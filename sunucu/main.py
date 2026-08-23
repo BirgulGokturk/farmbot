@@ -22,6 +22,7 @@ from contextlib import asynccontextmanager
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -36,6 +37,12 @@ AJAN_JETONU = os.environ.get("AJAN_JETONU", "")
 # Panel parolası isteğe bağlı: boşsa panel herkese açık olur (yerel ağ için
 # uygun), doluysa tarayıcı bu değeri sormadan bağlanamaz.
 PANEL_PAROLA = os.environ.get("PANEL_PAROLA", "")
+# Baska bir arayuzun (ornegin ayri bir gelistirme sunucusunda calisan
+# farmbot-web) tarayicidan bu API'yi cagirabilmesi icin kokeni burada
+# tek tek saymak gerekiyor. Bos birakilirsa CORS hic acilmaz: robotu
+# hareket ettiren bir API'de varsayilanin "herkese acik" olmasi dogru
+# degil. Ornek: IZINLI_KOKENLER="http://localhost:5173,http://batupi.local:3000"
+IZINLI_KOKENLER = [k.strip() for k in os.environ.get("IZINLI_KOKENLER", "").split(",") if k.strip()]
 
 # Ajan bir komuta bu süre içinde yanıt vermezse "zaman aşımı" deriz.
 KOMUT_ZAMAN_ASIMI = 20.0
@@ -188,6 +195,15 @@ async def yasam(app: FastAPI):
 
 
 app = FastAPI(title="Farmbot", lifespan=yasam)
+
+if IZINLI_KOKENLER:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=IZINLI_KOKENLER,
+        allow_methods=["GET", "POST"],
+        allow_headers=["*"],
+    )
+    logger.info("CORS acik: %s", ", ".join(IZINLI_KOKENLER))
 
 
 # --------------------------------------------------------------------------- #
