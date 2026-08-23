@@ -1,0 +1,4 @@
+# Kabuk betikleri ve systemd birimleri Linux satir sonuyla kalsin;
+# Windows kullanicisinin calisma kopyasi CRLF olsa bile depoda LF durur.
+*.sh text eol=lf
+*.service text eol=lf

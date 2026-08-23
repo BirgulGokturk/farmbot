@@ -4,9 +4,11 @@ Bu ilk sürüm bilerek küçük tutuldu: **hareket ettirme** ve **sensör grafik
 Çalıştığını gördükten sonra üzerine ekleme yapacağız.
 
 ```
-Arduino ──USB seri──> Raspberry Pi (ajan) ──WSS──> bulut sunucusu ──> tarayıcı
-   sensörler                 │                      (FastAPI + SQLite)
-   servo, röleler            └── Modbus TCP ──> PLC (X / Y / Z hareketi)
+Arduino ──USB seri──> Raspberry Pi ──ev ağı──> tarayıcı
+   sensörler            ajan + sunucu
+   servo, röleler       (FastAPI + SQLite)
+                             │
+                             └── Modbus TCP ──> PLC (X / Y / Z hareketi)
 ```
 
 > ⚠️ **Tek yazıcı kuralı.** Ajan çalışırken PLC'ye başka hiçbir program
@@ -18,34 +20,57 @@ Arduino ──USB seri──> Raspberry Pi (ajan) ──WSS──> bulut sunucus
 
 | Klasör | Ne yapar | Nerede çalışır |
 |---|---|---|
-| `sunucu/` | WebSocket köprüsü + ölçüm geçmişi + web arayüzü | Render (bulut) |
+| `sunucu/` | WebSocket köprüsü + ölçüm geçmişi + web arayüzü | Raspberry Pi |
 | `ajan/` | Arduino'yu okur, PLC'ye yazar, buluta bağlanır | Raspberry Pi |
 | `firmware/` | Sensör okuma + otonom vana kararı | Arduino |
 
-**Neden karar mekanizması Arduino'da?** İnternet ya da Pi giderse makinenin
-doğru davranmaya devam etmesi gerekiyor. Bulut yalnızca gösteriyor ve komut
+**Neden karar mekanizması Arduino'da?** Pi ya da ağ giderse makinenin doğru
+davranmaya devam etmesi gerekiyor. Panel yalnızca gösteriyor ve komut
 iletiyor; hiçbir güvenlik kararı orada değil.
 
 ---
 
-## 1. Bulut sunucusu (Render)
+## 1. Sunucu — Raspberry Pi'nin kendisinde
 
-1. Bu klasörü bir GitHub deposuna yükleyin.
-2. Render → **New → Blueprint** → depoyu seçin. `render.yaml` gerisini halleder.
-   (Elle kurmak isterseniz: Root Directory `sunucu`, Build `pip install -r
-   requirements.txt`, Start `uvicorn main:app --host 0.0.0.0 --port $PORT`.)
-3. Ortam değişkenleri:
+Sunucu ve ajan aynı Pi'de çalışır, bulut sunucusuna gerek yoktur. Pi zaten
+robot için 7/24 açık olmak zorunda; köprü işini de o görüyor. Kazancı: uyku
+yok, ücret yok, ölçüm geçmişi SD kartta kalıcı.
 
-   | Değişken | Anlamı |
-   |---|---|
-   | `AJAN_JETONU` | **Zorunlu.** Pi'nin kimliği. Uzun ve rastgele olsun; `ayarlar.json`daki `jeton` ile aynı olmalı. |
-   | `PANEL_PAROLA` | İsteğe bağlı. Doluysa panel parola sorar. Adres herkese açık olacağı için doldurmanızı öneririm. |
-   | `VERI_YOLU` | SQLite dosyasının yeri. Kalıcı disk varsa `/var/data/farmbot.db`. |
+Pi'de:
 
-> **Ücretsiz planda iki tuzak var:** servis 15 dakika trafik almazsa uykuya
-> dalar (ajan yeniden bağlanır, veri kaybı olmaz ama ilk açılış yavaş) ve
-> kalıcı disk yoktur — her dağıtımda geçmiş sıfırlanır. Grafik geçmişi sizin
-> için önemliyse `starter` planı + disk gerekiyor.
+```bash
+git clone <deponuz> ~/farmbot && cd ~/farmbot
+bash pi-kur.sh
+```
+
+Betik iki sanal ortamı kurar, `AJAN_JETONU`'nu rastgele üretir, panel
+parolasını sorar (yazarken ekranda görünmez), `ajan/ayarlar.json`'ı doldurur
+ve iki systemd servisini yazar. Tekrar çalıştırılabilir: var olan jetonu ve
+donanım ayarlarını bozmaz.
+
+Sonra servisleri başlatın:
+
+```bash
+sudo systemctl enable --now farmbot-sunucu
+sudo systemctl enable --now farmbot-ajan
+```
+
+Panel `http://<pi-ip>:8000` adresinde, ev ağındaki her cihazdan açılır.
+
+Gizli değerler `sunucu/ortam` dosyasında durur — yalnızca sahibi okuyabilir ve
+`.gitignore`'da olduğu için depoya gitmez:
+
+| Değişken | Anlamı |
+|---|---|
+| `AJAN_JETONU` | Ajanın sunucuya kimliği. `pi-kur.sh` üretir; `ayarlar.json`daki `jeton` ile aynıdır. |
+| `PANEL_PAROLA` | Doluysa panel parola sorar. Paneli ev ağı dışına açacaksanız zorunlu sayın. |
+| `VERI_YOLU` | SQLite dosyasının yeri: `~/farmbot-veri/farmbot.db`. |
+
+**Evin dışından erişim.** Panel varsayılan olarak yalnız yerel ağdan görünür;
+en güvenli hâli budur. Dışarıdan girmeniz gerekiyorsa modeme port açmayın —
+Tailscale kurun. Pi'ye ve telefonunuza kurulur, panel özel bir ağ üzerinden
+açılır, adres internete hiç çıkmaz. Herkese açık bir link şartsa Tailscale
+Funnel onu da veriyor.
 
 ## 2. Arduino
 
@@ -67,7 +92,10 @@ Eklenenler:
 Bağlantılar (Uno): BMP180 `SDA→A4, SCL→A5, VCC→3.3V` · DHT11 `DATA→D2` ·
 HW-103 `A0` · Servo `D9`.
 
-## 3. Raspberry Pi ajanı
+## 3. Ajan — elle kurulum
+
+`pi-kur.sh` bunların hepsini zaten yapıyor. Bu bölüm ne yaptığını görmek ya da
+tek tek denemek isteyenler için:
 
 ```bash
 sudo apt install -y python3-venv
@@ -78,18 +106,13 @@ sudo usermod -aG dialout $USER      # seri port izni — sonra yeniden başlat
 .venv/bin/python ajan.py ayarlar.json
 ```
 
-Çalıştığından emin olunca servise alın:
-
-```bash
-sudo cp farmbot-ajan.service /etc/systemd/system/
-sudo systemctl enable --now farmbot-ajan
-journalctl -u farmbot-ajan -f          # canlı günlük
-```
+Canlı günlük: `journalctl -u farmbot-ajan -f`
 
 ### ayarlar.json'da doldurulacaklar
 
-* `sunucu` — `wss://<render-adresiniz>/ws/ajan`
-* `jeton` — Render'daki `AJAN_JETONU` ile birebir aynı
+* `sunucu` — sunucu aynı Pi'de olduğu için `ws://127.0.0.1:8000/ws/ajan`
+* `jeton` — `sunucu/ortam` dosyasındaki `AJAN_JETONU` ile birebir aynı
+  (`pi-kur.sh` ikisini de kendisi yazar)
 * `arduino.port` — genelde `/dev/ttyUSB0` (klon kartlar) ya da `/dev/ttyACM0`.
   `ls /dev/tty*` ile Arduino'yu takıp çıkararak bulabilirsin.
 * `plc.ip` / `plc.port` — Modbus TCP adresi (Gantry Studio'daki değer:
@@ -194,3 +217,17 @@ Yeni komut eklemek için üç yer: `sunucu/main.py → IZINLI_KOMUTLAR`,
 2. Uç değiştirme dizisi (yan yaklaşımlı kilit) — en riskli parça, en son
 3. Zamanlanmış sulama (eşik + saat kuralları)
 4. Kamera görüntüsü ve uyarı kuralları
+
+---
+
+## Ek — bulutta barındırmak (Render)
+
+Sunucuyu Pi yerine bulutta çalıştırmak isterseniz `render.yaml` duruyor:
+Render → **New → Blueprint** → depoyu seçin. Ortam değişkenleri aynı
+(`AJAN_JETONU` otomatik üretilir, `PANEL_PAROLA`'yı elle girersiniz), tek fark
+`ayarlar.json`daki adresin `wss://<render-adresiniz>/ws/ajan` olması.
+
+Ücretsiz planın iki bedeli var: servis 15 dakika trafik almazsa uykuya dalar
+ve kalıcı disk olmadığı için **her dağıtımda ölçüm geçmişi sıfırlanır**. Canlı
+veri ve kontrol etkilenmez. Geçmiş sizin için önemliyse Pi'de barındırmak hem
+ücretsiz hem kalıcıdır.

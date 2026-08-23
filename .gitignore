@@ -3,3 +3,4 @@ __pycache__/
 .venv/
 ajan/ayarlar.json
 sunucu/farmbot.db*
+sunucu/ortam

@@ -2,8 +2,9 @@
   "_aciklama": "Bu dosyayı 'ayarlar.json' adıyla kopyalayıp kendi değerlerinizi yazın.",
   "_uyari": "Bu ajan çalışırken PLC'ye BAŞKA hiçbir program yazmamalı. Gantry Studio çalışıyorsa kapatın: sudo systemctl disable --now gantry-studio",
 
-  "sunucu": "wss://farmbot-api.onrender.com/ws/ajan",
-  "jeton": "SUNUCUDAKI_AJAN_JETONU_ILE_AYNI_OLMALI",
+  "_sunucu": "Sunucu Pi'nin kendisinde calisiyorsa asagidaki adres dogrudur. Bulutta barindiriyorsaniz wss://<adres>/ws/ajan yazin.",
+  "sunucu": "ws://127.0.0.1:8000/ws/ajan",
+  "jeton": "SUNUCUDAKI_AJAN_JETONU_ILE_AYNI_OLMALI (pi-kur.sh bunu kendisi doldurur)",
 
   "arduino": {
     "port": "/dev/ttyUSB0",
