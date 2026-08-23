@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Farmbot Paneli</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌱</text></svg>">
+<link rel="stylesheet" href="/statik/stil.css">
+<!-- Chart.js proje içinde duruyor (CDN değil): panel, internet olmayan bir
+     yerel ağda da açılsın ve dış bir servisin kesintisi paneli düşürmesin. -->
+<script src="/statik/chart.umd.js"></script>
+</head>
+<body>
+
+<!-- Panel parolası ayarlıysa önce bu ekran gelir -->
+<div id="giris">
+  <div class="kart">
+    <h3>Panel parolası</h3>
+    <input type="password" id="parola" style="width:100%" placeholder="Parola" autocomplete="current-password">
+    <div class="dugme-satir" style="margin-top:12px">
+      <button class="dugme secili" id="giris-dugme">Gir</button>
+      <span id="giris-hata" style="color:#ffb4b4;font-size:13px"></span>
+    </div>
+  </div>
+</div>
+
+<div id="uygulama" class="gizli">
+  <header>
+    <div class="marka">🌱 Farmbot <span>akıllı tarım robotu</span></div>
+    <div class="bosluk"></div>
+    <div class="rozet" id="rozet-sunucu"><i class="nokta"></i><span>Sunucu</span></div>
+    <div class="rozet" id="rozet-ajan"><i class="nokta"></i><span>Raspberry Pi</span></div>
+    <div class="rozet" id="rozet-plc"><i class="nokta"></i><span>PLC</span></div>
+    <div class="rozet" id="rozet-kip"><i class="nokta"></i><span>Kip: —</span></div>
+  </header>
+
+  <nav class="sekmeler">
+    <button data-sayfa="panel" class="etkin">Panel</button>
+    <button data-sayfa="kontrol">Kontrol</button>
+    <button data-sayfa="tablo">Tablo</button>
+  </nav>
+
+  <main>
+    <!-- ------------------------------- PANEL ------------------------------ -->
+    <section class="sayfa etkin" id="sayfa-panel">
+      <div class="izgara olcum-izgara">
+        <div class="kart">
+          <h3>HAVA SICAKLIĞI</h3>
+          <div class="deger" id="d-sicaklik">—<span class="birim">°C</span></div>
+          <div class="alt-not" id="a-sicaklik">DHT11</div>
+        </div>
+        <div class="kart">
+          <h3>HAVA NEMİ</h3>
+          <div class="deger" id="d-nem">—<span class="birim">%</span></div>
+          <div class="alt-not">DHT11</div>
+        </div>
+        <div class="kart">
+          <h3>TOPRAK NEMİ</h3>
+          <div class="deger" id="d-toprak">—<span class="birim">%</span></div>
+          <div class="alt-not" id="a-toprak">HW-103</div>
+        </div>
+        <div class="kart">
+          <h3>BASINÇ</h3>
+          <div class="deger" id="d-basinc">—<span class="birim">hPa</span></div>
+          <div class="alt-not" id="a-rakim">BMP180</div>
+        </div>
+        <div class="kart">
+          <h3>VANA (SERVO)</h3>
+          <div class="deger" id="d-servo">—<span class="birim">°</span></div>
+          <div class="alt-not" id="a-servo">SG-5010</div>
+        </div>
+      </div>
+
+      <div class="dugme-satir" style="margin-bottom:14px">
+        <span style="color:var(--metin-3);font-size:13px;margin-right:4px">Zaman aralığı</span>
+        <button class="dugme aralik" data-dakika="15">15 dk</button>
+        <button class="dugme aralik secili" data-dakika="60">1 saat</button>
+        <button class="dugme aralik" data-dakika="360">6 saat</button>
+        <button class="dugme aralik" data-dakika="1440">24 saat</button>
+        <button class="dugme aralik" data-dakika="10080">7 gün</button>
+      </div>
+
+      <div class="izgara grafik-izgara">
+        <div class="kart">
+          <h3>SICAKLIK (°C)</h3>
+          <div class="aciklama">
+            <span><i style="background:var(--seri-1)"></i>DHT11</span>
+            <span><i style="background:var(--seri-2)"></i>BMP180</span>
+          </div>
+          <div class="grafik-kutu"><canvas id="g-sicaklik"></canvas></div>
+        </div>
+
+        <div class="kart">
+          <h3>NEM (%)</h3>
+          <div class="aciklama">
+            <span><i style="background:var(--seri-1)"></i>Hava nemi</span>
+            <span><i style="background:var(--seri-2)"></i>Toprak nemi</span>
+          </div>
+          <div class="grafik-kutu"><canvas id="g-nem"></canvas></div>
+        </div>
+
+        <div class="kart">
+          <h3>BASINÇ (hPa)</h3>
+          <div class="grafik-kutu"><canvas id="g-basinc"></canvas></div>
+        </div>
+
+        <div class="kart">
+          <h3>VANA AÇISI (°)</h3>
+          <div class="grafik-kutu"><canvas id="g-servo"></canvas></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ------------------------------ KONTROL ----------------------------- -->
+    <section class="sayfa" id="sayfa-kontrol">
+      <!-- Acil durdurma mandalı: temizlenmeden hiçbir hareket komutu geçmez -->
+      <div id="acil-bant" class="gizli">
+        <span>⛔ <b>ACİL DURDURMA MANDALLI</b> — <span id="acil-detay"></span>. Makinenin güvende olduğunu doğrulayın.</span>
+        <button class="dugme" id="d-acil-temizle">Mandalı temizle</button>
+      </div>
+
+      <div class="izgara" style="grid-template-columns:repeat(auto-fit,minmax(330px,1fr))">
+
+        <div class="kart">
+          <h3>EKSEN KONUMU</h3>
+          <div class="eksen-kutu">
+            <div class="eksen"><b>X</b><div class="konum" id="k-x">—</div><div class="sinir" id="s-x"></div></div>
+            <div class="eksen"><b>Y</b><div class="konum" id="k-y">—</div><div class="sinir" id="s-y"></div></div>
+            <div class="eksen"><b>Z</b><div class="konum" id="k-z">—</div><div class="sinir" id="s-z"></div></div>
+          </div>
+
+          <div id="z-uyari" class="uyari-kutu gizli">
+            ⚠ Z güvenli yükseklikte değil — X/Y hareketi kilitli. Önce Z'yi kaldırın.
+          </div>
+
+          <div class="dugme-satir" style="margin-bottom:12px">
+            <span style="color:var(--metin-3);font-size:13px">Hız</span>
+            <input type="range" id="hiz-kaydirac" min="1" max="60" value="20" style="width:150px">
+            <span id="hiz-etiket" style="font-variant-numeric:tabular-nums">20 mm/s</span>
+          </div>
+
+          <p class="alt-not" style="margin-top:0">
+            Jog düğmeleri <b>basılı tutuldukça</b> hareket eder, bırakınca durur.
+            Bağlantı koparsa eksen 1,2 saniyede kendiliğinden durur.
+          </p>
+
+          <div style="display:flex;gap:18px;justify-content:center;align-items:center">
+            <div class="jog-izgara">
+              <div></div>
+              <button class="dugme jog" data-eksen="y" data-yon="1" title="Y+">▲</button>
+              <div></div>
+              <button class="dugme jog" data-eksen="x" data-yon="-1" title="X−">◀</button>
+              <button class="dugme" id="d-home" title="Referans arama (Z→Y→X)">⌂</button>
+              <button class="dugme jog" data-eksen="x" data-yon="1" title="X+">▶</button>
+              <div></div>
+              <button class="dugme jog" data-eksen="y" data-yon="-1" title="Y−">▼</button>
+              <div></div>
+            </div>
+            <div class="jog-z">
+              <button class="dugme jog" data-eksen="z" data-yon="1" title="Z+ (yukarı)">Z▲</button>
+              <div style="display:grid;place-items:center;color:var(--metin-3);font-size:12px">Z</div>
+              <button class="dugme jog" data-eksen="z" data-yon="-1" title="Z− (aşağı)">Z▼</button>
+            </div>
+          </div>
+
+          <div class="dugme-satir" style="margin-top:16px">
+            <button class="dugme" id="d-enable">⚡ Sürücüleri aç</button>
+            <button class="dugme" id="d-dur">■ Durdur</button>
+            <button class="dugme tehlike" id="d-acil">⛔ ACİL DURDURMA</button>
+          </div>
+        </div>
+
+        <div class="kart">
+          <h3>KONUMA GİT</h3>
+          <div class="dugme-satir" style="margin-bottom:12px">
+            <label style="color:var(--metin-3);font-size:13px">X <input type="number" id="h-x" step="0.1" placeholder="mm"></label>
+            <label style="color:var(--metin-3);font-size:13px">Y <input type="number" id="h-y" step="0.1" placeholder="mm"></label>
+            <label style="color:var(--metin-3);font-size:13px">Z <input type="number" id="h-z" step="0.1" placeholder="mm"></label>
+          </div>
+          <div class="dugme-satir">
+            <button class="dugme secili" id="d-git">Hedefe git</button>
+            <button class="dugme" id="d-buraya">Bulunduğu konumu al</button>
+          </div>
+          <p class="alt-not">Hareket sırası <b>Z → Y → X</b>, asla çapraz değil. X/Y yer değiştirecekse Z önce güvenli yüksekliğe çıkar. Boş bırakılan eksen olduğu yerde kalır; sınır dışı hedef ajanda reddedilir.</p>
+
+          <h3 style="margin-top:22px">VANA / SERVO</h3>
+          <div class="dugme-satir">
+            <input type="range" id="servo-kaydirac" min="0" max="180" value="0">
+            <span id="servo-etiket" style="font-variant-numeric:tabular-nums">0°</span>
+            <button class="dugme" id="d-servo-uygula">Uygula</button>
+          </div>
+          <div class="dugme-satir" style="margin-top:10px">
+            <button class="dugme" id="d-kip-oto">Otomatik kip</button>
+            <button class="dugme" id="d-kip-manuel">Manuel kip</button>
+          </div>
+          <p class="alt-not">Otomatik kipte vana kararını Arduino veriyor (toprak nemi eşiği). Manuel kipte panel karar verir.</p>
+
+          <h3 style="margin-top:22px">POMPA VE VANALAR</h3>
+          <div class="dugme-satir">
+            <button class="dugme role" data-role="su_pompasi">Su pompası</button>
+            <button class="dugme role" data-role="hava_pompasi">Hava pompası</button>
+            <button class="dugme role" data-role="su_vanasi">Su vanası</button>
+          </div>
+          <p class="alt-not">Tıklayınca açılır, tekrar tıklayınca kapanır. Acil durdurma hepsini kapatır.</p>
+        </div>
+
+        <div class="kart">
+          <h3>OLAY GÜNLÜĞÜ</h3>
+          <div id="gunluk"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ------------------------------- TABLO ------------------------------ -->
+    <section class="sayfa" id="sayfa-tablo">
+      <div class="kart">
+        <h3>SON ÖLÇÜMLER</h3>
+        <p class="alt-not" style="margin-top:0">Grafikteki aynı veri, sayı olarak. En yeni satır en üstte.</p>
+        <div class="tablo-kutu">
+          <table class="veri">
+            <thead>
+              <tr>
+                <th>Zaman</th><th>Sıcaklık (°C)</th><th>BMP (°C)</th><th>Hava nemi (%)</th>
+                <th>Toprak nemi (%)</th><th>Basınç (hPa)</th><th>Servo (°)</th>
+              </tr>
+            </thead>
+            <tbody id="tablo-govde"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<script src="/statik/app.js"></script>
+</body>
+</html>

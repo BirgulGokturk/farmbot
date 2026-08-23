@@ -1,0 +1,19 @@
+[Unit]
+Description=Farmbot köprü ajanı
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/farmbot/ajan
+ExecStart=/home/pi/farmbot/ajan/.venv/bin/python /home/pi/farmbot/ajan/ajan.py /home/pi/farmbot/ajan/ayarlar.json
+Restart=always
+RestartSec=5
+# Seri porta erişim için kullanıcı dialout grubunda olmalı:
+#   sudo usermod -aG dialout pi   (sonra yeniden başlatın)
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,20 @@
+services:
+  - type: web
+    name: farmbot-api
+    runtime: python
+    plan: starter          # Ücretsiz planda servis uykuya dalar ve kalıcı disk yoktur.
+    rootDir: sunucu
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /saglik
+    envVars:
+      - key: AJAN_JETONU
+        generateValue: true   # Render rastgele üretir; Pi'deki ayarlar.json'a kopyalayın
+      - key: PANEL_PAROLA
+        sync: false           # Panel parolasını Render panelinden elle girin
+      - key: VERI_YOLU
+        value: /var/data/farmbot.db
+    disk:
+      name: farmbot-veri
+      mountPath: /var/data
+      sizeGB: 1
