@@ -185,6 +185,10 @@ main.kabuk {
   min-width: 0;
   position: sticky;
   top: calc(var(--ust-yuk) + var(--b3));
+  /* Yapışkan sütun ekrandan uzun olursa altı hiç görünmez — profil şeridi
+     oraya düşüyordu. Kendi içinde kaydırılabiliyor. */
+  max-height: calc(100vh - var(--ust-yuk) - var(--b4));
+  overflow-y: auto;
   display: flex;
   flex-direction: column;
   gap: var(--b2);
@@ -1063,3 +1067,46 @@ button.dugme.tehlike:disabled {
 }
 /* İşaret beklerken artı imleç: tıklamanın bir anlamı olduğu belli olsun. */
 .kalib-tuval-kutu canvas.bekliyor { cursor: crosshair; background: rgba(57, 135, 229, .10); }
+
+/* ====================================================================
+   PROFİL GÖRÜNTÜLEYİCİ — haritanın altında Z kesiti.
+   Varsayılan kapalı: her zaman açık durması haritadan yer çalıyor.
+   ==================================================================== */
+.profil {
+  border-top: 1px solid var(--cizgi);
+  margin-top: var(--b2);
+  padding-top: var(--b2);
+  display: flex;
+  flex-direction: column;
+  gap: var(--b2);
+}
+.profil-ust { display: flex; align-items: center; gap: var(--b2); flex-wrap: wrap; }
+.profil-ust #d-profil-ac {
+  background: none;
+  border: none;
+  color: var(--metin-2);
+  font: var(--yazi-govde) inherit;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: var(--b1);
+  padding: 0;
+}
+.profil-ust #d-profil-ac:hover { color: var(--metin); }
+.profil-ust .ok { display: inline-block; transition: transform .12s; }
+.profil.kapali .ok { transform: rotate(-90deg); }
+.profil.kapali .profil-govde,
+.profil.kapali .profil-ust .dugme,
+.profil.kapali .profil-ust .alan { display: none; }
+
+.profil-govde { position: relative; }
+.profil-govde canvas {
+  display: block;
+  width: 100%;
+  height: 170px;
+  background: var(--yuzey-2);
+  border: 1px solid var(--cizgi);
+  border-radius: var(--b2);
+}
+.profil-govde canvas.gizli { display: none !important; }
+.profil-ust .alan.dar { min-width: 96px; }

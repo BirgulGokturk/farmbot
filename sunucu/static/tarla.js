@@ -205,6 +205,7 @@
       catch (h) { console.error("katman guncelle:", k.tanim.kimlik, h); }
     });
     ciz2bTumu();
+    if (window.Profil) window.Profil.tazele();
   }
 
   function katmanAcKapa(kayit, acik) {
@@ -269,6 +270,7 @@
     sahne.add(secmeDuzlem);
 
     olcuGuncelle();
+    if (window.Profil) window.Profil.kur();
     katmanlariKur();
     olaylariBagla();
     boyutla();
@@ -802,6 +804,12 @@
         ipucu("");
         const mm = ucBoyutlu ? zemindeMM(o) : olay2bMM(o);
 
+        // Sol tuşla yapılan HER tıklama profil kesitini oraya taşıyor —
+        // bir bitkiye tıklandığında da, çünkü kesite asıl o zaman bakılıyor.
+        if (o.button === 0 && !eski.tasindi && mm && window.Profil) {
+          window.Profil.konumSec(mm);
+        }
+
         if (eski.kutuSecim) {
           kutuGizle();
           if (eski.tasindi) {
@@ -1025,6 +1033,22 @@
 
     /** Deneme yardımcısı — çoklu seçimdeki nokta adları. */
     secimDurumu() { return [...T.secim]; },
+
+    /** PROFİL GÖRÜNTÜLEYİCİ'nin beslendiği tek yer.
+     *
+     * `profil.js` sahneye hiçbir şey çizmiyor — aynı verinin ikinci bir
+     * görünümü. Nokta deposunu ya da makine durumunu kendisi okumuyor,
+     * yalnız bunu çağırıyor. */
+    profilVeri() {
+      return {
+        sinir: T.sinir,
+        guvenliZ: T.guvenliZ,
+        noktalar: VERI.noktalar,
+        turler: VERI.turler,
+        konum: VERI.konum,
+        bolgeler: (VERI.durum && VERI.durum.bolgeler) || [],
+      };
+    },
 
     /** Deneme yardımcısı — katmanların ortak veri havuzu. */
     veriDurumu() {
