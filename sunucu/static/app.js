@@ -620,6 +620,162 @@ function adimlariTopla() {
   });
 }
 
+
+/* ================================================== kamera kalibrasyonu
+ *
+ * Fotoğrafı haritaya oturtan sayılar. Hesap sunucuda (kalibrasyon.py);
+ * panelin işi tıklanan pikselleri ve o anki eksen konumunu toplamak.
+ *
+ * İki kare yöntemi: makine bilinen bir mesafe oynuyor, aynı toprak parçası
+ * iki karede işaretleniyor. Piksel farkı ile mm farkı hem ölçeği hem açıyı
+ * veriyor.
+ */
+const KALIB = { kare1: null, kare2: null, bekleyen: 0 };
+
+function kalibDurumYaz(k) {
+  const rozet = $("#kalib-durum");
+  if (!rozet) return;
+  rozet.textContent = k && Number(k.mm_px) > 0
+    ? `${Number(k.mm_px).toFixed(3)} mm/px · ${Number(k.donme).toFixed(1)}°`
+    : "kalibre edilmedi";
+}
+
+async function kalibrasyonYukle() {
+  try {
+    const y = await apiIste("/api/kamera/kalibrasyon");
+    const k = y.kalibrasyon || {};
+    S.kalibrasyon = k;
+    $("#kalib-mmpx").value = k.mm_px ?? 0;
+    $("#kalib-donme").value = k.donme ?? 0;
+    $("#kalib-ofx").value = k.ofset_x ?? 0;
+    $("#kalib-ofy").value = k.ofset_y ?? 0;
+    $("#kalib-ayna-x").checked = !!k.ayna_x;
+    $("#kalib-ayna-y").checked = !!k.ayna_y;
+    kalibDurumYaz(k);
+  } catch (hata) { /* kalibrasyon yoksa sorun değil */ }
+}
+
+/** İşaretleri kare görüntüsünün üstüne çiziyor. */
+function kalibIsaretCiz() {
+  const im = $("#kalib-kare"), tuval = $("#kalib-tuval");
+  if (!im || !tuval || !im.clientWidth) return;
+  tuval.width = im.clientWidth;
+  tuval.height = im.clientHeight;
+  const c = tuval.getContext("2d");
+  c.clearRect(0, 0, tuval.width, tuval.height);
+  const olcek = im.clientWidth / (im.naturalWidth || 1);
+  [[KALIB.kare1, "1", "#3987e5"], [KALIB.kare2, "2", "#d95926"]].forEach(([k, ad, renk]) => {
+    if (!k) return;
+    const x = k.u * olcek, y = k.v * olcek;
+    c.strokeStyle = renk; c.lineWidth = 2;
+    c.beginPath(); c.arc(x, y, 9, 0, Math.PI * 2); c.stroke();
+    c.beginPath();
+    c.moveTo(x - 14, y); c.lineTo(x + 14, y);
+    c.moveTo(x, y - 14); c.lineTo(x, y + 14);
+    c.stroke();
+    c.fillStyle = renk;
+    c.font = "bold 12px ui-sans-serif, system-ui";
+    c.fillText(ad, x + 12, y - 12);
+  });
+}
+
+function kalibSonucCiz(metin, iyi) {
+  const kutu = $("#kalib-sonuc");
+  kutu.classList.remove("gizli");
+  kutu.innerHTML = `<div class="${iyi ? "" : "hata-yazi"}">${kacisli(metin)}</div>`;
+}
+
+async function kalibIsaretle(hangi) {
+  const im = $("#kalib-kare");
+  if (!im || !im.naturalWidth) { gunluk("Önce bir kamera karesi gelmeli", "uyari"); return; }
+  const k = S.konum || {};
+  if (k.x == null || k.y == null) { gunluk("Eksen konumu bilinmiyor", "uyari"); return; }
+  KALIB.bekleyen = hangi;
+  $("#kalib-yonerge").textContent =
+    `${hangi}. kare için görüntüde toprak parçasına tıklayın — konum X${k.x.toFixed(1)} Y${k.y.toFixed(1)}`;
+  $("#kalib-tuval").classList.add("bekliyor");
+}
+
+async function kalibTiklandi(olay) {
+  if (!KALIB.bekleyen) return;
+  const im = $("#kalib-kare");
+  const kutu = im.getBoundingClientRect();
+  const olcek = (im.naturalWidth || 1) / (kutu.width || 1);
+  const kayit = {
+    x: S.konum.x, y: S.konum.y,
+    u: (olay.clientX - kutu.left) * olcek,
+    v: (olay.clientY - kutu.top) * olcek,
+  };
+  if (KALIB.bekleyen === 1) KALIB.kare1 = kayit; else KALIB.kare2 = kayit;
+  KALIB.bekleyen = 0;
+  $("#kalib-tuval").classList.remove("bekliyor");
+  kalibIsaretCiz();
+
+  if (!KALIB.kare1 || !KALIB.kare2) {
+    $("#kalib-yonerge").textContent =
+      "İkinci kare için makineyi en az 20 mm oynatın, yeni kare gelince aynı yere tıklayın.";
+    return;
+  }
+  try {
+    const y = await apiIste("/api/kamera/kalibrasyon/coz", {
+      method: "POST",
+      body: JSON.stringify({
+        kare1: KALIB.kare1, kare2: KALIB.kare2, kaydet: true,
+        genislik_px: im.naturalWidth, yukseklik_px: im.naturalHeight,
+      }),
+    });
+    const s = y.sonuc;
+    kalibSonucCiz(
+      `${s.mm_mesafe.toFixed(1)} mm hareket · ${s.px_mesafe.toFixed(1)} px kayma → ` +
+      `${s.mm_px.toFixed(4)} mm/px · ${s.donme.toFixed(1)}° · kaydedildi`, true);
+    await kalibrasyonYukle();
+    if (window.Tarla && window.Tarla.kalibrasyonDegisti) window.Tarla.kalibrasyonDegisti();
+  } catch (hata) {
+    kalibSonucCiz(hata.message, false);
+  }
+}
+
+function kalibSifirla() {
+  KALIB.kare1 = KALIB.kare2 = null;
+  KALIB.bekleyen = 0;
+  $("#kalib-tuval").classList.remove("bekliyor");
+  $("#kalib-sonuc").classList.add("gizli");
+  $("#kalib-yonerge").textContent =
+    "1. Makineyi bir yere götürün, kare gelsin, aşağıda bir toprak parçasına tıklayın. " +
+    "2. Makineyi en az 20 mm oynatın, yeni kare gelsin, aynı yere tıklayın.";
+  kalibIsaretCiz();
+}
+
+function kalibBagla() {
+  const tuval = $("#kalib-tuval");
+  if (!tuval) return;
+  tuval.onclick = kalibTiklandi;
+  $("#d-kalib-kare1").onclick = () => kalibIsaretle(1);
+  $("#d-kalib-kare2").onclick = () => kalibIsaretle(2);
+  $("#d-kalib-temizle").onclick = kalibSifirla;
+  $("#d-kalib-kaydet").onclick = async () => {
+    try {
+      const y = await apiIste("/api/kamera/kalibrasyon", {
+        method: "POST",
+        body: JSON.stringify({
+          mm_px: Number($("#kalib-mmpx").value),
+          donme: Number($("#kalib-donme").value),
+          ofset_x: Number($("#kalib-ofx").value),
+          ofset_y: Number($("#kalib-ofy").value),
+          ayna_x: $("#kalib-ayna-x").checked,
+          ayna_y: $("#kalib-ayna-y").checked,
+          yontem: "elle", guncelleme: Date.now() / 1000,
+        }),
+      });
+      S.kalibrasyon = y.kalibrasyon;
+      kalibDurumYaz(y.kalibrasyon);
+      gunluk("✓ Kamera kalibrasyonu kaydedildi", "ok");
+      if (window.Tarla && window.Tarla.kalibrasyonDegisti) window.Tarla.kalibrasyonDegisti();
+    } catch (hata) { gunluk(`✕ ${hata.message}`, "hata"); }
+  };
+  window.addEventListener("resize", kalibIsaretCiz);
+}
+
 async function programlariYukle(secilecek) {
   try {
     const govde = await apiIste("/api/programlar");
@@ -672,11 +828,19 @@ function diziGuncelle(d) {
 // Kare WebSocket'ten gelmiyor; sunucu haber veriyor, tarayıcı <img> ile
 // çekiyor. Böylece büyük base64 dizeleri panel soketini tıkamıyor.
 function kareyiTazele(ts) {
+  const adres = `/api/kare/son?jeton=${encodeURIComponent(S.jeton)}&t=${ts || Date.now()}`;
   const img = $("#kamera-kare");
-  img.src = `/api/kare/son?jeton=${encodeURIComponent(S.jeton)}&t=${ts || Date.now()}`;
+  img.src = adres;
   img.classList.remove("gizli");
   $("#kamera-yok").classList.add("gizli");
   $("#kamera-zaman").textContent = "Son kare: " + new Date((ts || Date.now() / 1000) * 1000).toLocaleTimeString("tr-TR");
+  // Kalibrasyon karesi de aynı görüntüyü kullanıyor: iki kare yöntemi için
+  // makine oynadıkça yeni kare gelmesi gerekiyor.
+  const kalibKare = $("#kalib-kare");
+  if (kalibKare) {
+    kalibKare.src = adres;
+    kalibKare.onload = kalibIsaretCiz;
+  }
 }
 
 /* ------------------------------------------- yalnızca var olan sensörler */
@@ -1509,6 +1673,8 @@ async function basla() {
     $$(".grafik-kutu").forEach((k) => { k.innerHTML = '<p class="alt-not">Grafik kütüphanesi yüklenemedi.</p>'; });
   }
   olaylariBagla();
+  kalibBagla();
+  kalibrasyonYukle();
   // Tarla sahnesi kendi dosyasında; three.js yüklenmediyse panel yine çalışsın.
   try {
     if (window.Tarla) await window.Tarla.kur();

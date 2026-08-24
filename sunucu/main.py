@@ -26,6 +26,7 @@ from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 import depo
+import kalibrasyon
 import kareler
 import noktalar
 import programlar
@@ -651,6 +652,58 @@ async def api_program_calistir(govde: dict[str, Any], jeton: str = Query(default
         "ad": program["ad"], "adimlar": adimlar,
         "tekrar": program.get("tekrar", 1), "hiz": govde.get("hiz"),
     })
+
+
+# --------------------------------------------------------------------------- #
+# Kamera kalibrasyonu — fotoğrafı haritaya oturtan sayılar
+#
+# Kamera uç kafasında; kare çekildiği eksen konumuyla saklanıyor. Bu dört sayı
+# (ölçek, açı, iki eksen kayması) kareyi haritanın doğru yerine koymaya
+# yarıyor. Hesap `kalibrasyon.py` içinde; panel yalnızca tıklanan pikselleri
+# gönderiyor.
+# --------------------------------------------------------------------------- #
+@app.get("/api/kamera/kalibrasyon")
+async def api_kalibrasyon(jeton: str = Query(default="")):
+    _parola_dogrula(jeton)
+    return {"kalibrasyon": await asyncio.to_thread(kalibrasyon.oku)}
+
+
+@app.post("/api/kamera/kalibrasyon")
+async def api_kalibrasyon_kaydet(govde: dict[str, Any], jeton: str = Query(default="")):
+    _parola_dogrula(jeton)
+    try:
+        veri = await asyncio.to_thread(kalibrasyon.kaydet, govde)
+    except kalibrasyon.KalibrasyonHatasi as hata:
+        raise HTTPException(status_code=400, detail=str(hata))
+    except (TypeError, ValueError) as hata:
+        raise HTTPException(status_code=400, detail=f"Geçersiz kalibrasyon: {hata}")
+    return {"ok": True, "kalibrasyon": veri}
+
+
+@app.post("/api/kamera/kalibrasyon/coz")
+async def api_kalibrasyon_coz(govde: dict[str, Any], jeton: str = Query(default="")):
+    """İki kareden ölçek ve açıyı hesaplar; istenirse doğrudan kaydeder.
+
+    Gövde: {"kare1": {"x","y","u","v"}, "kare2": {…}, "kaydet": true}
+    """
+    _parola_dogrula(jeton)
+    try:
+        sonuc = await asyncio.to_thread(
+            kalibrasyon.coz, govde.get("kare1") or {}, govde.get("kare2") or {})
+    except kalibrasyon.KalibrasyonHatasi as hata:
+        raise HTTPException(status_code=400, detail=str(hata))
+    except (KeyError, TypeError, ValueError) as hata:
+        raise HTTPException(status_code=400, detail=f"Eksik ya da geçersiz kare verisi: {hata}")
+
+    veri = None
+    if govde.get("kaydet"):
+        veri = await asyncio.to_thread(kalibrasyon.kaydet, {
+            "mm_px": sonuc["mm_px"], "donme": sonuc["donme"],
+            "genislik_px": govde.get("genislik_px"),
+            "yukseklik_px": govde.get("yukseklik_px"),
+            "yontem": "iki-kare", "guncelleme": time.time(),
+        })
+    return {"ok": True, "sonuc": sonuc, "kalibrasyon": veri}
 
 
 # --------------------------------------------------------------------------- #

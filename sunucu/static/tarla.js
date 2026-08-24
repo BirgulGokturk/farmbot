@@ -94,6 +94,7 @@
     iz: [],           // [{x,y,ts}] — robotun geçtiği yerler
     kareler: [],      // [{damga,ts,x,y}]
     okumalar: [],     // [{ts,x,y,toprak_nem}]
+    kalibrasyon: null, // kamera kalibrasyonu — {mm_px, donme, ofset_x, ofset_y, …}
   };
 
   const P = () => window.Panel || {};
@@ -147,6 +148,14 @@
       return { x: t.u * olcek2b + kaydir2b.x, y: t.v * olcek2b + kaydir2b.y };
     },
     get olcek2b() { return olcek2b; },
+    /** 2B dönüşümün doğrusal kısmı (mm -> piksel). Döndürme, sıfır köşesi ve
+     *  ölçek hepsi burada. Bir katman kendi çizimini mm biriminde yapmak
+     *  isterse `c.transform(a,b,c,d,0,0)` diyerek mm uzayına geçebiliyor —
+     *  harita ayarlarını bilmesi gerekmiyor. */
+    haritaMatris() {
+      const s0 = BAGLAM.mm2b(0, 0), sx1 = BAGLAM.mm2b(1, 0), sy1 = BAGLAM.mm2b(0, 1);
+      return { a: sx1.x - s0.x, b: sx1.y - s0.y, c: sy1.x - s0.x, d: sy1.y - s0.y };
+    },
     komut: (ad, arg) => P().komutGonder && P().komutGonder(ad, arg),
     api: (yol, sec) => P().apiIste(yol, sec),
     noktalariYukle: () => P().noktalariYukle && P().noktalariYukle(),
@@ -902,6 +911,9 @@
     if (acikMi("kareler")) {
       try { VERI.kareler = (await P().apiIste("/api/kare/liste")).kareler || []; }
       catch (h) { VERI.kareler = []; }
+      // Kalibrasyon olmadan kare haritaya oturmuyor; katman açıkken tazeliyoruz.
+      try { VERI.kalibrasyon = (await P().apiIste("/api/kamera/kalibrasyon")).kalibrasyon; }
+      catch (h) { VERI.kalibrasyon = null; }
     }
     if (acikMi("okumalar")) {
       try { VERI.okumalar = (await P().apiIste("/api/olcum/konumlu?dakika=1440")).okumalar || []; }
@@ -1001,11 +1013,25 @@
                y: kutu.top + ((1 - v.y) / 2) * kutu.height };
     },
 
+    /** Kalibrasyon değişince (Ayarlar sekmesi) haritayı tazeliyoruz. */
+    async kalibrasyonDegisti() {
+      try { VERI.kalibrasyon = (await P().apiIste("/api/kamera/kalibrasyon")).kalibrasyon; }
+      catch (h) { VERI.kalibrasyon = null; }
+      katmanlariGuncelle();
+    },
+
     /** app.js dizileri yükledikçe çağırıyor — "Dizi uygula" listesi. */
     dizilerDegisti(programlar) { dizileriTazele(programlar); },
 
     /** Deneme yardımcısı — çoklu seçimdeki nokta adları. */
     secimDurumu() { return [...T.secim]; },
+
+    /** Deneme yardımcısı — katmanların ortak veri havuzu. */
+    veriDurumu() {
+      return { nokta: VERI.noktalar.length, kare: VERI.kareler.length,
+               okuma: VERI.okumalar.length, iz: VERI.iz.length,
+               kalibrasyon: VERI.kalibrasyon };
+    },
 
     /** Deneme yardımcısı — 2B haritanın ölçeği ve kapsadığı alan. */
     olcekDurumu() {
