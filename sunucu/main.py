@@ -419,6 +419,70 @@ async def api_nokta_sil(ad: str = Query(...), jeton: str = Query(default="")):
 
 
 # --------------------------------------------------------------------------- #
+# Toplu işlem — haritada seçilen noktalara tek seferde
+#
+# Panel "şu noktalara şunu yap" diyor; adım listesini BURADA kuruyoruz ve
+# ajanın olağan dizi yoluna veriyoruz. Panel tek tek hareket komutu
+# göndermiyor: sıralama, yasak bölge denetimi, Z kilidi ve acil durdurma
+# mandalı ajanın elinde kalıyor.
+#
+# Seçim en fazla 40 nokta: yatağımız 425 x 600 mm, sığan fide sayısı bu
+# mertebede. Üstü hem adım sınırını (200) zorlar hem de yanlışlıkla
+# yapılmış bir seçimi tehlikeli hâle getirir.
+# --------------------------------------------------------------------------- #
+AZAMI_SECIM = 40
+
+
+@app.post("/api/toplu")
+async def api_toplu(govde: dict[str, Any], jeton: str = Query(default="")):
+    _parola_dogrula(jeton)
+    islem = str(govde.get("islem", ""))
+    adlar = [str(a) for a in (govde.get("noktalar") or []) if str(a).strip()]
+    if not adlar:
+        raise HTTPException(status_code=400, detail="Seçim boş")
+    if len(adlar) > AZAMI_SECIM:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Tek seferde en fazla {AZAMI_SECIM} nokta işlenebilir "
+                   f"(seçili: {len(adlar)})")
+
+    if islem == "sil":
+        silinen = [ad for ad in adlar if await asyncio.to_thread(noktalar.sil, ad)]
+        if not silinen:
+            raise HTTPException(status_code=404, detail="Seçilen noktaların hiçbiri bulunamadı")
+        return {"ok": True, "silinen": silinen,
+                "mesaj": f"{len(silinen)} nokta silindi"}
+
+    if islem not in ("sula", "gez"):
+        raise HTTPException(status_code=400, detail=f"Bilinmeyen toplu işlem: {islem!r}")
+
+    # Sulama süresi: makul bir aralıkta tutuluyor, panelden gelen sayıya
+    # körlemesine güvenilmiyor.
+    saniye = max(1.0, min(60.0, float(govde.get("saniye", 3) or 3)))
+    adimlar: list[dict[str, Any]] = []
+    for ad in adlar:
+        adimlar.append({"tip": "nokta", "ad": ad})
+        if islem == "sula":
+            adimlar.append({"tip": "role", "ad": "su_vanasi", "durum": True})
+            adimlar.append({"tip": "bekle", "saniye": saniye})
+            adimlar.append({"tip": "role", "ad": "su_vanasi", "durum": False})
+
+    gecici = {"ad": "Seçim: " + ("sulama" if islem == "sula" else "gezinti"),
+              "adimlar": adimlar, "tekrar": 1}
+    try:
+        # Nokta adları koordinata burada çevriliyor — kayıtlı programlarla
+        # aynı yol. Bir nokta bulunamazsa dizi HİÇ başlamıyor.
+        cozulmus = await asyncio.to_thread(programlar.coz, gecici)
+    except programlar.ProgramHatasi as hata:
+        raise HTTPException(status_code=400, detail=str(hata))
+
+    return await merkez.komut_gonder("dizi_baslat", {
+        "ad": gecici["ad"], "adimlar": cozulmus, "tekrar": 1,
+        "hiz": govde.get("hiz"),
+    })
+
+
+# --------------------------------------------------------------------------- #
 # Tohum ızgarası
 #
 # Ayrı bir yapı kurmuyoruz: üretilen noktalar doğrudan nokta deposuna yazılıyor.

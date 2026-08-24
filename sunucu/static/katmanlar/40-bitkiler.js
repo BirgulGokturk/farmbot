@@ -83,12 +83,25 @@ Tarla.katman({
     return grup;
   },
 
+  /** Çoklu seçimdeki bitkinin altına vurgu halkası. */
+  secimHalkasi(o, n) {
+    const halka = new o.THREE.Mesh(
+      new o.THREE.RingGeometry(0.030, 0.040, 30),
+      new o.THREE.MeshBasicMaterial({ color: "#3987e5", transparent: true, opacity: 0.9,
+                                      side: o.THREE.DoubleSide }));
+    halka.rotation.x = -Math.PI / 2;
+    halka.position.set(o.sx(n.x), 0.005, o.sz(n.y));
+    halka.raycast = () => {};
+    return halka;
+  },
+
   guncelle(o) {
     o.bosalt(o.grup);
     this.bitkiler(o).forEach((b) => {
       const g = this.gorsel(o, b, this.olgunluk(b));
       g.position.set(o.sx(b.nokta.x), 0, o.sz(b.nokta.y));
       o.grup.add(g);
+      if (o.secim.has(b.nokta.ad)) o.grup.add(this.secimHalkasi(o, b.nokta));
     });
     // Seçili bitkinin altına beyaz halka
     const s = o.secili;
@@ -115,6 +128,11 @@ Tarla.katman({
     this.bitkiler(o).forEach((b) => {
       const p = o.mm2b(b.nokta.x, b.nokta.y);
       const secili = s && s.katman.tanim.kimlik === "bitkiler" && s.kayit.nokta.ad === b.nokta.ad;
+      const toplu = o.secim.has(b.nokta.ad);
+      if (toplu) {
+        c.beginPath(); c.arc(p.x, p.y, 10, 0, Math.PI * 2);
+        c.strokeStyle = "#3987e5"; c.lineWidth = 2.5; c.stroke();
+      }
       c.beginPath(); c.arc(p.x, p.y, secili ? 7 : 5, 0, Math.PI * 2);
       c.fillStyle = b.tur.color || "#5f9e46"; c.fill();
       if (secili) { c.strokeStyle = "#fff"; c.lineWidth = 2; c.stroke(); }
@@ -122,6 +140,12 @@ Tarla.katman({
       c.font = "10px ui-sans-serif, system-ui";
       c.fillText(b.nokta.ad, p.x + 9, p.y + 3);
     });
+  },
+
+  /** Kutu seçimine hangi öğelerin gireceği. Çekirdek yalnız {ad, x, y}
+   *  istiyor; katman kapalıysa hiç sorulmuyor. */
+  secilebilir(o) {
+    return this.bitkiler(o).map((b) => ({ ad: b.nokta.ad, x: b.nokta.x, y: b.nokta.y }));
   },
 
   /** Tıklama yarıçapı bitkinin gövdesi kadar — yayılım dairesi kadar değil. */

@@ -13,11 +13,25 @@ Tarla.katman({
     return o.veri.noktalar.filter((n) => n && !n.tur);
   },
 
+  /** Kutu seçimine giren öğeler — çekirdek yalnız {ad, x, y} istiyor. */
+  secilebilir(o) {
+    return this.liste(o).map((n) => ({ ad: n.ad, x: n.x, y: n.y }));
+  },
+
   guncelle(o) {
     o.bosalt(o.grup);
     const mal = new o.THREE.MeshBasicMaterial({ color: "#c3c2b7", transparent: true, opacity: 0.85 });
+    const secMal = new o.THREE.MeshBasicMaterial({ color: "#3987e5", transparent: true, opacity: 0.95,
+                                                   side: o.THREE.DoubleSide });
     this.liste(o).forEach((n) => {
       const g = new o.THREE.Group();
+      if (o.secim.has(n.ad)) {
+        const vurgu = new o.THREE.Mesh(new o.THREE.RingGeometry(0.014, 0.019, 24), secMal);
+        vurgu.rotation.x = -Math.PI / 2;
+        vurgu.position.y = 0.005;
+        vurgu.raycast = () => {};
+        g.add(vurgu);
+      }
       const halka = new o.THREE.Mesh(new o.THREE.RingGeometry(0.006, 0.011, 18), mal);
       halka.rotation.x = -Math.PI / 2;
       halka.position.y = 0.004;
@@ -34,6 +48,10 @@ Tarla.katman({
   ciz2b(o, c) {
     this.liste(o).forEach((n) => {
       const p = o.mm2b(n.x, n.y);
+      if (o.secim.has(n.ad)) {
+        c.beginPath(); c.arc(p.x, p.y, 8, 0, Math.PI * 2);
+        c.strokeStyle = "#3987e5"; c.lineWidth = 2.5; c.stroke();
+      }
       c.strokeStyle = "#c3c2b7"; c.lineWidth = 1;
       c.beginPath();
       c.moveTo(p.x - 4, p.y); c.lineTo(p.x + 4, p.y);

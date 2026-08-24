@@ -55,7 +55,17 @@
     guvenliZ: 280,
     sonNoktaImzasi: "",
     ekleme: false,
+
+    // İKİ KİP (FarmBot'un move/select ayrımı).
+    //   "tasi" — sürükle döndürür, öğe sürüklenir, tek tıkla kart açılır
+    //   "sec"  — sürükleme kutu seçimi çizer, Shift ile tek tek eklenir
+    kip: "tasi",
+    secim: new Set(),            // seçili nokta ADLARI
   };
+
+  /** Tek seferde işlenebilecek nokta sayısı — sunucudaki sınırla aynı.
+   *  Yatağımız 425 x 600 mm; sığan fide sayısı bu mertebede. */
+  const AZAMI_SECIM = 40;
 
   /* Bütün katmanların ortak veri havuzu. Tek kaynak: ayrı bir depo yok,
      2B ve 3B aynı nesneleri okuyor. */
@@ -109,6 +119,10 @@
     get genislikM() { return genislikM; },
     get derinlikM() { return derinlikM; },
     get secili() { return T.secili; },
+    /** Çoklu seçim — katmanlar `o.secim.has(nokta.ad)` ile vurguluyor.
+     *  Salt okunur kullanılıyor; değiştirmek çekirdeğin işi. */
+    get secim() { return T.secim; },
+    get kip() { return T.kip; },
     sx, sz, mmx, mmy, malzeme, kis, say, kacisli, gunluk,
     /** 2B: mm -> tuval pikseli */
     mm2b(x, y) {
@@ -448,6 +462,136 @@
     ciz2bTumu();
   }
 
+  /* ==================================================== çoklu seçim */
+  /* Kutu seçimi ve toplu işlem.
+   *
+   * Çekirdek hangi katmanın ne tuttuğunu BİLMİYOR: açık katmanlara
+   * `secilebilir(o)` diye soruyor, dönen {ad, x, y} listesini kutuyla
+   * kesiştiriyor. Yeni bir katman seçilebilir olmak isterse bu kancayı
+   * yazıyor, çekirdeğe dokunulmuyor. Kapalı katman seçime de girmiyor. */
+
+  function secilebilirler() {
+    const liste = [];
+    for (const k of T.katmanlar) {
+      if (!k.acik || !k.tanim.secilebilir) continue;
+      try {
+        const parca = k.tanim.secilebilir(katmanBaglami(k)) || [];
+        for (const n of parca) if (n && n.ad) liste.push(n);
+      } catch (h) { console.error("katman secilebilir:", k.tanim.kimlik, h); }
+    }
+    return liste;
+  }
+
+  /** Makine mm → etkin tuvalin İÇ pikseli (kutu kesişimi bunun üstünden). */
+  function tuvalXY(mmx_, mmy_) {
+    if (T.gorunum === "2b") return BAGLAM.mm2b(mmx_, mmy_);
+    const kutu = tuval.getBoundingClientRect();
+    const v = new THREE.Vector3(sx(mmx_), 0, sz(mmy_)).project(etkinKamera());
+    return { x: ((v.x + 1) / 2) * kutu.width, y: ((1 - v.y) / 2) * kutu.height };
+  }
+
+  function secimeYaz(adlar, ekle) {
+    if (!ekle) T.secim.clear();
+    for (const ad of adlar) {
+      if (T.secim.has(ad)) T.secim.delete(ad);
+      else if (T.secim.size < AZAMI_SECIM) T.secim.add(ad);
+    }
+    secimiCiz();
+  }
+
+  function secimiBirak() {
+    if (!T.secim.size) return;
+    T.secim.clear();
+    secimiCiz();
+  }
+
+  function secimiCiz() {
+    const cubuk = $("#toplu-cubuk");
+    const sayi = $("#toplu-sayi");
+    if (cubuk) cubuk.classList.toggle("gizli", T.secim.size === 0);
+    if (sayi) sayi.textContent = `${T.secim.size} seçili`;
+    katmanlariGuncelle();
+  }
+
+  /** Kutu seçimi dikdörtgenini tuvalin üstüne çiziyor. */
+  function kutuCiz(bas, o) {
+    const k = $("#secim-kutusu");
+    if (!k) return;
+    // Önce görünür yapılıyor: display:none iken offsetParent null geliyor.
+    k.classList.remove("gizli");
+    const hedef = T.gorunum === "2b" ? tuval2b : tuval;
+    const kutu = hedef.getBoundingClientRect();
+    const anne = (k.offsetParent || k.parentElement).getBoundingClientRect();
+    const x1 = Math.min(bas.x, o.clientX), x2 = Math.max(bas.x, o.clientX);
+    const y1 = Math.min(bas.y, o.clientY), y2 = Math.max(bas.y, o.clientY);
+    k.style.left = `${kis(x1, kutu.left, kutu.right) - anne.left}px`;
+    k.style.top = `${kis(y1, kutu.top, kutu.bottom) - anne.top}px`;
+    k.style.width = `${kis(x2, kutu.left, kutu.right) - kis(x1, kutu.left, kutu.right)}px`;
+    k.style.height = `${kis(y2, kutu.top, kutu.bottom) - kis(y1, kutu.top, kutu.bottom)}px`;
+  }
+
+  function kutuGizle() {
+    const k = $("#secim-kutusu");
+    if (k) k.classList.add("gizli");
+  }
+
+  /** Kutunun içine düşen her şeyi seçiyor. Shift basılıysa mevcut seçime ekliyor. */
+  function kutuylaSec(bas, o, ekle) {
+    const hedef = T.gorunum === "2b" ? tuval2b : tuval;
+    const kutu = hedef.getBoundingClientRect();
+    const x1 = Math.min(bas.x, o.clientX) - kutu.left, x2 = Math.max(bas.x, o.clientX) - kutu.left;
+    const y1 = Math.min(bas.y, o.clientY) - kutu.top, y2 = Math.max(bas.y, o.clientY) - kutu.top;
+    const icerde = [];
+    for (const n of secilebilirler()) {
+      const p = tuvalXY(n.x, n.y);
+      if (p.x >= x1 && p.x <= x2 && p.y >= y1 && p.y <= y2) icerde.push(n.ad);
+    }
+    if (!ekle) T.secim.clear();
+    for (const ad of icerde) {
+      if (T.secim.size >= AZAMI_SECIM) break;
+      T.secim.add(ad);
+    }
+    if (icerde.length > AZAMI_SECIM) {
+      gunluk(`Seçim ${AZAMI_SECIM} noktada durduruldu — kutuda ${icerde.length} vardı`, "uyari");
+    }
+    secimiCiz();
+  }
+
+  function kipSec(hangi) {
+    T.kip = hangi === "sec" ? "sec" : "tasi";
+    localStorage.setItem("farmbot_tarla_kip", T.kip);
+    $("#d-kip-tasi").classList.toggle("secili", T.kip === "tasi");
+    $("#d-kip-sec").classList.toggle("secili", T.kip === "sec");
+    if (T.kip === "sec") {
+      // Seç kipinde ekleme kipi kapanıyor: ikisi de sol tıkla çalışıyor.
+      if (T.ekleme) eklemeKipi(false);
+      secimiKapat();
+    } else {
+      secimiBirak();
+    }
+    kutuGizle();
+  }
+
+  /* -------------------------------------------------------- toplu işlem */
+  async function topluIslem(islem) {
+    const adlar = [...T.secim];
+    if (!adlar.length) return;
+    if (islem === "sil" && !confirm(`${adlar.length} nokta silinecek. Emin misiniz?`)) return;
+    try {
+      const y = await P().apiIste("/api/toplu", {
+        method: "POST", body: JSON.stringify({ islem, noktalar: adlar }),
+      });
+      gunluk(y.mesaj || `Toplu işlem başlatıldı — ${adlar.length} nokta`, "iyi");
+      if (islem === "sil") {
+        T.secim.clear();
+        await P().noktalariYukle();
+      }
+      secimiCiz();
+    } catch (h) {
+      gunluk(`✕ Toplu işlem: ${h.message || h}`, "hata");
+    }
+  }
+
   /** Bir katmanın "taşı" yeteneği varsa sürükleme buradan geçiyor. */
   function surukle(kayit, katman, mm, bitti) {
     if (!katman.tanim.tasi) return;
@@ -464,6 +608,14 @@
       hedef.addEventListener("pointerdown", (o) => {
         hedef.setPointerCapture(o.pointerId);
         const mm = ucBoyutlu ? zemindeMM(o) : olay2bMM(o);
+
+        // SEÇ KİPİ — sol tuş kutu çizer, öğe sürüklenmez, sahne dönmez.
+        if (T.kip === "sec" && o.button === 0) {
+          bas = { x: o.clientX, y: o.clientY, mm, vurus: null, tasindi: false,
+                  kutuSecim: true, ekle: o.shiftKey || o.ctrlKey || o.metaKey };
+          return;
+        }
+
         const vurus = (!T.ekleme && mm) ? vurTara(mm) : null;
         bas = { x: o.clientX, y: o.clientY, mm, vurus, tasindi: false,
                 kaydir: o.button === 1 || o.shiftKey,
@@ -474,7 +626,8 @@
       hedef.addEventListener("pointermove", (o) => {
         const mm = ucBoyutlu ? zemindeMM(o) : olay2bMM(o);
         if (!bas) {
-          hedef.style.cursor = T.ekleme ? "crosshair"
+          hedef.style.cursor = T.kip === "sec" ? "crosshair"
+            : T.ekleme ? "crosshair"
             : (mm && vurTara(mm)) ? "grab" : "default";
           if (mm && !ucBoyutlu) ipucu(`X ${say(mm.x, 1)} · Y ${say(mm.y, 1)} mm`);
           return;
@@ -483,7 +636,9 @@
         if (!bas.tasindi && Math.hypot(dx, dy) < 4) return;
         bas.tasindi = true;
 
-        if (bas.vurus && mm) {
+        if (bas.kutuSecim) {
+          kutuCiz(bas, o);
+        } else if (bas.vurus && mm) {
           surukle(bas.vurus.kayit, bas.vurus.katman, mm, false);
           ipucu(`X ${say(mm.x, 1)} · Y ${say(mm.y, 1)} mm`);
         } else if (ucBoyutlu && bas.kaydir) {
@@ -504,6 +659,23 @@
         try { hedef.releasePointerCapture(o.pointerId); } catch (h) { /* yoksay */ }
         ipucu("");
         const mm = ucBoyutlu ? zemindeMM(o) : olay2bMM(o);
+
+        if (eski.kutuSecim) {
+          kutuGizle();
+          if (eski.tasindi) {
+            kutuylaSec(eski, o, eski.ekle);
+          } else if (mm) {
+            // Sürüklemeden tıklandı: altındaki tek öğeyi ekle/çıkar.
+            const tek = secilebilirler()
+              .map((n) => ({ n, d: Math.hypot(n.x - mm.x, n.y - mm.y) }))
+              .filter((k) => k.d < 25)
+              .sort((a, b) => a.d - b.d)[0];
+            if (tek) secimeYaz([tek.n.ad], true);
+            else if (!eski.ekle) secimiBirak();
+          }
+          return;
+        }
+
         if (eski.vurus && eski.tasindi) { surukle(eski.vurus.kayit, eski.vurus.katman, mm, true); return; }
         if (eski.tasindi || eski.vurus) return;
         if (T.ekleme && o.button === 0 && mm) { await bitkiEkle(mm); return; }
@@ -525,8 +697,15 @@
     }, { passive: false });
 
     window.addEventListener("keydown", (o) => {
-      if (!T.gorunur || !T.secili) return;
+      if (!T.gorunur) return;
       if (/^(INPUT|TEXTAREA|SELECT)$/.test((document.activeElement || {}).tagName || "")) return;
+
+      // Çoklu seçim varsa klavye önce onu görüyor.
+      if (T.secim.size) {
+        if (o.key === "Escape") { secimiBirak(); return; }
+        if (o.key === "Delete") { topluIslem("sil"); return; }
+      }
+      if (!T.secili) return;
       if (o.key === "Escape") secimiKapat();
       if (o.key === "Delete" && T.secili.katman.tanim.sil) {
         T.secili.katman.tanim.sil(katmanBaglami(T.secili.katman), T.secili.kayit);
@@ -689,6 +868,9 @@
                y: kutu.top + ((1 - v.y) / 2) * kutu.height };
     },
 
+    /** Deneme yardımcısı — çoklu seçimdeki nokta adları. */
+    secimDurumu() { return [...T.secim]; },
+
     /** Deneme yardımcısı — katmanların durumu. */
     katmanDurumu() {
       return T.katmanlar.map((k) => ({
@@ -716,13 +898,30 @@
     else boyutla();
   }
 
+  function eklemeKipi(acik) {
+    T.ekleme = !!acik;
+    const ekle = $("#d-ekleme-kipi");
+    if (!ekle) return;
+    ekle.classList.toggle("secili", T.ekleme);
+    ekle.textContent = T.ekleme ? "Haritaya tıklayın" : "Bitki ekle";
+  }
+
   function araclariBagla() {
     const ekle = $("#d-ekleme-kipi");
     ekle.onclick = () => {
-      T.ekleme = !T.ekleme;
-      ekle.classList.toggle("secili", T.ekleme);
-      ekle.textContent = T.ekleme ? "Haritaya tıklayın" : "Bitki ekle";
+      eklemeKipi(!T.ekleme);
+      // Ekleme ve seçme ikisi de sol tıkla çalışıyor: biri açılınca diğeri kapanıyor.
+      if (T.ekleme && T.kip === "sec") kipSec("tasi");
     };
+
+    $("#d-kip-tasi").onclick = () => kipSec("tasi");
+    $("#d-kip-sec").onclick = () => kipSec("sec");
+    $("#d-toplu-sula").onclick = () => topluIslem("sula");
+    $("#d-toplu-gez").onclick = () => topluIslem("gez");
+    $("#d-toplu-sil").onclick = () => topluIslem("sil");
+    $("#d-toplu-temizle").onclick = () => secimiBirak();
+    kipSec(localStorage.getItem("farmbot_tarla_kip") || "tasi");
+
     $("#d-gorunum-3b").onclick = () => gorunumSec("3b");
     $("#d-gorunum-2b").onclick = () => gorunumSec("2b");
     $("#d-gorus-ust").onclick = () => {

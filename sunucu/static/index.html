@@ -572,6 +572,10 @@
     <aside class="harita" id="harita">
       <div class="harita-ust">
         <span class="harita-ad">Tarla <span id="tarla-olcu" class="birim-not"></span></span>
+        <!-- İKİ KİP — Taşı: sürükleyip döndürmek, tek öğe seçmek.
+             Seç: kutuyla çoklu seçim ve seçime toplu işlem. -->
+        <button class="dugme secili" id="d-kip-tasi">Taşı</button>
+        <button class="dugme" id="d-kip-sec">Seç</button>
         <span class="esnek"></span>
         <button class="dugme secili" id="d-gorunum-3b">3B sahne</button>
         <button class="dugme" id="d-gorunum-2b">2B harita</button>
@@ -592,6 +596,20 @@
           <canvas id="tarla-tuval2b"></canvas>
         </div>
         <div id="tarla-kart" class="tarla-kart gizli"></div>
+
+        <!-- Kutu seçimi dikdörtgeni — sürüklerken çiziliyor. -->
+        <div id="secim-kutusu" class="secim-kutusu gizli"></div>
+
+        <!-- TOPLU İŞLEM ÇUBUĞU — seçim boşken görünmüyor. Komutlar tek tek
+             hareket olarak değil, sunucuda diziye çevrilip ajana veriliyor:
+             sıralama ve güvenlik denetimi ajanda kalıyor. -->
+        <div id="toplu-cubuk" class="toplu-cubuk gizli">
+          <span id="toplu-sayi" class="toplu-sayi"></span>
+          <button class="dugme birincil" id="d-toplu-sula">Sula</button>
+          <button class="dugme" id="d-toplu-gez">Sırayla gez</button>
+          <button class="dugme tehlike" id="d-toplu-sil">Sil</button>
+          <button class="dugme" id="d-toplu-temizle">Seçimi bırak</button>
+        </div>
 
         <!-- KATMAN RAFI — her katman bağımsız, tercih localStorage'da.
              Kapalı katman hiç çizilmiyor; liste `/api/katmanlar`dan yüklenen
