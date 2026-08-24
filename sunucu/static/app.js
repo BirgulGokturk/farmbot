@@ -26,6 +26,8 @@ const S = {
   adimlar: [],
   bolgeDuzenleniyor: false,   // kullanıcı yazarken durum akışı üzerine yazmasın
   sinirlar: null,        // ajandan gelen yumuşak sınırlar
+  sekme: localStorage.getItem("farmbot_sekme") || "izle",
+  kalibImza: "",         // kalibrasyon tablosunu boşuna yeniden çizmemek için
   guvenliZ: null,        // X/Y hareketi için gereken en düşük Z (ajandan)
   kip: null,             // Arduino'nun kipi: "oto" | "manuel"
   otoDuzenleniyor: false,   // kullanıcı ayarla oynarken ölçüm üstüne yazmasın
@@ -66,13 +68,19 @@ function saatEtiketi(ts, uzunAralikMi) {
 }
 
 function gunluk(metin, sinif = "") {
+  // "ok" sınıfı CSS'te .ok-satir; sınıf adını burada eşliyoruz.
+  if (sinif === "ok") sinif = "ok-satir";
   const kutu = $("#gunluk");
   const satir = document.createElement("div");
   if (sinif) satir.className = sinif;
   const zaman = new Date().toLocaleTimeString("tr-TR");
-  satir.innerHTML = `<time>${zaman}</time>${metin}`;
+  satir.innerHTML = `<span class="saat">${zaman}</span>${metin}`;
   kutu.prepend(satir);
   while (kutu.children.length > 200) kutu.lastChild.remove();
+  // Şerit kapalıyken de son satır başlıkta görünsün: kapatan kullanıcı
+  // yine de "az önce ne oldu" sorusunun cevabını görebilmeli.
+  const ozet = $("#gunluk-son");
+  if (ozet) ozet.textContent = "· " + metin.replace(/<[^>]*>/g, "").slice(0, 70);
 }
 
 /* -------------------------------------------------------------------- komut */
@@ -292,25 +300,26 @@ function bolgeleriCiz(bolgeler) {
   }
   kutu.innerHTML = bolgeler.map((b, i) => `
     <div class="bolge" data-i="${i}">
-      <div class="bolge-ust">
+      <div class="ust">
         <input class="b-ad" value="${kacisli(b.ad)}" placeholder="Bölge adı" maxlength="40">
-        <label title="Uç değiştirme dizisi sürerken bu bölge atlanır">
+        <label class="onay" title="Uç değiştirme dizisi sürerken bu bölge atlanır">
           <input type="checkbox" class="b-yuva"${b.yuva ? " checked" : ""}> yuva
         </label>
-        <label title="Kapalıyken bu bölge denetlenmez">
+        <label class="onay" title="Kapalıyken bu bölge denetlenmez">
           <input type="checkbox" class="b-aktif"${b.aktif !== false ? " checked" : ""}> aktif
         </label>
         <button class="dugme b-sil" title="Bölgeyi sil">✕</button>
       </div>
-      <div class="bolge-alt">
-        <label>X1 <input type="number" class="b-x1" step="1" value="${b.x1}"></label>
-        <label>Y1 <input type="number" class="b-y1" step="1" value="${b.y1}"></label>
-        <label>X2 <input type="number" class="b-x2" step="1" value="${b.x2}"></label>
-        <label>Y2 <input type="number" class="b-y2" step="1" value="${b.y2}"></label>
+      <div class="alan-izgara">
+        <div class="alan"><label>X1</label><input type="number" class="b-x1" step="1" value="${b.x1}"></div>
+        <div class="alan"><label>Y1</label><input type="number" class="b-y1" step="1" value="${b.y1}"></div>
+        <div class="alan"><label>X2</label><input type="number" class="b-x2" step="1" value="${b.x2}"></div>
+        <div class="alan"><label>Y2</label><input type="number" class="b-y2" step="1" value="${b.y2}"></div>
       </div>
-      <input class="b-kosul" value="${kacisli(b.izin_kosulu || "")}"
-             placeholder="izin koşulu — boş bırakılırsa geçiş serbest">
-      ${b.uyari ? `<div class="rozet-uyari" style="display:block;margin-top:6px">
+      <div class="alan"><label>İzin koşulu</label>
+        <input class="b-kosul" value="${kacisli(b.izin_kosulu || "")}"
+               placeholder="boş bırakılırsa geçiş serbest"></div>
+      ${b.uyari ? `<div class="rozet-uyari" style="display:block">
         ⚠ Koşul hatalı: ${kacisli(b.uyari)} — bu bölgedeki her hareket ENGELLENİR</div>` : ""}
     </div>`).join("");
 
@@ -874,19 +883,32 @@ function kipGuncelle(kip) {
   $("#d-kip-manuel").classList.toggle("secili", !oto);
   const rozet = $("#kip-rozet");
   if (rozet) {
-    rozet.textContent = oto ? "AÇIK — kararı Arduino veriyor" : "KAPALI — kararı panel veriyor";
-    rozet.className = `rozet-kip ${oto ? "acik" : "kapali"}`;
+    // Sürülecek çıkış yokken "AÇIK" demek yanıltıcı: kip açık olabilir ama
+    // ortada açılacak bir vana yok.
+    const cikisYok = $("#oto-cikis") && $("#oto-cikis").disabled;
+    rozet.textContent = cikisYok ? "çıkış yok"
+      : oto ? "AÇIK — kararı Arduino veriyor" : "KAPALI — kararı panel veriyor";
+    rozet.className = `rozet-kip ${cikisYok ? "kapali" : oto ? "acik" : "kapali"}`;
   }
 }
 
 function otoAyarGuncelle(o) {
   const cikis = $("#oto-cikis"), esik = $("#oto-esik");
   if (!cikis || !esik) return;
-  // Arduino'nun firmware'i eski ise bu alanlar hiç gelmez.
+  // Alanlar hiç gelmiyorsa iki ayrı sebep olabilir ve ikisi farklı şey
+  // söylüyor: kartta sürülecek donanım yoksa bu normaldir, varsa yazılım
+  // eskidir. İkisini "yazılım eski" diye tek torbaya koymak, sensör-only
+  // kurulumda ortada hata yokken hata var gibi görünmesine yol açıyordu.
   if (o.oto_cikis === undefined && o.esik === undefined) {
-    $("#oto-not").innerHTML = "⚠ Arduino bu ayarları bildirmiyor — karttaki yazılım eski. " +
-      "<code>firmware/farmbot_sensors</code> sketch'ini yeniden yükleyin.";
+    const donanimYok = Number(o.servo_var) === 0 && Number(o.role_var) === 0;
+    $("#oto-not").innerHTML = donanimYok
+      ? "Bu kartta sürülecek bir çıkış yok (vana ve röleler bağlı değil). " +
+        "Donanımı bağlayıp sketch'te <code>SERVO_BAGLI 1</code> yaptığınızda bu bölüm açılır."
+      : "⚠ Arduino bu ayarları bildirmiyor — karttaki yazılım eski. " +
+        "<code>firmware/farmbot_sensors</code> sketch'ini yeniden yükleyin.";
     cikis.disabled = esik.disabled = $("#d-oto-kaydet").disabled = true;
+    // Rozet metni "çıkış var mı"ya bağlı; kilit yeni konduğu için tazeliyoruz.
+    if (S.kip) kipGuncelle(S.kip);
     return;
   }
   cikis.disabled = esik.disabled = $("#d-oto-kaydet").disabled = false;
@@ -941,8 +963,10 @@ function durumGuncelle(d) {
   }
 
   const k = d.konum || {};
+  // Birim ayrı bir eleman: satır içi stil yerine sınıf kullanıyoruz ki dar
+  // ekranda ölçüsünü CSS ayarlayabilsin.
   const birimli = (deger) =>
-    deger == null ? "—" : `${sayi(deger, 1)}<span style="font-size:13px;color:var(--metin-3)"> mm</span>`;
+    deger == null ? "—" : `${sayi(deger, 1)}<span class="birim"> mm</span>`;
   ["x", "y", "z"].forEach((eksen) => {
     $(`#k-${eksen}`).innerHTML = birimli(k[eksen]);
     const sinir = (d.sinirlar || {})[eksen];
@@ -971,6 +995,7 @@ function durumGuncelle(d) {
 
   ucGuncelle(d.uc);
   diziGuncelle(d.dizi);
+  kalibrasyonCiz(d);
   // Tarla sahnesi yatak ölçüsünü ve robot konumunu buradan alıyor.
   if (window.Tarla) window.Tarla.durumDegisti(d);
 
@@ -1041,12 +1066,34 @@ function olaylariBagla() {
       $$(".sayfa").forEach((s) => s.classList.remove("etkin"));
       dugme.classList.add("etkin");
       $(`#sayfa-${dugme.dataset.sayfa}`).classList.add("etkin");
+      S.sekme = dugme.dataset.sayfa;
+      localStorage.setItem("farmbot_sekme", S.sekme);
       // Gizliyken çizilen grafik yanlış ölçüde kalıyor; sekmeye dönünce tazele.
       Object.values(S.grafikler).forEach((g) => g.resize());
       // 3B sahne gizliyken çizim döngüsü boşa GPU yakıyor; sekmeye bağlıyoruz.
-      if (window.Tarla) window.Tarla.gorunurluk(dugme.dataset.sayfa === "tarla");
+      if (window.Tarla) window.Tarla.gorunurluk(S.sekme === "tarla");
+      window.scrollTo({ top: 0 });
     };
   });
+
+  // Olay günlüğü şeridi — açık/kapalı tercihi hatırlanıyor.
+  const serit = $("#gunluk-serit");
+  // Varsayılan KAPALI. Şerit yapışkan olduğu için açıkken sayfanın alt ~140
+  // pikselini örtüyor; testte bir tıklamayı yutması bunu gösterdi. Kapalıyken
+  // tek satırlık özet son olayı yine gösteriyor, açmak kullanıcının kararı.
+  if (localStorage.getItem("farmbot_gunluk") !== "acik") serit.classList.add("kapali");
+  $("#d-gunluk-ac").setAttribute("aria-expanded", String(!serit.classList.contains("kapali")));
+  $("#d-gunluk-ac").onclick = () => {
+    serit.classList.toggle("kapali");
+    const kapali = serit.classList.contains("kapali");
+    localStorage.setItem("farmbot_gunluk", kapali ? "kapali" : "acik");
+    $("#d-gunluk-ac").setAttribute("aria-expanded", String(!kapali));
+  };
+
+  // Son kalınan sekmeye dön: sayfa yenilendiğinde İzle'ye düşmek, uzun bir
+  // işin ortasında can sıkıcı.
+  const kayitli = $(`nav.sekmeler button[data-sayfa="${S.sekme}"]`);
+  if (kayitli && S.sekme !== "izle") kayitli.click();
 
   $$(".aralik").forEach((dugme) => {
     dugme.onclick = () => {
@@ -1250,7 +1297,10 @@ function olaylariBagla() {
     document.querySelector(`.jog[data-eksen="${eksen}"][data-yon="${yon}"]`);
 
   document.addEventListener("keydown", (olay) => {
-    if (olay.target.tagName === "INPUT" || !$("#sayfa-kontrol").classList.contains("etkin")) return;
+    // Kısayollar yalnızca Sür sekmesinde: başka sekmede yazı yazarken ok
+    // tuşunun makineyi hareket ettirmesi kabul edilemez.
+    if (olay.target.tagName === "INPUT" || olay.target.tagName === "SELECT"
+        || !$("#sayfa-sur").classList.contains("etkin")) return;
     if (olay.code === "Space") { olay.preventDefault(); $("#d-acil").click(); return; }
     if (olay.key === "Escape") { olay.preventDefault(); jogDurdur(); return; }
     const eslesme = TUS[olay.key];
@@ -1259,6 +1309,33 @@ function olaylariBagla() {
     if (olay.repeat) return;
     jogAcKapa(eslesme[0], eslesme[1], jogDugmesi(eslesme[0], eslesme[1]));
   });
+}
+
+/* --------------------------------------------------- kalibrasyon tablosu
+ * Salt okunur. Amaç "panelde şu yazıyor ama makine başka gidiyor"
+ * tartışmasını bitirmek: ajanın o an hangi katsayılarla çalıştığı görünsün.
+ */
+function kalibrasyonCiz(d) {
+  const govde = $("#kalib-govde");
+  if (!govde) return;
+  const imza = JSON.stringify([d.kalibrasyon || null, d.sinirlar || null, d.guvenli_z]);
+  if (imza === S.kalibImza) return;
+  S.kalibImza = imza;
+
+  const k = d.kalibrasyon, sn = d.sinirlar;
+  if (!k || !sn) {
+    govde.innerHTML = '<tr><td colspan="6" class="alt-not">Ajan bağlanınca dolacak.</td></tr>';
+    return;
+  }
+  govde.innerHTML = ["x", "y", "z"].map((e) => {
+    const c = k[e] || {}, s = sn[e] || {};
+    return `<tr><td><b>${e.toUpperCase()}</b></td>
+      <td>${sayi(c.cpm, 4)}</td><td>${c.dir > 0 ? "+1" : "−1"}</td>
+      <td>${sayi(c.home, 1)}</td><td>${sayi(s.min, 1)}</td><td>${sayi(s.max, 1)}</td></tr>`;
+  }).join("");
+  $("#kalib-ek").innerHTML =
+    `Güvenli Z yüksekliği: <b>${sayi(d.guvenli_z, 0)} mm</b> — X/Y hareketi için ` +
+    `Z'nin bulunması gereken en düşük yükseklik. Hız: <b>${sayi(d.hiz, 0)} mm/s</b>.`;
 }
 
 /* --------------------------------------------------------------- köprü
