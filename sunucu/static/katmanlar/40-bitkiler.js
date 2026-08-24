@@ -164,9 +164,13 @@ Tarla.katman({
     b.nokta.y = Math.round(mm.y * 10) / 10;
     if (!bitti) { this.guncelle(o); return; }
     const n = b.nokta;
+    // Eğri alanları da gönderiliyor: "üstüne yaz" bütün kaydı değiştiriyor,
+    // göndermezsek bitkiyi sürüklemek bağlı eğrileri siler.
     o.api("/api/noktalar", { method: "POST", body: JSON.stringify({
       ad: n.ad, x: n.x, y: n.y, z: n.z, etiket: n.etiket || "bitki",
-      tur: n.tur, ekim: n.ekim, ustune_yaz: true }) })
+      tur: n.tur, ekim: n.ekim, ustune_yaz: true,
+      egri_su: n.egri_su || "", egri_yayilim: n.egri_yayilim || "",
+      egri_yukseklik: n.egri_yukseklik || "" }) })
       .catch((h) => o.gunluk(`✕ Taşınamadı: ${h.message}`, "hata"))
       .then(() => o.noktalariYukle());
   },
@@ -195,15 +199,55 @@ Tarla.katman({
         <tr><td>Yayılım</td><td><b>${o.say(t.spread_mm, 0)} mm</b></td></tr>
         <tr><td>Büyüme</td><td><b>%${o.say(ol * 100, 0)}</b>${gun != null ? ` <span class="alt-not">(${gun}. gün)</span>` : ""}</td></tr>
       </table>
+      ${this.egriBolumu(o, n, gun)}
       <div class="tarla-kart-dugme">
         <button class="dugme birincil" id="d-tarla-git">Buraya git</button>
         <button class="dugme tehlike" id="d-tarla-sil">Sil</button>
       </div>`;
   },
 
+  /** Bitkiye bağlanabilen eğriler ve bugünkü değerleri.
+   *  Eğri yoksa bölüm hiç görünmüyor — boş bir açılır liste işe yaramıyor. */
+  egriBolumu(o, n, gun) {
+    const hepsi = o.egriler || [];
+    if (!hepsi.length) return "";
+    const yas = gun == null ? 0 : gun;
+    const satir = (alan, tip, baslik) => {
+      const uygun = hepsi.filter((e) => e.tip === tip);
+      if (!uygun.length) return "";
+      const secili = n[alan] || "";
+      const d = secili ? o.egriDeger(secili, yas) : null;
+      return `<tr><td>${o.kacisli(baslik)}</td><td>
+        <select class="egri-sec" data-alan="${alan}">
+          <option value="">(eğri yok)</option>
+          ${uygun.map((e) => `<option${e.ad === secili ? " selected" : ""}>${o.kacisli(e.ad)}</option>`).join("")}
+        </select>
+        ${d != null ? `<b>${o.say(d, 0)}</b> <span class="alt-not">${o.kacisli(uygun[0].birim)}</span>` : ""}
+      </td></tr>`;
+    };
+    const govde = satir("egri_su", "su", "Su eğrisi")
+                + satir("egri_yayilim", "yayilim", "Yayılım eğrisi")
+                + satir("egri_yukseklik", "yukseklik", "Yükseklik eğrisi");
+    if (!govde) return "";
+    return `<table class="tarla-ozellik egri-tablo">${govde}</table>`;
+  },
+
   baglan(o, kok, b) {
     kok.querySelector("#d-tarla-git").onclick = () =>
       o.komut("git", { x: b.nokta.x, y: b.nokta.y, z: b.nokta.z });
     kok.querySelector("#d-tarla-sil").onclick = () => this.sil(o, b);
+    kok.querySelectorAll(".egri-sec").forEach((sec) => {
+      sec.onchange = () => {
+        const n = b.nokta;
+        n[sec.dataset.alan] = sec.value;
+        o.api("/api/noktalar", { method: "POST", body: JSON.stringify({
+          ad: n.ad, x: n.x, y: n.y, z: n.z, etiket: n.etiket || "bitki",
+          tur: n.tur, ekim: n.ekim, ustune_yaz: true,
+          egri_su: n.egri_su || "", egri_yayilim: n.egri_yayilim || "",
+          egri_yukseklik: n.egri_yukseklik || "" }) })
+          .then(() => { o.gunluk(`✓ '${n.ad}' eğrisi güncellendi`, "ok"); return o.noktalariYukle(); })
+          .catch((h) => o.gunluk(`✕ Eğri bağlanamadı: ${h.message}`, "hata"));
+      };
+    });
   },
 });

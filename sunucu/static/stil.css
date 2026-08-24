@@ -1110,3 +1110,26 @@ button.dugme.tehlike:disabled {
 }
 .profil-govde canvas.gizli { display: none !important; }
 .profil-ust .alan.dar { min-width: 96px; }
+
+/* ------------------------------------------------------------- eğriler */
+.egri-onizleme { margin: var(--b3) 0 var(--b2); }
+.egri-onizleme canvas {
+  display: block;
+  width: 100%;
+  height: 150px;
+  background: var(--yuzey-2);
+  border: 1px solid var(--cizgi);
+  border-radius: var(--b2);
+}
+.egri-noktalar { display: flex; flex-direction: column; gap: var(--b1); }
+.egri-satir {
+  display: flex;
+  align-items: center;
+  gap: var(--b2);
+  padding: var(--b1) 0;
+}
+.egri-satir input { width: 88px; flex: none; }
+.egri-satir .alt-not { min-width: 42px; }
+.egri-satir .egri-nokta-sil { margin-left: auto; }
+/* Bitki kartındaki eğri satırları: açılır liste + bugünkü değer */
+.egri-tablo select { max-width: 150px; }

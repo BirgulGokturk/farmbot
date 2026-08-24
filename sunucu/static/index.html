@@ -420,6 +420,58 @@
           </div>
         </div>
 
+        <!-- EĞRİLER — sabit "günde X ml" yerine bitkinin yaşına göre değer. -->
+        <div class="kart">
+          <h3>Eğriler <button class="yardim" type="button" aria-expanded="false" aria-label="Açıklama">?</button></h3>
+          <p class="yardim-metin gizli">
+            "Günde 250 ml" sabit bir sayı; oysa fide üç günlükken de hasada bir
+            hafta kalmışken de aynı suyu istemiyor. Eğri bitkinin <b>yaşına</b>
+            göre bir değer veriyor: aradaki günler doğrusal ara değerle
+            bulunuyor, uçlarda düz devam ediyor.<br><br>
+            Üç tip var — <b>su</b> (ml/gün), <b>yayılım</b> (mm, haritadaki
+            halkanın çapı) ve <b>yükseklik</b> (mm). Bir eğriyi bitkiye
+            bağlamak için haritada bitkiye tıklayıp kartından seçin. Eğriyi
+            sonradan düzenlerseniz ona bağlı bütün bitkiler yeni değeri
+            kullanır.
+          </p>
+          <div class="satir-8 alt-hizali">
+            <div class="alan esnek-alan">
+              <label for="egri-secim">Eğri</label>
+              <select id="egri-secim"></select>
+            </div>
+            <button class="dugme" id="d-egri-yeni">Yeni</button>
+            <button class="dugme tehlike" id="d-egri-sil">Sil</button>
+          </div>
+          <div class="satir-8 alt-hizali">
+            <div class="alan esnek-alan">
+              <label for="egri-ad">Ad</label>
+              <input type="text" id="egri-ad" maxlength="40" placeholder="örn. marul-su">
+            </div>
+            <div class="alan"><label for="egri-tip">Tip</label>
+              <select id="egri-tip">
+                <option value="su">Su (ml/gün)</option>
+                <option value="yayilim">Yayılım (mm)</option>
+                <option value="yukseklik">Yükseklik (mm)</option>
+              </select></div>
+          </div>
+          <div class="satir-8 alt-hizali">
+            <div class="alan esnek-alan">
+              <label for="egri-sablon">Şablondan başla</label>
+              <select id="egri-sablon"></select>
+            </div>
+            <button class="dugme" id="d-egri-sablon">Uygula</button>
+          </div>
+
+          <div class="egri-onizleme"><canvas id="egri-tuval"></canvas></div>
+
+          <div id="egri-noktalar" class="egri-noktalar"></div>
+          <div class="satir-8">
+            <button class="dugme" id="d-egri-nokta-ekle">Nokta ekle</button>
+            <span class="esnek"></span>
+            <button class="dugme birincil" id="d-egri-kaydet">Kaydet</button>
+          </div>
+        </div>
+
         <div class="kart">
           <h3>Otomatik sulama <span id="kip-rozet" class="rozet-kip">—</span>
             <button class="yardim" type="button" aria-expanded="false" aria-label="Açıklama">?</button></h3>

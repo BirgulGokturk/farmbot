@@ -95,6 +95,7 @@
     kareler: [],      // [{damga,ts,x,y}]
     okumalar: [],     // [{ts,x,y,toprak_nem}]
     kalibrasyon: null, // kamera kalibrasyonu — {mm_px, donme, ofset_x, ofset_y, …}
+    egriler: [],      // [{ad,tip,birim,noktalar}] — yaşa göre değer
   };
 
   const P = () => window.Panel || {};
@@ -142,6 +143,22 @@
     get secim() { return T.secim; },
     get kip() { return T.kip; },
     sx, sz, mmx, mmy, malzeme, kis, say, kacisli, gunluk,
+    /** Bir eğrinin `gun` yaşındaki değeri — `egriler.py`deki `deger()` ile
+     *  aynı kural: aradaki günler doğrusal, uçlarda düz devam. Sunucuya
+     *  gitmeden çizebilmek için burada da var; tek gerçek kaynak sunucu. */
+    egriDeger(ad, gun) {
+      const e = (VERI.egriler || []).find((x) => x.ad === ad);
+      if (!e || !e.noktalar || !e.noktalar.length) return null;
+      const n = e.noktalar;
+      if (gun <= n[0][0]) return n[0][1];
+      if (gun >= n[n.length - 1][0]) return n[n.length - 1][1];
+      for (let i = 1; i < n.length; i++) {
+        const [g0, d0] = n[i - 1], [g1, d1] = n[i];
+        if (gun <= g1) return g1 === g0 ? d1 : d0 + (d1 - d0) * ((gun - g0) / (g1 - g0));
+      }
+      return n[n.length - 1][1];
+    },
+    get egriler() { return VERI.egriler; },
     /** 2B: mm -> tuval pikseli */
     mm2b(x, y) {
       const t = haritaDonusum(x, y);
@@ -1026,6 +1043,12 @@
       try { VERI.kalibrasyon = (await P().apiIste("/api/kamera/kalibrasyon")).kalibrasyon; }
       catch (h) { VERI.kalibrasyon = null; }
       katmanlariGuncelle();
+    },
+
+    /** app.js eğrileri yükledikçe çağırıyor — bitki kartındaki seçenekler. */
+    egrilerDegisti(liste) {
+      VERI.egriler = liste || [];
+      if (T.hazir) katmanlariGuncelle();
     },
 
     /** app.js dizileri yükledikçe çağırıyor — "Dizi uygula" listesi. */

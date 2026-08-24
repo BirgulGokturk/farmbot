@@ -16,7 +16,13 @@ Tarla.katman({
   hesapla(o) {
     const bitkiler = o.veri.noktalar.filter((n) => n && n.tur).map((n) => {
       const t = o.veri.turler[n.tur] || { spread_mm: 200, color: "#5f9e46", name_tr: n.tur };
-      return { nokta: n, tur: t, r: (Number(t.spread_mm) || 200) / 2, cakisma: [], disi: null };
+      // Bitkiye bir YAYILIM EĞRİSİ bağlıysa çap türün sabit sayısı değil,
+      // bitkinin o günkü yaşındaki değer. Bağlı değilse eski davranış.
+      const gun = n.ekim ? (Date.now() / 1000 - Number(n.ekim)) / 86400 : 0;
+      const egriCap = n.egri_yayilim ? o.egriDeger(n.egri_yayilim, gun) : null;
+      const cap = egriCap != null ? egriCap : (Number(t.spread_mm) || 200);
+      return { nokta: n, tur: t, r: cap / 2, egriden: egriCap != null,
+               cakisma: [], disi: null };
     });
     const s = o.sinir;
     bitkiler.forEach((b) => {

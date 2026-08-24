@@ -26,6 +26,7 @@ from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 import depo
+import egriler
 import kalibrasyon
 import kareler
 import noktalar
@@ -652,6 +653,53 @@ async def api_program_calistir(govde: dict[str, Any], jeton: str = Query(default
         "ad": program["ad"], "adimlar": adimlar,
         "tekrar": program.get("tekrar", 1), "hiz": govde.get("hiz"),
     })
+
+
+# --------------------------------------------------------------------------- #
+# Eğriler — zamana göre değişen değerler
+#
+# "Günde 250 ml" sabit bir sayı; oysa fide üç günlükken de hasada bir hafta
+# kalmışken de aynı suyu istemiyor. Eğri bitkinin YAŞINA göre değer veriyor.
+# Hesap `egriler.py` içinde; panel eğriyi çiziyor, değerlendirmiyor.
+# --------------------------------------------------------------------------- #
+@app.get("/api/egriler")
+async def api_egriler(jeton: str = Query(default="")):
+    _parola_dogrula(jeton)
+    return {"egriler": await asyncio.to_thread(egriler.hepsi),
+            "sablonlar": egriler.SABLONLAR,
+            "tipler": {t: egriler.BIRIM[t] for t in egriler.GECERLI_TIPLER}}
+
+
+@app.post("/api/egriler")
+async def api_egri_kaydet(govde: dict[str, Any], jeton: str = Query(default="")):
+    _parola_dogrula(jeton)
+    try:
+        egri = await asyncio.to_thread(
+            egriler.kaydet, govde.get("ad", ""), govde.get("tip", ""),
+            govde.get("noktalar") or [])
+    except egriler.EgriHatasi as hata:
+        raise HTTPException(status_code=400, detail=str(hata))
+    return {"ok": True, "egri": egri}
+
+
+@app.delete("/api/egriler")
+async def api_egri_sil(ad: str = Query(...), jeton: str = Query(default="")):
+    _parola_dogrula(jeton)
+    if not await asyncio.to_thread(egriler.sil, ad):
+        raise HTTPException(status_code=404, detail=f"'{ad}' adında eğri yok")
+    return {"ok": True}
+
+
+@app.get("/api/egriler/deger")
+async def api_egri_deger(ad: str = Query(...), gun: float = Query(default=0),
+                         jeton: str = Query(default="")):
+    """Bir eğrinin belirli yaştaki değeri — hesabın tek yeri sunucuda."""
+    _parola_dogrula(jeton)
+    egri = await asyncio.to_thread(egriler.bul, ad)
+    if egri is None:
+        raise HTTPException(status_code=404, detail=f"'{ad}' adında eğri yok")
+    return {"ad": egri["ad"], "tip": egri["tip"], "birim": egri["birim"],
+            "gun": gun, "deger": egriler.deger(egri, gun)}
 
 
 # --------------------------------------------------------------------------- #

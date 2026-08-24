@@ -127,7 +127,13 @@ def bul(ad: str) -> dict[str, Any] | None:
 # depoya yazılıyor: "şu noktaya git", program adımı ve sınır denetimi bir
 # bitki için de aynen çalışsın diye. Paralel bir nokta kavramı öğrenmek
 # gerekmiyor; bitki, tür bilgisi taşıyan bir noktadan ibaret.
-BITKI_ALANLARI = ("tur", "ekim")
+BITKI_ALANLARI = ("tur", "ekim", "egri_su", "egri_yayilim", "egri_yukseklik")
+
+# Eğri alanları bir eğrinin ADINI tutuyor, değerini değil: eğri düzenlenince
+# ona bağlı bütün bitkiler kendiliğinden yeni değeri kullanıyor. Eğri
+# silinmişse alan eski adı taşımaya devam eder ve panel "eğri yok" der —
+# noktayı bozmaktansa.
+EGRI_ALANLARI = ("egri_su", "egri_yayilim", "egri_yukseklik")
 
 
 def _ekstra_suz(kaynak: dict[str, Any]) -> dict[str, Any]:
@@ -139,6 +145,10 @@ def _ekstra_suz(kaynak: dict[str, Any]) -> dict[str, Any]:
             cikti["ekim"] = float(kaynak["ekim"])
         except (TypeError, ValueError):
             pass
+    for alan in EGRI_ALANLARI:
+        # Boş metin "eğri bağlı değil" demek; alanı hiç yazmıyoruz.
+        if kaynak.get(alan):
+            cikti[alan] = str(kaynak[alan])[:40]
     return cikti
 
 

@@ -776,6 +776,172 @@ function kalibBagla() {
   window.addEventListener("resize", kalibIsaretCiz);
 }
 
+
+/* ============================================================== eğriler
+ *
+ * Sabit "günde X ml" yerine bitkinin YAŞINA göre değer. Değerlendirme
+ * sunucuda (egriler.py); panelin işi eğriyi düzenlemek ve çizmek.
+ */
+const EGRI_BIRIM = { su: "ml/gün", yayilim: "mm", yukseklik: "mm" };
+
+function egriNoktaSatiri(n, sira) {
+  return `<div class="egri-satir" data-i="${sira}">
+    <span class="alt-not">gün</span>
+    <input type="number" class="en-gun" min="0" max="400" step="1" value="${n[0]}">
+    <span class="alt-not en-birim">değer</span>
+    <input type="number" class="en-deger" min="0" step="1" value="${n[1]}">
+    <button class="dugme egri-nokta-sil">✕</button>
+  </div>`;
+}
+
+function egriNoktalariCiz(noktalar) {
+  S.egriNoktalari = noktalar;
+  const kutu = $("#egri-noktalar");
+  kutu.innerHTML = noktalar.length
+    ? noktalar.map(egriNoktaSatiri).join("")
+    : '<p class="alt-not">Nokta yok — en az iki nokta gerekiyor.</p>';
+  const birim = EGRI_BIRIM[$("#egri-tip").value] || "";
+  $$("#egri-noktalar .en-birim").forEach((e) => { e.textContent = birim; });
+  $$("#egri-noktalar .egri-nokta-sil").forEach((d) => {
+    d.onclick = () => {
+      const l = egriNoktalariTopla();
+      l.splice(Number(d.closest(".egri-satir").dataset.i), 1);
+      egriNoktalariCiz(l);
+      egriCiz();
+    };
+  });
+  $$("#egri-noktalar input").forEach((g) => { g.onchange = egriCiz; });
+  egriCiz();
+}
+
+function egriNoktalariTopla() {
+  return $$("#egri-noktalar .egri-satir").map((el) => [
+    Number(el.querySelector(".en-gun").value),
+    Number(el.querySelector(".en-deger").value),
+  ]);
+}
+
+/** Eğriyi çiziyor — kaydetmeden önce ne yaptığını görmek için. */
+function egriCiz() {
+  const tuval = $("#egri-tuval");
+  if (!tuval) return;
+  const c = tuval.getContext("2d");
+  const g = tuval.clientWidth || 400, y = tuval.clientHeight || 140;
+  const oran = Math.min(window.devicePixelRatio || 1, 2);
+  tuval.width = g * oran; tuval.height = y * oran;
+  c.setTransform(oran, 0, 0, oran, 0, 0);
+  c.clearRect(0, 0, g, y);
+
+  const noktalar = egriNoktalariTopla().slice().sort((a, b) => a[0] - b[0]);
+  // ust: 22 — birim yazısı en üstteki ızgara etiketiyle çakışmasın.
+  const kenar = { sol: 42, sag: 10, ust: 22, alt: 22 };
+  const gg = g - kenar.sol - kenar.sag, yy = y - kenar.ust - kenar.alt;
+  const enGun = Math.max(1, ...noktalar.map((n) => n[0]));
+  const enDeger = Math.max(1, ...noktalar.map((n) => n[1]));
+  const px = (gun) => kenar.sol + (gun / enGun) * gg;
+  const py = (d) => kenar.ust + (1 - d / enDeger) * yy;
+
+  c.font = "10px ui-monospace, Menlo, Consolas, monospace";
+  c.strokeStyle = "#2a2a28"; c.lineWidth = 1;
+  for (let i = 0; i <= 4; i++) {
+    const yv = kenar.ust + (yy * i) / 4;
+    c.beginPath(); c.moveTo(kenar.sol, yv); c.lineTo(g - kenar.sag, yv); c.stroke();
+    c.fillStyle = "#8a8a80"; c.textAlign = "right";
+    c.fillText(String(Math.round(enDeger * (1 - i / 4))), kenar.sol - 6, yv + 3);
+  }
+  c.fillStyle = "#8a8a80"; c.textAlign = "left";
+  c.fillText("gün", kenar.sol, y - 6);
+  c.textAlign = "right";
+  c.fillText(String(Math.round(enGun)), g - kenar.sag, y - 6);
+  c.textAlign = "left";
+  c.fillText(EGRI_BIRIM[$("#egri-tip").value] || "", 4, 10);
+
+  if (noktalar.length < 2) return;
+  c.strokeStyle = "var(--vurgu)";
+  c.strokeStyle = "#3987e5";
+  c.lineWidth = 2;
+  c.beginPath();
+  noktalar.forEach((n, i) => (i ? c.lineTo(px(n[0]), py(n[1])) : c.moveTo(px(n[0]), py(n[1]))));
+  c.stroke();
+  c.fillStyle = "rgba(57,135,229,.12)";
+  c.lineTo(px(noktalar[noktalar.length - 1][0]), py(0));
+  c.lineTo(px(noktalar[0][0]), py(0));
+  c.closePath(); c.fill();
+  c.fillStyle = "#3987e5";
+  noktalar.forEach((n) => {
+    c.beginPath(); c.arc(px(n[0]), py(n[1]), 3.5, 0, Math.PI * 2); c.fill();
+  });
+}
+
+async function egrileriYukle(secilecek) {
+  try {
+    const y = await apiIste("/api/egriler");
+    S.egriler = y.egriler || [];
+    S.egriSablonlari = y.sablonlar || [];
+    const secili = secilecek || $("#egri-secim").value;
+    $("#egri-secim").innerHTML = S.egriler.length
+      ? S.egriler.map((e) => `<option${e.ad === secili ? " selected" : ""}>${kacisli(e.ad)}</option>`).join("")
+      : '<option value="">(eğri yok)</option>';
+    $("#egri-sablon").innerHTML = S.egriSablonlari
+      .map((e, i) => `<option value="${i}">${kacisli(e.ad)}</option>`).join("");
+    if (secili && S.egriler.some((e) => e.ad === secili)) egriYukle(secili);
+    // Bitki kartındaki eğri seçenekleri de aynı listeden besleniyor.
+    if (window.Tarla && window.Tarla.egrilerDegisti) window.Tarla.egrilerDegisti(S.egriler);
+  } catch (hata) { /* eğri yoksa sorun değil */ }
+}
+
+function egriYukle(ad) {
+  const e = S.egriler.find((x) => x.ad === ad);
+  if (!e) return;
+  $("#egri-ad").value = e.ad;
+  $("#egri-tip").value = e.tip;
+  egriNoktalariCiz(e.noktalar.map((n) => [...n]));
+}
+
+function egriBagla() {
+  if (!$("#egri-secim")) return;
+  $("#egri-secim").onchange = () => egriYukle($("#egri-secim").value);
+  $("#egri-tip").onchange = () => egriNoktalariCiz(egriNoktalariTopla());
+  $("#d-egri-yeni").onclick = () => {
+    $("#egri-ad").value = "";
+    egriNoktalariCiz([[0, 20], [30, 150]]);
+  };
+  $("#d-egri-nokta-ekle").onclick = () => {
+    const l = egriNoktalariTopla();
+    const son = l.length ? l[l.length - 1] : [0, 0];
+    egriNoktalariCiz([...l, [son[0] + 10, son[1]]]);
+  };
+  $("#d-egri-sablon").onclick = () => {
+    const s = S.egriSablonlari[Number($("#egri-sablon").value)];
+    if (!s) return;
+    $("#egri-ad").value = s.ad;
+    $("#egri-tip").value = s.tip;
+    egriNoktalariCiz(s.noktalar.map((n) => [...n]));
+  };
+  $("#d-egri-kaydet").onclick = async () => {
+    try {
+      const y = await apiIste("/api/egriler", {
+        method: "POST",
+        body: JSON.stringify({ ad: $("#egri-ad").value, tip: $("#egri-tip").value,
+                               noktalar: egriNoktalariTopla() }),
+      });
+      gunluk(`✓ '${y.egri.ad}' eğrisi kaydedildi`, "ok");
+      await egrileriYukle(y.egri.ad);
+    } catch (hata) { gunluk(`✕ ${hata.message}`, "hata"); }
+  };
+  $("#d-egri-sil").onclick = async () => {
+    const ad = $("#egri-secim").value;
+    if (!ad || !confirm(`'${ad}' eğrisi silinsin mi?`)) return;
+    try {
+      await apiIste(`/api/egriler?ad=${encodeURIComponent(ad)}`, { method: "DELETE" });
+      gunluk(`✓ '${ad}' silindi`, "ok");
+      await egrileriYukle();
+    } catch (hata) { gunluk(`✕ ${hata.message}`, "hata"); }
+  };
+  window.addEventListener("resize", egriCiz);
+  egriNoktalariCiz([[0, 20], [30, 150]]);
+}
+
 async function programlariYukle(secilecek) {
   try {
     const govde = await apiIste("/api/programlar");
@@ -1659,7 +1825,7 @@ function kalibrasyonCiz(d) {
  * olan birkaç şey burada açıkça dışarı veriliyor. Böylece iki dosya arasındaki
  * bağ tek satırda görülebiliyor.
  */
-window.Panel = { S, komutGonder, apiIste, gunluk, noktalariYukle };
+window.Panel = { S, komutGonder, apiIste, gunluk, noktalariYukle, egrileriYukle };
 
 /* -------------------------------------------------------------------- açılış */
 async function basla() {
@@ -1675,6 +1841,7 @@ async function basla() {
   olaylariBagla();
   kalibBagla();
   kalibrasyonYukle();
+  egriBagla();
   // Tarla sahnesi kendi dosyasında; three.js yüklenmediyse panel yine çalışsın.
   try {
     if (window.Tarla) await window.Tarla.kur();
@@ -1682,6 +1849,7 @@ async function basla() {
     console.error("Tarla sahnesi kurulamadı", hata);
   }
   if (Object.keys(S.grafikler).length) await gecmisYukle();
+  await egrileriYukle();
   await noktalariYukle();
   await programlariYukle();
   // Sayfa açılırken zaten bir kare varsa hemen göster.
