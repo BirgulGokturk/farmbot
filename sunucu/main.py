@@ -45,6 +45,10 @@ KOMUT_ZAMAN_ASIMI = 20.0
 # Bu süre boyunca ajandan tek satır gelmezse bağlantıyı ölü sayarız.
 AJAN_SESSIZLIK_SINIRI = 30.0
 
+# Statik dosya kökü: /api/katmanlar da bunu kullandığı için uçlardan önce
+# tanımlı olmak zorunda.
+_STATIK = os.path.join(os.path.dirname(__file__), "static")
+
 IZINLI_KOMUTLAR = {
     "jog",           # {"eksen":"x","yon":1,"basili":true} — basılı tut hareketi
     "jog_dur",       # {}                            — tüm jog bitlerini bırak
@@ -272,7 +276,8 @@ async def ws_ajan(ws: WebSocket, jeton: str = Query(default="")):
                 # saklıyor, panele yalnızca "yeni kare var" haberi gidiyor ve
                 # tarayıcı <img> ile çekiyor.
                 ts = float(mesaj.get("ts", time.time()))
-                await asyncio.to_thread(kareler.ekle, mesaj.get("veri", ""), ts)
+                await asyncio.to_thread(kareler.ekle, mesaj.get("veri", ""), ts,
+                                        mesaj.get("konum"))
                 await merkez.yayinla({"tip": "kare", "ts": ts})
 
             elif tip == "gunluk":
@@ -597,6 +602,41 @@ def _turleri_oku() -> list[dict[str, Any]]:
     return veri
 
 
+@app.get("/api/olcum/konumlu")
+async def api_olcum_konumlu(dakika: int = Query(default=1440), azami: int = Query(default=400),
+                            jeton: str = Query(default="")):
+    """Konumu bilinen toprak nemi ölçümleri — tarla haritasının sensör katmanı.
+
+    Grafik ucundan (`/api/gecmis`) ayrı: orada zaman ekseni var, burada
+    yalnızca "nerede, ne okundu" var ve konumu olmayan satırlar hiç
+    dönmüyor. Aynı noktada biriken yüzlerce okumadan yalnızca en yenisi
+    anlamlı olduğu için konuma göre teklileştiriliyor.
+    """
+    _parola_dogrula(jeton)
+    return {"okumalar": await asyncio.to_thread(depo.konumlu_okumalar, dakika, azami)}
+
+
+@app.get("/api/katmanlar")
+async def api_katmanlar(jeton: str = Query(default="")):
+    """Tarla haritasının katman dosyalarını listeler.
+
+    Katman mimarisinin sözü şu: yeni bir katman eklemek TEK DOSYA eklemek
+    olsun. Dosya adlarını HTML'e ya da bir listeye elle yazsaydık her katman
+    iki yerde kayıtlı olurdu ve biri unutulduğunda katman sessizce
+    görünmezdi. Sunucu klasörü okuyor, panel dönen listeyi sırayla yüklüyor.
+
+    Sıra dosya adından geliyor (`10-…`, `20-…`): çizim sırası da katmanın
+    kendi dosyasında belli oluyor, ayrı bir sıra tablosu gerekmiyor.
+    """
+    _parola_dogrula(jeton)
+    klasor = os.path.join(_STATIK, "katmanlar")
+    try:
+        adlar = sorted(a for a in os.listdir(klasor) if a.endswith(".js"))
+    except OSError:
+        adlar = []
+    return {"katmanlar": adlar}
+
+
 @app.get("/api/turler")
 async def api_turler(jeton: str = Query(default="")):
     _parola_dogrula(jeton)
@@ -611,10 +651,40 @@ async def saglik():
 
 # Arayüz en sonda bağlanıyor: kök yolu ("/") kaplıyor, önce API yolları
 # tanımlı olmalı.
-_STATIK = os.path.join(os.path.dirname(__file__), "static")
-app.mount("/statik", StaticFiles(directory=_STATIK), name="statik")
+
+
+class TazeStatik(StaticFiles):
+    """Panel dosyalarını tarayıcı önbelleğine bırakmayan statik sunucu.
+
+    Sahada şu yaşandı: Pi güncellendi, `index.html` yenilendi ama tarayıcı
+    `app.js`'in eski kopyasını önbellekten servis etmeye devam etti. Sonuç,
+    hata vermeyen ama çalışmayan bir panel oldu — yeni sekme HTML'de vardı,
+    onu çalıştıracak kod yoktu. Ctrl+F5 her tarayıcıda her alt kaynağı
+    tazelemiyor.
+
+    Panel dosyaları toplam ~900 KB ve yerel ağdan geliyor; önbelleğin
+    kazandırdığı milisaniyeler, "güncelledim ama değişmedi" hata ayıklamasının
+    yanında hiçbir şey. Kütüphaneler (three.js, chart.js) sürüm damgasıyla
+    geldiği için onları uzun süre önbellekte tutmak güvenli.
+    """
+
+    KUTUPHANE = ("three.min.js", "chart.umd.js")
+
+    def file_response(self, *args, **kwargs):  # type: ignore[override]
+        yanit = super().file_response(*args, **kwargs)
+        yol = str(getattr(yanit, "path", ""))
+        if yol.endswith(self.KUTUPHANE):
+            yanit.headers["Cache-Control"] = "public, max-age=604800, immutable"
+        else:
+            yanit.headers["Cache-Control"] = "no-store, must-revalidate"
+        return yanit
+
+
+app.mount("/statik", TazeStatik(directory=_STATIK), name="statik")
 
 
 @app.get("/")
 async def anasayfa():
-    return FileResponse(os.path.join(_STATIK, "index.html"))
+    yanit = FileResponse(os.path.join(_STATIK, "index.html"))
+    yanit.headers["Cache-Control"] = "no-store, must-revalidate"
+    return yanit

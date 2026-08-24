@@ -29,29 +29,35 @@
   <!-- ÜST ÇUBUK — her sekmede sabit. Acil durdurma buradan çıkmıyor:
        makineyi durdurmak, hangi sekmede olduğunuza bağlı olmamalı. -->
   <header>
-    <div class="marka">🌱<span> Farmbot</span></div>
-    <div class="rozetler">
-      <div class="rozet" id="rozet-sunucu"><i class="nokta"></i><span>Sunucu</span></div>
-      <div class="rozet" id="rozet-ajan"><i class="nokta"></i><span>Raspberry Pi</span></div>
-      <div class="rozet" id="rozet-plc"><i class="nokta"></i><span>PLC</span></div>
-      <div class="rozet" id="rozet-kip"><i class="nokta"></i><span>Kip: —</span></div>
+    <div class="ust-ic">
+      <div class="marka">🌱<span> Farmbot</span></div>
+      <div class="rozetler">
+        <div class="rozet" id="rozet-sunucu"><i class="nokta"></i><span>Sunucu</span></div>
+        <div class="rozet" id="rozet-ajan"><i class="nokta"></i><span>Raspberry Pi</span></div>
+        <div class="rozet" id="rozet-plc"><i class="nokta"></i><span>PLC</span></div>
+        <div class="rozet" id="rozet-kip"><i class="nokta"></i><span>Kip: —</span></div>
+      </div>
+      <button class="dugme tehlike acil-dugme" id="d-acil">Acil durdurma</button>
     </div>
-    <button class="dugme tehlike acil-dugme" id="d-acil">⛔ ACİL DURDURMA</button>
   </header>
 
   <nav class="sekmeler">
-    <button data-sayfa="izle" class="etkin"><i>📊</i><span>İzle</span></button>
-    <button data-sayfa="sur"><i>🎮</i><span>Sür</span></button>
-    <button data-sayfa="tarla"><i>🌱</i><span>Tarla</span></button>
-    <button data-sayfa="otomasyon"><i>⚙️</i><span>Otomasyon</span></button>
-    <button data-sayfa="ayarlar"><i>🔧</i><span>Ayarlar</span></button>
+    <div class="sekme-ic">
+      <button data-sayfa="izle" class="etkin">İzle</button>
+      <button data-sayfa="sur">Sür</button>
+      <button data-sayfa="tarla">Tarla</button>
+      <button data-sayfa="otomasyon">Otomasyon</button>
+      <button data-sayfa="ayarlar">Ayarlar</button>
+    </div>
   </nav>
 
   <!-- Acil durdurma mandalı sayfa seviyesinde: hangi sekmede olursanız olun
        görünür ve temizlenmeden hiçbir hareket komutu geçmez. -->
   <div id="acil-bant" class="gizli">
-    <span>⛔ <b>ACİL DURDURMA MANDALLI</b> — <span id="acil-detay"></span>. Makinenin güvende olduğunu doğrulayın.</span>
-    <button class="dugme" id="d-acil-temizle">Mandalı temizle</button>
+    <div class="bant-ic">
+      <span><b>Acil durdurma mandallı</b> — <span id="acil-detay"></span></span>
+      <button class="dugme" id="d-acil-temizle">Mandalı temizle</button>
+    </div>
   </div>
 
   <main>
@@ -131,18 +137,23 @@
 
       <div class="izgara iki-sutun">
         <div class="kart">
-          <h3>Kamera</h3>
+          <h3>Kamera <button class="yardim" type="button" aria-expanded="false" aria-label="Açıklama">?</button></h3>
+          <p class="yardim-metin gizli">
+            Kare aralığı varsayılan 30 saniye. Kamera <code>ayarlar.json</code>
+            içinde <code>"kamera": {"aktif": true}</code> ile açılır.
+          </p>
           <div id="kamera-kutu">
-            <p class="alt-not" id="kamera-yok">Henüz kare gelmedi. Kamera <code>ayarlar.json</code> içinde
-              <code>"kamera": {"aktif": true}</code> ile açılır.</p>
+            <p class="alt-not" id="kamera-yok">Henüz kare gelmedi.</p>
             <img id="kamera-kare" class="gizli" alt="Kamera görüntüsü">
           </div>
           <div class="alt-not" id="kamera-zaman"></div>
         </div>
 
         <div class="kart">
-          <h3>Son ölçümler</h3>
-          <p class="alt-not">Grafikteki aynı veri, sayı olarak. En yeni satır en üstte.</p>
+          <h3>Son ölçümler <button class="yardim" type="button" aria-expanded="false" aria-label="Açıklama">?</button></h3>
+          <p class="yardim-metin gizli">
+            Grafikteki aynı veri, sayı olarak. En yeni satır en üstte.
+          </p>
           <div class="tablo-kutu">
             <table class="veri">
               <thead>
@@ -163,7 +174,14 @@
       <div class="izgara iki-sutun">
 
         <div class="kart">
-          <h3>Eksen konumu</h3>
+          <h3>Eksen konumu <button class="yardim" type="button" aria-expanded="false" aria-label="Açıklama">?</button></h3>
+          <p class="yardim-metin gizli">
+            Jog düğmeleri tıklayınca başlar, tekrar tıklayınca durur. Ok
+            tuşları X/Y, PageUp ve PageDown Z, Esc durdurur, boşluk acil
+            durdurma. Eksen yumuşak sınıra yaklaşınca ajan kendiliğinden
+            durdurur; sekme gizlenir ya da bağlantı koparsa 1,2 saniyede durur.
+          </p>
+
           <div class="eksen-kutu">
             <div class="eksen"><b>X</b><div class="konum" id="k-x">—</div><div class="sinir" id="s-x"></div></div>
             <div class="eksen"><b>Y</b><div class="konum" id="k-y">—</div><div class="sinir" id="s-y"></div></div>
@@ -171,7 +189,7 @@
           </div>
 
           <div id="z-uyari" class="uyari-kutu gizli">
-            ⚠ Z güvenli yükseklikte değil — X/Y hareketi kilitli. Önce Z'yi kaldırın.
+            Z güvenli yükseklikte değil — X/Y hareketi kilitli.
           </div>
 
           <div class="alan">
@@ -202,20 +220,18 @@
           </div>
 
           <div class="satir-8">
-            <button class="dugme" id="d-enable">⚡ Sürücüleri aç</button>
-            <button class="dugme" id="d-dur">■ Durdur</button>
+            <button class="dugme" id="d-enable">Sürücüleri aç</button>
+            <button class="dugme" id="d-dur">Durdur</button>
           </div>
-
-          <p class="alt-not">
-            Jog düğmeleri <b>tıklayınca başlar, tekrar tıklayınca durur</b>.
-            Ok tuşları X/Y, PageUp/PageDown Z, Esc durdurur, boşluk acil durdurma.
-            Eksen yumuşak sınıra yaklaşınca ajan kendiliğinden durdurur; sekme
-            gizlenir ya da bağlantı koparsa 1,2 saniyede durur.
-          </p>
         </div>
 
         <div class="kart">
-          <h3>Konuma git</h3>
+          <h3>Konuma git <button class="yardim" type="button" aria-expanded="false" aria-label="Açıklama">?</button></h3>
+          <p class="yardim-metin gizli">
+            Hareket sırası Z → Y → X, asla çapraz değil. X/Y yer değiştirecekse
+            Z önce güvenli yüksekliğe çıkar. Boş bırakılan eksen olduğu yerde
+            kalır; sınır dışı hedef ajanda reddedilir.
+          </p>
           <div class="alan-izgara">
             <div class="alan"><label for="h-x">X (mm)</label><input type="number" id="h-x" step="0.1" placeholder="—"></div>
             <div class="alan"><label for="h-y">Y (mm)</label><input type="number" id="h-y" step="0.1" placeholder="—"></div>
@@ -225,23 +241,29 @@
             <button class="dugme birincil" id="d-git">Hedefe git</button>
             <button class="dugme" id="d-buraya">Bulunduğu konumu al</button>
           </div>
-          <p class="alt-not">Hareket sırası <b>Z → Y → X</b>, asla çapraz değil. X/Y yer değiştirecekse Z önce güvenli yüksekliğe çıkar. Boş bırakılan eksen olduğu yerde kalır; sınır dışı hedef ajanda reddedilir.</p>
 
-          <h3 class="ara-baslik">Vana / servo</h3>
+          <h3 class="ara-baslik">Vana / servo <button class="yardim" type="button" aria-expanded="false" aria-label="Açıklama">?</button></h3>
+          <p class="yardim-metin gizli">
+            Servo açısını elle verir. Bu komut kipi otomatikten manuele düşürür.
+          </p>
           <div class="kaydirac-satir">
             <input type="range" id="servo-kaydirac" min="0" max="180" value="0">
             <b id="servo-etiket" class="sayi">0°</b>
             <button class="dugme" id="d-servo-uygula">Uygula</button>
           </div>
-          <p class="alt-not" id="servo-not">Servo açısını elle verir. Bu komut kipi otomatikten <b>manuele</b> düşürür.</p>
+          <p class="alt-not gizli" id="servo-not"></p>
 
-          <h3 class="ara-baslik">Pompa ve vanalar</h3>
+          <h3 class="ara-baslik">Pompa ve vanalar <button class="yardim" type="button" aria-expanded="false" aria-label="Açıklama">?</button></h3>
+          <p class="yardim-metin gizli">
+            Tıklayınca açılır, tekrar tıklayınca kapanır. Acil durdurma
+            hepsini kapatır.
+          </p>
           <div class="satir-8">
             <button class="dugme role" data-role="su_pompasi">Su pompası</button>
             <button class="dugme role" data-role="hava_pompasi">Hava pompası</button>
             <button class="dugme role" data-role="su_vanasi">Su vanası</button>
           </div>
-          <p class="alt-not" id="role-not">Tıklayınca açılır, tekrar tıklayınca kapanır. Acil durdurma hepsini kapatır.</p>
+          <p class="alt-not gizli" id="role-not"></p>
         </div>
       </div>
     </section>
@@ -249,57 +271,89 @@
     <!-- ================================ TARLA =============================== -->
     <section class="sayfa" id="sayfa-tarla">
       <div class="kart">
-        <h3>Tarla tasarımcısı <span id="tarla-olcu" class="birim-not"></span></h3>
-        <p class="alt-not">
-          Tür seçip <b>Bitki ekle</b> ile yatağa tıklayın. Bitkiyi sürükleyerek taşıyabilir,
-          üstüne tıklayarak kartını açabilirsiniz. Halka türün yayılım çapıdır; iki halka
-          kesişirse ikisi de uyarı rengine döner ve kaç mm iç içe olduğu aşağıda yazar.
-          Bitkiler ayrı bir yere değil <b>nokta deposuna</b> kaydediliyor.
+        <h3>Tarla tasarımcısı <span id="tarla-olcu" class="birim-not"></span>
+          <button class="yardim" type="button" aria-expanded="false" aria-label="Açıklama">?</button></h3>
+        <p class="yardim-metin gizli">
+          Tür seçip <b>Bitki ekle</b> ile yatağa tıklayın. Bitkiyi sürükleyerek
+          taşıyabilir, üstüne tıklayarak kartını açabilirsiniz. Halka türün
+          yayılım çapıdır; iki halka kesişirse ikisi de uyarı rengine döner ve
+          kaç mm iç içe olduğu aşağıda yazar. Bitkiler ayrı bir yere değil
+          nokta deposuna kaydedilir.<br><br>
+          <b>3B sahne</b> izlemek için, <b>2B harita</b> hassas yerleştirme
+          için: milimetre cetvelli, tıklanan yerin koordinatı altta yazıyor.
+          İki görünüm aynı veriyi kullanıyor — birinde taşınan bitki
+          diğerinde de taşınmış oluyor.<br><br>
+          Sol tuş döndürür, Shift ile kaydırır, tekerlek yakınlaştırır.
+          Seçili öğe <kbd>Delete</kbd> ile silinir. Soldaki listeden
+          katmanlar tek tek kapatılabilir; kapalı katman hiç çizilmez.
         </p>
         <div class="araclar tarla-arac">
           <div class="alan">
             <label for="tur-secim">Tür</label>
             <select id="tur-secim"></select>
           </div>
-          <button class="dugme" id="d-ekleme-kipi">+ Bitki ekle</button>
+          <button class="dugme" id="d-ekleme-kipi">Bitki ekle</button>
           <span class="esnek"></span>
-          <button class="dugme secili" id="d-gorus-serbest">Serbest kamera</button>
-          <button class="dugme" id="d-gorus-ust">Üstten görünüm</button>
-          <label class="onay"><input type="checkbox" id="tarla-simge" checked> Simgeler</label>
-          <span id="tarla-sayi" class="alt-not"></span>
+          <button class="dugme secili" id="d-gorunum-3b">3B sahne</button>
+          <button class="dugme" id="d-gorunum-2b">2B harita</button>
+          <span id="tarla-3b-arac" class="satir-8">
+            <button class="dugme secili" id="d-gorus-serbest">Serbest</button>
+            <button class="dugme" id="d-gorus-ust">Üstten</button>
+            <label class="onay"><input type="checkbox" id="tarla-simge" checked> Simgeler</label>
+          </span>
         </div>
-        <div class="tarla-sahne">
-          <canvas id="tarla-tuval"></canvas>
-          <div id="tarla-ipucu" class="tarla-ipucu"></div>
-          <div id="tarla-kart" class="tarla-kart gizli"></div>
+
+        <div class="tarla-duzen">
+          <!-- KATMAN LİSTESİ — her katman bağımsız, tercih localStorage'da.
+               Kapalı katman hiç çizilmiyor; liste `/api/katmanlar`dan yüklenen
+               dosyaların kendi kaydından üretiliyor. -->
+          <aside class="katman-kutu">
+            <div class="katman-baslik">Katmanlar</div>
+            <div id="katman-liste"></div>
+            <div class="katman-dip">
+              <span id="tarla-sayi" class="alt-not"></span>
+              <span id="tarla-konum" class="alt-not sayi"></span>
+            </div>
+          </aside>
+
+          <div class="tarla-gorunum">
+            <div class="tarla-sahne" id="tarla-sahne3b">
+              <canvas id="tarla-tuval"></canvas>
+              <div id="tarla-ipucu" class="tarla-ipucu"></div>
+            </div>
+            <div class="tarla-sahne gizli" id="tarla-sahne2b">
+              <canvas id="tarla-tuval2b"></canvas>
+            </div>
+            <div id="tarla-kart" class="tarla-kart gizli"></div>
+          </div>
         </div>
-        <p class="alt-not">
-          Sol tuş: döndür · Shift + sol tuş: kaydır · Tekerlek: yakınlaştır ·
-          Seçiliyken <kbd>Delete</kbd>: sil
-        </p>
+
         <div id="tarla-cakisma" class="onizleme gizli"></div>
         <div id="tarla-uyari" class="uyari-kutu gizli"></div>
       </div>
 
       <div class="izgara iki-sutun">
         <div class="kart">
-          <h3>Kayıtlı noktalar</h3>
-          <div class="satir-8">
-            <input type="text" id="nokta-ad" placeholder="Nokta adı" maxlength="40">
-            <button class="dugme" id="d-nokta-kaydet">Bulunduğu konumu kaydet</button>
+          <h3>Kayıtlı noktalar <button class="yardim" type="button" aria-expanded="false" aria-label="Açıklama">?</button></h3>
+          <p class="yardim-metin gizli">
+            "Git" mevcut hareket komutunu kullanır — sıra Z → Y → X, sınır ve
+            Z kilidi denetimleri aynen geçerli.
+          </p>
+          <div class="satir-8 alt-hizali">
+            <div class="alan esnek-alan">
+              <label for="nokta-ad">Nokta adı</label>
+              <input type="text" id="nokta-ad" maxlength="40" placeholder="örn. sera-giris">
+            </div>
+            <button class="dugme birincil" id="d-nokta-kaydet">Konumu kaydet</button>
           </div>
           <div id="nokta-liste" class="liste">
             <p class="alt-not">Henüz kayıtlı nokta yok.</p>
           </div>
-          <p class="alt-not">
-            "Git" mevcut hareket komutunu kullanır — sıra Z → Y → X, sınır ve
-            Z kilidi denetimleri aynen geçerli.
-          </p>
         </div>
 
         <div class="kart">
-          <h3>Tohum ızgarası</h3>
-          <p class="alt-not">
+          <h3>Tohum ızgarası <button class="yardim" type="button" aria-expanded="false" aria-label="Açıklama">?</button></h3>
+          <p class="yardim-metin gizli">
             1 numaralı nokta başlangıçta. Sütunlar X'te, satırlar Y'de ilerler;
             numaralandırma satır-öncelikli: <code>s1, s2, s3…</code>
             Z, güvenli taşıma yüksekliği olarak yazılır.
@@ -339,75 +393,78 @@
       <div class="izgara iki-sutun">
 
         <div class="kart">
-          <h3>Programlar</h3>
-          <div class="satir-8">
-            <select id="prog-secim" class="esnek-alan"></select>
-            <button class="dugme birincil" id="d-prog-calistir">▶ Çalıştır</button>
-            <button class="dugme tehlike" id="d-prog-durdur">■ Durdur</button>
-            <button class="dugme" id="d-prog-sil">Sil</button>
+          <h3>Programlar <button class="yardim" type="button" aria-expanded="false" aria-label="Açıklama">?</button></h3>
+          <p class="yardim-metin gizli">
+            Adımlar mevcut komutları çağırır — yeni hareket yolu yok. Bir adım
+            hata verirse dizi durur ve sebebi burada kalır. Acil durdurma
+            diziyi keser; mandal temizlenmeden yeniden başlamaz.
+          </p>
+          <div class="satir-8 alt-hizali">
+            <div class="alan esnek-alan">
+              <label for="prog-secim">Program</label>
+              <select id="prog-secim"></select>
+            </div>
+            <button class="dugme birincil" id="d-prog-calistir">Çalıştır</button>
+            <button class="dugme" id="d-prog-durdur">Durdur</button>
+            <button class="dugme tehlike" id="d-prog-sil">Sil</button>
           </div>
           <div id="prog-ilerleme" class="onizleme gizli"></div>
 
           <h3 class="ara-baslik">Düzenle</h3>
-          <div class="satir-8">
-            <input type="text" id="prog-ad" placeholder="Program adı" maxlength="40">
+          <div class="satir-8 alt-hizali">
+            <div class="alan esnek-alan">
+              <label for="prog-ad">Program adı</label>
+              <input type="text" id="prog-ad" maxlength="40" placeholder="örn. sabah-sulama">
+            </div>
             <div class="alan dar"><label for="prog-tekrar">Tur</label>
               <input type="number" id="prog-tekrar" min="1" max="1000" value="1"></div>
             <button class="dugme" id="d-prog-yeni">Yeni</button>
-            <button class="dugme" id="d-prog-kaydet">Kaydet</button>
+            <button class="dugme birincil" id="d-prog-kaydet">Kaydet</button>
           </div>
           <div id="prog-adimlar"></div>
           <div class="satir-8">
-            <button class="dugme" id="d-adim-ekle">+ Adım ekle</button>
+            <button class="dugme" id="d-adim-ekle">Adım ekle</button>
           </div>
-          <p class="alt-not">
-            Adımlar mevcut komutları çağırır — yeni hareket yolu yok. Bir adım
-            hata verirse dizi durur ve sebebi burada kalır. Acil durdurma diziyi
-            keser; mandal temizlenmeden yeniden başlamaz.
-          </p>
         </div>
 
         <div class="kart">
-          <h3>Otomatik sulama <span id="kip-rozet" class="rozet-kip">—</span></h3>
-          <p class="alt-not">
-            Bu karar <b>Arduino'nun içinde</b> duruyor, panelde ya da Pi'de değil.
-            Sebebi: Pi kapansa, panel kapansa, ağ gitse bile bitkinin sulanması gerekiyor.
+          <h3>Otomatik sulama <span id="kip-rozet" class="rozet-kip">—</span>
+            <button class="yardim" type="button" aria-expanded="false" aria-label="Açıklama">?</button></h3>
+          <p class="yardim-metin gizli">
+            Bu karar Arduino'nun içinde duruyor, panelde ya da Pi'de değil.
+            Sebebi: Pi kapansa, panel kapansa, ağ gitse bile bitkinin
+            sulanması gerekiyor.<br><br>
+            <b>Otomatik:</b> toprak kuruyunca Arduino seçili çıkışı kendi açar.
+            <b>Manuel:</b> kararı panel ya da program verir. Seçim Arduino'nun
+            EEPROM'una yazılır, fişi çekilse bile korunur.
           </p>
           <div class="kip-secim">
-            <button class="dugme kip-dugme" id="d-kip-oto">
-              <b>Otomatik</b>
-              <span>Toprak kuruyunca Arduino kendi açar — Pi kapalıyken de çalışır</span>
-            </button>
-            <button class="dugme kip-dugme" id="d-kip-manuel">
-              <b>Manuel</b>
-              <span>Arduino hiçbir şeye kendiliğinden dokunmaz; kararı panel/program verir</span>
-            </button>
+            <button class="dugme kip-dugme" id="d-kip-oto">Otomatik</button>
+            <button class="dugme kip-dugme" id="d-kip-manuel">Manuel</button>
           </div>
 
           <div class="oto-ayar">
             <div class="alanlar">
-            <div class="alan">
-              <label for="oto-cikis">Otomatikte çalışacak çıkış</label>
-              <select id="oto-cikis">
-                <option value="servo">Vana servosu (SG-5010)</option>
-                <option value="su_vanasi">Su vanası rölesi</option>
-                <option value="su_pompasi">Su pompası rölesi</option>
-                <option value="yok">Yok — otomatik hiçbir şeyi sürmesin</option>
-              </select>
-            </div>
-            <div class="alan">
-              <label for="oto-esik">Toprak nemi bunun altına düşünce aç</label>
-              <div class="kaydirac-satir">
-                <input type="range" id="oto-esik" min="0" max="100" step="1" value="41">
-                <b id="oto-esik-etiket" class="sayi">%41</b>
+              <div class="alan">
+                <label for="oto-cikis">Otomatikte çalışacak çıkış</label>
+                <select id="oto-cikis">
+                  <option value="servo">Vana servosu (SG-5010)</option>
+                  <option value="su_vanasi">Su vanası rölesi</option>
+                  <option value="su_pompasi">Su pompası rölesi</option>
+                  <option value="yok">Yok</option>
+                </select>
+              </div>
+              <div class="alan">
+                <label for="oto-esik">Eşik — bu nemin altında aç</label>
+                <div class="kaydirac-satir">
+                  <input type="range" id="oto-esik" min="0" max="100" step="1" value="41">
+                  <b id="oto-esik-etiket" class="sayi">%41</b>
+                </div>
               </div>
             </div>
-            </div>
-            <button class="dugme" id="d-oto-kaydet">Kaydet</button>
+            <button class="dugme birincil" id="d-oto-kaydet">Kaydet</button>
           </div>
-          <p class="alt-not" id="oto-not">
-            Seçim Arduino'nun EEPROM'una yazılır; kartın fişi çekilse bile korunur.
-          </p>
+          <p class="alt-not" id="oto-not"></p>
         </div>
       </div>
     </section>
@@ -417,13 +474,20 @@
       <div class="izgara iki-sutun">
 
         <div class="kart">
-          <h3>Uç değiştirme</h3>
+          <h3>Uç değiştirme <button class="yardim" type="button" aria-expanded="false" aria-label="Açıklama">?</button></h3>
+          <p class="yardim-metin gizli">
+            Yandan yaklaşım: bütün X/Y yolculukları taşıma yüksekliğinde
+            yapılır, alçak Z'deki tek yatay hareket uca girip çıkan kısa
+            kaymadır. Her adımın sonunda konum doğrulanır; varılmadıysa dizi
+            durur. Dizi boyunca yalnızca "yuva" işaretli bölgeler atlanır.<br><br>
+            "Durumu temizle" yalnızca yazılımdaki kaydı sıfırlar; hiçbir eksen
+            hareket etmez.
+          </p>
 
           <!-- Alan açıkken kullanıcı Z kilidinin kapalı olduğunu BİLMELİ -->
           <div id="tc-uyari" class="uyari-kutu gizli">
-            ⚠ <b>Uç değiştirme alanı AÇIK</b> — alanın içinde X/Y jog için Z
-            güvenlik kilidi <b>devre dışı</b>. Alan dışında kilit aynen geçerli.
-            <span id="tc-nerede"></span>
+            <b>Uç değiştirme alanı açık</b> — alanın içinde X/Y jog için Z
+            güvenlik kilidi devre dışı. <span id="tc-nerede"></span>
           </div>
 
           <div class="uc-durum">
@@ -431,12 +495,12 @@
             <b id="uc-mevcut">—</b>
             <span id="uc-dogrulama" class="rozet-uyari gizli"></span>
           </div>
-          <div class="satir-8">
-            <select id="uc-secim"></select>
+          <div class="satir-8 alt-hizali">
+            <div class="alan esnek-alan"><label for="uc-secim">Uç</label><select id="uc-secim"></select></div>
             <button class="dugme birincil" id="d-uc-tak">Tak</button>
             <button class="dugme" id="d-uc-birak">Bırak</button>
-            <button class="dugme tehlike" id="d-uc-dur">■ Diziyi durdur</button>
-            <button class="dugme" id="d-uc-temizle" title="Yalnızca yazılımdaki kaydı sıfırlar; hiçbir eksen hareket etmez">Durumu temizle</button>
+            <button class="dugme tehlike" id="d-uc-dur">Diziyi durdur</button>
+            <button class="dugme" id="d-uc-temizle">Durumu temizle</button>
           </div>
 
           <div id="uc-onizleme" class="onizleme gizli"></div>
@@ -459,24 +523,15 @@
                 <label for="ua-lock_dwell">lock_dwell</label><input type="number" id="ua-lock_dwell" step="1"></div>
             </div>
 
-            <p class="alt-not">
-              Register alanları — <b>0 = donanım bağlı değil</b>. Varlık sensörü
-              bağlı değilken dizi "başarılı" değil "doğrulanamadı" der.
-            </p>
             <div class="alan-izgara">
-              <div class="alan"><label for="ua-lock_reg">lock_reg</label><input type="number" id="ua-lock_reg" step="1"></div>
-              <div class="alan"><label for="ua-grip_reg">grip_reg</label><input type="number" id="ua-grip_reg" step="1"></div>
-              <div class="alan"><label for="ua-presence_reg">presence_reg</label><input type="number" id="ua-presence_reg" step="1"></div>
+              <div class="alan" title="0 = donanım bağlı değil"><label for="ua-lock_reg">lock_reg</label><input type="number" id="ua-lock_reg" step="1"></div>
+              <div class="alan" title="0 = donanım bağlı değil"><label for="ua-grip_reg">grip_reg</label><input type="number" id="ua-grip_reg" step="1"></div>
+              <div class="alan" title="0 = donanım bağlı değil"><label for="ua-presence_reg">presence_reg</label><input type="number" id="ua-presence_reg" step="1"></div>
               <div class="alan" title="PLC'deki Z-güvenli biti. 0 ise karar milimetre hesabına kalır">
                 <label for="ua-z_safe_reg">z_safe_reg</label><input type="number" id="ua-z_safe_reg" step="1"></div>
             </div>
 
-            <p class="alt-not">
-              <b>Uç değiştirme alanı.</b> Bu 4 köşeli alanın içinde X/Y jog için
-              Z güvenlik şartı devre dışı — uçları alçak Z'de takıp çıkarabilmek
-              için. Alan kapalıyken <b>hiçbir muafiyet yoktur</b>.
-            </p>
-            <label class="onay"><input type="checkbox" id="ua-alan-acik"> Alanı aç</label>
+            <label class="onay"><input type="checkbox" id="ua-alan-acik"> Uç değiştirme alanını aç</label>
             <div class="alan-izgara">
               <div class="alan"><label for="ua-k0x">K1 X</label><input type="number" id="ua-k0x" step="1"></div>
               <div class="alan"><label for="ua-k0y">K1 Y</label><input type="number" id="ua-k0y" step="1"></div>
@@ -492,38 +547,32 @@
               <button class="dugme birincil" id="d-uc-ayar-kaydet">Ayarları kaydet</button>
             </div>
           </details>
-
-          <p class="alt-not">
-            Yandan yaklaşım: bütün X/Y yolculukları taşıma yüksekliğinde yapılır,
-            alçak Z'deki tek yatay hareket uca girip çıkan kısa kaymadır.
-            <b>Dizi boyunca yalnızca "yuva" işaretli bölgeler atlanır</b>.
-          </p>
         </div>
 
         <div class="kart">
-          <h3>Yasak bölgeler</h3>
-          <p class="alt-not">
-            Dikdörtgen alan (X/Y) + geçiş koşulu. Hedefi <b>ya da yolu</b> alanın
+          <h3>Yasak bölgeler <button class="yardim" type="button" aria-expanded="false" aria-label="Açıklama">?</button></h3>
+          <p class="yardim-metin gizli">
+            Dikdörtgen alan (X/Y) + geçiş koşulu. Hedefi ya da yolu alanın
             içine düşen hareket, koşul doğru değilse ajanda reddedilir — panel
-            kapalı olsa da. Değişkenler:
-            <code>z, x, y, prox, tool, safe_z, zmax</code>.
+            kapalı olsa da.<br><br>
+            Değişkenler: <code>z, x, y, prox, tool, safe_z, zmax</code>.
             Örnek: <code>z&gt;=safe_z</code> · <code>tool!='laser'</code>
           </p>
           <div id="bolge-liste"></div>
           <div class="satir-8">
-            <button class="dugme" id="d-bolge-ekle">+ Bölge ekle</button>
+            <button class="dugme" id="d-bolge-ekle">Bölge ekle</button>
             <button class="dugme birincil" id="d-bolge-kaydet">Kaydet</button>
-            <span id="bolge-esnetme" class="rozet-uyari gizli">⚠ Yuva esnetmesi açık</span>
+            <span id="bolge-esnetme" class="rozet-uyari gizli">Yuva esnetmesi açık</span>
           </div>
         </div>
 
         <div class="kart">
-          <h3>Kalibrasyon ve sınırlar</h3>
-          <p class="alt-not">
+          <h3>Kalibrasyon ve sınırlar <button class="yardim" type="button" aria-expanded="false" aria-label="Açıklama">?</button></h3>
+          <p class="yardim-metin gizli">
             Ajanın o an kullandığı değerler — salt okunur. Değiştirmek için
-            Pi'de <code>ajan/gantry_calib.json</code> düzenlenir ve ajan yeniden
-            başlatılır. <code>cpm</code> = adım/mm, <code>dir</code> = yön işareti,
-            <code>home</code> = referans anahtarındaki mm değeri.
+            Pi'de <code>ajan/gantry_calib.json</code> düzenlenir ve ajan
+            yeniden başlatılır. <code>cpm</code> = adım/mm, <code>dir</code> =
+            yön işareti, <code>home</code> = referans anahtarındaki mm değeri.
           </p>
           <div class="tablo-kutu">
             <table class="veri">
@@ -542,19 +591,21 @@
   </main>
 
   <!-- OLAY GÜNLÜĞÜ — sayfa seviyesinde: hangi sekmede olursanız olun komutun
-       sonucunu görürsünüz. Sürerken hata mesajını başka sekmede aramak
-       gerekmemeli. -->
-  <div id="gunluk-serit">
-    <button id="d-gunluk-ac" aria-expanded="true">
-      <span class="ok">▾</span> Olay günlüğü <span class="alt-not" id="gunluk-son"></span>
-    </button>
-    <div id="gunluk"></div>
+       sonucunu görürsünüz. Varsayılan kapalı; kapalıyken son olay tek satırda. -->
+  <div id="gunluk-serit" class="kapali">
+    <div class="serit-ic">
+      <button id="d-gunluk-ac" aria-expanded="false">
+        <span class="ok">▾</span> Olay günlüğü <span class="alt-not" id="gunluk-son"></span>
+      </button>
+      <div id="gunluk"></div>
+    </div>
   </div>
 </div>
 
 <!-- three.js yerel dosya: Pi internetsiz çalışıyor, CDN yok. UMD sürümü
      global THREE bırakıyor; modül/import haritası gerekmiyor. -->
 <script src="/statik/three.min.js"></script>
+<!-- Makine ölçüleri veri olarak; tarla.js bunu okuyor (bkz. makine.js) -->
 <script src="/statik/makine.js"></script>
 <script src="/statik/tarla.js"></script>
 <script src="/statik/app.js"></script>

@@ -24,6 +24,11 @@ KANALLAR = [
     "rakim",             # BMP180 rakım (m)
     "toprak_nem",        # HW-103 ham ADC değeri (0-1023)
     "servo_aci",         # SG-5010 açısı (derece)
+    # Ölçümün ALINDIĞI KONUM. Tarla haritasındaki "sensör okumaları" katmanı
+    # buna dayanıyor: toprak nemi bir sayı değil, bir YERDEKİ sayı. Ajan her
+    # ölçüme o anki eksen konumunu ekliyor; PLC bağlı değilse boş geçiyor.
+    "konum_x",           # mm
+    "konum_y",           # mm
 ]
 
 # Kaç gün saklansın? Pi 2 saniyede bir gönderse bile 7 gün ≈ 300k satır;
@@ -66,6 +71,15 @@ def baglan() -> sqlite3.Connection:
         f"CREATE TABLE IF NOT EXISTS olcum (ts REAL NOT NULL, {sutunlar})"
     )
     _baglanti.execute("CREATE INDEX IF NOT EXISTS olcum_ts ON olcum(ts)")
+
+    # Sürüm geçişi: KANALLAR'a yeni bir alan eklendiğinde var olan tablo
+    # otomatik büyümez. Sahadaki Pi'de aylardır veri var; tabloyu silmek
+    # geçmişi silmek olurdu. Eksik sütunları tek tek ekliyoruz — SQLite'ta
+    # ADD COLUMN ucuz ve mevcut satırlar NULL kalıyor.
+    var_olan = {satir["name"] for satir in _baglanti.execute("PRAGMA table_info(olcum)")}
+    for ad in KANALLAR:
+        if ad not in var_olan:
+            _baglanti.execute(f"ALTER TABLE olcum ADD COLUMN {ad} REAL")
     _baglanti.commit()
     return _baglanti
 
@@ -85,6 +99,34 @@ def yaz(veri: dict[str, Any], ts: float | None = None) -> None:
             satir,
         )
         db.commit()
+
+
+def konumlu_okumalar(dakika: int = 1440, azami: int = 400) -> list[dict[str, Any]]:
+    """Konumu bilinen toprak nemi okumaları — haritadaki sensör katmanı için.
+
+    Aynı noktada dakikalarca beklenirse yüzlerce özdeş okuma birikiyor;
+    haritada bunların hepsini çizmenin faydası yok, üst üste tek nokta
+    görünüyor. 10 mm'lik hücrelere yuvarlayıp her hücrenin EN YENİ okumasını
+    alıyoruz: harita "şu noktada en son ne okundu" sorusunu cevaplıyor.
+    """
+    db = baglan()
+    esik = time.time() - dakika * 60
+    with _KILIT:
+        satirlar = db.execute(
+            "SELECT ts, konum_x, konum_y, toprak_nem FROM olcum "
+            "WHERE ts >= ? AND konum_x IS NOT NULL AND toprak_nem IS NOT NULL "
+            "ORDER BY ts DESC", (esik,)).fetchall()
+
+    hucre: dict[tuple[int, int], dict[str, Any]] = {}
+    for s in satirlar:
+        anahtar = (round(s["konum_x"] / 10), round(s["konum_y"] / 10))
+        if anahtar in hucre:            # satırlar yeniden eskiye; ilki en yeni
+            continue
+        hucre[anahtar] = {"ts": s["ts"], "x": s["konum_x"], "y": s["konum_y"],
+                          "toprak_nem": s["toprak_nem"]}
+        if len(hucre) >= azami:
+            break
+    return sorted(hucre.values(), key=lambda k: k["ts"])
 
 
 def gecmis(dakika: int = 60, azami_nokta: int = 600) -> dict[str, list]:

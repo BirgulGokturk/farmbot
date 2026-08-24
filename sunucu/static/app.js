@@ -845,16 +845,18 @@ function donanimGuncelle(o) {
     const var_ = Number(o.servo_var) === 1;
     $("#servo-kaydirac").disabled = !var_;
     $("#d-servo-uygula").disabled = !var_;
-    $("#servo-not").innerHTML = var_
-      ? "Servo açısını elle verir. Bu komut kipi otomatikten <b>manuele</b> düşürür."
-      : `⚠ <b>Vana servosu bağlı değil.</b> ${AC}<code>SERVO_BAGLI 1</code>`;
+    // Kritik uyarı ekranda kalır; "her şey normal" durumunda hiçbir şey
+    // yazmıyoruz — açıklama zaten başlığın yanındaki "?" içinde.
+    $("#servo-not").innerHTML = var_ ? ""
+      : `<b>Vana servosu bağlı değil.</b> ${AC}<code>SERVO_BAGLI 1</code>`;
+    $("#servo-not").classList.toggle("gizli", var_);
   }
   if (o.role_var !== undefined) {
     const var_ = Number(o.role_var) === 1;
     $$(".dugme.role").forEach((d) => { d.disabled = !var_; });
-    $("#role-not").innerHTML = var_
-      ? "Tıklayınca açılır, tekrar tıklayınca kapanır. Acil durdurma hepsini kapatır."
-      : `⚠ <b>Röleler bağlı değil.</b> ${AC}<code>ROLELER_BAGLI 1</code>`;
+    $("#role-not").innerHTML = var_ ? ""
+      : `<b>Röleler bağlı değil.</b> ${AC}<code>ROLELER_BAGLI 1</code>`;
+    $("#role-not").classList.toggle("gizli", var_);
   }
   // Otomatik sulama çıkış listesi: bağlı olmayanlar seçilemesin.
   const secim = $("#oto-cikis");
@@ -902,10 +904,8 @@ function otoAyarGuncelle(o) {
   if (o.oto_cikis === undefined && o.esik === undefined) {
     const donanimYok = Number(o.servo_var) === 0 && Number(o.role_var) === 0;
     $("#oto-not").innerHTML = donanimYok
-      ? "Bu kartta sürülecek bir çıkış yok (vana ve röleler bağlı değil). " +
-        "Donanımı bağlayıp sketch'te <code>SERVO_BAGLI 1</code> yaptığınızda bu bölüm açılır."
-      : "⚠ Arduino bu ayarları bildirmiyor — karttaki yazılım eski. " +
-        "<code>firmware/farmbot_sensors</code> sketch'ini yeniden yükleyin.";
+      ? "<b>Sürülecek çıkış yok</b> — vana ve röleler bağlı değil."
+      : "<b>Karttaki yazılım eski</b> — <code>farmbot_sensors</code> sketch'ini yükleyin.";
     cikis.disabled = esik.disabled = $("#d-oto-kaydet").disabled = true;
     // Rozet metni "çıkış var mı"ya bağlı; kilit yeni konduğu için tazeliyoruz.
     if (S.kip) kipGuncelle(S.kip);
@@ -920,13 +920,12 @@ function otoAyarGuncelle(o) {
     $("#oto-esik-etiket").textContent = `%${yuzde}`;
   }
   const acik = Number(o.oto_acik) === 1;
-  $("#oto-not").innerHTML = (S.kip === "oto"
+  $("#oto-not").innerHTML = S.kip === "oto"
     ? (cikis.value === "yok"
-       ? "Otomatik kip açık ama çıkış <b>Yok</b> — Arduino hiçbir şeyi sürmüyor."
+       ? "Otomatik kip açık ama çıkış <b>Yok</b> — hiçbir şey sürülmüyor."
        : acik ? `Şu anda <b>sulama açık</b> (${cikis.options[cikis.selectedIndex].text}).`
               : "Toprak yeterince nemli — sulama kapalı.")
-    : "Manuel kipte bu ayarlar beklemede; otomatiğe alınca geçerli olur.") +
-    " Seçim Arduino'nun EEPROM'una yazılır, fişi çekilse bile korunur.";
+    : "Manuel kipte bu ayarlar beklemede.";
 }
 
 function rozetYaz(kimlik, sinif, metin) {
@@ -1000,7 +999,7 @@ function durumGuncelle(d) {
   if (window.Tarla) window.Tarla.durumDegisti(d);
 
   S.enable = !!d.enable;
-  $("#d-enable").textContent = d.enable ? "⚡ Sürücüleri kapat" : "⚡ Sürücüleri aç";
+  $("#d-enable").textContent = d.enable ? "Sürücüleri kapat" : "Sürücüleri aç";
   $("#d-enable").classList.toggle("secili", !!d.enable);
 
   if (d.hiz && !$("#hiz-kaydirac").matches(":active")) {
@@ -1073,6 +1072,18 @@ function olaylariBagla() {
       // 3B sahne gizliyken çizim döngüsü boşa GPU yakıyor; sekmeye bağlıyoruz.
       if (window.Tarla) window.Tarla.gorunurluk(S.sekme === "tarla");
       window.scrollTo({ top: 0 });
+    };
+  });
+
+  // "?" açıklama düğmeleri — her biri kendinden sonraki .yardim-metin'i açar.
+  // Tek tek bağlamak yerine tek kural: yeni bir bölüm eklendiğinde JS'e
+  // dokunmak gerekmesin.
+  $$(".yardim").forEach((d) => {
+    d.onclick = () => {
+      const metin = d.closest("h3").nextElementSibling;
+      if (!metin || !metin.classList.contains("yardim-metin")) return;
+      const acik = metin.classList.toggle("gizli");
+      d.setAttribute("aria-expanded", String(!acik));
     };
   });
 

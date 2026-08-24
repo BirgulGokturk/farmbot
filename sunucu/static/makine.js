@@ -25,14 +25,50 @@
 (function () {
   "use strict";
 
-  /** Sigma profil kenarı (m). Viewer3D'deki PROFILE ile aynı. */
-  const P = 0.02;
-  /** Tezgâh ayak yüksekliği (m). Viewer3D 0.62 kullanıyordu; 425x600 mm
- * yatakta o kadar uzun ayak makineyi sehpa gibi gösteriyordu. */
-  const AYAK = 0.16;
+  /* ==================================================================== veri
+   *
+   * Makinenin BÜTÜN ölçüleri ve renkleri burada, milimetre cinsinden.
+   * Katman dosyaları ve tarla.js buradan okur; hiçbir katmanda elle
+   * yazılmış ölçü yok. (farmbot-web'de aynı işi bot_versions.ts görüyor.)
+   *
+   * Bir ölçü değişecekse tek yer burası.
+   */
+  const MAKINE = {
+    /** Kirişin toprak yüzeyinden yüksekliği. */
+    ray_yuksekligi: 520,
+    /** Sigma profil kenarı. */
+    profil: 20,
+    /** Tezgâh ayak yüksekliği. Viewer3D 620 kullanıyordu; 425x600 mm
+     *  yatakta o kadar uzun ayak makineyi sehpa gibi gösteriyordu. */
+    ayak: 160,
+    /** Yan rayların toprak yüzeyinden yüksekliği. */
+    yan_ray: 35,
+    /** Tezgâh tablası toprak yüzeyinin bu kadar altında (negatif). */
+    tabla: -50,
+    /** Toprak kabı. */
+    kap: { yukseklik: 90, cidar: 6 },
+    /** 2B haritada çizilen karık sayısı. */
+    yatak: { karik_sayisi: 4 },
+    renk: {
+      arka: "#0e1210",
+      toprak: "#4a3b2c", toprak_koyu: "#3a2e22",
+      cerceve: "#8d9490", ray: "#6e7873",
+      uc: "#0f6e72", uc_koyu: "#3d4a46",
+      govde: "#4a7c35",
+      aluminyum: "#c9ced6", metal_koyu: "#2a2f38",
+    },
+  };
 
-  const ALUMINYUM = { color: "#c9ced6", metalness: 0.85, roughness: 0.32 };
-  const KOYU = { color: "#2a2f38", metalness: 0.5, roughness: 0.55 };
+  /** mm → metre. */
+  const M = (mm) => mm / 1000;
+
+  /** Sigma profil kenarı (m). Viewer3D'deki PROFILE ile aynı. */
+  const P = M(MAKINE.profil);
+  /** Tezgâh ayak yüksekliği (m). */
+  const AYAK = M(MAKINE.ayak);
+
+  const ALUMINYUM = { color: MAKINE.renk.aluminyum, metalness: 0.85, roughness: 0.32 };
+  const KOYU = { color: MAKINE.renk.metal_koyu, metalness: 0.5, roughness: 0.55 };
 
   function mal(THREE, tanim) {
     const t = Object.assign({}, tanim);
@@ -97,19 +133,27 @@
   }
 
   /**
-   * @param opt { w, d, rayY } — metre: yatak eni (makine X), boyu (makine Y),
-   *            kirişin toprak yüzeyinden yüksekliği
-   * @returns { sabit, portal, kizak, sutun, ucKafa }
+   * @param opt { w, d, rayY, parca } — metre: yatak eni (makine X), boyu
+   *            (makine Y), kirişin toprak yüzeyinden yüksekliği.
+   *            `parca` verilirse yalnız o bölüm kurulur: "sabit" (tezgâh,
+   *            kap, raylar) ya da "hareketli" (köprü, kızak, Z, uç). Ayrı
+   *            katmanlar ayrı bölümleri istiyor; ikisini birden kurup birini
+   *            atmak Pi'de boşuna geometri demek.
+   * @returns { sabit, portal, kizak, sutun, ucKafa } — istenmeyen bölüm null
    */
   function kur(THREE, opt) {
     const w = opt.w, d = opt.d, rayY = opt.rayY;
+    const parca = opt.parca || "hepsi";
+    const sabitIster = parca === "hepsi" || parca === "sabit";
+    const hareketliIster = parca === "hepsi" || parca === "hareketli";
     const sabit = new THREE.Group();
 
     // Toprak yüzeyi y = 0. Tezgâh tablası biraz altında, kap onun içinde.
-    const tabla = -0.05;
+    const tabla = M(MAKINE.tabla);
     const zemin = tabla - AYAK;
-    const rayYuk = 0.035;          // rayların toprak yüzeyinden yüksekliği
+    const rayYuk = M(MAKINE.yan_ray);   // rayların toprak yüzeyinden yüksekliği
 
+    if (sabitIster) {
     /* --- zemin: makine havada değil, atölye zemininde duruyor ------------ */
     const dosem = new THREE.Mesh(
       new THREE.PlaneGeometry(w + 2.2, d + 2.2),
@@ -143,7 +187,7 @@
       color: "#9aa3ad", roughness: 0.35, metalness: 0.05,
       transparent: true, opacity: 0.45,
     });
-    const kapYuk = 0.09, cidar = 0.006;
+    const kapYuk = M(MAKINE.kap.yukseklik), cidar = M(MAKINE.kap.cidar);
     const kapDuvar = (gx, gz, x, z) => {
       const m = new THREE.Mesh(new THREE.BoxGeometry(gx, kapYuk, gz), kapMal);
       m.position.set(x, tabla + kapYuk / 2, z);
@@ -154,10 +198,34 @@
     kapDuvar(cidar, d, -w / 2 + cidar / 2, 0);
     kapDuvar(cidar, d, w / 2 - cidar / 2, 0);
 
+    /* --- toprak: kabın içini dolduran yüzey + karıklar -------------------- */
+    // Üst yüzey y = 0: bitkiler, noktalar ve okumalar hep bu düzleme oturuyor.
+    const toprak = new THREE.Mesh(
+      new THREE.BoxGeometry(w - cidar * 2, -tabla, d - cidar * 2),
+      mal(THREE, { color: MAKINE.renk.toprak, roughness: 1, metalness: 0 }));
+    toprak.position.y = tabla / 2;
+    sabit.add(toprak);
+
+    // Karıklar ince oyuk izi: geniş koyu bant toprağı çizgili muşamba
+    // gösteriyordu, ekim sıralarını belli edecek kadarı yetiyor.
+    const karikMal = mal(THREE, { color: MAKINE.renk.toprak_koyu, roughness: 1 });
+    const karikSayi = MAKINE.yatak.karik_sayisi;
+    for (let i = 1; i <= karikSayi; i++) {
+      const karik = new THREE.Mesh(
+        new THREE.BoxGeometry(w * 0.94, 0.003, M(12)), karikMal);
+      karik.position.set(0, 0.0016, -d / 2 + (d * i) / (karikSayi + 1));
+      sabit.add(karik);
+    }
+
     /* --- yan raylar: köprü bunların üzerinde X'te yürür ------------------ */
     [-1, 1].forEach((iz) => {
       sabit.add(profil(THREE, [w, P, P * 2], [0, rayYuk, (iz * d) / 2]));
     });
+    }  /* sabitIster */
+
+    if (!hareketliIster) {
+      return { sabit: sabit, portal: null, kizak: null, sutun: null, ucKafa: null };
+    }
 
     /* --- hareketli köprü (makine X'inde yürür) --------------------------- */
     const portal = new THREE.Group();
@@ -223,5 +291,10 @@
     return { sabit: sabit, portal: portal, kizak: kizak, sutun: sutun, ucKafa: ucKafa };
   }
 
-  window.FarmbotMakine = { kur: kur, P: P, AYAK: AYAK };
+  /* Geometri kurucu: makine.js dışındaki hiçbir dosya `new BoxGeometry` ile
+   * makine parçası kurmuyor, hepsi buradan geliyor. */
+  window.FarmbotMakine = { kur: kur, P: P, AYAK: AYAK, veri: MAKINE };
+  /* Ölçü/renk tablosu: katmanlar ve tarla.js `MAKINE.renk.toprak` gibi
+   * okuyor. Aynı nesne — iki isim, tek kaynak. */
+  window.MAKINE = MAKINE;
 })();

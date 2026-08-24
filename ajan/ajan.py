@@ -155,13 +155,34 @@ class Ajan:
         return {"prox": bool(varlik), "tool": uclar.ayar.get("current_tool") or ""}
 
     # --- başka iş parçacıklarından gelen olaylar -------------------------
+    def _konum_ekle(self, veri: dict[str, Any]) -> dict[str, Any]:
+        """Ölçüme/kareye o anki eksen konumunu iliştirir.
+
+        Toprak nemi tek başına bir sayı; "yatağın neresinde ölçüldü" bilgisi
+        olmadan haritaya konamaz. Aynısı kamera karesi için de geçerli.
+        Konumu ajan ekliyor çünkü tek doğru kaynak burası — sunucu ölçümün
+        hangi anda alındığını bilse de makinenin nerede olduğunu bilmiyor.
+
+        PLC kopuksa alanlar boş geçiyor; ölçüm yine kaydediliyor, sadece
+        haritada görünmüyor.
+        """
+        try:
+            k = self._son_durum.get("konum") or {}
+            if k.get("x") is not None:
+                veri = {**veri, "konum_x": k["x"], "konum_y": k["y"], "konum_z": k.get("z")}
+        except Exception:
+            pass
+        return veri
+
     def _olcum_geldi(self, veri: dict[str, Any]) -> None:
         """Seri port iş parçacığından çağrılır — asyncio'ya güvenli aktarım."""
-        self._kuyruga_at({"tip": "olcum", "ts": time.time(), "veri": veri})
+        self._kuyruga_at({"tip": "olcum", "ts": time.time(), "veri": self._konum_ekle(veri)})
 
     def _kare_geldi(self, b64: str, ts: float) -> None:
         """Kamera iş parçacığından çağrılır."""
-        self._kuyruga_at({"tip": "kare", "ts": ts, "veri": b64})
+        k = (self._son_durum.get("konum") or {}) if self._son_durum else {}
+        self._kuyruga_at({"tip": "kare", "ts": ts, "veri": b64,
+                          "konum": {"x": k.get("x"), "y": k.get("y"), "z": k.get("z")}})
 
     def _gunluk_gonder(self, metin: str, seviye: str = "bilgi") -> None:
         """PLC sürücüsünden (bekçi, hareket işçisi) gelen bildirimler."""
@@ -369,6 +390,14 @@ class Ajan:
             durum["uc"] = {
                 **self.uclar.durum,
                 "uclar": [t.get("name") for t in self.uclar.ayar.get("tools", [])],
+                # Yuvaların koordinatları: tarla haritasının "uç yuvaları"
+                # katmanı bunları çiziyor. Ad listesi yeterli değil — harita
+                # nerede olduklarını sormak zorunda.
+                "tools_konum": [
+                    {"name": t.get("name"), "x": t.get("x"), "y": t.get("y"), "z": t.get("z")}
+                    for t in self.uclar.ayar.get("tools", [])
+                    if t.get("x") is not None
+                ],
                 "sensor_var": int(self.uclar.ayar.get("presence_reg", 0) or 0) > 0,
                 "travel_z": self.uclar.ayar.get("travel_z"),
                 "slide_axis": self.uclar.ayar.get("slide_axis"),

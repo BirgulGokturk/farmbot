@@ -49,9 +49,12 @@
   --b4: 24px;
 
   /* Tipografi — üç boyut */
-  --yazi-baslik:  15px;
+  --yazi-baslik:  13px;      /* bölüm başlığı — gövdeden KÜÇÜK, normal ağırlık */
   --yazi-govde:   14px;
   --yazi-kucuk:   12px;
+
+  --icerik:       1200px;    /* sayfa içeriğinin azami genişliği */
+  --metin-en:     62ch;      /* açıklama metni ~70 karakter */
 
   --yaricap:      10px;
   --alan-y:       36px;      /* bütün form alanları aynı yükseklikte */
@@ -89,10 +92,7 @@ kbd {
 
 /* ------------------------------------------------------------- üst çubuk */
 header {
-  display: flex;
-  align-items: center;
-  gap: var(--b3);
-  padding: var(--b2) var(--b3);
+  padding: var(--b2) 0;
   background: var(--yuzey);
   border-bottom: 1px solid var(--cizgi);
   position: sticky;
@@ -127,9 +127,6 @@ header {
 
 /* --------------------------------------------------------------- sekmeler */
 nav.sekmeler {
-  display: flex;
-  gap: var(--b1);
-  padding: 0 var(--b3);
   background: var(--yuzey);
   border-bottom: 1px solid var(--cizgi);
   position: sticky;
@@ -139,6 +136,8 @@ nav.sekmeler {
   scrollbar-width: none;
 }
 nav.sekmeler::-webkit-scrollbar { display: none; }
+.sekme-ic { gap: 0; overflow-x: auto; scrollbar-width: none; }
+.sekme-ic::-webkit-scrollbar { display: none; }
 nav.sekmeler button {
   background: none;
   border: none;
@@ -152,11 +151,23 @@ nav.sekmeler button {
   align-items: center;
   gap: var(--b2);
 }
-nav.sekmeler button i { font-style: normal; font-size: var(--yazi-govde); }
 nav.sekmeler button:hover { color: var(--metin-2); }
-nav.sekmeler button.etkin { color: var(--metin); border-bottom-color: var(--vurgu); }
+/* Etkin sekme yalnızca alt çizgiyle belli oluyor; metin vurgu rengine
+   boyanmıyor — vurgu rengi eylem düğmelerine ayrıldı. */
+nav.sekmeler button.etkin { color: var(--metin); border-bottom-color: var(--metin); }
 
-main { padding: var(--b3); padding-bottom: 56px; max-width: 1400px; margin: 0 auto; }
+/* İçerik genişliği tek yerde. Üst çubuk, sekmeler, acil şeridi ve içerik
+   aynı ölçüyü kullanıyor ki kenarlar hizalı olsun. */
+main { padding: var(--b3); padding-bottom: 56px; max-width: var(--icerik); margin: 0 auto; }
+.ust-ic, .sekme-ic, .bant-ic, .serit-ic {
+  max-width: var(--icerik);
+  margin: 0 auto;
+  padding: 0 var(--b3);
+  display: flex;
+  align-items: center;
+  gap: var(--b3);
+  width: 100%;
+}
 .sayfa { display: none; }
 .sayfa.etkin { display: block; }
 
@@ -165,7 +176,9 @@ main { padding: var(--b3); padding-bottom: 56px; max-width: 1400px; margin: 0 au
 .izgara:last-child { margin-bottom: 0; }
 .olcum-izgara { grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); }
 .grafik-izgara { grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); }
-.iki-sutun { grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); align-items: start; }
+/* 1200 px'te iki sütun. 340 px'te üç sütun oluyordu ve içerik eziliyordu:
+   bölge formu taşıyor, kalibrasyon tablosu kırpılıyordu. */
+.iki-sutun { grid-template-columns: repeat(auto-fit, minmax(440px, 1fr)); align-items: start; }
 
 .kart {
   background: var(--yuzey);
@@ -181,8 +194,11 @@ main { padding: var(--b3); padding-bottom: 56px; max-width: 1400px; margin: 0 au
 .kart h3 {
   margin: 0 0 var(--b2);
   font-size: var(--yazi-baslik);
-  font-weight: 600;
-  color: var(--metin);
+  font-weight: 500;
+  color: var(--metin-2);
+  display: flex;
+  align-items: center;
+  gap: var(--b2);
 }
 .kart h3.ara-baslik {
   margin-top: var(--b4);
@@ -311,18 +327,15 @@ input:disabled, select:disabled { opacity: .45; }
 
 /* -------------------------------------------------------------- durum kutuları */
 #acil-bant {
-  display: flex;
-  align-items: center;
-  gap: var(--b3);
-  flex-wrap: wrap;
   background: #3a1c1c;
   border-bottom: 1px solid #7a3030;
   color: #ffd7d7;
-  padding: var(--b2) var(--b3);
+  padding: var(--b2) 0;
   position: sticky;
-  top: 91px;
+  top: 89px;
   z-index: 18;
 }
+#acil-bant .bant-ic { justify-content: space-between; flex-wrap: wrap; gap: var(--b2); }
 #acil-bant b { color: #ffb4b4; }
 
 .uyari-kutu {
@@ -443,14 +456,16 @@ button.dugme.basili { background: var(--vurgu); border-color: var(--vurgu); colo
   background: var(--yuzey-2);
 }
 .bolge > * + * { margin-top: var(--b2); }
-.bolge .ust { display: flex; align-items: center; gap: var(--b2); }
-.bolge .ust input { flex: 1; min-width: 100px; }
-.bolge .ust .b-sil { width: var(--alan-y); padding: 0; flex: none; }
-.bolge .ust .onay input { flex: none; }
+.bolge .ust { display: flex; align-items: center; gap: var(--b2); flex-wrap: wrap; }
+.bolge .ust > input { flex: 1 1 140px; min-width: 100px; }
+.bolge .ust .b-sil { width: var(--alan-y); padding: 0; flex: none; margin-left: auto; }
+.bolge .ust .onay { flex: none; }
+.bolge .ust .onay input { flex: none; width: auto; }
 .bolge .rozet-uyari { white-space: normal; }
 
 /* -------------------------------------------------------------- uç değiştirme */
-.uc-durum { display: flex; align-items: center; gap: var(--b2); font-size: var(--yazi-govde); color: var(--metin-2); }
+.uc-durum { display: flex; align-items: center; gap: var(--b2); flex-wrap: wrap;
+             font-size: var(--yazi-govde); color: var(--metin-2); }
 .uc-durum b { color: var(--metin); font-size: var(--yazi-baslik); }
 .uc-ayar { border: 1px solid var(--cizgi); border-radius: var(--b2); padding: var(--b2) var(--b3); }
 .uc-ayar summary { cursor: pointer; font-size: var(--yazi-kucuk); color: var(--metin-2); }
@@ -524,7 +539,8 @@ table.veri td { color: var(--metin-2); }
   border-top: 1px solid var(--cizgi);
   z-index: 15;
 }
-#gunluk-serit > button {
+#gunluk-serit .serit-ic { display: block; }
+#gunluk-serit button {
   width: 100%;
   background: none;
   border: none;
@@ -537,15 +553,15 @@ table.veri td { color: var(--metin-2); }
   align-items: center;
   gap: var(--b2);
 }
-#gunluk-serit > button .ok { transition: transform .12s; }
-#gunluk-serit.kapali > button .ok { transform: rotate(-90deg); }
+#gunluk-serit button .ok { transition: transform .12s; }
+#gunluk-serit.kapali button .ok { transform: rotate(-90deg); }
 #gunluk-serit.kapali #gunluk { display: none; }
 /* Şerit yapışkan: kapalıyken 33 px, açıkken içeriğin üstüne biniyor.
    Son satırın şeridin altında kalmaması için main'e pay bırakıyoruz. */
 #gunluk {
   max-height: 120px;
   overflow-y: auto;
-  padding: 0 var(--b3) var(--b2);
+  padding: 0 0 var(--b2);
   font-size: var(--yazi-kucuk);
   font-family: ui-monospace, Menlo, Consolas, monospace;
 }
@@ -559,6 +575,53 @@ table.veri td { color: var(--metin-2); }
 #giris.acik { display: grid; }
 #giris .kart { width: min(360px, 100%); }
 
+/* ---------------------------------------------------------- tarla haritası */
+/* Katman listesi sahnenin solunda: hangi katmanların açık olduğu, sahneye
+   bakarken göz ucuyla görülebilmeli. Dar ekranda üste alınıyor. */
+.tarla-duzen { display: grid; grid-template-columns: 180px 1fr; gap: var(--b3); }
+.tarla-gorunum { position: relative; min-width: 0; }
+
+.katman-kutu {
+  border: 1px solid var(--cizgi);
+  border-radius: var(--b2);
+  background: var(--yuzey-2);
+  padding: var(--b2);
+  align-self: start;
+}
+.katman-baslik {
+  font-size: var(--yazi-kucuk);
+  color: var(--metin-3);
+  padding: var(--b1) var(--b2) var(--b2);
+}
+.katman-satir {
+  display: flex;
+  align-items: center;
+  gap: var(--b2);
+  padding: var(--b1) var(--b2);
+  border-radius: var(--b1);
+  font-size: var(--yazi-kucuk);
+  color: var(--metin-2);
+  cursor: pointer;
+}
+.katman-satir:hover { background: rgba(255, 255, 255, .04); color: var(--metin); }
+.katman-satir input { accent-color: var(--vurgu); flex: none; }
+.katman-dip {
+  border-top: 1px solid var(--cizgi);
+  margin-top: var(--b2);
+  padding: var(--b2) var(--b2) var(--b1);
+  display: flex;
+  flex-direction: column;
+  gap: var(--b1);
+}
+.kare-onizleme { width: 100%; border-radius: var(--b2); margin-top: var(--b2); display: block; }
+
+@media (max-width: 720px) {
+  .tarla-duzen { grid-template-columns: 1fr; }
+  .katman-kutu { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); }
+  .katman-baslik { grid-column: 1 / -1; }
+  .katman-dip { grid-column: 1 / -1; }
+}
+
 /* ------------------------------------------------------- tarla tasarımcısı */
 .tarla-arac .alan { min-width: 200px; }
 .tarla-sahne {
@@ -569,6 +632,10 @@ table.veri td { color: var(--metin-2); }
   background: #0e1210;
 }
 .tarla-sahne canvas { display: block; width: 100%; height: min(56vh, 520px); touch-action: none; }
+.tarla-sahne.gizli { display: none; }
+/* 2B tuval yatağın oranına göre daraltılıyor (bkz. boyutla2b); ortalanıyor. */
+#tarla-sahne2b { display: grid; place-items: center; }
+#tarla-tuval2b { height: min(64vh, 600px); }
 
 .tarla-ipucu {
   position: absolute;
@@ -690,4 +757,59 @@ table.veri td { color: var(--metin-2); }
   input[type="text"], input[type="number"], input[type="password"], select { height: 44px; }
   .satir-8 > input[type="text"] { width: 100%; }
   .tarla-sahne canvas { height: 52vh; }
+}
+
+
+/* ======================================================================
+   "?" AÇIKLAMA DÜĞMELERİ
+   Uzun açıklama paragrafları ekranda sürekli durduğunda okunmuyor, sadece
+   yer kaplıyordu. Metin artık başlığın yanındaki "?" ile açılıyor: ilk
+   kullanımda okunur, sonra görünmez. Ekranda kalan tek metin alan
+   etiketleri ve gerçek uyarılar.
+   ====================================================================== */
+.yardim {
+  width: 18px;
+  height: 18px;
+  flex: none;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid var(--cizgi-2);
+  background: none;
+  color: var(--metin-3);
+  font: 11px/1 inherit;
+  cursor: pointer;
+  display: inline-grid;
+  place-items: center;
+}
+.yardim:hover { color: var(--metin); border-color: var(--metin-3); }
+.yardim[aria-expanded="true"] { background: var(--yuzey-2); color: var(--metin); border-color: var(--metin-3); }
+
+.yardim-metin {
+  max-width: var(--metin-en);
+  padding: var(--b2) var(--b3);
+  border-left: 2px solid var(--cizgi-2);
+  background: var(--yuzey-2);
+  border-radius: 0 var(--b2) var(--b2) 0;
+  font-size: var(--yazi-kucuk);
+  color: var(--metin-2);
+  line-height: 1.6;
+}
+
+/* Ekranda kalan az sayıdaki açıklama da satır uzunluğu sınırına uyuyor:
+   1200 px'lik bir satırı gözle takip etmek zor. */
+p.alt-not, .uyari-kutu, .onizleme { max-width: var(--metin-en); }
+.onizleme .yol { max-width: none; }
+
+/* Etiket + alan + düğme aynı satırda: düğmeler etiket yüksekliği kadar
+   aşağı hizalanıyor ki alt kenarlar aynı çizgide olsun. */
+.satir-8.alt-hizali { align-items: flex-end; }
+
+/* Devre dışı düğme SOLUK olmalı, kırmızımsı değil: "kapalı" ile "tehlikeli"
+   aynı görünürse ikisi de anlamını yitiriyor. */
+button.dugme:disabled,
+button.dugme.tehlike:disabled {
+  background: var(--yuzey-2);
+  border-color: var(--cizgi);
+  color: var(--metin-3);
+  opacity: .5;
 }

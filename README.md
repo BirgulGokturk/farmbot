@@ -411,6 +411,80 @@ durdurma keser). Nokta adları sunucuda koordinata çevrilip ajana öyle gider;
 durur ve sebep panelde kalır. Acil durdurma diziyi keser, mandal
 temizlenmeden yeniden başlamaz. Sonsuz tekrar yok (en fazla 1000 tur).
 
+### Tarla haritası — katman mimarisi
+
+Harita **katmanlardan** kuruluyor; her katman `sunucu/static/katmanlar/`
+altında tek bir dosya ve tek tek açılıp kapanabiliyor. Tercih tarayıcıda
+(`localStorage`) saklanıyor.
+
+| Katman | Ne çiziyor | Varsayılan |
+|---|---|---|
+| Yatak ve çerçeve | toprak, karıklar, direkler, raylar | açık |
+| Yasak bölgeler | ajandaki bölgeler, koşulu hatalıysa kırmızı | açık |
+| Uç yuvaları | uçların yerleri + uç değiştirme alanı | açık |
+| Yayılma çapı | tür yayılımı ve çakışma hesabı | açık |
+| Bitkiler | gövde + yapraklar, yaşa göre büyüyen | açık |
+| Kayıtlı noktalar | bitki olmayan noktalar (ızgara, referans) | açık |
+| Sensör okumaları | toprak nemi, ölçüldüğü noktada renk noktası | kapalı |
+| Kamera kareleri | karenin çekildiği koordinatta işaret; tıklayınca kare | kapalı |
+| Robot izi | son 240 konumun soluklaşan çizgisi | kapalı |
+| Robot | portal, kızak, Z kolonu, uç kafası — canlı konumda | açık |
+
+**Kapalı katman hiç çizilmiyor.** Grubu sahneden çıkarılıyor, `guncelle` ve
+`ciz2b` çağrılmıyor, nesneleri bellekten atılıyor. Pi'nin GPU'su için bu
+gerçek bir fark: görünmeyen 300 bitkiyi her karede dönüştürmenin bedeli var.
+
+**Yeni katman eklemek tek dosya eklemek.** `statik/katmanlar/` içine bir `.js`
+koymanız yeterli — `GET /api/katmanlar` klasörü okuyor, panel dönen listeyi
+sırayla yüklüyor. Dosya adının başındaki sayı çizim sırasını veriyor
+(`10-…` altta, `90-…` üstte). HTML'e ya da bir listeye ad yazmak gerekmiyor;
+yazsaydık her katman iki yerde kayıtlı olur, biri unutulduğunda katman
+sessizce görünmezdi.
+
+Katmanlar **birbirini tanımıyor**. Her biri `Tarla.katman({...})` çağırıyor ve
+kendisine verilen bağlamdan (`o.veri`, `o.makine`, `o.sinir`, dönüşümler)
+okuyor. Sözleşme `tarla.js`in başında yazılı.
+
+### İki görünüm: 3B sahne ve 2B harita
+
+Aynı veriyi kullanan iki görünüm var, ayrı bir depo yok:
+
+* **3B sahne** — izlemek için. Makinenin nerede olduğunu, bitkilerin nasıl
+  durduğunu görmek.
+* **2B harita** — hassas iş için. Milimetre cetvelli, tıklanan yerin
+  koordinatı listenin altında yazıyor, sürükle-bırak piksel piksel değil
+  milimetre milimetre çalışıyor. 3B'de bir bitkiyi 5 mm oynatmak zor,
+  planda kolay.
+
+Birinde taşınan bitki diğerinde de taşınmış oluyor — çünkü ikisi de aynı
+nokta deposunu okuyor.
+
+### Makine ölçüleri tek dosyada
+
+Ray yüksekliği, profil kalınlıkları, kızak ve uç kafası ölçüleri
+`sunucu/static/makine.js` içinde **veri olarak** duruyor (FarmBot'un
+`bot_versions.ts` dosyası gibi). Çizim kodunda tek bir sabit sayı yok.
+Başka bir makine kurulursa dosyaya bir kayıt eklenip `secili` satırı
+değiştiriliyor.
+
+Yumuşak sınırlar (X/Y/Z aralığı) bu dosyada **değil**: onlar ajandan geliyor,
+çünkü hareketi reddedecek olan ajan ve aynı sayının iki yerde durması en
+tehlikeli hata türü.
+
+### Konum bilgisi nereden geliyor
+
+Üç yeni katman "nerede" sorusunu soruyor ve bu bilgi daha önce hiçbir yerde
+tutulmuyordu:
+
+* Ajan her **ölçüme** o anki eksen konumunu ekliyor; `depo.py`de
+  `konum_x`/`konum_y` sütunları var (mevcut veritabanı `ALTER TABLE` ile
+  büyütülüyor, geçmiş silinmiyor).
+* Ajan her **kareye** konumu iliştiriyor; sunucu konumu dosya adında
+  saklıyor (`<ts>_<x>_<y>.jpg`) — ayrı bir dizin dosyası tutsaydık budama
+  sırasında ikisi birbirinden ayrı düşebilirdi.
+* **Robot izi** sunucuya hiç yazılmıyor: panel durum akışını dinlerken
+  biriktiriyor, yenilenince sıfırlanıyor. Amacı "az önce nereden geçti".
+
 ### Tarla tasarımcısı (3B)
 Yatağın kuş bakışı ve serbest kamera görünümü. Tür seçilip **Bitki ekle** ile
 yatağa tıklanınca bitki oraya konuyor; sürüklenerek taşınıyor, üstüne

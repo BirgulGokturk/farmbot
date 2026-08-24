@@ -133,7 +133,10 @@ aşımı.
 | `DELETE /api/programlar?ad=…` | Siler |
 | `POST /api/programlar/calistir` | `{ad}` — nokta adlarını çözer, ajana yollar |
 | `GET /api/kare/son` | Son kamera karesi (JPEG) |
-| `GET /api/kare/liste` | Saklanan karelerin damgaları |
+| `GET /api/kare/liste` | Saklanan karelerin damgaları ve **çekildikleri konum** (`x`, `y`; eski karelerde `null`) |
+| `GET /api/kare/<damga>` | Tek kare, JPEG |
+| `GET /api/katmanlar` | Tarla haritasının katman dosyaları (`statik/katmanlar/*.js`), ada göre sıralı. Panel bu listeyi sırayla yüklüyor |
+| `GET /api/olcum/konumlu?dakika=1440&azami=400` | Konumu bilinen toprak nemi okumaları — `{ts,x,y,toprak_nem}`. 10 mm'lik hücrelerde en yeni okuma |
 | `GET /api/turler` | Bitki türü kataloğu (`docs/bitki_turleri.json`, 37 tür). Dosya değişmedikçe önbellekten döner; `TUR_YOLU` ile başka bir dosya gösterilebilir |
 
 ### `WS /ws/panel?jeton=PAROLA`

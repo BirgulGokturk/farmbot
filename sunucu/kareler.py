@@ -41,7 +41,39 @@ def _dosyalar() -> list[str]:
     return sorted(adlar)
 
 
-def ekle(b64: str, ts: float) -> bool:
+def _ad_coz(ad: str) -> dict:
+    """Dosya adından damga ve konumu çıkarır.
+
+    Ad biçimi: `<ts>.jpg` ya da `<ts>_<x>_<y>.jpg`. Konumu ayrı bir dizin
+    dosyasında tutmak yerine ADIN İÇİNE koyduk: budama sırasında dizinle
+    kare listesinin birbirinden ayrı düşme ihtimali kalmıyor, dosyayı silmek
+    konumu da siliyor. Eski kareler (konumsuz) aynen okunmaya devam ediyor.
+    """
+    govde = ad[:-4]
+    parca = govde.split("_")
+    kayit = {"damga": parca[0], "ts": 0.0, "x": None, "y": None}
+    try:
+        kayit["ts"] = float(parca[0])
+    except ValueError:
+        return kayit
+    if len(parca) >= 3:
+        try:
+            kayit["x"] = float(parca[1])
+            kayit["y"] = float(parca[2])
+        except ValueError:
+            pass
+    return kayit
+
+
+def _dosya_bul(damga: str) -> str | None:
+    """Damgaya karşılık gelen dosyayı bulur (adın sonunda konum olabilir)."""
+    for ad in _dosyalar():
+        if ad[:-4].split("_")[0] == damga:
+            return ad
+    return None
+
+
+def ekle(b64: str, ts: float, konum: dict | None = None) -> bool:
     if not b64:
         return False
     try:
@@ -53,6 +85,12 @@ def ekle(b64: str, ts: float) -> bool:
 
     klasor = _klasor()
     ad = f"{ts:.0f}.jpg"
+    k = konum or {}
+    if k.get("x") is not None and k.get("y") is not None:
+        # Konum tam sayı mm olarak yazılıyor: dosya adında ondalık nokta,
+        # uzantı ayırıcısıyla karışıyor. Bir fotoğrafın çekildiği yer için
+        # milimetre altı hassasiyetin zaten anlamı yok.
+        ad = f"{ts:.0f}_{round(float(k['x']))}_{round(float(k['y']))}.jpg"
     with _KILIT:
         gecici = os.path.join(klasor, "." + ad + ".tmp")
         with open(gecici, "wb") as dosya:
@@ -87,7 +125,10 @@ def getir(damga: str) -> bytes | None:
     damga = str(damga).replace(".jpg", "")
     if not damga.isdigit():
         return None
-    yol = os.path.join(_klasor(), damga + ".jpg")
+    ad = _dosya_bul(damga)
+    if not ad:
+        return None
+    yol = os.path.join(_klasor(), ad)
     try:
         with open(yol, "rb") as dosya:
             return dosya.read()
@@ -103,5 +144,8 @@ def liste() -> list[dict]:
             boyut = os.path.getsize(os.path.join(klasor, ad))
         except OSError:
             continue
-        cikti.append({"damga": ad[:-4], "ts": float(ad[:-4]), "bayt": boyut})
+        kayit = _ad_coz(ad)
+        if not kayit["ts"]:
+            continue
+        cikti.append({**kayit, "bayt": boyut})
     return cikti

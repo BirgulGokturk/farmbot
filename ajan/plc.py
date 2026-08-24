@@ -378,6 +378,17 @@ class Gantry:
                     e: {"min": self.kalib[i].get("min"), "max": self.kalib[i].get("max")}
                     for e, i in EKSEN_INDEKS.items()
                 },
+                # Kalibrasyon panelde salt-okunur gösteriliyor. Sahada "panelde
+                # şu yazıyor ama makine başka gidiyor" tartışmasını bitiren şey,
+                # ajanın hangi katsayılarla çalıştığını görebilmek.
+                "kalibrasyon": {
+                    e: {
+                        "cpm": self.kalib[i].get("cpm"),
+                        "dir": self.kalib[i].get("dir"),
+                        "home": self.kalib[i].get("home"),
+                    }
+                    for e, i in EKSEN_INDEKS.items()
+                },
                 "hiz": self.hiz,
                 "bolgeler": (self.bolgeler.liste if self.bolgeler else []),
                 "esnetme_acik": bool(self.bolgeler and self.bolgeler.esnetme_acik),
