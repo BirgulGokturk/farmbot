@@ -29,7 +29,7 @@
   const P = 0.02;
   /** Tezgâh ayak yüksekliği (m). Viewer3D 0.62 kullanıyordu; 425x600 mm
  * yatakta o kadar uzun ayak makineyi sehpa gibi gösteriyordu. */
-  const AYAK = 0.3;
+  const AYAK = 0.16;
 
   const ALUMINYUM = { color: "#c9ced6", metalness: 0.85, roughness: 0.32 };
   const KOYU = { color: "#2a2f38", metalness: 0.5, roughness: 0.55 };
