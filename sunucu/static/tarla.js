@@ -45,7 +45,9 @@
   /* --------------------------------------------------------------- durum */
   const T = {
     hazir: false,
-    gorunur: false,
+    // Harita sekmeden bağımsız, açılışta da görünür. Sekme geçişinde
+    // gizlenmiyor; yalnız dar ekranda küçülüyor.
+    gorunur: true,
     gorunum: "3b",               // "3b" | "2b"
     katmanlar: [],               // {tanim, acik, grup}
     secili: null,                // {katman, kayit}

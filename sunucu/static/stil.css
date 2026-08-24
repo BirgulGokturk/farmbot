@@ -53,7 +53,10 @@
   --yazi-govde:   14px;
   --yazi-kucuk:   12px;
 
-  --icerik:       1200px;    /* sayfa içeriğinin azami genişliği */
+  --icerik:       1200px;    /* üst çubuk / sekme şeridi genişliği */
+  --kabuk:        1560px;    /* panel + kalıcı harita birlikte */
+  --panel-en:     620px;     /* sol panelin azami genişliği */
+  --ust-yuk:      94px;      /* yapışkan üst çubuk + sekme şeridi */
   --metin-en:     62ch;      /* açıklama metni ~70 karakter */
 
   --yaricap:      10px;
@@ -158,9 +161,57 @@ nav.sekmeler button.etkin { color: var(--metin); border-bottom-color: var(--meti
 
 /* İçerik genişliği tek yerde. Üst çubuk, sekmeler, acil şeridi ve içerik
    aynı ölçüyü kullanıyor ki kenarlar hizalı olsun. */
-main { padding: var(--b3); padding-bottom: 56px; max-width: var(--icerik); margin: 0 auto; }
+/* KABUK — solda panel, sağda kalıcı harita.
+ *
+ * Harita hiçbir sekme geçişinde kaybolmuyor; yalnız soldaki panelin içeriği
+ * değişiyor. Harita sütunu yapışkan: panel uzun olduğunda aşağı kaydırırken
+ * de sahne ekranda kalıyor.
+ *
+ * Panel 620 px'te tutuluyor — okunabilirlik turunda konulan "metin satırı 70
+ * karakteri geçmesin" kuralı bu genişlikte kendiliğinden sağlanıyor. */
+main.kabuk {
+  padding: var(--b3);
+  padding-bottom: 56px;
+  max-width: var(--kabuk);
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: minmax(0, var(--panel-en)) minmax(0, 1fr);
+  gap: var(--b3);
+  align-items: start;
+}
+.panel { min-width: 0; }
+
+.harita {
+  min-width: 0;
+  position: sticky;
+  top: calc(var(--ust-yuk) + var(--b3));
+  display: flex;
+  flex-direction: column;
+  gap: var(--b2);
+  background: var(--yuzey);
+  border: 1px solid var(--cizgi);
+  border-radius: var(--yaricap);
+  padding: var(--b3);
+}
+.harita-ust {
+  display: flex;
+  align-items: center;
+  gap: var(--b2);
+  flex-wrap: wrap;
+}
+.harita-ad { font-size: var(--yazi-kucuk); color: var(--metin-3); white-space: nowrap; }
+/* Yalnız dar ekranda işe yarıyor. Seçici .dugme kadar ağır olmalı, yoksa
+   düğmenin kendi display kuralı bunu yeniyor. */
+.harita .harita-buyut { display: none; }
+
+/* Panelin içindeki kartlar dar sütunda tek sıraya düşüyor: 440 px'lik iki
+   sütun kuralı 620 px'lik panelde içeriği eziyordu. */
+.panel .iki-sutun,
+.panel .grafik-izgara { grid-template-columns: minmax(0, 1fr); }
+.panel .olcum-izgara { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); }
+
 .ust-ic, .sekme-ic, .bant-ic, .serit-ic {
-  max-width: var(--icerik);
+  max-width: var(--kabuk);
   margin: 0 auto;
   padding: 0 var(--b3);
   display: flex;
@@ -576,23 +627,44 @@ table.veri td { color: var(--metin-2); }
 #giris .kart { width: min(360px, 100%); }
 
 /* ---------------------------------------------------------- tarla haritası */
-/* Katman listesi sahnenin solunda: hangi katmanların açık olduğu, sahneye
-   bakarken göz ucuyla görülebilmeli. Dar ekranda üste alınıyor. */
-.tarla-duzen { display: grid; grid-template-columns: 180px 1fr; gap: var(--b3); }
 .tarla-gorunum { position: relative; min-width: 0; }
 
+/* KATMAN RAFI — sahnenin sol üstünde duruyor: hangi katmanların açık olduğu,
+   sahneye bakarken göz ucuyla görülebilmeli. Sahnenin üstünde yüzdüğü için
+   haritadan yer çalmıyor; başlığa basınca katlanıyor. */
 .katman-kutu {
+  position: absolute;
+  left: var(--b2);
+  top: var(--b2);
+  z-index: 3;
+  width: 168px;
+  max-height: calc(100% - var(--b3));
+  overflow-y: auto;
   border: 1px solid var(--cizgi);
   border-radius: var(--b2);
-  background: var(--yuzey-2);
+  background: rgba(26, 26, 25, .92);
   padding: var(--b2);
-  align-self: start;
 }
+.katman-kutu.katli #katman-liste,
+.katman-kutu.katli .katman-dip { display: none; }
+.katman-kutu.katli { width: auto; }
+.katman-kutu.katli .katman-baslik .ok { transform: rotate(-90deg); }
+
 .katman-baslik {
+  display: flex;
+  align-items: center;
+  gap: var(--b1);
+  width: 100%;
+  background: none;
+  border: none;
+  text-align: left;
+  cursor: pointer;
   font-size: var(--yazi-kucuk);
   color: var(--metin-3);
   padding: var(--b1) var(--b2) var(--b2);
 }
+.katman-baslik:hover { color: var(--metin-2); }
+.katman-baslik .ok { display: inline-block; transition: transform .12s; }
 .katman-satir {
   display: flex;
   align-items: center;
@@ -615,11 +687,31 @@ table.veri td { color: var(--metin-2); }
 }
 .kare-onizleme { width: 100%; border-radius: var(--b2); margin-top: var(--b2); display: block; }
 
+/* Dar ekran: iki sütun sığmıyor. Harita tek sütunun ÜSTÜNE alınıyor ve
+   kısalıyor — yine hiçbir sekmede kaybolmuyor, yalnız küçülüyor. "Büyüt"
+   düğmesi tam boya çıkarıyor. */
+@media (max-width: 1100px) {
+  main.kabuk { grid-template-columns: minmax(0, 1fr); }
+  .harita { position: static; order: -1; }
+  .harita .harita-buyut { display: inline-flex; }
+  .tarla-sahne canvas { height: 34vh; }
+  #tarla-tuval2b { height: 34vh; }
+  .harita.buyuk .tarla-sahne canvas { height: min(70vh, 620px); }
+  .harita.buyuk #tarla-tuval2b { height: min(70vh, 620px); }
+  /* min(...) şart: çıplak minmax(400px,1fr) 390 px telefonda sütunu 400'de
+     tutup sayfayı yana taşırıyor. */
+  .panel .iki-sutun { grid-template-columns: repeat(auto-fit, minmax(min(400px, 100%), 1fr)); }
+  .panel .grafik-izgara { grid-template-columns: repeat(auto-fit, minmax(min(340px, 100%), 1fr)); }
+}
+
 @media (max-width: 720px) {
-  .tarla-duzen { grid-template-columns: 1fr; }
-  .katman-kutu { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); }
-  .katman-baslik { grid-column: 1 / -1; }
-  .katman-dip { grid-column: 1 / -1; }
+  /* Harita araçları alt alta dizilince ekranın yarısını yiyordu; tek satırda
+     kalıp yana kayıyorlar. */
+  .harita-ust { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+  .harita-ust::-webkit-scrollbar { display: none; }
+  .harita-ust > * { flex: none; }
+  .harita-ust .esnek { display: none; }
+  .katman-kutu { width: 150px; }
 }
 
 /* ------------------------------------------------------- tarla tasarımcısı */
@@ -756,7 +848,12 @@ table.veri td { color: var(--metin-2); }
   .satir button.dugme, .adim .dugme, .tarla-kart-dugme .dugme { height: 36px; }
   input[type="text"], input[type="number"], input[type="password"], select { height: 44px; }
   .satir-8 > input[type="text"] { width: 100%; }
-  .tarla-sahne canvas { height: 52vh; }
+  /* Harita artık HER sekmenin üstünde duruyor; telefonda 52vh kaplarsa
+     panelden geriye bir şey kalmıyor. Bakmaya yetecek kadarı görünüyor,
+     gerisi "Büyüt" düğmesinde. */
+  .tarla-sahne canvas, #tarla-tuval2b { height: 30vh; }
+  .harita.buyuk .tarla-sahne canvas,
+  .harita.buyuk #tarla-tuval2b { height: min(70vh, 620px); }
 }
 
 

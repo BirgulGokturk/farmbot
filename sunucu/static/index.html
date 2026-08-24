@@ -60,7 +60,14 @@
     </div>
   </div>
 
-  <main>
+  <!-- KABUK — solda sekmeye göre değişen panel, sağda HİÇ KAYBOLMAYAN harita.
+       Eskiden her sekme bütün ekranı değiştiriyordu: Tarla'ya geçince
+       kontroller, Sür'e geçince tarla kayboluyordu. Artık sahne sabit; yalnız
+       yanındaki panelin içeriği değişiyor. Tuval hiçbir zaman DOM'dan
+       çıkarılmıyor — WebGL bağlamı ve kamera açısı olduğu gibi kalıyor. -->
+  <main class="kabuk">
+
+    <div class="panel">
 
     <!-- ================================ İZLE ================================ -->
     <section class="sayfa etkin" id="sayfa-izle">
@@ -271,7 +278,7 @@
     <!-- ================================ TARLA =============================== -->
     <section class="sayfa" id="sayfa-tarla">
       <div class="kart">
-        <h3>Tarla tasarımcısı <span id="tarla-olcu" class="birim-not"></span>
+        <h3>Bitkiler
           <button class="yardim" type="button" aria-expanded="false" aria-label="Açıklama">?</button></h3>
         <p class="yardim-metin gizli">
           Tür seçip <b>Bitki ekle</b> ile yatağa tıklayın. Bitkiyi sürükleyerek
@@ -293,43 +300,12 @@
             <select id="tur-secim"></select>
           </div>
           <button class="dugme" id="d-ekleme-kipi">Bitki ekle</button>
-          <span class="esnek"></span>
-          <button class="dugme secili" id="d-gorunum-3b">3B sahne</button>
-          <button class="dugme" id="d-gorunum-2b">2B harita</button>
-          <span id="tarla-3b-arac" class="satir-8">
-            <button class="dugme secili" id="d-gorus-serbest">Serbest</button>
-            <button class="dugme" id="d-gorus-ust">Üstten</button>
-            <label class="onay"><input type="checkbox" id="tarla-simge" checked> Simgeler</label>
-          </span>
         </div>
 
-        <div class="tarla-duzen">
-          <!-- KATMAN LİSTESİ — her katman bağımsız, tercih localStorage'da.
-               Kapalı katman hiç çizilmiyor; liste `/api/katmanlar`dan yüklenen
-               dosyaların kendi kaydından üretiliyor. -->
-          <aside class="katman-kutu">
-            <div class="katman-baslik">Katmanlar</div>
-            <div id="katman-liste"></div>
-            <div class="katman-dip">
-              <span id="tarla-sayi" class="alt-not"></span>
-              <span id="tarla-konum" class="alt-not sayi"></span>
-            </div>
-          </aside>
-
-          <div class="tarla-gorunum">
-            <div class="tarla-sahne" id="tarla-sahne3b">
-              <canvas id="tarla-tuval"></canvas>
-              <div id="tarla-ipucu" class="tarla-ipucu"></div>
-            </div>
-            <div class="tarla-sahne gizli" id="tarla-sahne2b">
-              <canvas id="tarla-tuval2b"></canvas>
-            </div>
-            <div id="tarla-kart" class="tarla-kart gizli"></div>
-          </div>
-        </div>
-
+        <!-- Sahne ve katman listesi bu kartta DEĞİL: sağdaki kalıcı harita
+             sütununda duruyorlar, çünkü sekme değişince kaybolmamaları
+             gerekiyor. Burada yalnız bitki araçları kalıyor. -->
         <div id="tarla-cakisma" class="onizleme gizli"></div>
-        <div id="tarla-uyari" class="uyari-kutu gizli"></div>
       </div>
 
       <div class="izgara iki-sutun">
@@ -588,6 +564,54 @@
         </div>
       </div>
     </section>
+    </div><!-- /.panel -->
+
+    <!-- ============================ KALICI HARİTA =========================
+         Sekmeden bağımsız. Hiçbir sekme geçişinde gizlenmiyor, DOM'dan
+         çıkarılmıyor ve yeniden kurulmuyor. -->
+    <aside class="harita" id="harita">
+      <div class="harita-ust">
+        <span class="harita-ad">Tarla <span id="tarla-olcu" class="birim-not"></span></span>
+        <span class="esnek"></span>
+        <button class="dugme secili" id="d-gorunum-3b">3B sahne</button>
+        <button class="dugme" id="d-gorunum-2b">2B harita</button>
+        <span id="tarla-3b-arac" class="satir-8">
+          <button class="dugme secili" id="d-gorus-serbest">Serbest</button>
+          <button class="dugme" id="d-gorus-ust">Üstten</button>
+          <label class="onay"><input type="checkbox" id="tarla-simge" checked> Simgeler</label>
+        </span>
+        <button class="dugme harita-buyut" id="d-harita-buyut" aria-expanded="false">Büyüt</button>
+      </div>
+
+      <div class="tarla-gorunum">
+        <div class="tarla-sahne" id="tarla-sahne3b">
+          <canvas id="tarla-tuval"></canvas>
+          <div id="tarla-ipucu" class="tarla-ipucu"></div>
+        </div>
+        <div class="tarla-sahne gizli" id="tarla-sahne2b">
+          <canvas id="tarla-tuval2b"></canvas>
+        </div>
+        <div id="tarla-kart" class="tarla-kart gizli"></div>
+
+        <!-- KATMAN RAFI — her katman bağımsız, tercih localStorage'da.
+             Kapalı katman hiç çizilmiyor; liste `/api/katmanlar`dan yüklenen
+             dosyaların kendi kaydından üretiliyor. Sahnenin üstünde duruyor:
+             hangi katmanların açık olduğu, sahneye bakarken görülebilmeli. -->
+        <aside class="katman-kutu" id="katman-kutu">
+          <button class="katman-baslik" id="d-katman-ac" aria-expanded="true">
+            <span class="ok">▾</span> Katmanlar
+          </button>
+          <div id="katman-liste"></div>
+          <div class="katman-dip">
+            <span id="tarla-sayi" class="alt-not"></span>
+            <span id="tarla-konum" class="alt-not sayi"></span>
+          </div>
+        </aside>
+      </div>
+
+      <div id="tarla-uyari" class="uyari-kutu gizli"></div>
+    </aside>
+
   </main>
 
   <!-- OLAY GÜNLÜĞÜ — sayfa seviyesinde: hangi sekmede olursanız olun komutun

@@ -1069,8 +1069,10 @@ function olaylariBagla() {
       localStorage.setItem("farmbot_sekme", S.sekme);
       // Gizliyken çizilen grafik yanlış ölçüde kalıyor; sekmeye dönünce tazele.
       Object.values(S.grafikler).forEach((g) => g.resize());
-      // 3B sahne gizliyken çizim döngüsü boşa GPU yakıyor; sekmeye bağlıyoruz.
-      if (window.Tarla) window.Tarla.gorunurluk(S.sekme === "tarla");
+      // HARİTA KAYBOLMUYOR: sahne sekmeden bağımsız, hep açık kalıyor.
+      // Sütun genişliği sekmeye göre değişebildiği için yalnız yeniden
+      // ölçülmesini istiyoruz.
+      if (window.Tarla) window.Tarla.gorunurluk(true);
       window.scrollTo({ top: 0 });
     };
   });
@@ -1100,6 +1102,40 @@ function olaylariBagla() {
     localStorage.setItem("farmbot_gunluk", kapali ? "kapali" : "acik");
     $("#d-gunluk-ac").setAttribute("aria-expanded", String(!kapali));
   };
+
+  // Katman rafı katlanabiliyor: dar ekranda sahnenin sol üstünü kapatması
+  // can sıkıcı. Tercih katman tercihleriyle aynı yerde saklanıyor.
+  const rafKutu = $("#katman-kutu");
+  const rafDugme = $("#d-katman-ac");
+  if (rafKutu && rafDugme) {
+    const rafTercih = localStorage.getItem("farmbot_katman_rafi");
+    // Dar ekranda raf, sahnenin yarısını kapatıyor: tercih yoksa katlı açılıyor.
+    if (rafTercih === "katli" || (rafTercih === null && window.innerWidth < 1100)) {
+      rafKutu.classList.add("katli");
+    }
+    // Açılıştaki katlama ekran genişliğinden geliyor; tercih olarak YAZILMIYOR,
+    // yoksa telefonda bir kez açılan panel masaüstünde de katlı kalırdı.
+    const rafYaz = (kaydet) => {
+      const katli = rafKutu.classList.contains("katli");
+      rafDugme.setAttribute("aria-expanded", String(!katli));
+      if (kaydet) localStorage.setItem("farmbot_katman_rafi", katli ? "katli" : "acik");
+    };
+    rafYaz(false);
+    rafDugme.onclick = () => { rafKutu.classList.toggle("katli"); rafYaz(true); };
+  }
+
+  // Dar ekranda harita kısalıyor ama kaybolmuyor; "Büyüt" tam boya çıkarıyor.
+  const haritaKutu = $("#harita");
+  const buyutDugme = $("#d-harita-buyut");
+  if (haritaKutu && buyutDugme) {
+    buyutDugme.onclick = () => {
+      const buyuk = haritaKutu.classList.toggle("buyuk");
+      buyutDugme.textContent = buyuk ? "Küçült" : "Büyüt";
+      buyutDugme.setAttribute("aria-expanded", String(buyuk));
+      // Tuval yüksekliği CSS'ten değişti; çizici yeni ölçüyü öğrenmeli.
+      if (window.Tarla) window.Tarla.gorunurluk(true);
+    };
+  }
 
   // Son kalınan sekmeye dön: sayfa yenilendiğinde İzle'ye düşmek, uzun bir
   // işin ortasında can sıkıcı.
