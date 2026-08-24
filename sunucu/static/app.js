@@ -464,11 +464,23 @@ function adimSatiri(adim, sira) {
   const secenek = (liste, secili) => liste
     .map((d) => `<option value="${kacisli(d)}"${d === secili ? " selected" : ""}>${kacisli(d || "(bırak)")}</option>`).join("");
 
+  // Tanımlı değişkenler adım alanlarında "$ad" olarak seçilebiliyor: dizi
+  // çağrılırken değeri veriliyor. "Şu noktayı sula" yerine "verilen noktayı sula".
+  const degiskenler = (S.degiskenler || []);
+  const degiskenAdlari = (tip) => degiskenler.filter((d) => d.tip === tip).map((d) => "$" + d.ad);
+
   let param = "";
   if (adim.tip === "nokta") {
-    param = `<select class="param p-ad">${secenek(S.noktalar.map((n) => n.ad), adim.ad)}</select>`;
+    param = `<select class="param p-ad">${secenek(
+      [...degiskenAdlari("nokta"), ...S.noktalar.map((n) => n.ad)], adim.ad)}</select>`;
   } else if (adim.tip === "bekle") {
-    param = `<input type="number" class="param p-saniye" min="0" max="600" step="1" value="${adim.saniye ?? 5}"> sn`;
+    const sayiDegisken = degiskenAdlari("sayi");
+    param = sayiDegisken.length
+      ? `<select class="param p-saniye-sec">${secenek(
+          ["(sayı gir)", ...sayiDegisken], String(adim.saniye).startsWith("$") ? adim.saniye : "(sayı gir)")}</select>
+         <input type="number" class="param p-saniye${String(adim.saniye).startsWith("$") ? " gizli" : ""}"
+                min="0" max="600" step="1" value="${String(adim.saniye).startsWith("$") ? 5 : (adim.saniye ?? 5)}"> sn`
+      : `<input type="number" class="param p-saniye" min="0" max="600" step="1" value="${adim.saniye ?? 5}"> sn`;
   } else if (adim.tip === "role") {
     param = `<select class="param p-ad">${secenek(ROLELER, adim.ad)}</select>
              <label style="font-size:12px;color:var(--metin-3)">
@@ -512,12 +524,93 @@ function adimlariCiz(adimlar) {
   });
 }
 
+/* ------------------------------------------------------ dizi değişkenleri
+ *
+ * Bir dizi "verilen noktayı sula" diyebilsin diye. Değişken tanımı dizinin
+ * yanında duruyor; adımlarda "$ad" yazılan yere değeri dizi ÇALIŞTIRILIRKEN
+ * konuyor. Yerleştirme ve eksik değer denetimi sunucuda (programlar.py),
+ * panelde değil.
+ */
+const DEGISKEN_TIPLERI = { nokta: "Nokta", sayi: "Sayı", metin: "Metin" };
+
+function degiskenSatiri(d, sira) {
+  return `<div class="degisken-satir" data-i="${sira}">
+    <span class="degisken-isaret">$</span>
+    <input type="text" class="dv-ad" maxlength="24" placeholder="hedef" value="${kacisli(d.ad || "")}">
+    <select class="dv-tip">${Object.entries(DEGISKEN_TIPLERI)
+      .map(([k, v]) => `<option value="${k}"${k === d.tip ? " selected" : ""}>${v}</option>`).join("")}</select>
+    <input type="text" class="dv-aciklama" maxlength="80" placeholder="açıklama (isteğe bağlı)"
+           value="${kacisli(d.aciklama || "")}">
+    <button class="dugme degisken-sil">✕</button>
+  </div>`;
+}
+
+function degiskenleriCiz(liste) {
+  S.degiskenler = liste;
+  const kutu = $("#prog-degiskenler");
+  kutu.innerHTML = liste.length
+    ? liste.map(degiskenSatiri).join("")
+    : '<p class="alt-not">Değişken yok — dizi hep aynı noktalara gider.</p>';
+  $$("#prog-degiskenler .degisken-sil").forEach((d) => {
+    d.onclick = () => {
+      const l = degiskenleriTopla();
+      l.splice(Number(d.closest(".degisken-satir").dataset.i), 1);
+      degiskenleriCiz(l);
+      adimlariCiz(adimlariTopla());     // adım açılır listeleri değişti
+    };
+  });
+  // Ad ya da tip değişince adım listelerindeki seçenekler de değişmeli.
+  $$("#prog-degiskenler .dv-ad, #prog-degiskenler .dv-tip").forEach((g) => {
+    g.onchange = () => { degiskenleriCiz(degiskenleriTopla()); adimlariCiz(adimlariTopla()); };
+  });
+}
+
+function degiskenleriTopla() {
+  return $$("#prog-degiskenler .degisken-satir").map((el) => ({
+    ad: el.querySelector(".dv-ad").value.trim(),
+    tip: el.querySelector(".dv-tip").value,
+    aciklama: el.querySelector(".dv-aciklama").value.trim(),
+  })).filter((d) => d.ad);
+}
+
+/** Seçili dizi değişken istiyorsa değer formunu çizer, istemiyorsa gizler. */
+function degerFormuCiz() {
+  const kutu = $("#prog-degerler");
+  const p = S.programlar.find((x) => x.ad === $("#prog-secim").value);
+  const liste = (p && p.degiskenler) || [];
+  if (!liste.length) { kutu.classList.add("gizli"); kutu.innerHTML = ""; return; }
+  kutu.classList.remove("gizli");
+  kutu.innerHTML = `<div class="alt-not">Bu dizi çalıştırılırken değer istiyor:</div>` +
+    liste.map((d) => {
+      const alan = d.tip === "nokta"
+        ? `<select class="dg-deger" data-ad="${kacisli(d.ad)}">${
+            S.noktalar.map((n) => `<option>${kacisli(n.ad)}</option>`).join("")}</select>`
+        : `<input type="${d.tip === "sayi" ? "number" : "text"}" class="dg-deger"
+                  data-ad="${kacisli(d.ad)}" placeholder="${kacisli(d.aciklama || d.tip)}">`;
+      return `<div class="deger-satir">
+        <label>$${kacisli(d.ad)}</label>${alan}
+        ${d.aciklama ? `<span class="alt-not">${kacisli(d.aciklama)}</span>` : ""}
+      </div>`;
+    }).join("");
+}
+
+function degerleriTopla() {
+  const d = {};
+  $$("#prog-degerler .dg-deger").forEach((g) => { d[g.dataset.ad] = g.value; });
+  return d;
+}
+
 function adimlariTopla() {
   return $$("#prog-adimlar .adim-satir").map((el) => {
     const tip = el.querySelector(".tip").value;
     const adim = { tip };
     if (tip === "nokta" || tip === "uc") adim.ad = el.querySelector(".p-ad")?.value || "";
-    if (tip === "bekle") adim.saniye = Number(el.querySelector(".p-saniye").value);
+    if (tip === "bekle") {
+      const sec = el.querySelector(".p-saniye-sec");
+      adim.saniye = sec && sec.value.startsWith("$")
+        ? sec.value
+        : Number(el.querySelector(".p-saniye").value);
+    }
     if (tip === "role") {
       adim.ad = el.querySelector(".p-ad").value;
       adim.durum = el.querySelector(".p-durum").checked;
@@ -535,6 +628,9 @@ async function programlariYukle(secilecek) {
     $("#prog-secim").innerHTML = S.programlar
       .map((p) => `<option${p.ad === secili ? " selected" : ""}>${kacisli(p.ad)}</option>`).join("");
     if (secili && S.programlar.some((p) => p.ad === secili)) programYukle(secili);
+    else degerFormuCiz();
+    // Haritadaki "Dizi uygula" listesi de aynı kaynaktan besleniyor.
+    if (window.Tarla && window.Tarla.dizilerDegisti) window.Tarla.dizilerDegisti(S.programlar);
   } catch (hata) {
     gunluk(`✕ Programlar yüklenemedi: ${hata.message}`, "hata");
   }
@@ -545,7 +641,9 @@ function programYukle(ad) {
   if (!p) return;
   $("#prog-ad").value = p.ad;
   $("#prog-tekrar").value = p.tekrar || 1;
+  degiskenleriCiz((p.degiskenler || []).map((d) => ({ ...d })));
   adimlariCiz(p.adimlar.map((a) => ({ ...a })));
+  degerFormuCiz();
 }
 
 function diziGuncelle(d) {
@@ -1183,14 +1281,20 @@ function olaylariBagla() {
   $("#d-nokta-kaydet").onclick = noktaKaydet;
   $("#prog-secim").onchange = () => programYukle($("#prog-secim").value);
   $("#d-prog-yeni").onclick = () => {
-    $("#prog-ad").value = ""; $("#prog-tekrar").value = 1; adimlariCiz([]);
+    $("#prog-ad").value = ""; $("#prog-tekrar").value = 1;
+    degiskenleriCiz([]); adimlariCiz([]); degerFormuCiz();
   };
   $("#d-adim-ekle").onclick = () => adimlariCiz([...adimlariTopla(), { tip: "nokta", ad: S.noktalar[0]?.ad || "" }]);
+  $("#d-degisken-ekle").onclick = () => {
+    degiskenleriCiz([...degiskenleriTopla(), { ad: "hedef", tip: "nokta", aciklama: "" }]);
+    adimlariCiz(adimlariTopla());
+  };
   $("#d-prog-kaydet").onclick = async () => {
     try {
       const p = await apiIste("/api/programlar", {
         method: "POST",
         body: JSON.stringify({ ad: $("#prog-ad").value, tekrar: Number($("#prog-tekrar").value),
+                               degiskenler: degiskenleriTopla(),
                                adimlar: adimlariTopla() }),
       });
       gunluk(`✓ '${p.program.ad}' kaydedildi (${p.program.adimlar.length} adım)`, "ok");
@@ -1200,7 +1304,8 @@ function olaylariBagla() {
   $("#d-prog-calistir").onclick = async () => {
     try {
       const s = await apiIste("/api/programlar/calistir", {
-        method: "POST", body: JSON.stringify({ ad: $("#prog-secim").value }),
+        method: "POST",
+        body: JSON.stringify({ ad: $("#prog-secim").value, degerler: degerleriTopla() }),
       });
       gunluk(s.ok ? `✓ ${s.mesaj}` : `✕ ${s.mesaj}`, s.ok ? "ok" : "hata");
     } catch (hata) { gunluk(`✕ ${hata.message}`, "hata"); }

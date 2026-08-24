@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import tempfile
 import threading
 from typing import Any
@@ -23,9 +24,24 @@ _KILIT = threading.RLock()
 AZAMI_ADIM = 200
 GECERLI_TIPLER = ("nokta", "bekle", "role", "servo", "uc")
 
+# Değişken tipleri. FarmBot'ta Location/Number/Text/Peripheral/Sensor/Sequence
+# var; bizde işi gören üçü: bir noktayı, bir sayıyı ve bir metni dışarıdan
+# vermek. Asıl kazanç "nokta": tek bir "sula" dizisi 40 ayrı bitkiye
+# uygulanabiliyor.
+GECERLI_DEGISKEN_TIPLERI = ("nokta", "sayi", "metin")
+AZAMI_DEGISKEN = 8
+
+# Adım alanında "$ad" yazılırsa oraya değişkenin değeri konuyor.
+_DEGISKEN_DESENI = re.compile(r"^\$([A-Za-z_][A-Za-z0-9_]*)$")
+
+
 
 class ProgramHatasi(Exception):
     """Geçersiz program tanımı ya da çözülemeyen nokta."""
+
+
+class EksikDegisken(ProgramHatasi):
+    """Dizi bir değişken istiyor ama değeri verilmemiş."""
 
 
 def _yol() -> str:
@@ -78,6 +94,26 @@ def yaz(veri: dict[str, Any]) -> None:
             raise
 
 
+def degisken_mi(deger: Any) -> str | None:
+    """Bir alan "$ad" biçiminde mi? Öyleyse değişken adını döndürür."""
+    if not isinstance(deger, str):
+        return None
+    eslesme = _DEGISKEN_DESENI.match(deger.strip())
+    return eslesme.group(1) if eslesme else None
+
+
+def degisken_dogrula(d: dict[str, Any]) -> dict[str, Any]:
+    ad = str(d.get("ad", "")).strip()
+    if not _DEGISKEN_DESENI.match("$" + ad):
+        raise ProgramHatasi(
+            f"Geçersiz değişken adı: '{ad}' — harf ya da _ ile başlamalı, "
+            "harf/rakam/_ içerebilir")
+    tip = str(d.get("tip", "nokta"))
+    if tip not in GECERLI_DEGISKEN_TIPLERI:
+        raise ProgramHatasi(f"Bilinmeyen değişken tipi: '{tip}'")
+    return {"ad": ad, "tip": tip, "aciklama": str(d.get("aciklama", ""))[:80]}
+
+
 def adim_dogrula(adim: dict[str, Any]) -> dict[str, Any]:
     tip = str(adim.get("tip", ""))
     if tip not in GECERLI_TIPLER:
@@ -88,6 +124,10 @@ def adim_dogrula(adim: dict[str, Any]) -> dict[str, Any]:
             raise ProgramHatasi("Nokta adımı bir nokta adı ister")
         return {"tip": "nokta", "ad": ad}
     if tip == "bekle":
+        # "$sure" gibi bir değişken referansı olduğu gibi saklanıyor; sayıya
+        # çevirme işi diziyi çalıştırırken, değer bilindiğinde yapılıyor.
+        if degisken_mi(adim.get("saniye")):
+            return {"tip": "bekle", "saniye": str(adim["saniye"]).strip()}
         return {"tip": "bekle", "saniye": max(0.0, min(600.0, float(adim.get("saniye", 1))))}
     if tip == "role":
         ad = str(adim.get("ad", ""))
@@ -95,6 +135,8 @@ def adim_dogrula(adim: dict[str, Any]) -> dict[str, Any]:
             raise ProgramHatasi(f"Bilinmeyen röle: '{ad}'")
         return {"tip": "role", "ad": ad, "durum": bool(adim.get("durum"))}
     if tip == "servo":
+        if degisken_mi(adim.get("aci")):
+            return {"tip": "servo", "aci": str(adim["aci"]).strip()}
         aci = int(adim.get("aci", 0))
         if not 0 <= aci <= 180:
             raise ProgramHatasi("Servo açısı 0-180 arasında olmalı")
@@ -111,7 +153,8 @@ def bul(ad: str) -> dict[str, Any] | None:
     return next((p for p in hepsi() if p.get("ad") == ad), None)
 
 
-def kaydet(ad: str, adimlar: list[dict[str, Any]], tekrar: int = 1) -> dict[str, Any]:
+def kaydet(ad: str, adimlar: list[dict[str, Any]], tekrar: int = 1,
+           degiskenler: list[dict[str, Any]] | None = None) -> dict[str, Any]:
     ad = str(ad or "").strip()
     if not ad:
         raise ProgramHatasi("Program adı boş olamaz")
@@ -120,11 +163,30 @@ def kaydet(ad: str, adimlar: list[dict[str, Any]], tekrar: int = 1) -> dict[str,
     if len(adimlar) > AZAMI_ADIM:
         raise ProgramHatasi(f"En fazla {AZAMI_ADIM} adım olabilir")
 
+    ham_degisken = list(degiskenler or [])
+    if len(ham_degisken) > AZAMI_DEGISKEN:
+        raise ProgramHatasi(f"En fazla {AZAMI_DEGISKEN} değişken tanımlanabilir")
+    cozulmus_degisken = [degisken_dogrula(d) for d in ham_degisken]
+    adlar = [d["ad"] for d in cozulmus_degisken]
+    if len(set(adlar)) != len(adlar):
+        raise ProgramHatasi("Aynı değişken adı iki kez tanımlanamaz")
+
     program = {
         "ad": ad[:40],
+        "degiskenler": cozulmus_degisken,
         "adimlar": [adim_dogrula(a) for a in adimlar],
         "tekrar": max(1, min(1000, int(tekrar or 1))),
     }
+
+    # Adımlarda geçen ama tanımlanmamış bir değişken, dizi çalıştırılana kadar
+    # fark edilmezdi. Kaydederken söylüyoruz.
+    bilinmeyen = sorted({
+        d for adim in program["adimlar"] for alan in ("ad", "saniye", "aci")
+        if (d := degisken_mi(adim.get(alan))) and d not in adlar
+    })
+    if bilinmeyen:
+        raise ProgramHatasi(
+            "Adımlarda tanımlanmamış değişken var: " + ", ".join("$" + b for b in bilinmeyen))
     with _KILIT:
         veri = oku()
         mevcut = next((i for i, p in enumerate(veri["programlar"]) if p.get("ad") == program["ad"]), None)
@@ -148,15 +210,54 @@ def sil(ad: str) -> bool:
     return True
 
 
-def coz(program: dict[str, Any]) -> list[dict[str, Any]]:
-    """Nokta adlarını koordinata çevirir — ajana bu hâli gidiyor.
+def degiskenleri_yerlestir(program: dict[str, Any],
+                           degerler: dict[str, Any] | None) -> list[dict[str, Any]]:
+    """Adımlardaki "$ad" referanslarını verilen değerlerle değiştirir.
 
-    Eksik bir nokta diziyi ortasında durdurmasın diye çözümleme **başlamadan
-    önce** yapılıyor: bir isim bulunamazsa dizi hiç başlamıyor.
+    Dizi çalıştırılmadan ÖNCE yapılıyor: değeri verilmemiş bir değişken varsa
+    dizi hiç başlamıyor. Yarıda "değer yok" diye durmaktansa.
     """
+    degerler = dict(degerler or {})
+    tanimli = {d["ad"]: d for d in program.get("degiskenler", [])}
+
+    # Değeri verilmemiş değişken var mı?
+    eksik = [ad for ad in tanimli if ad not in degerler or degerler[ad] in ("", None)]
+    if eksik:
+        raise EksikDegisken("Şu değişkenlerin değeri verilmedi: "
+                            + ", ".join("$" + a for a in sorted(eksik)))
+
+    def coz_alan(deger: Any) -> Any:
+        ad = degisken_mi(deger)
+        if ad is None:
+            return deger
+        if ad not in degerler:
+            raise EksikDegisken(f"'${ad}' değişkeninin değeri verilmedi")
+        return degerler[ad]
+
+    yerlesmis = []
+    for ham in program.get("adimlar", []):
+        adim = dict(ham)
+        for alan in ("ad", "saniye", "aci"):
+            if alan in adim:
+                adim[alan] = coz_alan(adim[alan])
+        # Değişkenden gelen sayılar metin olabilir; adım doğrulaması sayıya
+        # çevirsin ve sınırları uygulasın.
+        yerlesmis.append(adim_dogrula(adim))
+    return yerlesmis
+
+
+def coz(program: dict[str, Any],
+        degerler: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+    """Değişkenleri yerleştirir, sonra nokta adlarını koordinata çevirir.
+
+    Ajana bu hâli gidiyor. Eksik bir nokta ya da değeri verilmemiş bir
+    değişken diziyi ortasında durdurmasın diye çözümleme **başlamadan önce**
+    yapılıyor: biri bile eksikse dizi hiç başlamıyor.
+    """
+    adimlar = degiskenleri_yerlestir(program, degerler)
     cozulmus = []
     eksik = []
-    for adim in program.get("adimlar", []):
+    for adim in adimlar:
         if adim.get("tip") != "nokta":
             cozulmus.append(dict(adim))
             continue

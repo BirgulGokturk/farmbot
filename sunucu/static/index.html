@@ -373,7 +373,12 @@
           <p class="yardim-metin gizli">
             Adımlar mevcut komutları çağırır — yeni hareket yolu yok. Bir adım
             hata verirse dizi durur ve sebebi burada kalır. Acil durdurma
-            diziyi keser; mandal temizlenmeden yeniden başlamaz.
+            diziyi keser; mandal temizlenmeden yeniden başlamaz.<br><br>
+            <b>Değişkenler</b> diziyi tek bir noktaya bağlı olmaktan
+            çıkarıyor. Bir adımda nokta yerine <code>$hedef</code> yazarsanız
+            değeri dizi çalıştırılırken veriliyor — böylece tek bir "sula"
+            dizisi 40 ayrı fideye uygulanabiliyor. Haritada Seç kipiyle
+            fideleri seçip <b>Dizi uygula</b> diyerek bunu yapabilirsiniz.
           </p>
           <div class="satir-8 alt-hizali">
             <div class="alan esnek-alan">
@@ -384,6 +389,9 @@
             <button class="dugme" id="d-prog-durdur">Durdur</button>
             <button class="dugme tehlike" id="d-prog-sil">Sil</button>
           </div>
+          <!-- Dizi değişken istiyorsa değerleri çalıştırmadan önce burada
+               sorulur. İstemiyorsa bu bölüm hiç görünmüyor. -->
+          <div id="prog-degerler" class="deger-kutu gizli"></div>
           <div id="prog-ilerleme" class="onizleme gizli"></div>
 
           <h3 class="ara-baslik">Düzenle</h3>
@@ -397,6 +405,15 @@
             <button class="dugme" id="d-prog-yeni">Yeni</button>
             <button class="dugme birincil" id="d-prog-kaydet">Kaydet</button>
           </div>
+          <!-- DEĞİŞKENLER — dizi çağrılırken değeri verilen alanlar.
+               Adımlarda "$ad" yazılan yere bu değer konuyor. -->
+          <div class="ara-baslik-kucuk">Değişkenler</div>
+          <div id="prog-degiskenler"></div>
+          <div class="satir-8">
+            <button class="dugme" id="d-degisken-ekle">Değişken ekle</button>
+          </div>
+
+          <div class="ara-baslik-kucuk">Adımlar</div>
           <div id="prog-adimlar"></div>
           <div class="satir-8">
             <button class="dugme" id="d-adim-ekle">Adım ekle</button>
@@ -644,8 +661,15 @@
           <span id="toplu-sayi" class="toplu-sayi"></span>
           <button class="dugme birincil" id="d-toplu-sula">Sula</button>
           <button class="dugme" id="d-toplu-gez">Sırayla gez</button>
+          <!-- Nokta değişkeni tanımlı bir dizi seçime uygulanıyor: dizi seçili
+               her nokta için bir kez, o noktayla çalışıyor. -->
+          <select id="toplu-dizi" class="toplu-dizi" title="Seçime uygulanacak dizi"></select>
+          <!-- Dizinin nokta dışındaki değişkenleri varsa değerleri burada
+               soruluyor; yoksa bu alan boş kalıyor. -->
+          <span id="toplu-degerler" class="toplu-degerler"></span>
+          <button class="dugme" id="d-toplu-dizi">Dizi uygula</button>
           <button class="dugme tehlike" id="d-toplu-sil">Sil</button>
-          <button class="dugme" id="d-toplu-temizle">Seçimi bırak</button>
+          <button class="dugme" id="d-toplu-temizle">Bırak</button>
         </div>
 
         <!-- KATMAN RAFI — her katman bağımsız, tercih localStorage'da.

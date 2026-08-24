@@ -779,13 +779,14 @@ table.veri td { color: var(--metin-2); }
   border-radius: var(--yaricap);
   background: rgba(26, 26, 25, .96);
   /* max-content şart: overflow:auto olan bir esnek kutu kendi genişliğini
-     içeriğinden küçük hesaplayıp son düğmeyi kırpıyordu. */
+     içeriğinden küçük hesaplayıp son düğmeyi kırpıyordu. Sığmayınca
+     kaydırmak yerine ikinci satıra geçiyor — haritanın üstünde yer var,
+     yatay kaydırılan bir eylem çubuğu ise fark edilmiyor. */
   width: max-content;
   max-width: calc(100% - var(--b4));
-  overflow-x: auto;
-  scrollbar-width: none;
+  flex-wrap: wrap;
+  justify-content: center;
 }
-.toplu-cubuk::-webkit-scrollbar { display: none; }
 .toplu-cubuk > * { flex: none; }
 .toplu-sayi {
   font-size: var(--yazi-kucuk);
@@ -976,3 +977,69 @@ button.dugme.tehlike:disabled {
   color: var(--metin-3);
   opacity: .5;
 }
+
+
+/* ====================================================================
+   DİZİ DEĞİŞKENLERİ
+   Adımlarda "$ad" yazılan yere değeri dizi çalıştırılırken konuyor.
+   ==================================================================== */
+.ara-baslik-kucuk {
+  font-size: var(--yazi-kucuk);
+  color: var(--metin-3);
+  margin: var(--b4) 0 var(--b2);
+}
+
+.degisken-satir {
+  display: flex;
+  align-items: center;
+  gap: var(--b2);
+  padding: var(--b2) 0;
+  border-bottom: 1px solid var(--cizgi);
+}
+.degisken-satir:last-child { border-bottom: none; }
+.degisken-isaret {
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  color: var(--vurgu);
+  flex: none;
+}
+.degisken-satir .dv-ad { width: 110px; flex: none; }
+.degisken-satir .dv-tip { width: 92px; flex: none; }
+.degisken-satir .dv-aciklama { flex: 1; min-width: 0; }
+.degisken-satir .degisken-sil { flex: none; }
+
+/* Çalıştırmadan önce sorulan değerler. Dizi değişken istemiyorsa bu kutu
+   hiç görünmüyor. */
+.deger-kutu {
+  border: 1px solid var(--cizgi);
+  border-left: 2px solid var(--vurgu);
+  border-radius: var(--b2);
+  background: var(--yuzey-2);
+  padding: var(--b3);
+  margin-bottom: var(--b3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--b2);
+}
+.deger-kutu.gizli { display: none; }
+.deger-satir { display: flex; align-items: center; gap: var(--b2); flex-wrap: wrap; }
+.deger-satir label {
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-size: var(--yazi-kucuk);
+  color: var(--vurgu);
+  min-width: 84px;
+}
+.deger-satir .dg-deger { flex: 1; min-width: 140px; }
+
+.toplu-dizi { max-width: 190px; }
+
+/* Toplu çubukta dizinin nokta dışındaki değişkenleri için küçük alanlar. */
+.toplu-degerler { display: flex; align-items: center; gap: var(--b2); }
+.toplu-deger {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--b1);
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-size: var(--yazi-kucuk);
+  color: var(--vurgu);
+}
+.toplu-deger input { width: 64px; }

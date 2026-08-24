@@ -656,13 +656,63 @@
   }
 
   /* -------------------------------------------------------- toplu işlem */
+
+  /** Nokta değişkeni olan diziler — seçime uygulanabilenler. Liste app.js'ten
+   *  geliyor; katman ya da çekirdek dizi deposunu ayrıca okumuyor. */
+  let uygunDiziler = [];
+
+  function dizileriTazele(programlar) {
+    const sec = $("#toplu-dizi");
+    if (!sec) return;
+    uygunDiziler = (programlar || []).filter(
+      (p) => (p.degiskenler || []).filter((d) => d.tip === "nokta").length === 1);
+    const onceki = sec.value;
+    sec.innerHTML = uygunDiziler.length
+      ? uygunDiziler.map((p) => `<option>${kacisli(p.ad)}</option>`).join("")
+      : '<option value="">(nokta değişkenli dizi yok)</option>';
+    if (uygunDiziler.some((p) => p.ad === onceki)) sec.value = onceki;
+    sec.disabled = !uygunDiziler.length;
+    const d = $("#d-toplu-dizi");
+    if (d) d.disabled = !uygunDiziler.length;
+    diziDegerleriCiz();
+  }
+
+  /** Seçilen dizinin nokta DIŞINDAKİ değişkenleri için alan açıyor.
+   *  Nokta değişkeni seçimin kendisinden geliyor, sorulmuyor. */
+  function diziDegerleriCiz() {
+    const kutu = $("#toplu-degerler");
+    if (!kutu) return;
+    const p = uygunDiziler.find((x) => x.ad === ($("#toplu-dizi") || {}).value);
+    const digerleri = ((p && p.degiskenler) || []).filter((d) => d.tip !== "nokta");
+    kutu.innerHTML = digerleri.map((d) => `
+      <label class="toplu-deger" title="${kacisli(d.aciklama || d.ad)}">
+        <span>$${kacisli(d.ad)}</span>
+        <input type="${d.tip === "sayi" ? "number" : "text"}" data-ad="${kacisli(d.ad)}"
+               value="${d.tip === "sayi" ? 3 : ""}">
+      </label>`).join("");
+  }
+
+  function diziDegerleriTopla() {
+    const d = {};
+    document.querySelectorAll("#toplu-degerler input").forEach((g) => {
+      d[g.dataset.ad] = g.value;
+    });
+    return d;
+  }
+
   async function topluIslem(islem) {
     const adlar = [...T.secim];
     if (!adlar.length) return;
     if (islem === "sil" && !confirm(`${adlar.length} nokta silinecek. Emin misiniz?`)) return;
+    const govde = { islem, noktalar: adlar };
+    if (islem === "dizi") {
+      govde.dizi = ($("#toplu-dizi") || {}).value || "";
+      if (!govde.dizi) { gunluk("Uygulanacak dizi seçilmedi", "uyari"); return; }
+      govde.degerler = diziDegerleriTopla();
+    }
     try {
       const y = await P().apiIste("/api/toplu", {
-        method: "POST", body: JSON.stringify({ islem, noktalar: adlar }),
+        method: "POST", body: JSON.stringify(govde),
       });
       gunluk(y.mesaj || `Toplu işlem başlatıldı — ${adlar.length} nokta`, "iyi");
       if (islem === "sil") {
@@ -951,6 +1001,9 @@
                y: kutu.top + ((1 - v.y) / 2) * kutu.height };
     },
 
+    /** app.js dizileri yükledikçe çağırıyor — "Dizi uygula" listesi. */
+    dizilerDegisti(programlar) { dizileriTazele(programlar); },
+
     /** Deneme yardımcısı — çoklu seçimdeki nokta adları. */
     secimDurumu() { return [...T.secim]; },
 
@@ -1077,6 +1130,8 @@
     $("#d-toplu-sula").onclick = () => topluIslem("sula");
     $("#d-toplu-gez").onclick = () => topluIslem("gez");
     $("#d-toplu-sil").onclick = () => topluIslem("sil");
+    $("#d-toplu-dizi").onclick = () => topluIslem("dizi");
+    $("#toplu-dizi").onchange = () => diziDegerleriCiz();
     $("#d-toplu-temizle").onclick = () => secimiBirak();
     kipSec(localStorage.getItem("farmbot_tarla_kip") || "tasi");
 

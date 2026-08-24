@@ -453,6 +453,52 @@ async def api_toplu(govde: dict[str, Any], jeton: str = Query(default="")):
         return {"ok": True, "silinen": silinen,
                 "mesaj": f"{len(silinen)} nokta silindi"}
 
+    if islem == "dizi":
+        # KAYITLI DİZİYİ SEÇİMİN HER NOKTASINA UYGULA.
+        #
+        # "Şu noktayı sula" yerine "verilen noktayı sula": dizi bir nokta
+        # değişkeni tanımlıyor, biz onu seçili her nokta için bir kez
+        # dolduruyoruz ve çıkan adımları arka arkaya ekliyoruz. Tek bir
+        # "sula" dizisi 40 fideye böyle uygulanıyor.
+        prog_ad = str(govde.get("dizi", ""))
+        program = await asyncio.to_thread(programlar.bul, prog_ad)
+        if program is None:
+            raise HTTPException(status_code=404, detail=f"'{prog_ad}' adında dizi yok")
+
+        nokta_degiskenleri = [d for d in program.get("degiskenler", [])
+                              if d.get("tip") == "nokta"]
+        if len(nokta_degiskenleri) != 1:
+            raise HTTPException(
+                status_code=400,
+                detail=f"'{prog_ad}' dizisinde tam olarak bir nokta değişkeni olmalı "
+                       f"(şu an {len(nokta_degiskenleri)}). Diziye "
+                       "\"nokta\" tipinde bir değişken ekleyin.")
+        hedef = nokta_degiskenleri[0]["ad"]
+
+        # Nokta dışındaki değişkenlerin değeri istekte gelmeli.
+        digerleri = {d["ad"]: govde.get("degerler", {}).get(d["ad"])
+                     for d in program.get("degiskenler", []) if d["ad"] != hedef}
+
+        adimlar = []
+        try:
+            for nokta_ad in adlar:
+                adimlar.extend(await asyncio.to_thread(
+                    programlar.coz, program, {**digerleri, hedef: nokta_ad}))
+        except programlar.ProgramHatasi as hata:
+            raise HTTPException(status_code=400, detail=str(hata))
+
+        if len(adimlar) > programlar.AZAMI_ADIM:
+            raise HTTPException(
+                status_code=400,
+                detail=f"{len(adlar)} nokta × {len(adimlar) // max(1, len(adlar))} adım = "
+                       f"{len(adimlar)} adım, sınır {programlar.AZAMI_ADIM}. "
+                       "Daha az nokta seçin ya da diziyi kısaltın.")
+
+        return await merkez.komut_gonder("dizi_baslat", {
+            "ad": f"{prog_ad} × {len(adlar)} nokta", "adimlar": adimlar,
+            "tekrar": 1, "hiz": govde.get("hiz"),
+        })
+
     if islem not in ("sula", "gez"):
         raise HTTPException(status_code=400, detail=f"Bilinmeyen toplu işlem: {islem!r}")
 
@@ -566,7 +612,7 @@ async def api_program_kaydet(govde: dict[str, Any], jeton: str = Query(default="
     try:
         program = await asyncio.to_thread(
             programlar.kaydet, govde.get("ad", ""), govde.get("adimlar") or [],
-            int(govde.get("tekrar", 1)))
+            int(govde.get("tekrar", 1)), govde.get("degiskenler") or [])
     except programlar.ProgramHatasi as hata:
         raise HTTPException(status_code=400, detail=str(hata))
     except (TypeError, ValueError) as hata:
@@ -595,7 +641,10 @@ async def api_program_calistir(govde: dict[str, Any], jeton: str = Query(default
     if program is None:
         raise HTTPException(status_code=404, detail=f"'{ad}' adında program yok")
     try:
-        adimlar = await asyncio.to_thread(programlar.coz, program)
+        # Değişkenli dizi: değerler istekte geliyor. Biri eksikse dizi HİÇ
+        # başlamıyor — yarıda "değer yok" diye durmaktansa.
+        adimlar = await asyncio.to_thread(
+            programlar.coz, program, govde.get("degerler") or {})
     except programlar.ProgramHatasi as hata:
         raise HTTPException(status_code=400, detail=str(hata))
     return await merkez.komut_gonder("dizi_baslat", {
