@@ -109,6 +109,32 @@ aşımı.
 | `kip` | `{"deger": "oto"}` ya da `"manuel"` |
 | `role` | `{"ad": "su_pompasi", "durum": true}` — `hava_pompasi`, `su_vanasi` |
 | `jog` / `jog_dur` | REST yerine WebSocket'ten gönderin (aşağı bakın) |
+| `bolge_listele` | `{}` — ajandaki yasak bölgeler |
+| `bolge_kaydet` | `{"bolgeler":[{ad,x1,y1,x2,y2,izin_kosulu,yuva,aktif}]}` |
+| `uc_listele` | `{}` — uç ayarları ve dizi durumu |
+| `uc_kaydet` | `{"ayar": {...}}` — `gantry_tools.json` yapısı |
+| `uc_al` / `uc_degistir` | `{"ad":"tool1"}` — yandan yaklaşımlı dizi |
+| `uc_birak` | `{}` |
+| `dizi_baslat` | `{"ad":…,"adimlar":[…],"tekrar":1}` — adımlar ÇÖZÜLMÜŞ olmalı |
+| `dizi_durdur` | `{}` — sert duruş, hedefleri nötrler |
+| `oto_esik` | `{"ham":600}` — otomatik sulama eşiği (HW-103 ham ADC, 0–1023). Panel yüzdeyi hama çevirir |
+| `oto_cikis` | `{"ad":"yok"\|"servo"\|"su_vanasi"\|"su_pompasi"}` — otomatik kipte sürülecek çıkış |
+
+### Nokta deposu, ızgara, programlar, kamera (ajana gitmeyen uçlar)
+
+| Uç | Ne yapar |
+|---|---|
+| `GET /api/noktalar` | Kayıtlı noktalar |
+| `POST /api/noktalar` | `{ad,x,y,z,ustune_yaz}` — aynı isim 409 döner. `tur` ve `ekim` alanları verilirse nokta bir **bitki** olur (tarla tasarımcısı bunu kullanıyor) |
+| `DELETE /api/noktalar?ad=…` | Siler |
+| `POST /api/izgara/onizle` | `{x0,y0,z,dx,dy,satir,sutun,onek}` → sayım + sınır dışı + üzerine yazılacaklar |
+| `POST /api/izgara/uygula` | Aynı gövde; noktaları depoya yazar |
+| `GET/POST /api/programlar` | Program listesi / kaydet |
+| `DELETE /api/programlar?ad=…` | Siler |
+| `POST /api/programlar/calistir` | `{ad}` — nokta adlarını çözer, ajana yollar |
+| `GET /api/kare/son` | Son kamera karesi (JPEG) |
+| `GET /api/kare/liste` | Saklanan karelerin damgaları |
+| `GET /api/turler` | Bitki türü kataloğu (`docs/bitki_turleri.json`, 37 tür). Dosya değişmedikçe önbellekten döner; `TUR_YOLU` ile başka bir dosya gösterilebilir |
 
 ### `WS /ws/panel?jeton=PAROLA`
 Canlı akış. Bağlanınca ilk paket anlık görüntü, sonrası olay bazlı:
@@ -119,6 +145,10 @@ Canlı akış. Bağlanınca ilk paket anlık görüntü, sonrası olay bazlı:
 | `olcum` | `{veri: {...}}` — yeni sensör okuması |
 | `durum` | `{durum: {...}}` — konum, bağlantı, acil durum değişimi |
 | `gunluk` | `{seviye, metin}` — olay günlüğü satırı |
+| `kare` | `{ts}` — yeni kamera karesi var; görüntü `GET /api/kare/son` ile alınır |
+
+`durum` paketine eklenen alanlar: `bolgeler`, `esnetme_acik`, `islem`,
+`uc` (dizi ilerlemesi + takılı uç), `dizi` (program ilerlemesi).
 
 İstemciden gönderilebilen tek mesaj basılı-tut jog'u:
 

@@ -1,18 +1,23 @@
 {
   "_aciklama": "DENEME AYARI — donanım gerekmez. Sunucu kendi bilgisayarında, sensör ve PLC sahte.",
-  "_kullanim": "python ajan.py ayarlar.deneme.json",
-
+  "_kullanim": "python ajan.py ayarlar.deneme.json  — sahte PLC + sahte Arduino + sahte kamera",
   "sunucu": "ws://127.0.0.1:8000/ws/ajan",
   "jeton": "test123",
-
-  "arduino": { "sahte": true },
-
+  "arduino": {
+    "sahte": true
+  },
   "plc": {
     "sahte": true,
     "kalibrasyon_dosyasi": "gantry_calib.json",
     "guvenli_z": 340.0,
-    "hiz": 20.0
+    "hiz": 20.0,
+    "home_bekleme_sn": 2.0
   },
-
-  "durum_araligi_sn": 0.5
+  "durum_araligi_sn": 0.5,
+  "kamera": {
+    "aktif": true,
+    "sahte": true,
+    "aralik_sn": 10.0,
+    "genislik": 480
+  }
 }

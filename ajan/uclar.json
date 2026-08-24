@@ -1,0 +1,64 @@
+{
+ "safe_z": 280,
+ "travel_z": 280,
+ "home_z": 280.0,
+ "slide_axis": "Y",
+ "approach": -55,
+ "retreat": -20,
+ "lift": 80,
+ "speed": 20,
+ "lock_reg": 0,
+ "lock_dwell": 1500,
+ "grip_reg": 0,
+ "grip_dwell": 1000,
+ "presence_reg": 0,
+ "z_safe_reg": 0,
+ "tc_area": {
+  "on": true,
+  "pts": [
+   [
+    0,
+    0
+   ],
+   [
+    80,
+    0
+   ],
+   [
+    80,
+    300
+   ],
+   [
+    0,
+    300
+   ]
+  ]
+ },
+ "current_tool": null,
+ "tools": [
+  {
+   "name": "tool1",
+   "x": 10.0,
+   "y": 70.5,
+   "z": 150.0
+  },
+  {
+   "name": "tool2",
+   "x": 5.0,
+   "y": 150.0,
+   "z": 200.0
+  },
+  {
+   "name": "tool3",
+   "x": 5.0,
+   "y": 250.0,
+   "z": 250.0
+  }
+ ],
+ "_aciklama": "Uç değiştirme ayarları. Sahadan gelen gerçek değerler.",
+ "_z": "travel_z, en yüksek ucun kavrama yüksekliğinden (250) yukarıda olmalı — baş yan geçerken uçlara sürtmesin.",
+ "_retreat": "Çıkış ofseti. null ise approach kullanılır.",
+ "_dwell": "Milisaniye. 50'nin altındaki değerler saniye kabul edilir (referans program 1.5 kullanıyordu).",
+ "_reg": "0 = donanım bağlı değil. presence_reg 0 iken dizi 'başarılı' değil 'doğrulanamadı' der.",
+ "_tc_area": "İçinde X/Y jog için Z güvenlik şartı devre dışı. Kapalıyken hiçbir muafiyet yok."
+}

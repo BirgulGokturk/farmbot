@@ -172,6 +172,73 @@ button.dugme.tehlike:hover:not(:disabled) { background: #4d2222; }
 /* Basılı tutulan jog düğmesi — parmak altında olduğunu göstermek gerekiyor */
 button.dugme.basili { background: var(--seri-1); border-color: var(--seri-1); color: #fff; }
 
+/* --- kayıtlı noktalar / bölgeler / uçlar listesi --- */
+.liste { max-height: 300px; overflow-y: auto; border: 1px solid var(--cizgi); border-radius: 9px; }
+.liste:empty { display: none; }
+.liste > p.alt-not { padding: 12px; margin: 0; }
+
+.satir {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 10px; border-bottom: 1px solid var(--cizgi);
+}
+.satir:last-child { border-bottom: none; }
+.satir .ad { font-weight: 550; min-width: 70px; }
+.satir .koordinat {
+  color: var(--metin-2); font-size: 12px; font-variant-numeric: tabular-nums;
+  font-family: ui-monospace, Menlo, Consolas, monospace; flex: 1;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.satir button.dugme { padding: 5px 10px; font-size: 13px; }
+
+/* --- ızgara formu --- */
+/* Izgara formu: sekiz eşit hücre yerine anlamlı gruplar. "X0 / Y0 / ΔX / ΔY"
+   diye sıralanınca hangi ikilinin ne olduğu okunmuyordu; başlıklı kutular
+   ilişkiyi gösteriyor. */
+.izgara-form { display: flex; flex-wrap: wrap; gap: 10px; }
+.izgara-form .grup {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  padding: 8px 11px 9px;
+  border: 1px solid var(--cizgi);
+  border-radius: 9px;
+  background: var(--yuzey-2);
+  position: relative;
+}
+.izgara-form .grup-ad {
+  position: absolute;
+  top: -8px;
+  left: 10px;
+  padding: 0 5px;
+  background: var(--yuzey);
+  font-size: 11px;
+  letter-spacing: .3px;
+  color: var(--metin-3);
+}
+.izgara-form label { font-size: 12px; color: var(--metin-3); display: block; }
+.izgara-form input { width: 78px; margin-top: 3px; }
+
+.onizleme {
+  margin-top: 12px; padding: 11px 13px; border-radius: 9px;
+  background: var(--yuzey-2); border: 1px solid var(--cizgi); font-size: 13px;
+}
+.onizleme b { font-variant-numeric: tabular-nums; }
+/* Önizlemedeki uyarı bir cümle, liste rozeti değil: satır sonu alsın,
+   kartın dışına taşmasın. */
+.onizleme .rozet-uyari { white-space: normal; display: block; margin-top: 8px; }
+.onizleme .ornek {
+  font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px;
+  color: var(--metin-3); margin-top: 8px; line-height: 1.7;
+}
+
+/* Sınır dışı nokta: silinmiyor, işaretleniyor. Renk tek başına anlam
+   taşımasın diye simge + yazı birlikte. */
+.rozet-uyari {
+  background: #3a2f10; border: 1px solid #6b5620; color: #ffe4a3;
+  border-radius: 6px; padding: 2px 7px; font-size: 11px; white-space: nowrap;
+}
+.satir.sinir-disi .ad { color: #ffe4a3; }
+
 input[type="number"], input[type="password"] {
   background: var(--yuzey-2);
   border: 1px solid var(--cizgi);
@@ -217,3 +284,196 @@ table.veri th:first-child, table.veri td:first-child { text-align: left; }
   main { padding: 14px; }
   .grafik-kutu { height: 220px; }
 }
+
+/* --- bölge düzenleyici --- */
+.bolge {
+  border: 1px solid var(--cizgi); border-radius: 9px;
+  padding: 10px; margin-bottom: 8px; background: var(--yuzey-2);
+}
+.bolge-ust { display: flex; gap: 10px; align-items: center; margin-bottom: 8px; }
+.bolge-ust .b-ad { flex: 1; }
+.bolge-ust label { font-size: 12px; color: var(--metin-3); white-space: nowrap; }
+.bolge-alt { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-bottom: 8px; }
+.bolge-alt label { font-size: 11px; color: var(--metin-3); }
+.bolge-alt input { width: 100%; }
+.bolge input[type="text"], .bolge .b-ad, .bolge .b-kosul {
+  background: var(--yuzey); border: 1px solid var(--cizgi); border-radius: 7px;
+  color: var(--metin); padding: 7px 9px; font: inherit; font-size: 13px;
+}
+.bolge .b-kosul {
+  width: 100%; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px;
+}
+.bolge .b-sil { padding: 4px 9px; }
+/* Bölgedeki koşul uyarısı bir cümle: kartın dışına taşmasın. */
+.bolge .rozet-uyari { white-space: normal; }
+
+/* --- uç değiştirme --- */
+.uc-durum { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 14px; }
+.uc-durum b { font-size: 17px; }
+select {
+  background: var(--yuzey-2); border: 1px solid var(--cizgi); border-radius: 8px;
+  color: var(--metin); padding: 9px 10px; font: inherit;
+}
+.adim-cubuk { height: 5px; background: var(--yuzey); border-radius: 3px; overflow: hidden; margin-top: 8px; }
+.adim-cubuk i { display: block; height: 100%; background: var(--seri-1); transition: width .25s; }
+
+/* --- program adımları --- */
+.adim-satir {
+  display: flex; gap: 6px; align-items: center; margin-bottom: 6px;
+}
+.adim-satir .sira { color: var(--metin-3); font-size: 12px; width: 18px; text-align: right; }
+.adim-satir select, .adim-satir input { font-size: 13px; padding: 6px 8px; }
+.adim-satir select.tip { width: 105px; }
+.adim-satir .param { flex: 1; min-width: 80px; }
+.adim-satir button { padding: 4px 9px; }
+
+/* --- kamera --- */
+#kamera-kutu { background: var(--yuzey-2); border: 1px solid var(--cizgi); border-radius: 9px; overflow: hidden; }
+#kamera-kare { width: 100%; display: block; }
+#kamera-kutu p { padding: 14px; margin: 0; }
+
+/* --- uç ayarları katlanır bölümü --- */
+details.uc-ayar { margin-top: 12px; border-top: 1px solid var(--cizgi); padding-top: 10px; }
+details.uc-ayar summary {
+  cursor: pointer; font-size: 13px; color: var(--metin-2); user-select: none;
+}
+details.uc-ayar summary:hover { color: var(--metin); }
+.onizleme .yol { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; line-height: 1.8; }
+.onizleme .yol b { color: var(--metin); }
+
+/* --- tarla tasarımcısı (3B) --- */
+.tarla-arac {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+.tarla-arac label { color: var(--metin-3); font-size: 13px; display: inline-flex; align-items: center; gap: 6px; }
+.tarla-arac select { max-width: 240px; }
+.tarla-arac .onay { cursor: pointer; }
+
+.tarla-sahne {
+  position: relative;
+  border: 1px solid var(--cizgi);
+  border-radius: 9px;
+  overflow: hidden;
+  background: #0e1210;
+}
+.tarla-sahne canvas {
+  display: block;
+  width: 100%;
+  height: min(58vh, 520px);
+  touch-action: none;          /* sürükleme sayfayı kaydırmasın */
+}
+
+/* Sürüklerken canlı mm okuması — fareyi takip etmiyor, sabit köşede:
+   sayının yerinde durması okumayı kolaylaştırıyor. */
+.tarla-ipucu {
+  position: absolute;
+  left: 10px;
+  bottom: 10px;
+  padding: 5px 9px;
+  border-radius: 7px;
+  background: rgba(0, 0, 0, .65);
+  border: 1px solid var(--cizgi);
+  font-variant-numeric: tabular-nums;
+  font-size: 13px;
+  opacity: 0;
+  transition: opacity .12s;
+  pointer-events: none;
+}
+.tarla-ipucu.gorunur { opacity: 1; }
+
+.tarla-kart {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: min(300px, calc(100% - 20px));
+  padding: 12px;
+  border-radius: 10px;
+  background: rgba(26, 26, 25, .95);
+  border: 1px solid var(--cizgi);
+  box-shadow: var(--golge);
+}
+.tarla-kart-bas { display: flex; align-items: flex-start; gap: 10px; }
+.tarla-kart-bas .simge { font-size: 26px; line-height: 1; }
+.tarla-kart-bas .kapat {
+  margin-left: auto;
+  background: none;
+  border: none;
+  color: var(--metin-3);
+  cursor: pointer;
+  font-size: 15px;
+  padding: 0 2px;
+}
+.tarla-kart-bas .kapat:hover { color: var(--metin); }
+.tarla-kart .rozet-uyari { display: block; white-space: normal; margin-top: 8px; }
+
+.tarla-ozellik { width: 100%; margin: 10px 0 4px; border-collapse: collapse; font-size: 13px; }
+.tarla-ozellik td { padding: 3px 0; color: var(--metin-3); }
+.tarla-ozellik td:last-child { text-align: right; color: var(--metin-2); font-variant-numeric: tabular-nums; }
+.tarla-ozellik b { color: var(--metin); }
+
+.tarla-kart-dugme { display: flex; gap: 8px; margin-top: 8px; }
+.tarla-kart-dugme .dugme { flex: 1; padding: 6px 10px; font-size: 13px; }
+
+.cakisma-satir { margin-top: 4px; font-variant-numeric: tabular-nums; }
+
+kbd {
+  border: 1px solid var(--cizgi);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  padding: 0 5px;
+  font-size: 12px;
+  font-family: inherit;
+  color: var(--metin-2);
+}
+
+
+/* --- otomatik sulama (Arduino kipi) --- */
+.rozet-kip {
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--cizgi);
+  color: var(--metin-3);
+  margin-left: 8px;
+  text-transform: none;
+}
+.rozet-kip.acik   { color: #b7e8b7; border-color: #2f5f2f; background: #172a17; }
+.rozet-kip.kapali { color: var(--metin-2); }
+
+/* Kip düğmeleri iki satırlı: üstte ne olduğu, altında ne anlama geldiği.
+   Tek kelimelik "Otomatik / Manuel" hangisinin ne yaptığını söylemiyordu. */
+.kip-secim { display: flex; gap: 10px; flex-wrap: wrap; }
+.kip-dugme {
+  flex: 1 1 240px;
+  display: block;
+  text-align: left;
+  padding: 10px 13px;
+  line-height: 1.35;
+}
+.kip-dugme b { display: block; font-size: 14px; }
+.kip-dugme span { display: block; font-size: 12px; color: var(--metin-3); margin-top: 2px; }
+.kip-dugme.secili span { color: rgba(255, 255, 255, .8); }
+
+.oto-ayar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px;
+  margin-top: 12px;
+  padding: 12px 13px;
+  border: 1px solid var(--cizgi);
+  border-radius: 9px;
+  background: var(--yuzey-2);
+}
+.oto-ayar label { font-size: 12px; color: var(--metin-3); display: block; }
+.oto-ayar select { display: block; margin-top: 4px; min-width: 210px; }
+.oto-ayar .esik-satir { display: flex; align-items: center; gap: 9px; margin-top: 4px; }
+.oto-ayar .esik-satir input { width: 150px; }
+.oto-ayar .esik-satir b { color: var(--metin); font-variant-numeric: tabular-nums; min-width: 42px; }
+.oto-ayar .dugme:disabled, .oto-ayar select:disabled, .oto-ayar input:disabled { opacity: .5; }

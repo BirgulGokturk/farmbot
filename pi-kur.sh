@@ -31,16 +31,24 @@ sudo apt-get install -y -qq python3-venv python3-pip
 # --- 2. Sanal ortamlar -------------------------------------------------------
 venv_kur() {
     local klasor="$1"
+    local sistem="$2"          # "sistem" ise apt ile gelen paketler de görünür
     if [ ! -x "$klasor/.venv/bin/python" ]; then
         echo "      sanal ortam kuruluyor: $(basename "$klasor")"
-        python3 -m venv "$klasor/.venv"
+        if [ "$sistem" = "sistem" ]; then
+            # Ajanın donanım kütüphaneleri (picamera2, lgpio) apt'tan geliyor
+            # ve pip ile venv'e kurulmuyor. Yalıtılmış bir venv onları
+            # göremediği için kamera sessizce komut satırı yoluna düşüyordu.
+            python3 -m venv --system-site-packages "$klasor/.venv"
+        else
+            python3 -m venv "$klasor/.venv"
+        fi
     fi
     "$klasor/.venv/bin/pip" install --quiet --upgrade pip
     "$klasor/.venv/bin/pip" install --quiet -r "$klasor/requirements.txt"
 }
 echo "[2/6] Python bağımlılıkları"
 venv_kur "$KOK/sunucu"
-venv_kur "$KOK/ajan"
+venv_kur "$KOK/ajan" sistem
 
 # --- 3. Jeton ve panel parolası ----------------------------------------------
 # Jeton ajanın sunucuya kimliğini kanıtladığı anahtar. Makineden makineye,

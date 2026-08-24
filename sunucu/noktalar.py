@@ -1,0 +1,248 @@
+"""Nokta deposu — isimlendirilmiş X/Y/Z konumları.
+
+Neden SQLite değil de JSON
+--------------------------
+Bu veri yapılandırma niteliğinde: küçük, bütün olarak okunuyor, bütün olarak
+yazılıyor. SQLite'ın kazandırdığı şey — aralık sorgusu, seyreltme, eşzamanlı
+yazma — burada hiç kullanılmıyor. Buna karşılık JSON'un üç somut faydası var:
+
+  1. Gantry Studio'nun `gantry_store.json` dosyası zaten bu biçimde; makinedeki
+     mevcut noktalar elle dönüştürülmeden kopyalanabiliyor.
+  2. Bir şey ters giderse düzeltmek metin düzenlemek kadar kolay. Sahada,
+     telefondan SSH ile bakarken SQL istemcisi aramak istemezsiniz.
+  3. Yedeklemek `cp` demek.
+
+Telemetri farklı bir iş (sürekli ekleme, zaman aralığı sorgusu, seyreltme) ve
+o yüzden `depo.py` içinde SQLite'ta kalıyor. Nokta sayısı on binleri bulursa —
+ızgara üstüne ızgara üretilirse — bu dosya da SQLite'a taşınır; 2000 noktalık
+bir dosya ~200 KB, o sınırın çok uzağındayız.
+
+Yazma atomik: geçici dosyaya yazıp `os.replace` ile yerine koyuyoruz. Yarım
+yazılmış bir JSON, elektrik kesintisinde bütün noktaları kaybetmek demek olurdu.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import tempfile
+import threading
+import time
+from typing import Any
+
+_KILIT = threading.RLock()
+
+# İsim uzunluğu sınırı: panelde okunabilir kalsın ve dosya şişmesin.
+AZAMI_AD = 40
+AZAMI_NOKTA = 5000
+
+
+class NoktaHatasi(Exception):
+    """Geçersiz isim, çakışan isim ya da bulunamayan nokta."""
+
+
+def _yol() -> str:
+    """Veri dosyasının yeri — SQLite ile aynı klasör.
+
+    `pi-kur.sh` veriyi depo dışında (`~/farmbot-veri/`) tutuyor; depoyu
+    güncellemek kayıtlı noktaları silmesin diye buraya bağlıyoruz.
+    """
+    ozel = os.environ.get("NOKTA_YOLU")
+    if ozel:
+        return ozel
+    veri = os.environ.get("VERI_YOLU")
+    if veri:
+        return os.path.join(os.path.dirname(veri) or ".", "noktalar.json")
+    return os.path.join(os.path.dirname(__file__), "noktalar.json")
+
+
+def _bos() -> dict[str, Any]:
+    return {"surum": 1, "noktalar": []}
+
+
+def oku() -> dict[str, Any]:
+    yol = _yol()
+    with _KILIT:
+        if not os.path.exists(yol):
+            return _bos()
+        try:
+            with open(yol, encoding="utf-8") as dosya:
+                veri = json.load(dosya)
+        except (json.JSONDecodeError, OSError):
+            # Bozuk dosya sessizce yutulmaz ama sunucuyu da düşürmez: bozuğu
+            # kenara alıp boş depoyla devam ediyoruz, kullanıcı dosyayı
+            # kurtarabilsin.
+            try:
+                os.replace(yol, yol + ".bozuk")
+            except OSError:
+                pass
+            return _bos()
+        if not isinstance(veri, dict) or not isinstance(veri.get("noktalar"), list):
+            return _bos()
+        return veri
+
+
+def yaz(veri: dict[str, Any]) -> None:
+    yol = _yol()
+    klasor = os.path.dirname(yol) or "."
+    os.makedirs(klasor, exist_ok=True)
+    with _KILIT:
+        # Aynı klasöre yazıyoruz: os.replace yalnızca aynı dosya sisteminde
+        # atomik ve /tmp farklı bir bağlama noktası olabilir.
+        gecici = tempfile.NamedTemporaryFile(
+            "w", encoding="utf-8", dir=klasor, prefix=".noktalar-", suffix=".tmp", delete=False)
+        try:
+            json.dump(veri, gecici, ensure_ascii=False, indent=1)
+            gecici.flush()
+            os.fsync(gecici.fileno())
+            gecici.close()
+            os.replace(gecici.name, yol)
+        except Exception:
+            try:
+                os.unlink(gecici.name)
+            except OSError:
+                pass
+            raise
+
+
+def _ad_dogrula(ad: str) -> str:
+    ad = str(ad or "").strip()
+    if not ad:
+        raise NoktaHatasi("Nokta adı boş olamaz")
+    if len(ad) > AZAMI_AD:
+        raise NoktaHatasi(f"Nokta adı en fazla {AZAMI_AD} karakter olabilir")
+    return ad
+
+
+def hepsi() -> list[dict[str, Any]]:
+    return oku()["noktalar"]
+
+
+def bul(ad: str) -> dict[str, Any] | None:
+    ad = str(ad or "").strip()
+    return next((n for n in hepsi() if n.get("ad") == ad), None)
+
+
+# Bitki noktalarının taşıdığı ek alanlar. Bitkiler ayrı bir depoya değil bu
+# depoya yazılıyor: "şu noktaya git", program adımı ve sınır denetimi bir
+# bitki için de aynen çalışsın diye. Paralel bir nokta kavramı öğrenmek
+# gerekmiyor; bitki, tür bilgisi taşıyan bir noktadan ibaret.
+BITKI_ALANLARI = ("tur", "ekim")
+
+
+def _ekstra_suz(kaynak: dict[str, Any]) -> dict[str, Any]:
+    cikti = {}
+    if kaynak.get("tur"):
+        cikti["tur"] = str(kaynak["tur"])[:40]
+    if kaynak.get("ekim") is not None:
+        try:
+            cikti["ekim"] = float(kaynak["ekim"])
+        except (TypeError, ValueError):
+            pass
+    return cikti
+
+
+def ekle(ad: str, x: float, y: float, z: float, ustune_yaz: bool = False,
+         etiket: str = "", ekstra: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Yeni nokta ekler ya da (izin verilirse) aynı isimdekini günceller."""
+    ad = _ad_dogrula(ad)
+    nokta = {
+        "ad": ad,
+        "x": round(float(x), 2),
+        "y": round(float(y), 2),
+        "z": round(float(z), 2),
+        "etiket": str(etiket or ""),
+        "ts": time.time(),
+        **_ekstra_suz(ekstra or {}),
+    }
+    with _KILIT:
+        veri = oku()
+        liste = veri["noktalar"]
+        mevcut = next((i for i, n in enumerate(liste) if n.get("ad") == ad), None)
+        if mevcut is not None:
+            if not ustune_yaz:
+                raise NoktaHatasi(f"'{ad}' adında bir nokta zaten var")
+            liste[mevcut] = nokta
+        else:
+            if len(liste) >= AZAMI_NOKTA:
+                raise NoktaHatasi(f"Nokta sayısı sınırı aşıldı ({AZAMI_NOKTA})")
+            liste.append(nokta)
+        yaz(veri)
+    return nokta
+
+
+def sil(ad: str) -> bool:
+    ad = str(ad or "").strip()
+    with _KILIT:
+        veri = oku()
+        once = len(veri["noktalar"])
+        veri["noktalar"] = [n for n in veri["noktalar"] if n.get("ad") != ad]
+        if len(veri["noktalar"]) == once:
+            return False
+        yaz(veri)
+    return True
+
+
+def toplu_ekle(yeni: list[dict[str, Any]]) -> dict[str, int]:
+    """Izgara üretimi için: aynı isimdekilerin üzerine yazar, yenileri ekler.
+
+    Tek tek `ekle` çağırmak her nokta için dosyayı baştan yazmak olurdu; 60
+    noktalık bir ızgarada 60 kez disk yazması demek.
+    """
+    with _KILIT:
+        veri = oku()
+        indeks = {n.get("ad"): i for i, n in enumerate(veri["noktalar"])}
+        eklendi = guncellendi = 0
+        for n in yeni:
+            ad = _ad_dogrula(n["ad"])
+            kayit = {
+                "ad": ad,
+                "x": round(float(n["x"]), 2),
+                "y": round(float(n["y"]), 2),
+                "z": round(float(n["z"]), 2),
+                "etiket": str(n.get("etiket", "")),
+                "ts": time.time(),
+                **_ekstra_suz(n),
+            }
+            if ad in indeks:
+                veri["noktalar"][indeks[ad]] = kayit
+                guncellendi += 1
+            else:
+                if len(veri["noktalar"]) >= AZAMI_NOKTA:
+                    raise NoktaHatasi(f"Nokta sayısı sınırı aşıldı ({AZAMI_NOKTA})")
+                indeks[ad] = len(veri["noktalar"])
+                veri["noktalar"].append(kayit)
+                eklendi += 1
+        yaz(veri)
+    return {"eklendi": eklendi, "guncellendi": guncellendi}
+
+
+# --------------------------------------------------------------------------- #
+# Tohum ızgarası
+# --------------------------------------------------------------------------- #
+def izgara_uret(x0: float, y0: float, z: float, dx: float, dy: float,
+                satir: int, sutun: int, onek: str = "s") -> list[dict[str, Any]]:
+    """Satır-öncelikli ızgara: 1 numara (x0, y0), sütun X'te, satır Y'de ilerler.
+
+    Numaralandırma `gantry_studio.gen_seed_grid` ile aynı: `<önek>1..<önek>N`,
+    satır-öncelikli. Tek satırlık bir ızgara böylece s1, s2, s3… oluyor.
+    """
+    satir = max(1, int(satir))
+    sutun = max(1, int(sutun))
+    onek = _ad_dogrula(onek or "s")
+    if satir * sutun > AZAMI_NOKTA:
+        raise NoktaHatasi(f"Izgara çok büyük: {satir * sutun} nokta")
+
+    cikti = []
+    sayac = 0
+    for r in range(satir):
+        for c in range(sutun):
+            sayac += 1
+            cikti.append({
+                "ad": f"{onek}{sayac}",
+                "x": round(float(x0) + c * float(dx), 1),
+                "y": round(float(y0) + r * float(dy), 1),
+                "z": round(float(z), 1),
+                "etiket": "ızgara",
+            })
+    return cikti

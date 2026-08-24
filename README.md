@@ -83,14 +83,46 @@ Eklenenler:
 * `VERI:{...}` satırı — ajan yalnızca bunu okur, Türkçe satırlar durduğu için
   Seri Monitör'den izlemeye devam edebilirsin.
 * Seri komutlar: `AC`, `KAPA`, `SERVO 45`, `AUTO`, `MANUEL`, `OKU`,
-  `ROLE su_pompasi 1`.
+  `ROLE su_pompasi 1`, `ESIK 600`, `OTOCIKIS servo`.
 * Röle pinleri: D4 su pompası, D5 hava pompası, D6 su vanası. Röle kartın
   "aktif yüksek" ise `#define ROLE_AKTIF_LOW 0` yap.
 * Barometre bulunamazsa sistem artık durmuyor; o kanal `null` gidiyor,
   diğer sensörler çalışmaya devam ediyor.
 
-Bağlantılar (Uno): BMP180 `SDA→A4, SCL→A5, VCC→3.3V` · DHT11 `DATA→D2` ·
-HW-103 `A0` · Servo `D9`.
+### Bağlantılar (Arduino Uno)
+
+| Sensör | Ucu | Uno | Not |
+|---|---|---|---|
+| GY-68 (BMP180) | VCC · GND · SDA · SCL | **3.3V** · GND · A4 · A5 | 5V **bağlamayın** |
+| DHT11 / DHT22 | VCC · GND · DATA | 5V · GND · D2 | Kart üstünde direnç yoksa VCC–DATA arası 10K |
+| HW-103 | VCC · GND · A0 | 5V · GND · A0 | D0 boşta kalır |
+| SG-5010 servo | — | D9 | *şu an bağlı değil* |
+| Röleler | — | D4 · D5 · D6 | *şu an bağlı değil* |
+
+### Bağlı donanım anahtarı
+
+Sketch'in başında iki satır var:
+
+```c
+#define SERVO_BAGLI   0      // SG-5010 vana servosu (D9)
+#define ROLELER_BAGLI 0      // su pompası / hava pompası / su vanası röleleri
+```
+
+Bağlı olmayan bir çıkışı sürmek zararsız *görünür* ama panelde yalan söyler:
+ortada vana yokken "vana açık" yazan bir kart, en kötü türden bilgidir. Bu
+yüzden 0 iken o pinlere hiç dokunulmuyor, ilgili komutlar `HATA: ... bagli
+degil` diye reddediliyor, otomatik sulama çıkışı "yok"a düşüyor ve panel o
+kartları kendiliğinden gizleyip düğmeleri sebebiyle birlikte kapatıyor.
+Donanımı taktığınızda **yalnızca** bu satırı 1 yapıp sketch'i yeniden
+yükleyin.
+
+### DHT11 mi DHT22 mi
+
+Artık elle seçmiyorsunuz: açılışta ikisi de deneniyor, hangisi okuma
+veriyorsa o kullanılıyor ve adı panele bildiriliyor (kartın altında "DHT11"
+ya da "DHT22" yazar). Yanlış tip seçilince kütüphane sessizce `NaN`
+döndürüyor ve panelde sürekli "—" görünüyordu; sensör bozuk sanılıyordu.
+Seri Monitör açılışta `DHT tipi: DHT22` gibi bir satır basar.
 
 ## 3. Ajan — elle kurulum
 
@@ -180,15 +212,67 @@ ediyordu.)
 
 ## Panel
 
-* **Panel** — anlık değerler, 4 grafik, zaman aralığı seçimi (15 dk → 7 gün).
+* **Panel** — anlık değerler, grafikler, zaman aralığı seçimi (15 dk → 7 gün).
+  Kartlar ve grafikler yalnızca **gerçekten veri gelen** kanallar için
+  görünür: bağlı olmayan bir sensör için boş eksen çizilmez. İşaret yapışkan,
+  yani DHT'nin ara sıra atladığı bir okuma kartı gözden kaybettirmez.
 * **Kontrol** — jog paneli, konuma git, hız, sürücü aç/kapa, servo, kip,
-  röleler.
+  röleler, kayıtlı noktalar, tohum ızgarası, yasak bölgeler, uç değiştirme,
+  programlar ve kamera önizlemesi.
+* **Tarla** — yatağın 3B görünümü: bitki ekleme, sürükleyerek taşıma,
+  yayılım daireleri ve çakışma uyarıları (aşağıda).
 * **Tablo** — aynı verinin sayı hâli; grafik okuyamadığınız durumlar için.
 
-Jog düğmeleri **basılı tutuldukça** hareket eder (makinedeki gerçek davranış),
-bırakınca durur. Ok tuşları da aynı şekilde çalışır: `←→` X, `↑↓` Y,
-`PageUp/PageDown` Z, **boşluk** acil durdurma. Jog yenilemeleri WebSocket'ten
+Jog düğmeleri **tıklayınca başlar, tekrar tıklayınca durur**; çalışan eksenin
+düğmesi mavi yanar. Ok tuşları da aynı: `←→` X, `↑↓` Y, `PageUp/PageDown` Z,
+**Esc** durdurur, **boşluk** acil durdurma. Jog yenilemeleri WebSocket'ten
 gidiyor — saniyede birkaç HTTP isteği hem yavaş hem gereksizdi.
+
+Basılı tutma yerine tıklama, "parmağını çekince durur" güvencesini ortadan
+kaldırdığı için koruma tamamen ajana bindi:
+
+* Panel yenilemeyi kesince (sekme gizlendi, pencere odağı gitti, soket koptu)
+  eksen **1,2 saniyede** durur.
+* Eksen yumuşak sınıra yaklaşınca ajanın bekçisi **kendiliğinden durdurur**;
+  duruş payı hıza göre hesaplanır (hız × 0,5, en az 2 mm).
+* Her yenilemede yasak bölge ileri-bakışı tekrarlanır.
+
+**Jog yönü kalibrasyondaki `dir` değerine göre seçilir.** PLC'nin `jogf` biti
+eksenin kendi ileri yönü; Z'de `dir` = −1 olduğu için o bit mm cinsinden
+aşağı demek. Panelde `Z▲` her zaman **artı mm** yönünde hareket eder.
+
+**`enable` her açılışta 0 → 1 kenarı üretir.** Register zaten 1 okurken üstüne
+tekrar 1 yazmak hiçbir şey değiştirmiyor: bir arıza sonrası düşmüş sürücü
+öylece kapalı kalıyor ve komutlar sessizce yutuluyor. Sahada tam olarak bu
+yaşandı — hareket alınamamasının sebebi buydu.
+
+### Otomatik sulama (kip)
+Panelin **Otomatik / Manuel** düğmeleri Arduino'nun kendi sulama kararını açıp
+kapatıyor. Karar bilerek Arduino'da: Pi kapansa, panel kapansa, ağ gitse bile
+bitkinin sulanması gerekiyor.
+
+* **Otomatik** — toprak nemi eşiğin altına düşünce Arduino seçili çıkışı
+  kendi açar, nem yeterliyse kapatır. Pi kapalıyken de çalışır.
+* **Manuel** — Arduino hiçbir şeye kendiliğinden dokunmaz; kararı panel ya da
+  ajandaki program verir. Panelden servo/vana komutu göndermek kipi
+  kendiliğinden manuele düşürür.
+
+İki ayar panelden değiştirilebiliyor ve **Arduino'nun EEPROM'unda** duruyor —
+kartın fişi çekilse bile korunur, çünkü kararı veren de o:
+
+| Ayar | Ne işe yarar |
+|---|---|
+| **Otomatikte çalışacak çıkış** | Vana servosu · Su vanası rölesi · Su pompası rölesi · **Yok**. "Yok" seçmek otomatik sulamayı tamamen kaldırır. |
+| **Eşik** | Toprak nemi bu yüzdenin altına düşünce açılır. Panel yüzde gösterir, Arduino ham ADC ile karşılaştırır; çeviri tek yerde. |
+
+Üç yerde çıkış kapatılıyor, açık unutulmasın diye: çıkış değiştirilirken
+eskisi, manuele geçilirken otomatiğin açtığı çıkış, otomatiğe geçilirken elle
+yarı açık bırakılmış çıkış. Sonuncusu olmasa "elle 45°'de bırakılmış vana,
+sulama gerekmiyor kararıyla öylece açık kalır" durumu doğuyordu.
+
+Bu ayarlar kartın yazılımına eklendi: **sketch'i yeniden yüklemeden**
+görünmezler, panel de o durumda "karttaki yazılım eski" uyarısı verip alanları
+kilitler.
 
 Toprak nemi panelde **yüzde** gösteriliyor. HW-103 kuruyken ~1023, ıslakken ~0
 okuyor; ham sayıyı göstermek "nem arttıkça değer düşüyor" gibi tersine bir
@@ -201,7 +285,13 @@ Sunucu → ajan (WebSocket): `{"tip":"komut","id":"...","ad":"...","arg":{...}}`
 Ajan → sunucu: `{"tip":"sonuc","id":"...","ok":true,"mesaj":"..."}`
 
 Tanımlı komutlar: `jog`, `jog_dur`, `git`, `home`, `dur`, `acil`,
-`acil_temizle`, `enable`, `hiz`, `servo`, `kip`, `role`.
+`acil_temizle`, `enable`, `hiz`, `servo`, `kip`, `role`, `bolge_listele`,
+`bolge_kaydet`, `uc_listele`, `uc_kaydet`, `uc_al`, `uc_birak`, `uc_degistir`,
+`dizi_baslat`, `dizi_durdur`.
+
+Sunucuda kalan, ajana hiç gitmeyen uçlar: `/api/noktalar`,
+`/api/izgara/onizle`, `/api/izgara/uygula`, `/api/programlar`,
+`/api/programlar/calistir`, `/api/kare/son`.
 
 İstisna: `jog` ve `jog_dur` panel WebSocket'inden geçiyor ve yanıt
 beklenmiyor — saniyede 3-4 yenileme için gidiş-dönüş beklemek gecikme yaratır.
@@ -210,13 +300,190 @@ Güvenlik yanıta değil, ajandaki kira bekçisine dayanıyor.
 Yeni komut eklemek için üç yer: `sunucu/main.py → IZINLI_KOMUTLAR`,
 `ajan/ajan.py → komut_isle`, arayüzde bir düğme.
 
-## Sırada ne var (bunlar çalışınca)
+## Nokta deposu, ızgara, bölgeler, uç değiştirme, programlar
 
-1. Nokta/bitki haritası ve "şu noktaya git" dizileri (Gantry Studio'daki
-   `gantry_store.json` ve fide ızgarası buraya taşınabilir)
-2. Uç değiştirme dizisi (yan yaklaşımlı kilit) — en riskli parça, en son
-3. Zamanlanmış sulama (eşik + saat kuralları)
-4. Kamera görüntüsü ve uyarı kuralları
+### Kayıtlı noktalar
+Bulunulan konum isimle kaydedilir; listeden "Git" mevcut `git` komutunu
+çağırır (ikinci bir hareket yolu yok). Makinenin yumuşak sınırlarının dışında
+kalan noktalar **silinmez**, uyarıyla işaretlenir ve "Git" düğmeleri kapanır —
+sınırlar sonradan daralmış olabilir, kaydı çöpe atmak kullanıcının emeğini
+çöpe atmaktır.
+
+Veri `~/farmbot-veri/noktalar.json` içinde. **Neden JSON, neden SQLite değil:**
+küçük, bütün okunup bütün yazılan bir yapılandırma verisi; aralık sorgusu ya
+da seyreltme gerekmiyor. Gantry Studio'nun `gantry_store.json` biçimiyle aynı
+mantıkta, elle düzeltmesi kolay, yedeklemesi `cp`. Telemetri farklı bir iş
+(sürekli ekleme + zaman aralığı sorgusu) ve SQLite'ta kalıyor. Yazma atomik:
+geçici dosya + `os.replace`.
+
+### Tohum ızgarası
+Alanlar dört grupta: **Başlangıç** (X, Y) · **Aralık** (ΔX, ΔY) · **Boyut**
+(satır × sütun) · **Ad** (önek). Z alanı yok: noktalar tarla tasarımcısındaki
+bitkilerle aynı kuralla, güvenli taşıma yüksekliğine (`guvenli_z`) yazılıyor —
+"git" dendiğinde uç toprağa dalmasın diye. Ekim derinliği ayrı bir bilgi ve
+türde duruyor.
+
+Önizleme kaç nokta üretileceğini, ilk ve son noktayı, sınır dışı kalanları ve
+üzerine yazılacakları söylüyor; ilk dört noktanın koordinat listesi bilerek
+kaldırıldı — karar için gereken bilgi bu değildi ve noktaların tamamı zaten
+Uygula'dan sonra listede görünüyor.
+`x0,y0,z` + `dx,dy` + satır/sütun + önek → satır-öncelikli `s1..sN`.
+Üretilen noktalar **aynı nokta deposuna** yazılıyor, ayrı bir yapı yok.
+Uygulamadan önce önizleme: kaç nokta çıkacak, kaçı sınır dışı kalacak, kaç
+mevcut noktanın üzerine yazılacak.
+
+### Yasak bölgeler
+Dikdörtgen alan (X/Y) + `izin_kosulu`. Denetim **ajanda**; panel çökse de
+koruma çalışır. Değişkenler: `z, x, y, prox, tool, safe_z, zmax`.
+
+    z>=safe_z          tool!='laser'          z>=safe_z or prox
+
+`eval()` kullanılmıyor — karşılaştırma, `and/or/not`, parantez, sayı ve metin
+sabiti destekleyen küçük bir değerlendirici (`ajan/kosul.py`) var. Bilinmeyen
+isim, bozuk ifade ya da tip uyuşmazlığı → koşul **FALSE**, yani hareket
+engellenir. Güvenlikte şüphe izin verme yönünde çözülmez.
+
+İki nokta referanstan farklı:
+
+* **Yol denetimi.** Yalnızca hedef değil, hareketin geçtiği yol da
+  denetleniyor. Başlangıç ve hedef bölge dışında olsa bile aradan geçmek
+  engelleniyor. Jog'da ise ileriye bakılıyor: eksen bölgeye *girmeden* duruyor.
+* **İhlalden çıkış.** Makine bir bölgenin içinde koşulu sağlamadan kalırsa
+  (elektrik kesintisi, bölge sonradan tanımlandı) her hareketi engellemek onu
+  kilitlerdi. Bu durumda yalnızca **Z'yi yukarı almaya** izin veriliyor —
+  açıklığı ancak artırabilecek tek hareket. Yanlamasına sürüklenme engelli.
+
+### Uç değiştirme
+Yandan yaklaşımlı kilit dizisi (`ajan/uclar.py`, ayarlar `ajan/uclar.json`).
+Bütün X/Y yolculukları `travel_z` yüksekliğinde; alçak Z'deki tek yatay
+hareket uca girip çıkan kısa kayma.
+
+**Her adımın sonunda konum doğrulanıyor**; varılmadıysa dizi durur ve sonraki
+adıma geçmez. (Referansta bazı adımların dönüşü denetlenmiyor.)
+
+**Bölge esnetmesi — açıkça:** yuvalar bölgelerin içinde yaşadığı için dizi
+boyunca yalnızca `yuva: true` işaretli bölgeler atlanıyor. Diğer bölgeler
+dizinin ortasında da engelliyor; esnetme dizi bitince, hata verince ya da acil
+durdurmada anında kapanıyor ve panelde "⚠ Yuva esnetmesi açık" rozetiyle
+görünüyor. (Referans dizinin tamamında bütün bölge denetimlerini kapatıyor.)
+
+`lock_reg` / `grip_reg` / `presence_reg` **0** olduğu sürece donanım bağlı
+değil demektir: dizi çalışır ama sonunda "başarılı" değil
+**"doğrulanamadı"** der.
+
+**Uç değiştirme alanı (`tc_area`).** 4 köşeli bir alan; içinde X/Y jog için Z
+güvenlik şartı devre dışı — uçları alçak Z'de takıp çıkarabilmek için.
+Kapalıyken **hiçbir muafiyet yok** ve muafiyet alanın dışına taşmıyor. Alan
+açıkken panelde sarı bir uyarı duruyor ve makinenin şu anda alanın içinde mi
+dışında mı olduğunu yazıyor — sessizce açık kalan bir muafiyet, kilidin
+kendisinden tehlikeli.
+
+**`z_safe_reg`.** PLC'deki "Z güvenli yükseklikte" biti. Tanımlıysa milimetre
+hesabının önüne geçer: gerçek bir switch, hesaptan güvenilirdir. 0 ise
+kullanılmaz. Okuma hata verirse "güvenli değil" sayılır.
+
+**`retreat`.** `approach`ın çıkış karşılığı: girişte ucun altına kayarken
+izlenen yol ile çıkarken izlenen yol farklı olabilir. Boş bırakılırsa
+`approach` kullanılır.
+
+**Hareket önizlemesi.** Tak/Bırak'a basmadan önce izlenecek yol koordinat
+koordinat panelde yazıyor, `travel_z` ile uç yüksekliği tutarsızsa uyarı
+veriyor. Makinenin kendine çarpma riski en yüksek hareketi bu; "başlat"a
+basıp ne olacağını izlemek yerine önce okunabilmesi gerekiyor.
+
+**"Durumu temizle".** Dizi ortasında kesilen bir uç değiştirmeden sonra
+yazılımın kaydı ile gerçek durum ayrışabiliyor. Bu düğme **yalnızca kaydı**
+sıfırlar; hiçbir eksen hareket etmez. Otomatik kurtarma denemek, bilinmeyen
+bir durumda kör hareket demek olurdu.
+
+Sahadan gelen gerçek değerler `ajan/uclar.json` içinde: `safe_z` 280,
+`travel_z` 280, `lift` 80, `approach` −55, `lock_dwell` 1500, `speed` 20,
+`slide_axis` Y; uçlar tool1 (10, 70.5, 150), tool2 (5, 150, 200),
+tool3 (5, 250, 250). `lock_dwell` milisaniye — 50'nin altındaki değerler
+saniye kabul edilir (referans program 1.5 kullanıyordu; 1500'ü saniye sanmak
+servo komutundan sonra 25 dakika donmak demekti).
+
+### Programlar
+Adım tipleri: noktaya git · bekle · röle aç/kapa · servo · uç değiştir.
+Hepsi mevcut komutları çağırır. Dizi **ajanda** yürür (panel kapansa da acil
+durdurma keser). Nokta adları sunucuda koordinata çevrilip ajana öyle gider;
+çözülemeyen bir nokta varsa dizi **hiç başlamaz**. Bir adım hata verirse dizi
+durur ve sebep panelde kalır. Acil durdurma diziyi keser, mandal
+temizlenmeden yeniden başlamaz. Sonsuz tekrar yok (en fazla 1000 tur).
+
+### Tarla tasarımcısı (3B)
+Yatağın kuş bakışı ve serbest kamera görünümü. Tür seçilip **Bitki ekle** ile
+yatağa tıklanınca bitki oraya konuyor; sürüklenerek taşınıyor, üstüne
+tıklanınca kartı açılıyor (ekim derinliği, hasat süresi, günlük su, yayılım,
+ışık, büyüme yüzdesi) ve **Buraya git** ile makine oraya gidiyor.
+
+Dört tasarım kararı:
+
+* **Bitki ayrı bir depo değil.** Bitki, `tur` ve `ekim` alanları taşıyan
+  sıradan bir **nokta**. Böylece "buraya git" mevcut `git` komutu, sınır
+  denetimi mevcut denetim, yedekleme mevcut yedekleme. Kontrol sekmesindeki
+  nokta listesinde de görünüyorlar (başında 🌱 ile).
+* **Ölçüler sabit yazılmıyor.** Yatak boyu `durum.sinirlar`dan geliyor
+  (şu an X 425, Y 550); kalibrasyon değişince sahne kendiliğinden değişiyor.
+* **Bitkinin Z'si güvenli taşıma yüksekliği.** Ekim derinliği türde duruyor;
+  noktanın Z'si `guvenli_z` ki "buraya git" ucu toprağa daldırmasın.
+* **Çakışma görünür.** Her bitkinin altında yayılım çapı kadar bir halka var;
+  iki halka kesişirse ikisi de sarıya döner ve kaç mm iç içe oldukları
+  listelenir. Yumuşak sınırın dışına düşen bitki kırmızıya döner — kayıt
+  silinmez ama hareketi ajan zaten reddeder.
+
+Teknik: `three.js` **yerel dosya** olarak duruyor (`statik/three.min.js`,
+UMD, global `THREE`) — tıpkı `chart.umd.js` gibi. CDN yok, ES modülü yok,
+derleme adımı yok; Pi internetsiz çalışıyor. React ya da React Three Fiber
+kullanılmadı, yörünge denetimi de elle yazıldı (o modül bu sürümde yalnızca
+ESM olarak geliyor). Üstten görünüm **ortografik**: ekrandaki mesafe ile
+gerçek mm doğru orantılı.
+
+Bitkiler prosedürel çiziliyor (gövde + yapraklar; tür rengi, yayılım çapı ve
+`days_to_harvest`e göre büyüme). Fotoğraf dokusu eklemek isterseniz
+`tarla.js` içindeki `DOKU` nesnesi bunun için ayrıldı: dosya adını yazıp
+görselleri `statik/doku/` altına koymanız yeterli. **Depoda hiç doku dosyası
+yok** — telifi doğrulanmamış görsel eklenmedi.
+
+Tür kataloğu `docs/bitki_turleri.json` (37 tür) ve `GET /api/turler` ile
+sunuluyor; dosyayı düzenlemek yeni tür eklemeye yetiyor.
+
+### Kamera
+`ayarlar.json` → `"kamera": {"aktif": true, "aralik_sn": 30}`. Kare yakalama
+picamera2 → rpicam-still → libcamera-still → fswebcam sırasıyla deneniyor;
+hiçbiri yoksa
+kamera kapanır, geri kalan her şey çalışmaya devam eder. Kare WebSocket'ten
+panellere yayılmıyor (40 KB base64 her panele ayrı giderdi): sunucu son 12
+kareyi diskte tutuyor, panele "yeni kare var" haberi gidiyor, tarayıcı `<img>`
+ile çekiyor.
+
+**Şerit kablolu Pi kamera modülü için** Pi'de:
+
+```bash
+sudo apt install -y python3-picamera2 rpicam-apps
+rpicam-hello --list-cameras          # kamera görünüyor mu
+```
+
+Bir uyarı: `pi-kur.sh` ajanın sanal ortamını artık `--system-site-packages`
+ile kuruyor, yoksa apt'tan gelen `python3-picamera2` venv'in içinden
+görünmüyor ve 1. yol sessizce eleniyordu. Ortam daha önce kurulduysa
+yeniden yaratmak gerekir (`rm -rf ajan/.venv && bash pi-kur.sh`) — ya da hiç
+uğraşmayın: `rpicam-still` yolu da aynı işi görüyor, 30 saniyede bir tek kare
+için işlem açmanın maliyeti önemsiz.
+
+## Sırada ne var
+
+- [x] Nokta deposu ve "şu noktaya git"
+- [x] Tohum ızgarası
+- [x] Yasak bölgeler (`allow_if` koşullu)
+- [x] Uç değiştirme dizisi
+- [x] Kayıtlı program çalıştırma
+- [x] Kamera görüntüsü
+- [x] 3B tarla tasarımcısı (bitki yerleşimi, yayılım çakışması)
+- [ ] Zamanlanmış sulama (eşik + saat kuralları)
+- [ ] Uyarı kuralları (nem düşerse bildirim)
+- [ ] Fide durumu takibi (sulandı / hasat edildi — ekim tarihi zaten tutuluyor)
+- [ ] Nem ölçüm ucu ve otomatik sulama kararı (referanstaki `measure`/`water`)
 
 ---
 

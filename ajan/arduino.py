@@ -32,6 +32,7 @@ class Arduino:
         self._calisiyor = False
         self._is_parcacigi: threading.Thread | None = None
         self._yazma_kilidi = threading.Lock()
+        self._makul_uyarildi: set[str] = set()
         self.son_veri: dict[str, Any] = {}
         self.son_veri_zamani: float = 0.0
 
@@ -87,6 +88,48 @@ class Arduino:
                 self._seri = None
                 time.sleep(3.0)
 
+    def _makul_suz(self, veri: dict[str, Any]) -> dict[str, Any]:
+        """Fiziken imkânsız okumaları `null`a çevirir ve sebebini bir kez loglar.
+
+        Neden gerekli: arızalı bir sensör çoğu zaman susmuyor, saçmalıyor.
+        Sahada BMP180 -59 °C ve 1810 hPa bildirdi; bu değerler grafiğe
+        çizilince eksen eziliyor, tabloya girince ortalama bozuluyor ve en
+        kötüsü "veri var" izlenimi veriyor. Sensörün kendi veri sayfasındaki
+        çalışma aralığının dışına çıkan bir okuma, ölçüm değil arıza
+        belirtisidir; kaydetmek yerine kanalı boş bırakıp uyarıyoruz.
+
+        Sınırlar sensörlerin veri sayfasından: BMP180 -40..85 °C / 300..1100
+        hPa, DHT11 0..50 °C / 20..90 %RH (DHT22 daha geniş olduğu için onun
+        aralığı alındı), HW-103 10 bitlik ADC.
+        """
+        SINIR = {
+            "hava_sicaklik": (-40.0, 85.0, "°C"),
+            "bmp_sicaklik": (-40.0, 85.0, "°C"),
+            "hava_nem": (0.0, 100.0, "%"),
+            "basinc": (300.0, 1100.0, "hPa"),
+            "rakim": (-500.0, 9000.0, "m"),
+            "toprak_nem": (0.0, 1023.0, ""),
+            "servo_aci": (0.0, 180.0, "°"),
+        }
+        for ad, (alt, ust, birim) in SINIR.items():
+            deger = veri.get(ad)
+            if deger is None:
+                continue
+            try:
+                sayi = float(deger)
+            except (TypeError, ValueError):
+                veri[ad] = None
+                continue
+            if sayi != sayi or not (alt <= sayi <= ust):     # NaN ya da aralık dışı
+                veri[ad] = None
+                if ad not in self._makul_uyarildi:
+                    self._makul_uyarildi.add(ad)
+                    logger.warning(
+                        "%s makul olmayan değer bildiriyor: %s %s (beklenen %s..%s) — "
+                        "bu kanal boş geçiliyor, sensörü/kabloyu kontrol edin",
+                        ad, sayi, birim, alt, ust)
+        return veri
+
     def _veri_isle(self, govde: str) -> None:
         try:
             veri = json.loads(govde)
@@ -95,6 +138,7 @@ class Arduino:
             return
         if not isinstance(veri, dict):
             return
+        veri = self._makul_suz(veri)
         self.son_veri = veri
         self.son_veri_zamani = time.time()
         if self.geri_cagir:
@@ -125,6 +169,17 @@ class SahteArduino(Arduino):
         super().__init__(port="sahte", baud=0, geri_cagir=geri_cagir)
         self.aralik = aralik
         self.servo_aci = 0.0
+        # Gerçek kartta bunlar EEPROM'da; burada bellekte taklit ediliyor ki
+        # panelin otomatik sulama ekranı sahte kipte de denenebilsin.
+        self.esik = 600
+        # Sahadaki tesisat: şu an yalnızca üç sensör takılı, vana servosu ve
+        # röleler bağlı değil. Sahte kip bunu taklit ediyor ki panel gerçekte
+        # göreceğimiz hâliyle denenebilsin (firmware'deki SERVO_BAGLI /
+        # ROLELER_BAGLI ile aynı anlam).
+        self.servo_var = 0
+        self.role_var = 0
+        self.oto_cikis = "servo" if self.servo_var else "yok"
+        self.kip = "oto"
 
     @property
     def bagli(self) -> bool:
@@ -146,6 +201,8 @@ class SahteArduino(Arduino):
             sicaklik = 22 + 6 * math.sin(gun_orani - 1.5) + random.uniform(-0.3, 0.3)
             nem = 55 - 12 * math.sin(gun_orani - 1.5) + random.uniform(-1.5, 1.5)
             toprak = 520 + 180 * math.sin(t / 900) + random.uniform(-15, 15)
+            if self.kip == "oto" and self.oto_cikis == "servo" and self.servo_var:
+                self.servo_aci = 90.0 if toprak < self.esik else 0.0
             self._veri_isle(
                 json.dumps(
                     {
@@ -155,8 +212,14 @@ class SahteArduino(Arduino):
                         "basinc": round(1012 + 3 * math.sin(t / 3600), 2),
                         "rakim": round(120 + random.uniform(-2, 2), 1),
                         "toprak_nem": int(toprak),
-                        "servo_aci": self.servo_aci,
-                        "kip": "oto",
+                        "servo_aci": self.servo_aci if self.servo_var else None,
+                        "dht": "DHT11",
+                        "servo_var": self.servo_var,
+                        "role_var": self.role_var,
+                        "esik": self.esik,
+                        "oto_cikis": self.oto_cikis,
+                        "oto_acik": 1 if (self.oto_cikis != "yok" and toprak < self.esik) else 0,
+                        "kip": self.kip,
                     }
                 )
             )
@@ -166,11 +229,35 @@ class SahteArduino(Arduino):
         metin = metin.strip().upper()
         if metin == "AC":
             self.servo_aci = 90.0
+            self.kip = "manuel"
         elif metin == "KAPA":
             self.servo_aci = 0.0
+            self.kip = "manuel"
         elif metin.startswith("SERVO"):
             try:
                 self.servo_aci = float(metin.split()[1])
             except (IndexError, ValueError):
                 raise RuntimeError("SERVO komutu bir açı bekliyor")
+            self.kip = "manuel"
+        elif metin == "AUTO":
+            self.kip = "oto"
+        elif metin == "MANUEL":
+            self.kip = "manuel"
+        elif metin.startswith("ESIK"):
+            try:
+                self.esik = max(0, min(1023, int(metin.split()[1])))
+            except (IndexError, ValueError):
+                raise RuntimeError("ESIK komutu bir sayı bekliyor")
+        elif metin.startswith("OTOCIKIS"):
+            try:
+                ad = metin.split()[1].lower()
+            except IndexError:
+                raise RuntimeError("OTOCIKIS bir ad bekliyor")
+            if ad not in ("yok", "servo", "su_vanasi", "su_pompasi"):
+                raise RuntimeError(f"Bilinmeyen çıkış: {ad}")
+            bagli = {"yok": True, "servo": bool(self.servo_var),
+                     "su_vanasi": bool(self.role_var), "su_pompasi": bool(self.role_var)}
+            if not bagli[ad]:
+                raise RuntimeError(f"'{ad}' bağlı değil")
+            self.oto_cikis = ad
         logger.info("Sahte Arduino komutu: %s", metin)

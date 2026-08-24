@@ -4,3 +4,4 @@ __pycache__/
 ajan/ayarlar.json
 sunucu/farmbot.db*
 sunucu/ortam
+*.tar.gz

@@ -17,6 +17,20 @@ const S = {
   enable: false,
   grafikler: {},
   roleDurum: { su_pompasi: false, hava_pompasi: false, su_vanasi: false },
+  noktalar: [],
+  bolgeler: [],
+  ucListesi: [],
+  sonTakiliUc: undefined,
+  ucAyarDuzenleniyor: false,
+  programlar: [],
+  adimlar: [],
+  bolgeDuzenleniyor: false,   // kullanıcı yazarken durum akışı üzerine yazmasın
+  sinirlar: null,        // ajandan gelen yumuşak sınırlar
+  guvenliZ: null,        // X/Y hareketi için gereken en düşük Z (ajandan)
+  kip: null,             // Arduino'nun kipi: "oto" | "manuel"
+  otoDuzenleniyor: false,   // kullanıcı ayarla oynarken ölçüm üstüne yazmasın
+  sonKonum: null,
+  ajanBagli: false,
   satirlar: [],          // tablo görünümü için son ölçümler
   sonZaman: 0,
 };
@@ -74,7 +88,11 @@ async function komutGonder(ad, arg = {}) {
       gunluk(`✕ ${ad}: ${govde.detail || yanit.statusText}`, "hata");
       return null;
     }
-    gunluk(govde.ok ? `✓ ${govde.mesaj}` : `✕ ${govde.mesaj}`, govde.ok ? "ok" : "hata");
+    // "sessiz" komutlar (jog yenilemesi, önizleme sorgusu) günlüğe düşmüyor:
+    // saniyede birkaç kez tekrarlanan bir sorgu, gerçek olayları kaydırırdı.
+    if (!govde.sessiz) {
+      gunluk(govde.ok ? `✓ ${govde.mesaj}` : `✕ ${govde.mesaj}`, govde.ok ? "ok" : "hata");
+    }
     return govde;
   } catch (hata) {
     gunluk(`✕ ${ad}: sunucuya ulaşılamadı (${hata.message})`, "hata");
@@ -82,11 +100,522 @@ async function komutGonder(ad, arg = {}) {
   }
 }
 
-/* ---------------------------------------------------------- basılı tut jog */
-// PLC'nin jog bitleri MANDAL: 1 yazılınca eksen durmaz. Ajan bunu "kira"ya
-// çevirdi — panel basılı tuttuğu sürece yeniliyor, yenileme kesilince ajanın
-// bekçisi 1,2 saniyede biti düşürüyor. Bu yüzden yenilemeler WebSocket'ten
-// gidiyor: her yenileme için HTTP isteği hem yavaş hem gereksiz.
+/* ------------------------------------------------------------ noktalar API */
+async function apiIste(yol, secenek = {}) {
+  const ayirac = yol.includes("?") ? "&" : "?";
+  const yanit = await fetch(`${yol}${ayirac}jeton=${encodeURIComponent(S.jeton)}`, {
+    headers: { "Content-Type": "application/json" },
+    ...secenek,
+  });
+  const govde = await yanit.json().catch(() => ({}));
+  if (!yanit.ok) throw Object.assign(new Error(govde.detail || yanit.statusText), { kod: yanit.status });
+  return govde;
+}
+
+/** Nokta makinenin yumuşak sınırlarının dışında mı?
+ *  Sınırlar ajandan geliyor (durum.sinirlar); panel bunları yalnızca
+ *  göstermek için kullanıyor — asıl denetim ajanda. */
+function sinirDisi(nokta) {
+  const s = S.sinirlar;
+  if (!s) return null;
+  const disarida = ["x", "y", "z"].filter((eksen) => {
+    const sinir = s[eksen];
+    if (!sinir || sinir.min == null || sinir.max == null) return false;
+    return nokta[eksen] < sinir.min - 0.5 || nokta[eksen] > sinir.max + 0.5;
+  });
+  return disarida.length ? disarida.map((e) => e.toUpperCase()).join(", ") : null;
+}
+
+async function noktalariYukle() {
+  try {
+    const govde = await apiIste("/api/noktalar");
+    S.noktalar = govde.noktalar || [];
+    noktalariCiz();
+    // Bitkiler de bu depoda duruyor; 3B tarla görünümü aynı listeden besleniyor.
+    if (window.Tarla) window.Tarla.noktalarDegisti();
+  } catch (hata) {
+    gunluk(`✕ Noktalar yüklenemedi: ${hata.message}`, "hata");
+  }
+}
+
+function noktalariCiz() {
+  const kutu = $("#nokta-liste");
+  if (!S.noktalar.length) {
+    kutu.innerHTML = '<p class="alt-not">Henüz kayıtlı nokta yok.</p>';
+    return;
+  }
+  kutu.innerHTML = S.noktalar.map((n, i) => {
+    const disi = sinirDisi(n);
+    return `<div class="satir${disi ? " sinir-disi" : ""}">
+      <span class="ad">${n.tur ? "🌱 " : ""}${kacisli(n.ad)}</span>
+      <span class="koordinat">X${sayi(n.x)} Y${sayi(n.y)} Z${sayi(n.z)}</span>
+      ${disi ? `<span class="rozet-uyari" title="Bu nokta makinenin yumuşak sınırlarının dışında; hareket ajanda reddedilir. Kayıt silinmedi.">⚠ ${disi} sınır dışı</span>` : ""}
+      <button class="dugme nokta-git" data-i="${i}"${disi ? ` disabled data-sinir-disi="1"` : ""}>Git</button>
+      <button class="dugme nokta-sil" data-i="${i}">Sil</button>
+    </div>`;
+  }).join("");
+
+  $$(".nokta-git").forEach((d) => {
+    d.disabled = d.disabled || !S.ajanBagli;
+    d.onclick = () => {
+      const n = S.noktalar[Number(d.dataset.i)];
+      komutGonder("git", { x: n.x, y: n.y, z: n.z });
+    };
+  });
+  $$(".nokta-sil").forEach((d) => {
+    d.onclick = async () => {
+      const n = S.noktalar[Number(d.dataset.i)];
+      try {
+        await apiIste(`/api/noktalar?ad=${encodeURIComponent(n.ad)}`, { method: "DELETE" });
+        gunluk(`✓ '${n.ad}' silindi`, "ok");
+        await noktalariYukle();
+      } catch (hata) {
+        gunluk(`✕ Silinemedi: ${hata.message}`, "hata");
+      }
+    };
+  });
+}
+
+/** Kullanıcının yazdığı isim doğrudan HTML'e giriyor; kaçırmadan basmak
+ *  panelin kendi kendini bozmasına yol açardı. */
+function kacisli(metin) {
+  return String(metin).replace(/[&<>"']/g, (k) =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[k]));
+}
+
+async function noktaKaydet() {
+  const ad = $("#nokta-ad").value.trim();
+  if (!ad) { gunluk("✕ Önce bir nokta adı yazın", "hata"); return; }
+  const k = S.sonKonum;
+  if (!k || k.x == null) { gunluk("✕ Konum bilinmiyor — PLC bağlı mı?", "hata"); return; }
+
+  const govde = { ad, x: k.x, y: k.y, z: k.z };
+  try {
+    await apiIste("/api/noktalar", { method: "POST", body: JSON.stringify(govde) });
+  } catch (hata) {
+    if (hata.kod === 409) {
+      // Üzerine yazmak veri kaybı; sormadan yapmıyoruz.
+      if (!confirm(`'${ad}' zaten var. Üzerine yazılsın mı?`)) return;
+      try {
+        await apiIste("/api/noktalar", {
+          method: "POST", body: JSON.stringify({ ...govde, ustune_yaz: true }),
+        });
+      } catch (ikinci) { gunluk(`✕ ${ikinci.message}`, "hata"); return; }
+    } else {
+      gunluk(`✕ ${hata.message}`, "hata");
+      return;
+    }
+  }
+  gunluk(`✓ '${ad}' kaydedildi: X${sayi(k.x)} Y${sayi(k.y)} Z${sayi(k.z)}`, "ok");
+  $("#nokta-ad").value = "";
+  await noktalariYukle();
+}
+
+/* --------------------------------------------------------- tohum ızgarası */
+function izgaraGirdisi() {
+  // Z artık formda yok: tarla tasarımcısındaki bitkilerle aynı kural geçerli —
+  // nokta güvenli taşıma yüksekliğine yazılıyor ki "git" dendiğinde uç toprağa
+  // dalmasın. Ekim derinliği ayrı bir bilgi ve türde duruyor.
+  return {
+    x0: Number($("#iz-x0").value), y0: Number($("#iz-y0").value),
+    z: S.guvenliZ == null ? 340 : S.guvenliZ,
+    dx: Number($("#iz-dx").value), dy: Number($("#iz-dy").value),
+    satir: Number($("#iz-satir").value), sutun: Number($("#iz-sutun").value),
+    onek: $("#iz-onek").value.trim() || "s",
+  };
+}
+
+async function izgaraOnizle() {
+  const kutu = $("#izgara-onizleme");
+  try {
+    const o = await apiIste("/api/izgara/onizle", {
+      method: "POST", body: JSON.stringify(izgaraGirdisi()),
+    });
+    S.izgaraHazir = true;
+
+    const uyarilar = [];
+    if (o.sinir_disi.length) {
+      uyarilar.push(`<div class="rozet-uyari" style="display:inline-block;margin-top:8px">
+        ⚠ ${o.sinir_disi.length} nokta sınır dışı: ${kacisli(o.sinir_disi.slice(0, 6).map((s) => s.ad).join(", "))}${o.sinir_disi.length > 6 ? "…" : ""}
+        — üretilecek ve işaretlenecek, hareket ajanda reddedilir</div>`);
+    }
+    if (o.ustune_yazilacak.length) {
+      uyarilar.push(`<div class="rozet-uyari" style="display:inline-block;margin-top:8px">
+        ⚠ ${o.ustune_yazilacak.length} mevcut noktanın ÜZERİNE yazılacak:
+        ${kacisli(o.ustune_yazilacak.slice(0, 6).join(", "))}${o.ustune_yazilacak.length > 6 ? "…" : ""}</div>`);
+    }
+    if (o.sinir_bilinmiyor) {
+      uyarilar.push(`<div class="rozet-uyari" style="display:inline-block;margin-top:8px">
+        ⚠ Ajan bağlı değil — sınır denetimi yapılamadı</div>`);
+    }
+
+    // Örnek nokta listesi bilerek yok: kaç nokta üretileceği ve sorunlu
+    // olanların hangileri olduğu karar için yeterli, ilk dört koordinatı
+    // okumak değil. Noktaların tamamı zaten Uygula'dan sonra listede.
+    const ilk = o.noktalar[0], son = o.noktalar[o.noktalar.length - 1];
+    kutu.innerHTML = `<b>${o.toplam}</b> nokta üretilecek` +
+      (o.sinir_disi.length ? `, <b>${o.sinir_disi.length}</b> tanesi sınır dışı` : ", hepsi sınırlar içinde") +
+      (ilk ? ` — <b>${kacisli(ilk.ad)}</b> (X${sayi(ilk.x)} Y${sayi(ilk.y)}) ile ` +
+             `<b>${kacisli(son.ad)}</b> (X${sayi(son.x)} Y${sayi(son.y)}) arası, Z${sayi(ilk.z)}` : "") +
+      `.${uyarilar.join("")}`;
+    kutu.classList.remove("gizli");
+    $("#d-izgara-uygula").classList.remove("gizli");
+  } catch (hata) {
+    kutu.innerHTML = `<span style="color:#ffb4b4">✕ ${kacisli(hata.message)}</span>`;
+    kutu.classList.remove("gizli");
+    $("#d-izgara-uygula").classList.add("gizli");
+  }
+}
+
+async function izgaraUygula() {
+  try {
+    const o = await apiIste("/api/izgara/uygula", {
+      method: "POST", body: JSON.stringify(izgaraGirdisi()),
+    });
+    gunluk(`✓ Izgara: ${o.eklendi} yeni, ${o.guncellendi} güncellendi (toplam ${o.toplam})`, "ok");
+    $("#izgara-onizleme").classList.add("gizli");
+    $("#d-izgara-uygula").classList.add("gizli");
+    await noktalariYukle();
+  } catch (hata) {
+    gunluk(`✕ Izgara uygulanamadı: ${hata.message}`, "hata");
+  }
+}
+
+/* ------------------------------------------------------------ yasak bölgeler */
+// Bölgeler ajanda duruyor; panel yalnızca düzenleyici. Kaydetmek bir komut
+// (bolge_kaydet) — sunucu kopya tutmuyor, ajan dosyaya yazıyor.
+function bolgeleriCiz(bolgeler) {
+  const kutu = $("#bolge-liste");
+  if (!bolgeler.length) {
+    kutu.innerHTML = '<p class="alt-not">Tanımlı bölge yok — hiçbir alan kısıtlı değil.</p>';
+    return;
+  }
+  kutu.innerHTML = bolgeler.map((b, i) => `
+    <div class="bolge" data-i="${i}">
+      <div class="bolge-ust">
+        <input class="b-ad" value="${kacisli(b.ad)}" placeholder="Bölge adı" maxlength="40">
+        <label title="Uç değiştirme dizisi sürerken bu bölge atlanır">
+          <input type="checkbox" class="b-yuva"${b.yuva ? " checked" : ""}> yuva
+        </label>
+        <label title="Kapalıyken bu bölge denetlenmez">
+          <input type="checkbox" class="b-aktif"${b.aktif !== false ? " checked" : ""}> aktif
+        </label>
+        <button class="dugme b-sil" title="Bölgeyi sil">✕</button>
+      </div>
+      <div class="bolge-alt">
+        <label>X1 <input type="number" class="b-x1" step="1" value="${b.x1}"></label>
+        <label>Y1 <input type="number" class="b-y1" step="1" value="${b.y1}"></label>
+        <label>X2 <input type="number" class="b-x2" step="1" value="${b.x2}"></label>
+        <label>Y2 <input type="number" class="b-y2" step="1" value="${b.y2}"></label>
+      </div>
+      <input class="b-kosul" value="${kacisli(b.izin_kosulu || "")}"
+             placeholder="izin koşulu — boş bırakılırsa geçiş serbest">
+      ${b.uyari ? `<div class="rozet-uyari" style="display:block;margin-top:6px">
+        ⚠ Koşul hatalı: ${kacisli(b.uyari)} — bu bölgedeki her hareket ENGELLENİR</div>` : ""}
+    </div>`).join("");
+
+  $$(".b-sil").forEach((d) => {
+    d.onclick = () => {
+      const liste = bolgeleriTopla();
+      liste.splice(Number(d.closest(".bolge").dataset.i), 1);
+      bolgeleriCiz(liste);
+    };
+  });
+}
+
+function bolgeleriTopla() {
+  return $$("#bolge-liste .bolge").map((el) => ({
+    ad: el.querySelector(".b-ad").value,
+    x1: Number(el.querySelector(".b-x1").value),
+    y1: Number(el.querySelector(".b-y1").value),
+    x2: Number(el.querySelector(".b-x2").value),
+    y2: Number(el.querySelector(".b-y2").value),
+    izin_kosulu: el.querySelector(".b-kosul").value,
+    yuva: el.querySelector(".b-yuva").checked,
+    aktif: el.querySelector(".b-aktif").checked,
+  }));
+}
+
+async function bolgeleriKaydet() {
+  const sonuc = await komutGonder("bolge_kaydet", { bolgeler: bolgeleriTopla() });
+  // Ajan doğrulanmış hâli geri gönderiyor: köşeler sıralanmış, koşul uyarısı
+  // hesaplanmış. Kullanıcının gördüğü, kaydedilenle birebir aynı olsun.
+  if (sonuc && sonuc.ok && sonuc.veri) {
+    S.bolgeler = sonuc.veri.bolgeler;
+    bolgeleriCiz(S.bolgeler);
+  }
+}
+
+/* ------------------------------------------------------------ uç değiştirme */
+function ucGuncelle(u) {
+  if (!u) return;
+  $("#uc-mevcut").textContent = u.uc || "yok";
+
+  // Uç değiştirme alanı açıkken kullanıcı Z kilidinin kapalı olduğunu
+  // bilmeli — sessizce açık kalan bir muafiyet, kilidin kendisinden tehlikeli.
+  const alanAcik = !!(u.alan && u.alan.on);
+  $("#tc-uyari").classList.toggle("gizli", !alanAcik);
+  if (alanAcik) {
+    $("#tc-nerede").innerHTML = u.alanda
+      ? '<b>Makine şu anda alanın İÇİNDE</b> — kilit şu an uygulanmıyor.'
+      : "Makine şu anda alanın dışında, kilit uygulanıyor.";
+  }
+
+  // Ayar alanları: kullanıcı düzenlerken üzerine yazmıyoruz.
+  if (u.ayar && !S.ucAyarDuzenleniyor) {
+    for (const [ad, deger] of Object.entries(u.ayar)) {
+      const el = $("#ua-" + ad);
+      if (el && document.activeElement !== el) el.value = deger === null ? "" : deger;
+    }
+    const zsr = $("#ua-z_safe_reg");
+    if (zsr && document.activeElement !== zsr) zsr.value = u.z_safe_reg ?? 0;
+    const kutu = $("#ua-alan-acik");
+    if (kutu && document.activeElement !== kutu) kutu.checked = alanAcik;
+    const pts = (u.alan && u.alan.pts) || [];
+    pts.slice(0, 4).forEach((p, i) => {
+      const ex = $(`#ua-k${i}x`), ey = $(`#ua-k${i}y`);
+      if (ex && document.activeElement !== ex) ex.value = p[0];
+      if (ey && document.activeElement !== ey) ey.value = p[1];
+    });
+  }
+
+  // Uç listesi ajandan geliyor; seçim kutusunu yalnız değiştiğinde yeniden
+  // kuruyoruz, yoksa kullanıcının seçimi her durum paketinde sıfırlanırdı.
+  const uclar = u.uclar || [];
+  if (JSON.stringify(uclar) !== JSON.stringify(S.ucListesi)) {
+    S.ucListesi = uclar;
+    $("#uc-secim").innerHTML = uclar.map((a) => `<option>${kacisli(a)}</option>`).join("");
+  }
+
+  // Doğrulama durumu: sensör yoksa "başarılı" demiyoruz.
+  const rozet = $("#uc-dogrulama");
+  if (!u.sensor_var) {
+    rozet.textContent = "⚠ Varlık sensörü bağlı değil — uç takıldı mı doğrulanamıyor";
+    rozet.classList.remove("gizli");
+  } else if (u.dogrulandi === true) {
+    rozet.textContent = "✓ sensörle doğrulandı";
+    rozet.classList.add("gizli");
+  } else {
+    rozet.classList.add("gizli");
+  }
+
+  const kutu = $("#uc-ilerleme");
+  if (u.calisiyor || u.hata) {
+    const oran = u.toplam ? Math.round((u.adim / u.toplam) * 100) : 0;
+    kutu.innerHTML =
+      (u.calisiyor
+        ? `<b>${kacisli(u.dizi)}</b> — adım ${u.adim}/${u.toplam}<br>
+           <span class="ornek" style="margin-top:4px;display:block">${kacisli(u.aciklama)}</span>
+           <div class="adim-cubuk"><i style="width:${oran}%"></i></div>`
+        : "") +
+      (u.hata ? `<div class="rozet-uyari" style="display:block;margin-top:8px">
+                   ✕ Dizi durdu (adım ${u.adim}/${u.toplam}): ${kacisli(u.hata)}</div>` : "");
+    kutu.classList.remove("gizli");
+  } else {
+    kutu.classList.add("gizli");
+  }
+
+  $$("#d-uc-tak, #d-uc-birak, #d-uc-temizle").forEach((b) => {
+    b.disabled = !S.ajanBagli || u.calisiyor;
+  });
+  $("#d-uc-dur").disabled = !u.calisiyor;
+
+  // Takılı uç değişince önizleme de değişmeli (al → bırak).
+  if (u.uc !== S.sonTakiliUc) { S.sonTakiliUc = u.uc; onizlemeTazele(); }
+}
+
+/** Tak/Bırak'a basmadan önce izlenecek yolu koordinat koordinat göster. */
+async function onizlemeTazele() {
+  const kutu = $("#uc-onizleme");
+  if (!S.ajanBagli) { kutu.classList.add("gizli"); return; }
+  const takili = S.sonTakiliUc;
+  const islem = takili ? "birak" : "al";
+  const ad = takili || $("#uc-secim").value;
+  if (!ad) { kutu.classList.add("gizli"); return; }
+
+  const sonuc = await komutGonder("uc_onizle", { islem, ad });
+  const v = sonuc && sonuc.veri;
+  if (!v || !v.ok) { kutu.classList.add("gizli"); return; }
+
+  const uyari = (v.uyari || []).length
+    ? `<div class="rozet-uyari" style="display:block;margin-top:8px">⚠ ${
+        v.uyari.map(kacisli).join("<br>⚠ ")}</div>`
+    : "";
+  kutu.innerHTML =
+    `<b>${islem === "birak" ? "Bırakma" : "Takma"} yolu — '${kacisli(ad)}'</b>
+     <div class="yol">${v.adimlar.map((a, i) => `${i + 1}. ${kacisli(a)}`).join("<br>")}</div>${uyari}`;
+  kutu.classList.remove("gizli");
+}
+
+/* -------------------------------------------------------------- programlar */
+const ADIM_TIPLERI = { nokta: "Noktaya git", bekle: "Bekle", role: "Röle", servo: "Servo", uc: "Uç değiştir" };
+const ROLELER = ["su_pompasi", "hava_pompasi", "su_vanasi"];
+
+function adimSatiri(adim, sira) {
+  const secenek = (liste, secili) => liste
+    .map((d) => `<option value="${kacisli(d)}"${d === secili ? " selected" : ""}>${kacisli(d || "(bırak)")}</option>`).join("");
+
+  let param = "";
+  if (adim.tip === "nokta") {
+    param = `<select class="param p-ad">${secenek(S.noktalar.map((n) => n.ad), adim.ad)}</select>`;
+  } else if (adim.tip === "bekle") {
+    param = `<input type="number" class="param p-saniye" min="0" max="600" step="1" value="${adim.saniye ?? 5}"> sn`;
+  } else if (adim.tip === "role") {
+    param = `<select class="param p-ad">${secenek(ROLELER, adim.ad)}</select>
+             <label style="font-size:12px;color:var(--metin-3)">
+               <input type="checkbox" class="p-durum"${adim.durum ? " checked" : ""}> aç</label>`;
+  } else if (adim.tip === "servo") {
+    param = `<input type="number" class="param p-aci" min="0" max="180" value="${adim.aci ?? 90}">°`;
+  } else if (adim.tip === "uc") {
+    param = `<select class="param p-ad">${secenek(["", ...S.ucListesi], adim.ad || "")}</select>`;
+  }
+
+  return `<div class="adim-satir" data-i="${sira}">
+    <span class="sira">${sira + 1}</span>
+    <select class="tip">${Object.entries(ADIM_TIPLERI)
+      .map(([k, v]) => `<option value="${k}"${k === adim.tip ? " selected" : ""}>${v}</option>`).join("")}</select>
+    ${param}
+    <button class="dugme adim-sil">✕</button>
+  </div>`;
+}
+
+function adimlariCiz(adimlar) {
+  S.adimlar = adimlar;
+  const kutu = $("#prog-adimlar");
+  kutu.innerHTML = adimlar.length
+    ? adimlar.map(adimSatiri).join("")
+    : '<p class="alt-not">Adım yok — "+ Adım ekle" ile başlayın.</p>';
+
+  $$("#prog-adimlar .tip").forEach((sec) => {
+    // Tip değişince parametre alanı da değişmeli; satırı yeniden çiziyoruz.
+    sec.onchange = () => {
+      const liste = adimlariTopla();
+      liste[Number(sec.closest(".adim-satir").dataset.i)] = { tip: sec.value };
+      adimlariCiz(liste);
+    };
+  });
+  $$("#prog-adimlar .adim-sil").forEach((d) => {
+    d.onclick = () => {
+      const liste = adimlariTopla();
+      liste.splice(Number(d.closest(".adim-satir").dataset.i), 1);
+      adimlariCiz(liste);
+    };
+  });
+}
+
+function adimlariTopla() {
+  return $$("#prog-adimlar .adim-satir").map((el) => {
+    const tip = el.querySelector(".tip").value;
+    const adim = { tip };
+    if (tip === "nokta" || tip === "uc") adim.ad = el.querySelector(".p-ad")?.value || "";
+    if (tip === "bekle") adim.saniye = Number(el.querySelector(".p-saniye").value);
+    if (tip === "role") {
+      adim.ad = el.querySelector(".p-ad").value;
+      adim.durum = el.querySelector(".p-durum").checked;
+    }
+    if (tip === "servo") adim.aci = Number(el.querySelector(".p-aci").value);
+    return adim;
+  });
+}
+
+async function programlariYukle(secilecek) {
+  try {
+    const govde = await apiIste("/api/programlar");
+    S.programlar = govde.programlar || [];
+    const secili = secilecek || $("#prog-secim").value;
+    $("#prog-secim").innerHTML = S.programlar
+      .map((p) => `<option${p.ad === secili ? " selected" : ""}>${kacisli(p.ad)}</option>`).join("");
+    if (secili && S.programlar.some((p) => p.ad === secili)) programYukle(secili);
+  } catch (hata) {
+    gunluk(`✕ Programlar yüklenemedi: ${hata.message}`, "hata");
+  }
+}
+
+function programYukle(ad) {
+  const p = S.programlar.find((x) => x.ad === ad);
+  if (!p) return;
+  $("#prog-ad").value = p.ad;
+  $("#prog-tekrar").value = p.tekrar || 1;
+  adimlariCiz(p.adimlar.map((a) => ({ ...a })));
+}
+
+function diziGuncelle(d) {
+  if (!d) return;
+  const kutu = $("#prog-ilerleme");
+  if (d.calisiyor || d.hata) {
+    const oran = d.toplam ? Math.round((d.adim / d.toplam) * 100) : 0;
+    kutu.innerHTML =
+      (d.calisiyor
+        ? `<b>${kacisli(d.ad)}</b> — adım ${d.adim}/${d.toplam}` +
+          (d.tekrar > 1 ? ` · tur ${d.tur}/${d.tekrar}` : "") +
+          `<br><span class="ornek" style="margin-top:4px;display:block">${kacisli(d.aciklama || "")}</span>
+           <div class="adim-cubuk"><i style="width:${oran}%"></i></div>`
+        : "") +
+      (d.hata ? `<div class="rozet-uyari" style="display:block;margin-top:8px">
+                   ✕ Dizi ${d.adim}. adımda durdu: ${kacisli(d.hata)}</div>` : "");
+    kutu.classList.remove("gizli");
+  } else {
+    kutu.classList.add("gizli");
+  }
+  $("#d-prog-calistir").disabled = !S.ajanBagli || d.calisiyor;
+  $("#d-prog-durdur").disabled = !d.calisiyor;
+}
+
+/* ------------------------------------------------------------------ kamera */
+// Kare WebSocket'ten gelmiyor; sunucu haber veriyor, tarayıcı <img> ile
+// çekiyor. Böylece büyük base64 dizeleri panel soketini tıkamıyor.
+function kareyiTazele(ts) {
+  const img = $("#kamera-kare");
+  img.src = `/api/kare/son?jeton=${encodeURIComponent(S.jeton)}&t=${ts || Date.now()}`;
+  img.classList.remove("gizli");
+  $("#kamera-yok").classList.add("gizli");
+  $("#kamera-zaman").textContent = "Son kare: " + new Date((ts || Date.now() / 1000) * 1000).toLocaleTimeString("tr-TR");
+}
+
+/* ------------------------------------------- yalnızca var olan sensörler */
+// Panelde her zaman dört grafik ve beş kart göstermek, bağlı olmayan bir
+// sensör için boş bir eksen çizmek demekti — "sensör bozuk mu, veri mi
+// gelmiyor" sorusunu doğuran türden bir boşluk. Artık bir kanal ancak
+// gerçekten değer ürettiğinde görünüyor.
+//
+// İşaret YAPIŞKAN: bir kez veri gelen kanal, sonraki okumada null dönse de
+// gizlenmiyor. Aksi hâlde DHT'nin ara sıra atladığı bir okuma yüzünden kart
+// gözden kaybolup geri gelir, panel titrer.
+const KANAL_VAR = {};
+
+function kanallariTara(kaynak) {
+  let yeni = false;
+  for (const [ad, deger] of Object.entries(kaynak || {})) {
+    if (deger !== null && deger !== undefined && !KANAL_VAR[ad] && ad !== "ts" && ad !== "kip") {
+      KANAL_VAR[ad] = true;
+      yeni = true;
+    }
+  }
+  return yeni;
+}
+
+function gorunurlukGuncelle() {
+  $$("[data-kanallar]").forEach((el) => {
+    const varMi = el.dataset.kanallar.split(",").some((k) => KANAL_VAR[k.trim()]);
+    el.classList.toggle("gizli", !varMi);
+  });
+  // Grafik açıklamasında olmayan seriyi de göstermeyelim.
+  $$("[data-kanal]").forEach((el) => el.classList.toggle("gizli", !KANAL_VAR[el.dataset.kanal]));
+
+  const hicbiri = !$$("[data-kanallar]:not(.gizli)").length;
+  $("#veri-yok").classList.toggle("gizli", !hicbiri);
+  // Gizliyken yeniden boyutlanan grafik yanlış ölçüde kalıyor.
+  Object.values(S.grafikler).forEach((g) => g.resize());
+}
+
+/* ------------------------------------------------------- tıkla-çalış jog */
+// PLC'nin jog bitleri MANDAL: 1 yazılınca eksen durmaz. Düğmeyi basılı tutmak
+// yerine tıklayıp bırakmak, "parmağını çekince durur" güvencesini ortadan
+// kaldırıyor — o yüzden koruma tamamen ajana bindi:
+//   · panel açık kaldığı sürece yenileme gider; sekme gizlenir, pencere odağı
+//     giderse ya da soket koparsa yenileme durur ve eksen 1,2 sn'de durur
+//   · yumuşak sınıra yaklaşan ekseni ajanın bekçisi kendiliğinden durdurur
+//   · her yenilemede yasak bölge ileri-bakışı tekrarlanır
 const JOG_YENILEME_MS = 300;
 
 function jogYolla(eksen, yon, basili) {
@@ -94,16 +623,20 @@ function jogYolla(eksen, yon, basili) {
   S.ws.send(JSON.stringify({ tip: "jog", eksen, yon, basili }));
 }
 
-function jogBasla(eksen, yon, dugme) {
-  if (S.jogAktif) return;                       // aynı anda tek eksen
+function jogAcKapa(eksen, yon, dugme) {
+  const a = S.jogAktif;
+  if (a && a.eksen === eksen && a.yon === yon) { jogDurdur(); return; }
+  // Aynı anda tek eksen: başka bir yöne geçmeden önce mevcut jog kapanır.
+  if (a) jogDurdur();
   if (dugme && dugme.disabled) return;
+
   S.jogAktif = { eksen, yon, dugme };
   if (dugme) dugme.classList.add("basili");
   jogYolla(eksen, yon, true);
   S.jogSayac = setInterval(() => jogYolla(eksen, yon, true), JOG_YENILEME_MS);
 }
 
-function jogBirak() {
+function jogDurdur() {
   if (!S.jogAktif) return;
   const { eksen, yon, dugme } = S.jogAktif;
   clearInterval(S.jogSayac);
@@ -199,6 +732,13 @@ async function gecmisYukle() {
     grafik.update("none");
   };
 
+  // Geçmişte bir kez bile değer görülen kanal "var" sayılıyor.
+  for (const [ad, dizi] of Object.entries(v)) {
+    if (ad !== "ts" && Array.isArray(dizi) && dizi.some((x) => x !== null && x !== undefined)) {
+      KANAL_VAR[ad] = true;
+    }
+  }
+
   ata(S.grafikler.sicaklik, [v.hava_sicaklik, v.bmp_sicaklik]);
   ata(S.grafikler.nem, [v.hava_nem, v.toprak_nem.map(toprakYuzde)]);
   ata(S.grafikler.basinc, [v.basinc]);
@@ -213,6 +753,7 @@ async function gecmisYukle() {
   })).slice(-300);
   tabloCiz();
   S.sonZaman = v.ts.length ? v.ts[v.ts.length - 1] : 0;
+  gorunurlukGuncelle();
 }
 
 function noktaEkle(olcum) {
@@ -261,17 +802,109 @@ function tabloCiz() {
 /* ----------------------------------------------------------------- kartlar */
 function kartlariGuncelle(o) {
   if (!o) return;
+  if (kanallariTara(o)) gorunurlukGuncelle();
   $("#d-sicaklik").innerHTML = `${sayi(o.hava_sicaklik)}<span class="birim">°C</span>`;
   $("#d-nem").innerHTML = `${sayi(o.hava_nem)}<span class="birim">%</span>`;
   $("#d-toprak").innerHTML = `${sayi(toprakYuzde(o.toprak_nem), 0)}<span class="birim">%</span>`;
   $("#d-basinc").innerHTML = `${sayi(o.basinc)}<span class="birim">hPa</span>`;
   $("#d-servo").innerHTML = `${sayi(o.servo_aci, 0)}<span class="birim">°</span>`;
 
+  // Sensör adı sabit yazılmıyor: Arduino hangi DHT'yi bulduysa onu bildiriyor.
+  // "DHT11" yazan bir kartın altında DHT22 durması, ölçüm tutmadığında yanlış
+  // yerde hata aramaya yol açıyordu.
+  const dhtAd = o.dht && o.dht !== "yok" ? o.dht : "DHT";
+  $("#a-nem").textContent = dhtAd;
   $("#a-toprak").textContent = o.toprak_nem == null ? "HW-103" : `HW-103 · ham ${Math.round(o.toprak_nem)}`;
   $("#a-rakim").textContent = o.rakim == null ? "BMP180" : `BMP180 · rakım ${sayi(o.rakim, 0)} m`;
-  $("#a-sicaklik").textContent = o.bmp_sicaklik == null ? "DHT11" : `DHT11 · BMP ${sayi(o.bmp_sicaklik)} °C`;
+  $("#a-sicaklik").textContent = o.bmp_sicaklik == null ? dhtAd : `${dhtAd} · BMP ${sayi(o.bmp_sicaklik)} °C`;
   $("#a-servo").textContent = Number(o.servo_aci) > 5 ? "SG-5010 · AÇIK" : "SG-5010 · kapalı";
   if (o.ts) $("#a-servo").title = new Date(o.ts * 1000).toLocaleString("tr-TR");
+  donanimGuncelle(o);
+  otoAyarGuncelle(o);
+  if (o.kip) kipGuncelle(o.kip);
+}
+
+/* ---------------------------------------------------- bağlı olmayan donanım
+ * Arduino hangi çıkışların fiilen takılı olduğunu bildiriyor (`servo_var`,
+ * `role_var`). Takılı olmayan bir düğmeyi tıklanabilir bırakmak, komutu
+ * gönderip hiçbir şey olmadığını görmek demek; sebebini söyleyip kapatmak
+ * daha dürüst. Alan hiç gelmiyorsa (eski firmware) hiçbir şeye dokunmuyoruz.
+ */
+function donanimGuncelle(o) {
+  const AC = "Donanım bağlanınca sketch'te ilgili satırı 1 yapın: ";
+  if (o.servo_var !== undefined) {
+    const var_ = Number(o.servo_var) === 1;
+    $("#servo-kaydirac").disabled = !var_;
+    $("#d-servo-uygula").disabled = !var_;
+    $("#servo-not").innerHTML = var_
+      ? "Servo açısını elle verir. Bu komut kipi otomatikten <b>manuele</b> düşürür."
+      : `⚠ <b>Vana servosu bağlı değil.</b> ${AC}<code>SERVO_BAGLI 1</code>`;
+  }
+  if (o.role_var !== undefined) {
+    const var_ = Number(o.role_var) === 1;
+    $$(".dugme.role").forEach((d) => { d.disabled = !var_; });
+    $("#role-not").innerHTML = var_
+      ? "Tıklayınca açılır, tekrar tıklayınca kapanır. Acil durdurma hepsini kapatır."
+      : `⚠ <b>Röleler bağlı değil.</b> ${AC}<code>ROLELER_BAGLI 1</code>`;
+  }
+  // Otomatik sulama çıkış listesi: bağlı olmayanlar seçilemesin.
+  const secim = $("#oto-cikis");
+  if (!secim || o.servo_var === undefined) return;
+  const bagli = { servo: Number(o.servo_var) === 1, su_vanasi: Number(o.role_var) === 1,
+                  su_pompasi: Number(o.role_var) === 1, yok: true };
+  Array.from(secim.options).forEach((s) => {
+    const acik = bagli[s.value];
+    s.disabled = !acik;
+    const ek = " (bağlı değil)";
+    const temiz = s.textContent.replace(ek, "");
+    s.textContent = acik ? temiz : temiz + ek;
+  });
+}
+
+/* ------------------------------------------------- otomatik sulama (Arduino)
+ * Ayarların kaynağı Arduino: eşik ve çıkış seçimi orada EEPROM'da duruyor ve
+ * her ölçüm satırında geri geliyor. Panel bir kopya tutmuyor — tuttuğu anda
+ * "panelde şu yazıyor ama kart başka şey yapıyor" durumu doğardı.
+ */
+function kipGuncelle(kip) {
+  if (!kip) return;
+  S.kip = kip;
+  const oto = kip === "oto";
+  $("#d-kip-oto").classList.toggle("secili", oto);
+  $("#d-kip-manuel").classList.toggle("secili", !oto);
+  const rozet = $("#kip-rozet");
+  if (rozet) {
+    rozet.textContent = oto ? "AÇIK — kararı Arduino veriyor" : "KAPALI — kararı panel veriyor";
+    rozet.className = `rozet-kip ${oto ? "acik" : "kapali"}`;
+  }
+}
+
+function otoAyarGuncelle(o) {
+  const cikis = $("#oto-cikis"), esik = $("#oto-esik");
+  if (!cikis || !esik) return;
+  // Arduino'nun firmware'i eski ise bu alanlar hiç gelmez.
+  if (o.oto_cikis === undefined && o.esik === undefined) {
+    $("#oto-not").innerHTML = "⚠ Arduino bu ayarları bildirmiyor — karttaki yazılım eski. " +
+      "<code>firmware/farmbot_sensors</code> sketch'ini yeniden yükleyin.";
+    cikis.disabled = esik.disabled = $("#d-oto-kaydet").disabled = true;
+    return;
+  }
+  cikis.disabled = esik.disabled = $("#d-oto-kaydet").disabled = false;
+  if (S.otoDuzenleniyor) return;         // kullanıcı oynuyorsa üstüne yazma
+  if (o.oto_cikis) cikis.value = o.oto_cikis;
+  if (o.esik != null) {
+    const yuzde = Math.round(toprakYuzde(Number(o.esik)));
+    esik.value = yuzde;
+    $("#oto-esik-etiket").textContent = `%${yuzde}`;
+  }
+  const acik = Number(o.oto_acik) === 1;
+  $("#oto-not").innerHTML = (S.kip === "oto"
+    ? (cikis.value === "yok"
+       ? "Otomatik kip açık ama çıkış <b>Yok</b> — Arduino hiçbir şeyi sürmüyor."
+       : acik ? `Şu anda <b>sulama açık</b> (${cikis.options[cikis.selectedIndex].text}).`
+              : "Toprak yeterince nemli — sulama kapalı.")
+    : "Manuel kipte bu ayarlar beklemede; otomatiğe alınca geçerli olur.") +
+    " Seçim Arduino'nun EEPROM'una yazılır, fişi çekilse bile korunur.";
 }
 
 function rozetYaz(kimlik, sinif, metin) {
@@ -294,6 +927,18 @@ function durumGuncelle(d) {
     : d.enable ? "PLC: hazır" : "PLC: sürücüler kapalı";
   rozetYaz("#rozet-plc", plcSinif, plcMetin);
   rozetYaz("#rozet-kip", d.kip === "manuel" ? "uyari-rengi" : "canli", `Kip: ${d.kip || "—"}`);
+  kipGuncelle(d.kip);
+
+  S.ajanBagli = !!d.bagli;
+  S.sonKonum = d.konum || null;
+  if (d.guvenli_z != null) S.guvenliZ = Number(d.guvenli_z);
+  // Sınırlar değişirse (kalibrasyon güncellendi, ajan yeniden bağlandı)
+  // nokta listesindeki "sınır dışı" işaretleri de tazelenmeli.
+  const yeniSinir = JSON.stringify(d.sinirlar || null);
+  if (yeniSinir !== JSON.stringify(S.sinirlar || null)) {
+    S.sinirlar = d.sinirlar || null;
+    if (S.noktalar.length) noktalariCiz();
+  }
 
   const k = d.konum || {};
   const birimli = (deger) =>
@@ -315,6 +960,20 @@ function durumGuncelle(d) {
   const zSorunlu = d.plc === "bagli" && d.z_guvenli === false;
   $("#z-uyari").classList.toggle("gizli", !zSorunlu);
 
+  // Bölgeler ajandan geliyor. Kullanıcı düzenlerken listeyi yeniden çizmek
+  // yazdığını silerdi; o yüzden yalnız düzenleme yokken tazeleniyor.
+  if (Array.isArray(d.bolgeler) && !S.bolgeDuzenleniyor
+      && JSON.stringify(d.bolgeler) !== JSON.stringify(S.bolgeler)) {
+    S.bolgeler = d.bolgeler;
+    bolgeleriCiz(S.bolgeler);
+  }
+  $("#bolge-esnetme").classList.toggle("gizli", !d.esnetme_acik);
+
+  ucGuncelle(d.uc);
+  diziGuncelle(d.dizi);
+  // Tarla sahnesi yatak ölçüsünü ve robot konumunu buradan alıyor.
+  if (window.Tarla) window.Tarla.durumDegisti(d);
+
   S.enable = !!d.enable;
   $("#d-enable").textContent = d.enable ? "⚡ Sürücüleri kapat" : "⚡ Sürücüleri aç";
   $("#d-enable").classList.toggle("secili", !!d.enable);
@@ -328,6 +987,10 @@ function durumGuncelle(d) {
   // "gönderdim sandım" hatasının en sık kaynağı.
   const kilit = !d.bagli || acilAcik;
   $$("#d-git, #d-home, #d-dur, #d-servo-uygula, .role").forEach((b) => { b.disabled = kilit; });
+  $$(".nokta-git").forEach((b) => {
+    // Sınır dışı olduğu için kapatılmış düğmeyi geri açmıyoruz.
+    if (!b.dataset.sinirDisi) b.disabled = kilit;
+  });
   $$(".jog").forEach((b) => {
     const xy = b.dataset.eksen !== "z";
     b.disabled = kilit || (xy && zSorunlu);
@@ -354,13 +1017,14 @@ function wsBagla() {
     if (m.tip === "anlik") { durumGuncelle(m.durum); kartlariGuncelle(m.olcum); }
     else if (m.tip === "olcum") { kartlariGuncelle(m.veri); noktaEkle(m.veri); }
     else if (m.tip === "durum") durumGuncelle(m.durum);
+    else if (m.tip === "kare") kareyiTazele(m.ts);
     else if (m.tip === "gunluk") gunluk(m.metin, m.seviye === "hata" ? "hata" : "");
   };
 
   ws.onclose = () => {
     // Soket kapandıysa "bırak" paketi gidemez; düğmeyi görsel olarak da
     // bırakıyoruz. Eksen zaten ajanın kira bekçisiyle 1,2 sn'de duruyor.
-    jogBirak();
+    jogDurdur();
     rozetYaz("#rozet-sunucu", "kopuk", "Sunucu bağlantısı yok");
     // Sabit 3 saniye yeterli: sunucu Render'da uyandırılıyorsa birkaç deneme
     // sürebilir ama kullanıcı sayfayı yenilemek zorunda kalmaz.
@@ -379,6 +1043,8 @@ function olaylariBagla() {
       $(`#sayfa-${dugme.dataset.sayfa}`).classList.add("etkin");
       // Gizliyken çizilen grafik yanlış ölçüde kalıyor; sekmeye dönünce tazele.
       Object.values(S.grafikler).forEach((g) => g.resize());
+      // 3B sahne gizliyken çizim döngüsü boşa GPU yakıyor; sekmeye bağlıyoruz.
+      if (window.Tarla) window.Tarla.gorunurluk(dugme.dataset.sayfa === "tarla");
     };
   });
 
@@ -392,28 +1058,18 @@ function olaylariBagla() {
   });
 
   $$(".jog").forEach((dugme) => {
-    const eksen = dugme.dataset.eksen;
-    const yon = Number(dugme.dataset.yon);
-    // pointer olayları: fare, dokunmatik ve kalem tek kod yolundan geçsin.
-    dugme.addEventListener("pointerdown", (olay) => {
-      olay.preventDefault();
-      // Parmak düğmeden kayarsa "pointerup" başka öğeye gider ve bırakma
-      // kaybolurdu; yakalama bunu bu düğmeye bağlıyor.
-      dugme.setPointerCapture?.(olay.pointerId);
-      jogBasla(eksen, yon, dugme);
-    });
-    ["pointerup", "pointercancel", "pointerleave"].forEach((tur) =>
-      dugme.addEventListener(tur, jogBirak));
-    dugme.addEventListener("contextmenu", (o) => o.preventDefault());  // uzun basışta menü çıkmasın
+    dugme.onclick = () => jogAcKapa(dugme.dataset.eksen, Number(dugme.dataset.yon), dugme);
   });
 
-  // Sekme gizlenirse, pencere odağı giderse ya da soket kapanırsa jog biter.
-  document.addEventListener("visibilitychange", () => { if (document.hidden) jogBirak(); });
-  window.addEventListener("blur", jogBirak);
-  window.addEventListener("pagehide", jogBirak);
+  // Sekme gizlenirse, pencere odağı giderse ya da sayfa kapanırsa jog biter.
+  // Tıkla-çalış kipinde bu daha da önemli: ekrana bakan kimse kalmadığında
+  // eksenin kendi başına gitmeye devam etmesini istemiyoruz.
+  document.addEventListener("visibilitychange", () => { if (document.hidden) jogDurdur(); });
+  window.addEventListener("blur", jogDurdur);
+  window.addEventListener("pagehide", jogDurdur);
 
   $("#d-home").onclick = () => komutGonder("home");
-  $("#d-dur").onclick = () => { jogBirak(); komutGonder("dur"); };
+  $("#d-dur").onclick = () => { jogDurdur(); komutGonder("dur"); };
   $("#d-enable").onclick = () => komutGonder("enable", { deger: !S.enable });
   $("#d-acil-temizle").onclick = () => komutGonder("acil_temizle");
   $("#d-buraya").onclick = () => {
@@ -424,11 +1080,113 @@ function olaylariBagla() {
   };
   $("#d-acil").onclick = () => {
     // confirm() bilerek yok: acil durdurma bir soru sormaz, uygular.
-    jogBirak();
+    jogDurdur();
     komutGonder("acil");
     S.roleDurum = { su_pompasi: false, hava_pompasi: false, su_vanasi: false };
     $$(".role").forEach((b) => b.classList.remove("secili"));
   };
+
+  $("#d-nokta-kaydet").onclick = noktaKaydet;
+  $("#prog-secim").onchange = () => programYukle($("#prog-secim").value);
+  $("#d-prog-yeni").onclick = () => {
+    $("#prog-ad").value = ""; $("#prog-tekrar").value = 1; adimlariCiz([]);
+  };
+  $("#d-adim-ekle").onclick = () => adimlariCiz([...adimlariTopla(), { tip: "nokta", ad: S.noktalar[0]?.ad || "" }]);
+  $("#d-prog-kaydet").onclick = async () => {
+    try {
+      const p = await apiIste("/api/programlar", {
+        method: "POST",
+        body: JSON.stringify({ ad: $("#prog-ad").value, tekrar: Number($("#prog-tekrar").value),
+                               adimlar: adimlariTopla() }),
+      });
+      gunluk(`✓ '${p.program.ad}' kaydedildi (${p.program.adimlar.length} adım)`, "ok");
+      await programlariYukle(p.program.ad);
+    } catch (hata) { gunluk(`✕ ${hata.message}`, "hata"); }
+  };
+  $("#d-prog-calistir").onclick = async () => {
+    try {
+      const s = await apiIste("/api/programlar/calistir", {
+        method: "POST", body: JSON.stringify({ ad: $("#prog-secim").value }),
+      });
+      gunluk(s.ok ? `✓ ${s.mesaj}` : `✕ ${s.mesaj}`, s.ok ? "ok" : "hata");
+    } catch (hata) { gunluk(`✕ ${hata.message}`, "hata"); }
+  };
+  $("#d-prog-durdur").onclick = () => komutGonder("dizi_durdur");
+  $("#d-prog-sil").onclick = async () => {
+    const ad = $("#prog-secim").value;
+    if (!ad || !confirm(`'${ad}' silinsin mi?`)) return;
+    try {
+      await apiIste(`/api/programlar?ad=${encodeURIComponent(ad)}`, { method: "DELETE" });
+      gunluk(`✓ '${ad}' silindi`, "ok");
+      await programlariYukle();
+    } catch (hata) { gunluk(`✕ ${hata.message}`, "hata"); }
+  };
+
+  $("#d-uc-tak").onclick = () => komutGonder("uc_degistir", { ad: $("#uc-secim").value });
+  $("#d-uc-birak").onclick = () => komutGonder("uc_birak");
+  $("#d-uc-dur").onclick = () => komutGonder("dur");
+  $("#uc-secim").onchange = onizlemeTazele;
+  $("#d-uc-temizle").onclick = async () => {
+    if (!confirm("Takılı uç kaydı sıfırlanacak. Hiçbir eksen hareket etmez — "
+                 + "makinede uç olup olmadığını gözle doğrulayın. Devam?")) return;
+    await komutGonder("uc_durum_temizle");
+  };
+
+  $$("details.uc-ayar input, details.uc-ayar select").forEach((el) => {
+    el.oninput = () => { S.ucAyarDuzenleniyor = true; };
+  });
+  $("#d-uc-ayar-kaydet").onclick = async () => {
+    const sayi_ = (id, bosDegeri = null) => {
+      const v = $("#ua-" + id).value;
+      return v === "" ? bosDegeri : Number(v);
+    };
+    const ayar = {
+      safe_z: sayi_("safe_z", 280), travel_z: sayi_("travel_z", 280),
+      lift: sayi_("lift", 80), approach: sayi_("approach", -55),
+      retreat: sayi_("retreat"),          // boş = approach kullan
+      speed: sayi_("speed", 20), slide_axis: $("#ua-slide_axis").value,
+      lock_dwell: sayi_("lock_dwell", 1500),
+      lock_reg: sayi_("lock_reg", 0), grip_reg: sayi_("grip_reg", 0),
+      presence_reg: sayi_("presence_reg", 0), z_safe_reg: sayi_("z_safe_reg", 0),
+      tc_area: {
+        on: $("#ua-alan-acik").checked,
+        pts: [0, 1, 2, 3].map((i) => [Number($(`#ua-k${i}x`).value), Number($(`#ua-k${i}y`).value)]),
+      },
+    };
+    const sonuc = await komutGonder("uc_kaydet", { ayar });
+    if (sonuc && sonuc.ok) {
+      S.ucAyarDuzenleniyor = false;
+      if (ayar.tc_area.on) {
+        gunluk("⚠ Uç değiştirme alanı AÇILDI — alan içinde Z kilidi devre dışı", "hata");
+      }
+      onizlemeTazele();
+    }
+  };
+
+  $("#d-bolge-ekle").onclick = () => {
+    const liste = bolgeleriTopla();
+    liste.push({ ad: `bölge ${liste.length + 1}`, x1: 0, y1: 0, x2: 100, y2: 100,
+                 izin_kosulu: "z>=safe_z", yuva: false, aktif: true });
+    bolgeleriCiz(liste);
+    S.bolgeDuzenleniyor = true;
+  };
+  $("#d-bolge-kaydet").onclick = async () => {
+    await bolgeleriKaydet();
+    S.bolgeDuzenleniyor = false;
+  };
+  $("#bolge-liste").addEventListener("input", () => { S.bolgeDuzenleniyor = true; });
+
+  $("#d-izgara-onizle").onclick = izgaraOnizle;
+  $("#d-izgara-uygula").onclick = izgaraUygula;
+  // Form değişince eski önizleme yanıltıcı olur; "Uygula" o değerlerle
+  // çalışmıyor artık.
+  $$(".izgara-form input").forEach((g) => {
+    g.oninput = () => {
+      $("#izgara-onizleme").classList.add("gizli");
+      $("#d-izgara-uygula").classList.add("gizli");
+    };
+  });
+  $("#nokta-ad").onkeydown = (o) => { if (o.key === "Enter") noktaKaydet(); };
 
   const hizKaydirac = $("#hiz-kaydirac");
   hizKaydirac.oninput = () => { $("#hiz-etiket").textContent = `${hizKaydirac.value} mm/s`; };
@@ -450,6 +1208,24 @@ function olaylariBagla() {
   $("#d-kip-oto").onclick = () => komutGonder("kip", { deger: "oto" });
   $("#d-kip-manuel").onclick = () => komutGonder("kip", { deger: "manuel" });
 
+  // Otomatik sulama ayarları
+  const esikKaydirac = $("#oto-esik");
+  esikKaydirac.oninput = () => {
+    S.otoDuzenleniyor = true;
+    $("#oto-esik-etiket").textContent = `%${esikKaydirac.value}`;
+  };
+  $("#oto-cikis").onchange = () => { S.otoDuzenleniyor = true; };
+  $("#d-oto-kaydet").onclick = async () => {
+    const cikis = $("#oto-cikis").value;
+    const yuzde = Number(esikKaydirac.value);
+    // Panel yüzde gösteriyor, Arduino ham ADC ile karşılaştırıyor: çeviri
+    // burada, tek yerde. toprakYuzde'nin tersi.
+    const ham = Math.round(1023 - (yuzde / 100) * 1023);
+    await komutGonder("oto_cikis", { ad: cikis });
+    await komutGonder("oto_esik", { ham });
+    S.otoDuzenleniyor = false;
+  };
+
   $$(".role").forEach((dugme) => {
     dugme.onclick = async () => {
       const ad = dugme.dataset.role;
@@ -462,8 +1238,9 @@ function olaylariBagla() {
     };
   });
 
-  // Klavye: ok tuşları X/Y, PageUp/Down Z — tuş basılı tutuldukça hareket,
-  // bırakınca durur (düğmelerle aynı davranış). Boşluk acil durdurma.
+  // Klavye: ok tuşları X/Y, PageUp/Down Z — düğmelerle aynı, tıkla-çalış.
+  // Aynı tuşa tekrar basmak durdurur; Esc her hâlükârda durdurur.
+  // Boşluk acil durdurma.
   const TUS = {
     ArrowRight: ["x", 1], ArrowLeft: ["x", -1],
     ArrowUp: ["y", 1], ArrowDown: ["y", -1],
@@ -475,14 +1252,21 @@ function olaylariBagla() {
   document.addEventListener("keydown", (olay) => {
     if (olay.target.tagName === "INPUT" || !$("#sayfa-kontrol").classList.contains("etkin")) return;
     if (olay.code === "Space") { olay.preventDefault(); $("#d-acil").click(); return; }
+    if (olay.key === "Escape") { olay.preventDefault(); jogDurdur(); return; }
     const eslesme = TUS[olay.key];
     if (!eslesme) return;
     olay.preventDefault();
-    if (olay.repeat) return;                 // tuş tekrarı zaten yenilemeyi tetiklemiyor
-    jogBasla(eslesme[0], eslesme[1], jogDugmesi(eslesme[0], eslesme[1]));
+    if (olay.repeat) return;
+    jogAcKapa(eslesme[0], eslesme[1], jogDugmesi(eslesme[0], eslesme[1]));
   });
-  document.addEventListener("keyup", (olay) => { if (TUS[olay.key]) jogBirak(); });
 }
+
+/* --------------------------------------------------------------- köprü
+ * `tarla.js` ayrı bir dosya ve buranın iç değişkenlerine dokunmuyor; ihtiyacı
+ * olan birkaç şey burada açıkça dışarı veriliyor. Böylece iki dosya arasındaki
+ * bağ tek satırda görülebiliyor.
+ */
+window.Panel = { S, komutGonder, apiIste, gunluk, noktalariYukle };
 
 /* -------------------------------------------------------------------- açılış */
 async function basla() {
@@ -496,7 +1280,20 @@ async function basla() {
     $$(".grafik-kutu").forEach((k) => { k.innerHTML = '<p class="alt-not">Grafik kütüphanesi yüklenemedi.</p>'; });
   }
   olaylariBagla();
+  // Tarla sahnesi kendi dosyasında; three.js yüklenmediyse panel yine çalışsın.
+  try {
+    if (window.Tarla) await window.Tarla.kur();
+  } catch (hata) {
+    console.error("Tarla sahnesi kurulamadı", hata);
+  }
   if (Object.keys(S.grafikler).length) await gecmisYukle();
+  await noktalariYukle();
+  await programlariYukle();
+  // Sayfa açılırken zaten bir kare varsa hemen göster.
+  try {
+    const k = await apiIste("/api/kare/liste");
+    if (k.kareler && k.kareler.length) kareyiTazele(k.kareler[k.kareler.length - 1].ts);
+  } catch (hata) { /* kare yoksa sorun değil */ }
   wsBagla();
 }
 

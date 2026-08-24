@@ -22,11 +22,13 @@ from contextlib import asynccontextmanager
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 import depo
+import kareler
+import noktalar
+import programlar
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger("farmbot")
@@ -37,12 +39,6 @@ AJAN_JETONU = os.environ.get("AJAN_JETONU", "")
 # Panel parolası isteğe bağlı: boşsa panel herkese açık olur (yerel ağ için
 # uygun), doluysa tarayıcı bu değeri sormadan bağlanamaz.
 PANEL_PAROLA = os.environ.get("PANEL_PAROLA", "")
-# Baska bir arayuzun (ornegin ayri bir gelistirme sunucusunda calisan
-# farmbot-web) tarayicidan bu API'yi cagirabilmesi icin kokeni burada
-# tek tek saymak gerekiyor. Bos birakilirsa CORS hic acilmaz: robotu
-# hareket ettiren bir API'de varsayilanin "herkese acik" olmasi dogru
-# degil. Ornek: IZINLI_KOKENLER="http://localhost:5173,http://batupi.local:3000"
-IZINLI_KOKENLER = [k.strip() for k in os.environ.get("IZINLI_KOKENLER", "").split(",") if k.strip()]
 
 # Ajan bir komuta bu süre içinde yanıt vermezse "zaman aşımı" deriz.
 KOMUT_ZAMAN_ASIMI = 20.0
@@ -59,8 +55,21 @@ IZINLI_KOMUTLAR = {
     "acil_temizle",  # {}                            — mandalı temizle
     "enable",        # {"deger": true|false}         — sürücü torku
     "hiz",           # {"mm_s": 20}
+    "bolge_listele", # {}                            — ajandaki yasak bölgeler
+    "bolge_kaydet",  # {"bolgeler":[…]}              — doğrular, dosyaya yazar
+    "uc_listele",    # {}                            — uç ayarları ve dizi durumu
+    "uc_kaydet",     # {"ayar":{…}}
+    "uc_al",         # {"ad":"tool1"}                — yandan yaklaşımlı alma dizisi
+    "uc_birak",      # {}
+    "uc_degistir",   # {"ad":"tool3"}
+    "uc_onizle",     # {"islem":"al"|"birak","ad":"tool1"} — yolu koordinatla göster
+    "uc_durum_temizle",  # {}                        — takılı uç kaydını sıfırla
+    "dizi_baslat",   # {"ad":…,"adimlar":[…],"tekrar":1} — çözülmüş adımlarla
+    "dizi_durdur",   # {}
     "servo",         # {"aci": 90}
     "kip",           # {"deger": "oto" | "manuel"}
+    "oto_esik",      # {"ham": 600}                  — otomatik sulama eşiği (ADC)
+    "oto_cikis",     # {"ad": "yok"|"servo"|"su_vanasi"|"su_pompasi"}
     "role",          # {"ad": "su_pompasi"|"hava_pompasi"|"su_vanasi", "durum": true}
 }
 
@@ -98,6 +107,11 @@ class Merkez:
             "acil": {"acik": False, "saat": "", "neden": ""},
             "sinirlar": {},
             "hiz": None,
+            "bolgeler": [],
+            "esnetme_acik": False,
+            "uc": {},
+            "dizi": {},
+            "islem": "",
             "hata": None,
         }
         # Gönderilip yanıtı beklenen komutlar: komut_id -> Future
@@ -162,9 +176,15 @@ class Merkez:
     def sonuc_isle(self, mesaj: dict[str, Any]) -> None:
         beklenen = self._bekleyen.get(str(mesaj.get("id")))
         if beklenen is not None and not beklenen.done():
-            beklenen.set_result(
-                {"ok": bool(mesaj.get("ok")), "mesaj": mesaj.get("mesaj", ""), "veri": mesaj.get("veri")}
-            )
+            beklenen.set_result({
+                "ok": bool(mesaj.get("ok")),
+                "mesaj": mesaj.get("mesaj", ""),
+                "veri": mesaj.get("veri"),
+                # Ajan bazı komutları "sessiz" işaretliyor (jog yenilemesi,
+                # önizleme sorgusu). Bayrağı panele geçirmezsek panel her
+                # önizleme sorgusunu olay günlüğüne yazar.
+                "sessiz": bool(mesaj.get("sessiz")),
+            })
 
 
 merkez = Merkez()
@@ -195,15 +215,6 @@ async def yasam(app: FastAPI):
 
 
 app = FastAPI(title="Farmbot", lifespan=yasam)
-
-if IZINLI_KOKENLER:
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=IZINLI_KOKENLER,
-        allow_methods=["GET", "POST"],
-        allow_headers=["*"],
-    )
-    logger.info("CORS acik: %s", ", ".join(IZINLI_KOKENLER))
 
 
 # --------------------------------------------------------------------------- #
@@ -254,6 +265,15 @@ async def ws_ajan(ws: WebSocket, jeton: str = Query(default="")):
 
             elif tip == "sonuc":
                 merkez.sonuc_isle(mesaj)
+
+            elif tip == "kare":
+                # Kareyi WebSocket'ten bütün panellere yollamıyoruz: 40 KB'lık
+                # base64 her panele ayrı ayrı gitmek zorunda kalırdı. Sunucu
+                # saklıyor, panele yalnızca "yeni kare var" haberi gidiyor ve
+                # tarayıcı <img> ile çekiyor.
+                ts = float(mesaj.get("ts", time.time()))
+                await asyncio.to_thread(kareler.ekle, mesaj.get("veri", ""), ts)
+                await merkez.yayinla({"tip": "kare", "ts": ts})
 
             elif tip == "gunluk":
                 await merkez.yayinla(
@@ -347,6 +367,240 @@ async def api_komut(govde: dict[str, Any], jeton: str = Query(default="")):
         await merkez.komut_yolla(ad, arg)
         return {"ok": True, "mesaj": "", "sessiz": True}
     return await merkez.komut_gonder(ad, arg)
+
+
+# --------------------------------------------------------------------------- #
+# Kayıtlı noktalar
+#
+# Bu uçlar ajana hiç gitmiyor: nokta deposu sunucuda duruyor ve "Git"
+# düğmesi mevcut `git` komutunu çağırıyor. Yeni bir hareket yolu açmamak
+# bilinçli — güvenlik denetimleri (sınırlar, Z kilidi) tek yerde kalsın.
+# --------------------------------------------------------------------------- #
+@app.get("/api/noktalar")
+async def api_noktalar(jeton: str = Query(default="")):
+    _parola_dogrula(jeton)
+    return {"noktalar": await asyncio.to_thread(noktalar.hepsi)}
+
+
+@app.post("/api/noktalar")
+async def api_nokta_ekle(govde: dict[str, Any], jeton: str = Query(default="")):
+    _parola_dogrula(jeton)
+    try:
+        for eksen in ("x", "y", "z"):
+            if govde.get(eksen) is None:
+                raise HTTPException(status_code=400, detail=f"{eksen} değeri eksik")
+        nokta = await asyncio.to_thread(
+            noktalar.ekle, govde.get("ad", ""),
+            float(govde["x"]), float(govde["y"]), float(govde["z"]),
+            bool(govde.get("ustune_yaz")), str(govde.get("etiket", "")), govde)
+    except noktalar.NoktaHatasi as hata:
+        # 409: "isteğin kendisi geçerli ama mevcut durumla çakışıyor" —
+        # panel bunu görüp "üzerine yazılsın mı?" diye sorabiliyor.
+        kod = 409 if "zaten var" in str(hata) else 400
+        raise HTTPException(status_code=kod, detail=str(hata))
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="x, y, z sayı olmalı")
+    return {"ok": True, "nokta": nokta}
+
+
+@app.delete("/api/noktalar")
+async def api_nokta_sil(ad: str = Query(...), jeton: str = Query(default="")):
+    # Adres yolunda değil sorgu parametresinde: nokta adları Türkçe karakter
+    # ve boşluk içerebiliyor, yol kodlaması gereksiz bir hata kaynağı.
+    _parola_dogrula(jeton)
+    if not await asyncio.to_thread(noktalar.sil, ad):
+        raise HTTPException(status_code=404, detail=f"'{ad}' adında nokta yok")
+    return {"ok": True}
+
+
+# --------------------------------------------------------------------------- #
+# Tohum ızgarası
+#
+# Ayrı bir yapı kurmuyoruz: üretilen noktalar doğrudan nokta deposuna yazılıyor.
+# Böylece "Git", "Sil" ve program adımları ızgara noktaları için de aynen
+# çalışıyor — ikinci bir nokta kavramı öğrenmek gerekmiyor.
+# --------------------------------------------------------------------------- #
+def _izgara_coz(govde: dict[str, Any]) -> list[dict[str, Any]]:
+    try:
+        return noktalar.izgara_uret(
+            float(govde.get("x0", 0)), float(govde.get("y0", 0)), float(govde.get("z", 0)),
+            float(govde.get("dx", 0)), float(govde.get("dy", 0)),
+            int(govde.get("satir", 1)), int(govde.get("sutun", 1)),
+            str(govde.get("onek", "s")))
+    except noktalar.NoktaHatasi as hata:
+        raise HTTPException(status_code=400, detail=str(hata))
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="Izgara değerleri sayı olmalı")
+
+
+def _sinir_disi_mi(nokta: dict[str, Any]) -> list[str]:
+    """Noktanın hangi eksenlerde sınır dışı kaldığı.
+
+    Sınırlar ajandan geliyor (`durum.sinirlar`). Ajan bağlı değilse boş liste
+    dönüyoruz — "sınır dışı değil" demek değil, "bilinmiyor" demek; panel bunu
+    ayrıca yazıyor.
+    """
+    sinirlar = merkez.son_durum.get("sinirlar") or {}
+    disarida = []
+    for eksen in ("x", "y", "z"):
+        sinir = sinirlar.get(eksen) or {}
+        alt, ust = sinir.get("min"), sinir.get("max")
+        if alt is None or ust is None:
+            continue
+        if nokta[eksen] < float(alt) - 0.5 or nokta[eksen] > float(ust) + 0.5:
+            disarida.append(eksen.upper())
+    return disarida
+
+
+@app.post("/api/izgara/onizle")
+async def api_izgara_onizle(govde: dict[str, Any], jeton: str = Query(default="")):
+    """Üretmeden önce ne olacağını gösterir: kaç nokta, kaçı sınır dışı,
+    kaçının üzerine yazılacak. Geri alınamaz bir işlemi körlemesine yapmak
+    yerine önce sonucu göstermek, 60 noktalık bir ızgarada fark ediyor."""
+    _parola_dogrula(jeton)
+    uretilen = _izgara_coz(govde)
+    mevcut = {n["ad"] for n in await asyncio.to_thread(noktalar.hepsi)}
+
+    sinir_disi = [{"ad": n["ad"], "eksenler": d} for n in uretilen if (d := _sinir_disi_mi(n))]
+    return {
+        "toplam": len(uretilen),
+        "sinir_disi": sinir_disi,
+        "ustune_yazilacak": sorted(n["ad"] for n in uretilen if n["ad"] in mevcut),
+        "sinir_bilinmiyor": not (merkez.son_durum.get("sinirlar")),
+        "noktalar": uretilen,
+    }
+
+
+@app.post("/api/izgara/uygula")
+async def api_izgara_uygula(govde: dict[str, Any], jeton: str = Query(default="")):
+    _parola_dogrula(jeton)
+    uretilen = _izgara_coz(govde)
+    try:
+        sonuc = await asyncio.to_thread(noktalar.toplu_ekle, uretilen)
+    except noktalar.NoktaHatasi as hata:
+        raise HTTPException(status_code=400, detail=str(hata))
+    return {"ok": True, **sonuc, "toplam": len(uretilen)}
+
+
+# --------------------------------------------------------------------------- #
+# Kayıtlı programlar
+# --------------------------------------------------------------------------- #
+@app.get("/api/programlar")
+async def api_programlar(jeton: str = Query(default="")):
+    _parola_dogrula(jeton)
+    return {"programlar": await asyncio.to_thread(programlar.hepsi)}
+
+
+@app.post("/api/programlar")
+async def api_program_kaydet(govde: dict[str, Any], jeton: str = Query(default="")):
+    _parola_dogrula(jeton)
+    try:
+        program = await asyncio.to_thread(
+            programlar.kaydet, govde.get("ad", ""), govde.get("adimlar") or [],
+            int(govde.get("tekrar", 1)))
+    except programlar.ProgramHatasi as hata:
+        raise HTTPException(status_code=400, detail=str(hata))
+    except (TypeError, ValueError) as hata:
+        raise HTTPException(status_code=400, detail=f"Geçersiz program: {hata}")
+    return {"ok": True, "program": program}
+
+
+@app.delete("/api/programlar")
+async def api_program_sil(ad: str = Query(...), jeton: str = Query(default="")):
+    _parola_dogrula(jeton)
+    if not await asyncio.to_thread(programlar.sil, ad):
+        raise HTTPException(status_code=404, detail=f"'{ad}' adında program yok")
+    return {"ok": True}
+
+
+@app.post("/api/programlar/calistir")
+async def api_program_calistir(govde: dict[str, Any], jeton: str = Query(default="")):
+    """Programı çözüp ajana gönderir.
+
+    Nokta adları burada koordinata çevriliyor; ajan nokta deposunu bilmiyor.
+    Eksik bir nokta varsa dizi HİÇ başlamıyor — yarıda durmasındansa.
+    """
+    _parola_dogrula(jeton)
+    ad = str(govde.get("ad", ""))
+    program = await asyncio.to_thread(programlar.bul, ad)
+    if program is None:
+        raise HTTPException(status_code=404, detail=f"'{ad}' adında program yok")
+    try:
+        adimlar = await asyncio.to_thread(programlar.coz, program)
+    except programlar.ProgramHatasi as hata:
+        raise HTTPException(status_code=400, detail=str(hata))
+    return await merkez.komut_gonder("dizi_baslat", {
+        "ad": program["ad"], "adimlar": adimlar,
+        "tekrar": program.get("tekrar", 1), "hiz": govde.get("hiz"),
+    })
+
+
+# --------------------------------------------------------------------------- #
+# Kamera kareleri
+# --------------------------------------------------------------------------- #
+@app.get("/api/kare/son")
+async def api_kare_son(jeton: str = Query(default=""), t: float = Query(default=0)):
+    """En son kareyi JPEG olarak döndürür. `t` yalnızca önbellek kırıcı."""
+    _parola_dogrula(jeton)
+    kare = await asyncio.to_thread(kareler.son)
+    if kare is None:
+        raise HTTPException(status_code=404, detail="Henüz kare yok")
+    return Response(content=kare, media_type="image/jpeg",
+                    headers={"Cache-Control": "no-store"})
+
+
+@app.get("/api/kare/liste")
+async def api_kare_liste(jeton: str = Query(default="")):
+    _parola_dogrula(jeton)
+    return {"kareler": await asyncio.to_thread(kareler.liste)}
+
+
+@app.get("/api/kare/{damga}")
+async def api_kare(damga: str, jeton: str = Query(default="")):
+    _parola_dogrula(jeton)
+    kare = await asyncio.to_thread(kareler.getir, damga)
+    if kare is None:
+        raise HTTPException(status_code=404, detail="Kare bulunamadı")
+    return Response(content=kare, media_type="image/jpeg")
+
+
+# --------------------------------------------------------------------------- #
+# Bitki türleri
+#
+# Veri `docs/bitki_turleri.json` içinde ve elle bakımı yapılıyor; sunucu
+# yalnızca okuyup panele veriyor. Türleri koda gömmek, yeni bir tür eklemek
+# için sürüm çıkmak demek olurdu.
+# --------------------------------------------------------------------------- #
+_TUR_ONBELLEK: dict[str, Any] = {"ts": 0.0, "veri": []}
+
+
+def _turleri_oku() -> list[dict[str, Any]]:
+    yol = os.environ.get("TUR_YOLU") or os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "docs", "bitki_turleri.json")
+    try:
+        damga = os.path.getmtime(yol)
+    except OSError:
+        return []
+    # Dosya değişmediyse yeniden okumuyoruz; her panel açılışında 10 KB JSON
+    # ayrıştırmanın anlamı yok.
+    if damga == _TUR_ONBELLEK["ts"] and _TUR_ONBELLEK["veri"]:
+        return _TUR_ONBELLEK["veri"]
+    try:
+        with open(yol, encoding="utf-8") as dosya:
+            veri = json.load(dosya)
+    except (json.JSONDecodeError, OSError) as hata:
+        logger.warning("Bitki türleri okunamadı (%s): %s", yol, hata)
+        return []
+    if not isinstance(veri, list):
+        return []
+    _TUR_ONBELLEK.update(ts=damga, veri=veri)
+    return veri
+
+
+@app.get("/api/turler")
+async def api_turler(jeton: str = Query(default="")):
+    _parola_dogrula(jeton)
+    return {"turler": await asyncio.to_thread(_turleri_oku)}
 
 
 @app.get("/saglik")

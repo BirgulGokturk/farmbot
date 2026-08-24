@@ -59,7 +59,7 @@ JOG_TICK = 0.1
 
 VARSAYILAN_KALIB = [
     {"cpm": 7.0, "dir": 1, "home": 0.0, "min": 0.0, "max": 425.0},      # X
-    {"cpm": 2.2746, "dir": 1, "home": 0.0, "min": 0.0, "max": 600.0},   # Y
+    {"cpm": 2.2746, "dir": 1, "home": 0.0, "min": 0.0, "max": 550.0},   # Y
     {"cpm": 56.8376, "dir": -1, "home": 438.0, "min": 0.0, "max": 550.0},  # Z
 ]
 
@@ -174,6 +174,12 @@ class SahteModbus(Modbus):
         self._konum[2] = (340.0 - kalib[2]["home"]) * kalib[2]["dir"] * kalib[2]["cpm"]
         self._hedef[2] = self._konum[2]
         self._reg[ENABLE_REG] = 1
+        # Konum register'larını hemen doldur: ilk döngü turuna kadar (50 ms)
+        # okuma yapılırsa ham 0 dönüyordu ve Z, home ofseti yüzünden 438 mm
+        # görünüyordu — simülasyon daha başlarken yanlış yerde sanılıyordu.
+        for i, eksen in enumerate(EKSENLER):
+            self._float_yaz_ic(eksen["konum"], self._konum[i])
+            self._float_yaz_ic(eksen["hedef"], self._konum[i])
         threading.Thread(target=self._dongu, daemon=True).start()
 
     def kapat(self) -> None:
@@ -248,10 +254,23 @@ class SahteModbus(Modbus):
 # Portal denetleyici
 # --------------------------------------------------------------------------- #
 class Gantry:
-    def __init__(self, ayar: dict[str, Any], gunluk_cb: Callable[[str, str], None] | None = None) -> None:
+    def __init__(self, ayar: dict[str, Any], gunluk_cb: Callable[[str, str], None] | None = None,
+                 bolgeler: Any = None, baglam_saglayici: Callable[[], dict[str, Any]] | None = None) -> None:
         self.ayar = ayar
+        # Yasak bölgeler ve koşul bağlamı dışarıdan veriliyor: plc.py bölge
+        # dosyasını okumayı ya da hangi ucun takılı olduğunu bilmek zorunda
+        # kalmasın. Verilmezse denetim yapılmıyor (birim testleri, sahte kurulum).
+        self.bolgeler = bolgeler
+        self.baglam_saglayici = baglam_saglayici
+        # Uç değiştirme modülü bağlanınca doldurulur (bkz. ajan.py):
+        #   z_guvenli_kaynagi() -> True/False/None  (None = mm kuralına düş)
+        #   tc_alani(x, y)      -> bool             (uç değiştirme alanı içinde mi)
+        self.z_guvenli_kaynagi: Callable[[], bool | None] | None = None
+        self.tc_alani: Callable[[float, float], bool] | None = None
         self.kalib = ayar.get("kalibrasyon") or VARSAYILAN_KALIB
         self.guvenli_z = float(ayar.get("guvenli_z", 340.0))
+        # PLC'de "referans tamam" biti yok; her eksene bu kadar süre tanınıyor.
+        self.home_bekleme = float(ayar.get("home_bekleme_sn", 8.0))
         self.hiz = float(ayar.get("hiz", 20.0))
         self.ivme = float(ayar.get("ivme", 100.0))
         self.yavaslama = float(ayar.get("yavaslama", 100.0))
@@ -267,6 +286,9 @@ class Gantry:
         self._jog: dict[tuple[int, str], float] = {}
         self._jog_kilit = threading.Lock()
         self._hareket_ip: threading.Thread | None = None
+        # Süren işin adı: hata mesajları "hareket" ile "referans arama"yı
+        # ayırt edebilsin ve hangi işin kesilebileceğine karar verebilelim.
+        self._islem_ad: str = ""
         self.son_hata: str | None = None
         self.hareket_ediyor = False
 
@@ -287,11 +309,50 @@ class Gantry:
 
     # --- okuma -----------------------------------------------------------
     def konum_mm(self) -> list[float]:
-        return [round(self.ham_dan_mm(i, self.mb.float_oku(EKSENLER[i]["konum"])), 2) for i in range(N)]
+        """Üç eksenin konumu — TEK Modbus işleminde.
+
+        Eksen başına ayrı okuma yapmak üç gidiş-dönüş demekti. Hareket
+        sırasında bekleme döngüsü saniyede 20 kez konum sorduğu için bu trafik
+        Modbus kilidini doldurup panelin konum göstergesini geciktiriyordu.
+        Konum register'ları 1026 ile 1063 arasına dağılmış; aralığın tamamını
+        (38 register) tek istekte alıp diliyoruz — Modbus'ın 125 register
+        sınırının çok altında.
+        """
+        bas = EKSENLER[0]["konum"]
+        son = EKSENLER[N - 1]["konum"] + 1
+        try:
+            blok = self.mb.oku(bas, son - bas + 1)
+        except PLCHatasi:
+            raise
+        sonuc = []
+        for i in range(N):
+            ofset = EKSENLER[i]["konum"] - bas
+            dusuk, yuksek = blok[ofset], blok[ofset + 1]
+            ham = struct.unpack(">f", struct.pack(">I", (yuksek << 16) | dusuk))[0]
+            sonuc.append(round(self.ham_dan_mm(i, ham), 2))
+        return sonuc
+
+    def eksen_konum_mm(self, i: int) -> float:
+        """Tek eksenin konumu — bekleme döngüsü üçünü birden okumasın diye."""
+        return round(self.ham_dan_mm(i, self.mb.float_oku(EKSENLER[i]["konum"])), 2)
 
     def z_guvenli_mi(self) -> bool:
-        """Z yukarıda mı? Okunamıyorsa 'güvenli değil' deriz — hata anında
-        hareketi serbest bırakmak, çarpmanın en kolay yolu."""
+        """Z yukarıda mı?
+
+        Önce PLC'deki Z-güvenli biti (`z_safe_reg`) soruluyor: gerçek bir
+        switch, milimetre hesabından her zaman daha güvenilir. Register
+        tanımlı değilse karar milimetre karşılaştırmasına kalıyor.
+
+        Okunamıyorsa "güvenli değil" deriz — hata anında hareketi serbest
+        bırakmak, çarpmanın en kolay yolu.
+        """
+        if self.z_guvenli_kaynagi is not None:
+            try:
+                bit = self.z_guvenli_kaynagi()
+            except Exception:
+                return False
+            if bit is not None:
+                return bool(bit)
         try:
             return self.konum_mm()[2] >= self.guvenli_z - 1.0
         except Exception:
@@ -318,6 +379,9 @@ class Gantry:
                     for e, i in EKSEN_INDEKS.items()
                 },
                 "hiz": self.hiz,
+                "bolgeler": (self.bolgeler.liste if self.bolgeler else []),
+                "esnetme_acik": bool(self.bolgeler and self.bolgeler.esnetme_acik),
+                "islem": self._islem_ad if self.hareket_ediyor else "",
                 "hata": None,
             }
         except Exception as hata:
@@ -342,13 +406,32 @@ class Gantry:
         time.sleep(0.12)
         self.mb.yaz(eksen["go"], 0)
 
-    def _eksen_bekle(self, i: int, hedef_mm: float, tolerans: float = 0.6, zaman_asimi: float = 45.0) -> bool:
+    def _bekleme_suresi(self, i: int, hedef_mm: float, hiz: float | None = None) -> float:
+        """Bu hareket için ne kadar beklenmeli?
+
+        Sabit 45 saniye yanlış: 550 mm'lik bir Y yolculuğu 5 mm/s hızda 110
+        saniye sürer ve zaman aşımına uğrardı — hareket başarılıyken "ulaşamadı"
+        denirdi. Mesafe/hız süresinin üç katı + 10 saniye pay; ivmelenme ve
+        yavaşlama için fazlasıyla yeterli, takılan bir eksende de sonsuza
+        kadar beklenmiyor.
+        """
+        try:
+            mesafe = abs(self.eksen_konum_mm(i) - hedef_mm)
+        except Exception:
+            mesafe = 550.0
+        hiz = max(0.5, float(hiz or self.hiz))
+        return min(300.0, max(20.0, mesafe / hiz * 3.0 + 10.0))
+
+    def _eksen_bekle(self, i: int, hedef_mm: float, tolerans: float = 0.6,
+                     zaman_asimi: float | None = None, hiz: float | None = None) -> bool:
+        if zaman_asimi is None:
+            zaman_asimi = self._bekleme_suresi(i, hedef_mm, hiz)
         t0 = time.time()
         while time.time() - t0 < zaman_asimi:
             if self._iptal.is_set() or self.acil_mandal["acik"]:
                 return False
             try:
-                if abs(self.konum_mm()[i] - hedef_mm) <= tolerans:
+                if abs(self.eksen_konum_mm(i) - hedef_mm) <= tolerans:
                     return True
             except Exception:
                 pass
@@ -372,28 +455,74 @@ class Gantry:
         return sayac
 
     # --- jog (basılı tut) ------------------------------------------------
-    def _jog_bekcisi(self) -> None:
-        """Kirası dolan jog bitini düşürür.
+    def _jog_mm_yonu(self, i: int, tur: str) -> int:
+        """Bu jog biti milimetre ekseninde hangi yöne gidiyor?
 
-        Panel her ~300 ms'de bir 'hâlâ basılıyım' diyor. Tarayıcı kapanır,
-        telefon kilitlenir ya da internet giderse yenileme gelmez ve eksen
-        JOG_TTL kadar sonra durur.
+        PLC'nin `jogf` biti eksenin kendi ileri yönü; `dir` −1 olan eksende
+        (Z) bu, mm cinsinden aşağı demek.
+        """
+        ileri_pozitif = float(self.kalib[i].get("dir", 1)) >= 0
+        return 1 if (tur == "jogf") == ileri_pozitif else -1
+
+    def _jog_bekcisi(self) -> None:
+        """Jog bitlerinin bekçisi — iki iş yapıyor.
+
+        1. **Kira denetimi.** Panel her ~300 ms'de bir "hâlâ açık" diyor.
+           Tarayıcı kapanır, telefon kilitlenir ya da ağ giderse yenileme
+           gelmez ve eksen JOG_TTL kadar sonra durur. Jog artık basılı tutmayla
+           değil tıklamayla açılıp kapandığı için bu koruma daha da önemli:
+           düğmeyi bırakan bir parmak yok, geriye yalnızca bu bekçi kalıyor.
+
+        2. **Yumuşak sınırda durdurma.** Basılı tut kipinde ekseni izleyen bir
+           operatör vardı. Tıkla-çalış kipinde eksen kendi başına gidiyor;
+           sınıra dayanmadan durdurmak artık yazılımın işi. Duruş payı hıza
+           göre hesaplanıyor: bekçi turu + yavaşlama mesafesi kadar erken
+           kesiyoruz.
         """
         while True:
             time.sleep(JOG_TICK)
             simdi = time.time()
             olenler = []
             with self._jog_kilit:
-                for anahtar, bitis in list(self._jog.items()):
+                acik = list(self._jog.items())
+                for anahtar, bitis in acik:
                     if simdi > bitis:
-                        olenler.append(anahtar)
+                        olenler.append((anahtar, "kira"))
                         self._jog.pop(anahtar, None)
-            for (i, tur) in olenler:
+
+            # Sınır denetimi yalnızca açık jog varken okuma yapar; boştayken
+            # Modbus'a gereksiz trafik bindirmiyor.
+            kalanlar = [a for a, _ in acik if (a, "kira") not in olenler]
+            if kalanlar:
+                try:
+                    konum = self.konum_mm()
+                except Exception:
+                    konum = None
+                if konum is not None:
+                    pay = max(2.0, self.hiz * 0.5)
+                    for (i, tur) in kalanlar:
+                        yon = self._jog_mm_yonu(i, tur)
+                        alt = self.kalib[i].get("min")
+                        ust = self.kalib[i].get("max")
+                        vardi = ((ust is not None and yon > 0 and konum[i] >= float(ust) - pay)
+                                 or (alt is not None and yon < 0 and konum[i] <= float(alt) + pay))
+                        if vardi:
+                            with self._jog_kilit:
+                                self._jog.pop((i, tur), None)
+                            olenler.append(((i, tur), "sinir"))
+
+            for (i, tur), neden in olenler:
                 try:
                     self.mb.yaz(EKSENLER[i][tur], 0)
-                    self.gunluk_cb(
-                        f"{EKSENLER[i]['ad']} {'+' if tur == 'jogf' else '-'} bekçi tarafından durduruldu "
-                        f"({JOG_TTL:.1f} sn yenileme gelmedi)", "uyari")
+                    isaret = "+" if self._jog_mm_yonu(i, tur) > 0 else "−"
+                    if neden == "sinir":
+                        self.gunluk_cb(
+                            f"{EKSENLER[i]['ad']}{isaret} yumuşak sınırda durduruldu "
+                            f"[{self.kalib[i].get('min')}, {self.kalib[i].get('max')}] mm", "uyari")
+                    else:
+                        self.gunluk_cb(
+                            f"{EKSENLER[i]['ad']}{isaret} bekçi tarafından durduruldu "
+                            f"({JOG_TTL:.1f} sn yenileme gelmedi)", "uyari")
                 except Exception as hata:
                     logger.error("Bekçi %s bitini kapatamadı: %s", EKSENLER[i]["ad"], hata)
 
@@ -401,18 +530,64 @@ class Gantry:
         if eksen not in EKSEN_INDEKS:
             raise PLCHatasi(f"Geçersiz eksen: {eksen}")
         i = EKSEN_INDEKS[eksen]
-        tur = "jogf" if yon > 0 else "jogb"
+        # Hangi bit "artı yön"? PLC'nin jogf biti eksenin KENDİ ileri yönü;
+        # bu, milimetre ekseninin artı yönü olmak zorunda değil. Z'de
+        # `dir` = −1, yani PLC'nin ileri yönü mm cinsinden AŞAĞI. Referans
+        # program da tam olarak bu dönüşümü yapıyor (`fwd = dir>=0 ? pos : !pos`).
+        # Bunu atlamak, panelde Z+ yazan düğmenin ucu aşağı indirmesi demekti.
+        ileri = yon > 0 if float(self.kalib[i].get("dir", 1)) >= 0 else yon < 0
+        tur = "jogf" if ileri else "jogb"
 
         if basili:
             if self.acil_mandal["acik"]:
                 raise PLCHatasi("ACİL DURDURMA mandallı — önce temizleyin")
+            # Süren bir hareket varken jog, aynı eksenin register'larına iki
+            # yazıcı demek: hareket işçisi hedefi tazelerken jog mandalı da
+            # açık kalıyor ve eksenin nereye gideceği belirsizleşiyor.
+            if self._hareket_ip and self._hareket_ip.is_alive():
+                raise PLCHatasi(f"{self._islem_ad or 'Hareket'} sürüyor — jog için önce durdurun")
             # Z yukarıda değilken X/Y kilitli. Bu kontrol her yenilemede
             # tekrarlanıyor: jog sırasında Z düşerse hareket kendiliğinden durur.
             if i in (0, 1) and not self.z_guvenli_mi():
-                self.jog_hepsini_birak()
-                raise PLCHatasi(
-                    f"{EKSENLER[i]['ad']} hareket edemez — Z güvenli yükseklikte değil "
-                    f"(≥ {self.guvenli_z:.0f} mm gerekiyor). Önce Z'yi kaldırın.")
+                # Uç değiştirme alanı: yalnızca bu alanın İÇİNDE ve alan
+                # AÇIKKEN Z şartı düşüyor. Uçlar alçak Z'de takılıp
+                # çıkarılabilsin diye var; alan kapalıyken hiçbir muafiyet yok
+                # ve muafiyetin kapsamı alanın dışına taşmıyor.
+                alanda = False
+                if self.tc_alani is not None:
+                    try:
+                        simdi = self.konum_mm()
+                        alanda = bool(self.tc_alani(simdi[0], simdi[1]))
+                    except Exception:
+                        alanda = False
+                if not alanda:
+                    self.jog_hepsini_birak()
+                    raise PLCHatasi(
+                        f"{EKSENLER[i]['ad']} hareket edemez — Z güvenli yükseklikte değil "
+                        f"(≥ {self.guvenli_z:.0f} mm gerekiyor). Önce Z'yi kaldırın.")
+
+            # Bölge denetimi: mevcut konuma değil, İLERİYE bakıyoruz. Sadece
+            # bulunduğumuz noktaya baksaydık eksen bölgeye girdikten sonra
+            # dururdu — yani bir miktar içeri girmiş olurdu. Bir sonraki
+            # yenilemeye kadar (JOG_TTL) katedilecek yolu tarıyoruz.
+            if self.bolgeler is not None:
+                simdiki = self.konum_mm()
+                # İhlal hâlindeyken kaçış: yalnızca Z+ jog serbest.
+                bas_ihlal = self.bolgeler.ihlal(simdiki[0], simdiki[1], simdiki[2], self.baglam())
+                if bas_ihlal and not (i == 2 and yon > 0):
+                    self.jog(eksen, yon, False)
+                    raise PLCHatasi(
+                        f"Makine bölge ihlali hâlinde ({bas_ihlal}). "
+                        "Bu konumdan yalnızca Z+ (yukarı) hareket edebilirsiniz.")
+                ileri = list(simdiki)
+                ileri[i] += yon * self.hiz * JOG_TTL
+                ileri[i] = max(float(self.kalib[i].get("min", -1e9)),
+                               min(float(self.kalib[i].get("max", 1e9)), ileri[i]))
+                try:
+                    self.bolgeler.yol_kontrol(tuple(simdiki), tuple(ileri), self.baglam())
+                except Exception as hata:
+                    self.jog(eksen, yon, False)
+                    raise PLCHatasi(str(hata))
             self._iptal.clear()
             self._hiz_ivme_yaz(i, self.hiz)
             # Kirayı ÖNCE al: bit açıldıktan sonra alsaydık, arada bekçi turu
@@ -444,8 +619,44 @@ class Gantry:
         if ac:
             # Bayat hedefe enable vermek, yarım kalan hareketi başlatır.
             self.hedefleri_esitle()
+            # Sürücüler kenar bekliyor olabilir. Register zaten 1 okuyorsa
+            # üstüne 1 yazmak hiçbir şey değiştirmez: bir arıza sonrası
+            # düşmüş sürücü öylece kapalı kalır ve komutlar sessizce yutulur.
+            # Önce 0 yazıp kısa bir duraklama ile 0 → 1 geçişi üretiyoruz —
+            # operatörün fiziksel enable anahtarını çevirmesinin karşılığı.
+            self.mb.yaz(ENABLE_REG, 0)
+            time.sleep(0.15)
         self.mb.yaz(ENABLE_REG, 1 if ac else 0)
         return "Sürücüler açık" if ac else "Sürücüler kapalı"
+
+    def _onceki_isi_kes(self, yeni_is: str) -> None:
+        """Süren işi, kesilebilir bir şeyse iptal edip bitmesini bekler.
+
+        Operatör bir noktaya giderken listeden başka bir noktaya tıklarsa
+        kastı "önce durdur, sonra tıkla" değil, "oraya değil buraya git"tir.
+        Bu yüzden basit bir konum hareketi yeni bir hareketle **değiştirilir**.
+
+        Referans arama, uç değiştirme ve program dizisi böyle değil: yarıda
+        kesilip yerine tek bir hareket konulması, makineyi dizinin ortasında
+        tanımsız bir durumda bırakır. Onlar açıkça durdurulmadan yeni komut
+        kabul edilmiyor.
+        """
+        if not (self._hareket_ip and self._hareket_ip.is_alive()):
+            self._islem_ad = ""
+            return
+
+        if self._islem_ad not in ("hareket", ""):
+            raise PLCHatasi(
+                f"{self._islem_ad} sürüyor — {yeni_is} için önce durdurun")
+
+        self._iptal.set()
+        self._hareket_ip.join(timeout=3.0)
+        if self._hareket_ip.is_alive():
+            # İşçi 3 saniyede çıkmadıysa bir yerde takılmış demektir; üstüne
+            # yeni hareket başlatmak iki yazıcı yaratır.
+            raise PLCHatasi("Önceki hareket sonlanmadı — durdurup tekrar deneyin")
+        self._iptal.clear()
+        self.gunluk_cb("Önceki hareket iptal edildi", "bilgi")
 
     def git(self, x: float | None, y: float | None, z: float | None, hiz: float | None = None) -> str:
         """Hedefe git. Sıra Z → Y → X, her eksen bitmeden diğeri başlamaz.
@@ -455,8 +666,7 @@ class Gantry:
         """
         if self.acil_mandal["acik"]:
             raise PLCHatasi("ACİL DURDURMA mandallı — önce temizleyin")
-        if self._hareket_ip and self._hareket_ip.is_alive():
-            raise PLCHatasi("Zaten süren bir hareket var — önce durdurun")
+        self._onceki_isi_kes("hareket")
 
         simdiki = self.konum_mm()
         hedef = [
@@ -472,31 +682,131 @@ class Gantry:
 
         # X/Y yer değiştirecekse yol Z güvenli yükseklikten geçmeli.
         yatay_var = abs(hedef[0] - simdiki[0]) > 0.2 or abs(hedef[1] - simdiki[1]) > 0.2
+        adimlar = self._adim_plani(simdiki, hedef, yatay_var)
+
+        # Yasak bölge denetimi hareket BAŞLAMADAN, planın tamamı üzerinde
+        # yapılıyor. Adım adım denetleseydik makine iki adım gidip üçüncüde
+        # dururdu — yarım kalmış bir hareket, hiç başlamamış olandan kötü.
+        self._bolge_plani_denetle(simdiki, adimlar)
+
         hiz_mm_s = float(hiz or self.hiz)
         self._iptal.clear()
+        self._islem_ad = "hareket"
         self._hareket_ip = threading.Thread(
-            target=self._git_isci, args=(hedef, yatay_var, hiz_mm_s), daemon=True)
+            target=self._git_isci, args=(adimlar, hiz_mm_s), daemon=True)
         self._hareket_ip.start()
         return f"Hedefe gidiliyor: X{hedef[0]:.1f} Y{hedef[1]:.1f} Z{hedef[2]:.1f}"
 
-    def _git_isci(self, hedef: list[float], yatay_var: bool, hiz: float) -> None:
+    def git_senkron(self, x: float | None, y: float | None, z: float | None,
+                    hiz: float | None = None) -> None:
+        """`git` ile AYNI yolu izler ama bitene kadar döner değil — dizi
+        adımları için.
+
+        Ayrı bir hareket yolu açmıyoruz bilerek: aynı plan, aynı sınır ve
+        bölge denetimi, aynı Z→Y→X sırası. İki kod yolu olsaydı biri
+        düzeltilip diğeri unutulurdu.
+        """
+        if self.acil_mandal["acik"]:
+            raise PLCHatasi("ACİL DURDURMA mandallı")
+        simdiki = self.konum_mm()
+        hedef = [simdiki[0] if x is None else float(x),
+                 simdiki[1] if y is None else float(y),
+                 simdiki[2] if z is None else float(z)]
+        for i in range(N):
+            if not self.sinir_icinde(i, hedef[i]):
+                raise PLCHatasi(
+                    f"{EKSENLER[i]['ad']} hedefi sınır dışı: {hedef[i]:.1f} mm "
+                    f"[{self.kalib[i]['min']:.0f}, {self.kalib[i]['max']:.0f}]")
+        yatay_var = abs(hedef[0] - simdiki[0]) > 0.2 or abs(hedef[1] - simdiki[1]) > 0.2
+        adimlar = self._adim_plani(simdiki, hedef, yatay_var)
+        self._bolge_plani_denetle(simdiki, adimlar)
+        for i, deger, etiket in adimlar:
+            if self.kesildi_mi():
+                raise PLCHatasi("Hareket durduruldu")
+            if abs(self.eksen_konum_mm(i) - deger) < 0.2:
+                continue
+            self._eksen_git(i, deger, float(hiz or self.hiz))
+            if not self._eksen_bekle(i, deger, hiz=float(hiz or self.hiz)):
+                if self.kesildi_mi():
+                    raise PLCHatasi("Hareket durduruldu")
+                raise PLCHatasi(f"{etiket} ekseni {deger:.1f} mm'ye ulaşamadı (zaman aşımı)")
+
+    def _adim_plani(self, simdiki: list[float], hedef: list[float],
+                    yatay_var: bool) -> list[tuple[int, float, str]]:
+        """Hareketin adım adım planı: (eksen, hedef mm, etiket).
+
+        Sıra: (gerekirse Z'yi güvenli yüksekliğe kaldır) → Y → X → Z indir.
+        Plan hem denetim hem yürütme tarafından kullanılıyor; ikisinin aynı
+        listeden okuması, "denetlenen yol ile gidilen yol farklı" hatasının
+        önünü kesiyor.
+        """
+        adimlar: list[tuple[int, float, str]] = []
+        if yatay_var and simdiki[2] < self.guvenli_z - 1.0:
+            adimlar.append((2, self.guvenli_z, "Z güvenli yüksekliğe"))
+        adimlar += [(1, hedef[1], "Y"), (0, hedef[0], "X"), (2, hedef[2], "Z")]
+        return adimlar
+
+    def _bolge_plani_denetle(self, simdiki: list[float],
+                             adimlar: list[tuple[int, float, str]]) -> None:
+        """Planın her parçasını yasak bölgelere karşı denetler."""
+        if self.bolgeler is None:
+            return
+        baglam = self.baglam()
+
+        # Makine hâlihazırda ihlal hâlindeyse (bir bölgenin içinde, koşulu
+        # sağlamadan duruyorsa) her hareketi engellemek onu kilitler: çıkış
+        # hamlesi de engellenmiş olur ve operatörün elinde bölgeleri kapatmak
+        # dışında seçenek kalmaz. Bu durumda YALNIZCA Z'yi yukarı almaya izin
+        # veriyoruz — açıklığı ancak artırabilecek tek hareket bu. Yanlamasına
+        # sürüklenme (asıl tehlikeli olan) engelli kalıyor.
+        bas_ihlal = self.bolgeler.ihlal(simdiki[0], simdiki[1], simdiki[2], baglam)
+        if bas_ihlal:
+            yalniz_z_yukari = all(
+                i == 2 and deger > simdiki[2] + 0.2 for i, deger, _ in adimlar
+                if abs(deger - simdiki[{0: 0, 1: 1, 2: 2}[i]]) > 0.2)
+            if not yalniz_z_yukari:
+                raise PLCHatasi(
+                    f"Makine şu anda bölge ihlali hâlinde ({bas_ihlal}). "
+                    "Bu konumdan yalnızca Z'yi yukarı almaya izin var — "
+                    "önce Z'yi güvenli yüksekliğe kaldırın.")
+            self.gunluk_cb(f"Bölge ihlalinden çıkış: Z yukarı ({bas_ihlal})", "uyari")
+            return
+
+        konum = list(simdiki)
+        for i, deger, _ in adimlar:
+            yeni = list(konum)
+            yeni[i] = deger
+            try:
+                self.bolgeler.yol_kontrol(tuple(konum), tuple(yeni), baglam)
+            except Exception as hata:
+                # Engel sınıfını burada isimle yakalamıyoruz ki bolgeler modülü
+                # olmadan da plc.py çalışsın (sahte kurulum, birim testleri).
+                raise PLCHatasi(str(hata))
+            konum = yeni
+
+    def baglam(self) -> dict[str, Any]:
+        """Bölge koşullarında kullanılan değişkenler."""
+        temel = {"safe_z": self.guvenli_z, "zmax": float(self.kalib[2].get("max", 550.0)),
+                 "prox": False, "tool": ""}
+        if self.baglam_saglayici:
+            try:
+                temel.update(self.baglam_saglayici() or {})
+            except Exception:
+                pass
+        return temel
+
+    def _git_isci(self, adimlar: list[tuple[int, float, str]], hiz: float) -> None:
         self.hareket_ediyor = True
         try:
-            # Sıra: (gerekirse Z'yi güvenli yüksekliğe kaldır) → Y → X → Z indir.
-            adimlar: list[tuple[int, float, str]] = []
-            if yatay_var and not self.z_guvenli_mi():
-                adimlar.append((2, self.guvenli_z, "Z güvenli yüksekliğe"))
-            adimlar += [(1, hedef[1], "Y"), (0, hedef[0], "X"), (2, hedef[2], "Z")]
-
             for i, deger, etiket in adimlar:
                 if self._iptal.is_set() or self.acil_mandal["acik"]:
                     self.gunluk_cb("Hareket iptal edildi", "uyari")
                     return
-                if abs(self.konum_mm()[i] - deger) < 0.2:
+                if abs(self.eksen_konum_mm(i) - deger) < 0.2:
                     continue
                 self.gunluk_cb(f"{etiket} → {deger:.1f} mm", "bilgi")
                 self._eksen_git(i, deger, hiz)
-                if not self._eksen_bekle(i, deger):
+                if not self._eksen_bekle(i, deger, hiz=hiz):
                     neden = "iptal edildi" if (self._iptal.is_set() or self.acil_mandal["acik"]) \
                         else f"{deger:.1f} mm'ye ulaşamadı (zaman aşımı)"
                     self.gunluk_cb(f"{etiket} {neden}", "hata")
@@ -506,19 +816,133 @@ class Gantry:
             self.gunluk_cb(f"Hareket hatası: {hata}", "hata")
         finally:
             self.hareket_ediyor = False
+            self._iptal_sahipligi_birak()
+
+    def harici_is_baslat(self, ad: str, isci: Callable[[], None]) -> None:
+        """Uç değiştirme / program dizisi gibi dış modüllerin işini başlatır.
+
+        Hareket sahipliği tek yerde kalsın diye: `_islem_ad` ve `_hareket_ip`
+        buradan yönetiliyor, böylece `git`, `jog` ve `dur` süren dizinin
+        varlığını görüyor ve araya girmiyor.
+        """
+        self._onceki_isi_kes(ad)
+        self._iptal.clear()
+        self._islem_ad = ad
+
+        def sarmal() -> None:
+            self.hareket_ediyor = True
+            try:
+                isci()
+            except Exception as hata:
+                self.gunluk_cb(f"{ad} hatası: {hata}", "hata")
+            finally:
+                self.hareket_ediyor = False
+                self._iptal_sahipligi_birak()
+
+        self._hareket_ip = threading.Thread(target=sarmal, daemon=True)
+        self._hareket_ip.start()
+
+    def _iptal_sahipligi_birak(self) -> None:
+        """İşi biten iş parçacığı iptal bayrağını bırakır.
+
+        `_iptal` "şu an süren işi kes" demek; iş bittiğinde bayrak bayat
+        kalıyor. Bayat bayrak gerçek bir hataya yol açtı: durdurulan bir
+        dizinin temizlik adımı (`dur()`) bayrağı yeniden kaldırıyor ve
+        hemen sonra başlatılan YENİ dizi ilk adımında "durduruldu" diye
+        ölüyordu. Bayrağı yalnızca onu son kullanan iş parçacığı bırakıyor,
+        böylece araya giren yeni bir işin bayrağı silinmiyor.
+        """
+        if threading.current_thread() is self._hareket_ip:
+            self._iptal.clear()
+
+    def kesildi_mi(self) -> bool:
+        """Dizi adımları arasında çağrılır: durduruldu mu, acil mi?"""
+        return self._iptal.is_set() or self.acil_mandal["acik"]
+
+    def eksen_git_dogrula(self, i: int, mm: float, hiz: float | None = None,
+                          tolerans: float = 0.6, bolge_denetle: bool = True) -> None:
+        """Tek ekseni mutlak konuma götürür ve VARDIĞINI DOĞRULAR.
+
+        Referanstaki uç değiştirme dizisinde bazı adımların dönüş değeri
+        denetlenmiyor; eksen hedefe varmasa da dizi devam ediyor. Bir uç
+        değiştirme dizisinde bu, kilit açılmadan kalkmaya çalışmak demek.
+        Burada her adım doğrulanıyor ve varılmadıysa istisna atılıyor.
+        """
+        if self.acil_mandal["acik"]:
+            raise PLCHatasi("ACİL DURDURMA mandallı")
+        if not self.sinir_icinde(i, mm):
+            raise PLCHatasi(
+                f"{EKSENLER[i]['ad']} hedefi sınır dışı: {mm:.1f} mm "
+                f"[{self.kalib[i]['min']:.0f}, {self.kalib[i]['max']:.0f}]")
+
+        simdiki = self.konum_mm()
+        if bolge_denetle:
+            # Dizi sürerken de bölge denetimi geçerli. Yalnızca 'yuva'
+            # işaretli bölgeler, yalnızca esnetme açıkken atlanıyor.
+            self._bolge_plani_denetle(simdiki, [(i, mm, EKSENLER[i]["ad"])])
+
+        if abs(simdiki[i] - mm) < 0.2:
+            return
+        self._eksen_git(i, mm, float(hiz or self.hiz))
+        if not self._eksen_bekle(i, mm, tolerans=tolerans, hiz=float(hiz or self.hiz)):
+            if self.kesildi_mi():
+                raise PLCHatasi("Dizi durduruldu")
+            raise PLCHatasi(
+                f"{EKSENLER[i]['ad']} ekseni {mm:.1f} mm'ye ulaşamadı "
+                f"(şu an {self.eksen_konum_mm(i):.1f} mm) — dizi durduruldu")
 
     def home(self, eksen: str | None = None) -> str:
-        """Referans arama. Eksen verilmezse sıra Z → Y → X."""
+        """Referans arama — eksenler SIRAYLA, aralarında bekleyerek.
+
+        Buradaki bekleme neden zorunlu: PLC'de "referans tamam" biti eşlenmiş
+        değil, yani eksenin switch'e vardığını okuyamıyoruz. Darbeyi atıp
+        hemen sıradaki eksene geçmek, Z hâlâ inip çıkarken X ve Y'yi hareket
+        ettirmek demek — uç aşağıdayken yatay hareket, tam olarak Z kilidinin
+        önlemeye çalıştığı şey.
+
+        Bu yüzden sıra Z → X → Y ve her eksen için `home_bekleme` saniye
+        bekleniyor. Bu bir doğrulama değil, süreli bekleme: değeri en yavaş
+        ekseninizin referans süresinden uzun tutun.
+        """
         if self.acil_mandal["acik"]:
             raise PLCHatasi("ACİL DURDURMA mandallı — önce temizleyin")
-        sira = [EKSEN_INDEKS[eksen]] if eksen else [2, 1, 0]
-        for i in sira:
-            reg = EKSENLER[i].get("home") or EKSENLER[i]["go"]
-            self.mb.yaz(reg, 1)
-            time.sleep(0.2)
-            self.mb.yaz(reg, 0)
-        adlar = ", ".join(EKSENLER[i]["ad"] for i in sira)
+        self._onceki_isi_kes("referans arama")
+
+        sira = [EKSEN_INDEKS[eksen]] if eksen else [2, 0, 1]   # Z, X, Y
+        self._iptal.clear()
+        self._islem_ad = "referans arama"
+        self._hareket_ip = threading.Thread(target=self._home_isci, args=(sira,), daemon=True)
+        self._hareket_ip.start()
+        adlar = " → ".join(EKSENLER[i]["ad"] for i in sira)
         return f"Referans arama başlatıldı: {adlar}"
+
+    def _home_isci(self, sira: list[int]) -> None:
+        self.hareket_ediyor = True
+        try:
+            for i in sira:
+                if self._iptal.is_set() or self.acil_mandal["acik"]:
+                    self.gunluk_cb("Referans arama iptal edildi", "uyari")
+                    return
+                reg = EKSENLER[i].get("home") or EKSENLER[i]["go"]
+                self.gunluk_cb(f"{EKSENLER[i]['ad']} referans aranıyor...", "bilgi")
+                self.mb.yaz(reg, 1)
+                time.sleep(0.2)
+                self.mb.yaz(reg, 0)
+                # Bekleme iptal edilebilir olmalı: 8 saniye boyunca acil
+                # durdurmaya sağır kalan bir döngü kabul edilemez.
+                bitis = time.time() + self.home_bekleme
+                while time.time() < bitis:
+                    if self._iptal.is_set() or self.acil_mandal["acik"]:
+                        self.mb.yaz(reg, 0)
+                        self.gunluk_cb("Referans arama iptal edildi", "uyari")
+                        return
+                    time.sleep(0.1)
+                self.gunluk_cb(f"{EKSENLER[i]['ad']} referans tamam (süreli bekleme)", "bilgi")
+        except Exception as hata:
+            self.gunluk_cb(f"Referans arama hatası: {hata}", "hata")
+        finally:
+            self.hareket_ediyor = False
+            self._iptal_sahipligi_birak()
 
     def dur(self) -> str:
         """Süren hareketi kes ve jog bitlerini bırak. Mandal bırakmaz."""
@@ -576,5 +1000,6 @@ class Gantry:
             self.mb.kapat()
 
 
-def olustur(ayar: dict[str, Any], gunluk_cb=None) -> Gantry:
-    return Gantry(ayar, gunluk_cb)
+def olustur(ayar: dict[str, Any], gunluk_cb=None, bolgeler: Any = None,
+            baglam_saglayici: Callable[[], dict[str, Any]] | None = None) -> Gantry:
+    return Gantry(ayar, gunluk_cb, bolgeler=bolgeler, baglam_saglayici=baglam_saglayici)

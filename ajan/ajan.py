@@ -35,7 +35,11 @@ import time
 from typing import Any
 
 import arduino as arduino_modulu
+import bolgeler as bolge_modulu
 import plc as plc_modulu
+import dizi as dizi_modulu
+import kamera as kamera_modulu
+import uclar as uc_modulu
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger("ajan")
@@ -55,6 +59,7 @@ VARSAYILAN_AYAR = {
         "yavaslama": 100.0,
         "kalibrasyon_dosyasi": "gantry_calib.json",
     },
+    "kamera": {"aktif": False, "aralik_sn": 30.0, "genislik": 640, "sahte": False},
     "durum_araligi_sn": 0.5,
 }
 
@@ -102,7 +107,19 @@ class Ajan:
         self.ws = None
         self.kip = "oto"
 
-        self.plc = plc_modulu.olustur(ayar["plc"], gunluk_cb=self._gunluk_gonder)
+        # Yasak bölgeler ajanda: panel çökse, sunucu düşse, komut başka bir
+        # arayüzden gelse de koruma çalışsın.
+        self.bolgeler = bolge_modulu.Bolgeler(ayar.get("plc", {}), gunluk_cb=self._gunluk_gonder)
+        self.plc = plc_modulu.olustur(
+            ayar["plc"], gunluk_cb=self._gunluk_gonder,
+            bolgeler=self.bolgeler, baglam_saglayici=self._kosul_baglami)
+        # Uç değiştirme: bölge esnetmesini ve konum doğrulamasını yönetiyor.
+        self.uclar = uc_modulu.Uclar(ayar.get("plc", {}), self.plc,
+                                     bolgeler=self.bolgeler, gunluk_cb=self._gunluk_gonder)
+        # Z güvenlik kararının iki kaynağı uç modülünde: PLC'deki Z-güvenli
+        # biti ve uç değiştirme alanı. PLC sürücüsü bunları buradan soruyor.
+        self.plc.z_guvenli_kaynagi = self.uclar.z_guvenli_reg_oku
+        self.plc.tc_alani = self.uclar.tc_alani_icinde
         ard = ayar["arduino"]
         if ard.get("sahte"):
             self.arduino = arduino_modulu.SahteArduino(geri_cagir=self._olcum_geldi)
@@ -112,12 +129,39 @@ class Ajan:
                 baud=int(ard.get("baud", 9600)),
                 geri_cagir=self._olcum_geldi,
             )
+        # Program dizisi ajanda yürüyor: panel kapansa da acil durdurma
+        # diziyi kesebilsin diye.
+        self.dizi = dizi_modulu.Dizi(self.plc, self.uclar,
+                                     lambda k: self.arduino.komut(k),
+                                     gunluk_cb=self._gunluk_gonder)
+        self.kamera = kamera_modulu.Kamera(ayar.get("kamera", {}), self._kare_geldi,
+                                           gunluk_cb=self._gunluk_gonder)
         self._son_durum: dict[str, Any] = {}
+
+    def _kosul_baglami(self) -> dict[str, Any]:
+        """Bölge koşullarında kullanılan makine durumu.
+
+        `prox` (varlık sensörü) ve `tool` (takılı uç) uç değiştirme eklenince
+        dolacak; şimdilik sabit. Değerlerin buradan geçmesi, koşul yazan
+        kişinin bugün de `prox` ve `tool` kullanabilmesi demek — sonuç
+        değişmiyor ama ifade geçersiz olmuyor.
+        """
+        uclar = getattr(self, "uclar", None)
+        if uclar is None:
+            return {"prox": False, "tool": ""}
+        varlik = uclar.varlik_oku()
+        # Sensör bağlı değilken `prox` False: "uç yok" değil, "doğrulanamıyor".
+        # Koşullarda fail-closed tarafta kalmak için doğrusu bu.
+        return {"prox": bool(varlik), "tool": uclar.ayar.get("current_tool") or ""}
 
     # --- başka iş parçacıklarından gelen olaylar -------------------------
     def _olcum_geldi(self, veri: dict[str, Any]) -> None:
         """Seri port iş parçacığından çağrılır — asyncio'ya güvenli aktarım."""
         self._kuyruga_at({"tip": "olcum", "ts": time.time(), "veri": veri})
+
+    def _kare_geldi(self, b64: str, ts: float) -> None:
+        """Kamera iş parçacığından çağrılır."""
+        self._kuyruga_at({"tip": "kare", "ts": ts, "veri": b64})
 
     def _gunluk_gonder(self, metin: str, seviye: str = "bilgi") -> None:
         """PLC sürücüsünden (bekçi, hareket işçisi) gelen bildirimler."""
@@ -186,6 +230,62 @@ class Ajan:
             if ad == "enable":
                 return {"ok": True, "mesaj": await asyncio.to_thread(self.plc.enable, bool(arg.get("deger")))}
 
+            if ad == "bolge_listele":
+                return {"ok": True, "mesaj": "", "veri": {"bolgeler": self.bolgeler.liste}, "sessiz": True}
+
+            if ad == "bolge_kaydet":
+                gelen = arg.get("bolgeler")
+                if not isinstance(gelen, list):
+                    return {"ok": False, "mesaj": "bolgeler bir liste olmalı"}
+                try:
+                    kayitli = await asyncio.to_thread(self.bolgeler.kaydet, gelen)
+                except bolge_modulu.BolgeHatasi as hata:
+                    return {"ok": False, "mesaj": str(hata)}
+                uyarili = [b["ad"] for b in kayitli if b.get("uyari")]
+                mesaj = f"{len(kayitli)} bölge kaydedildi"
+                if uyarili:
+                    mesaj += f" — koşulu hatalı olanlar hareketi ENGELLER: {', '.join(uyarili)}"
+                return {"ok": True, "mesaj": mesaj, "veri": {"bolgeler": kayitli}}
+
+            if ad == "uc_listele":
+                return {"ok": True, "mesaj": "", "sessiz": True,
+                        "veri": {"ayar": self.uclar.ayar, "durum": self.uclar.durum}}
+
+            if ad == "uc_kaydet":
+                gelen = arg.get("ayar")
+                if not isinstance(gelen, dict):
+                    return {"ok": False, "mesaj": "ayar bir nesne olmalı"}
+                yeni = await asyncio.to_thread(self.uclar.kaydet, gelen)
+                return {"ok": True, "mesaj": "Uç ayarları kaydedildi", "veri": {"ayar": yeni}}
+
+            if ad == "uc_onizle":
+                return {"ok": True, "mesaj": "", "sessiz": True,
+                        "veri": self.uclar.yol_onizleme(str(arg.get("islem", "al")),
+                                                        str(arg.get("ad", "")))}
+
+            if ad == "uc_durum_temizle":
+                return {"ok": True, "mesaj": await asyncio.to_thread(self.uclar.durumu_temizle)}
+
+            if ad in ("uc_al", "uc_birak", "uc_degistir"):
+                islem = {"uc_al": "al", "uc_birak": "birak", "uc_degistir": "degistir"}[ad]
+                try:
+                    mesaj_metni = self.uclar.dizi_baslat(islem, str(arg.get("ad", "")))
+                except uc_modulu.UcHatasi as hata:
+                    return {"ok": False, "mesaj": str(hata)}
+                return {"ok": True, "mesaj": mesaj_metni}
+
+            if ad == "dizi_baslat":
+                try:
+                    mesaj_metni = self.dizi.baslat(
+                        str(arg.get("ad", "dizi")), arg.get("adimlar") or [],
+                        int(arg.get("tekrar", 1) or 1), arg.get("hiz"))
+                except (dizi_modulu.DiziHatasi, plc_modulu.PLCHatasi) as hata:
+                    return {"ok": False, "mesaj": str(hata)}
+                return {"ok": True, "mesaj": mesaj_metni}
+
+            if ad == "dizi_durdur":
+                return {"ok": True, "mesaj": await asyncio.to_thread(self.dizi.durdur)}
+
             if ad == "hiz":
                 return {"ok": True, "mesaj": await asyncio.to_thread(self.plc.hiz_ayarla, float(arg.get("mm_s", 20)))}
 
@@ -205,6 +305,22 @@ class Ajan:
                 self.kip = deger
                 return {"ok": True, "mesaj": f"Kip: {deger}"}
 
+            if ad == "oto_esik":
+                # Panel yüzde gösteriyor, Arduino ham ADC ile karşılaştırıyor;
+                # çeviri panelde yapılıyor, buraya ham değer geliyor.
+                ham = int(arg.get("ham", 600))
+                if not 0 <= ham <= 1023:
+                    return {"ok": False, "mesaj": "Eşik 0-1023 arasında olmalı"}
+                await asyncio.to_thread(self.arduino.komut, f"ESIK {ham}")
+                return {"ok": True, "mesaj": f"Otomatik sulama eşiği: {ham} (ham)"}
+
+            if ad == "oto_cikis":
+                cikis = str(arg.get("ad", "servo")).lower()
+                if cikis not in ("yok", "servo", "su_vanasi", "su_pompasi"):
+                    return {"ok": False, "mesaj": f"Bilinmeyen çıkış: {cikis}"}
+                await asyncio.to_thread(self.arduino.komut, f"OTOCIKIS {cikis}")
+                return {"ok": True, "mesaj": f"Otomatik sulama çıkışı: {cikis}"}
+
             if ad == "role":
                 role_adi = str(arg.get("ad", ""))
                 if role_adi not in ("su_pompasi", "hava_pompasi", "su_vanasi"):
@@ -217,6 +333,13 @@ class Ajan:
 
         except plc_modulu.PLCHatasi as hata:
             logger.warning("PLC komutu reddedildi: %s", hata)
+            return {"ok": False, "mesaj": str(hata)}
+        except RuntimeError as hata:
+            # Arduino tarafının anlaşılır ret sebepleri: "bağlı değil",
+            # "o çıkış bağlı değil", "port kapalı". Bunları genel hata
+            # dalına düşürmek panelde "Beklenmeyen hata" yazdırıyordu —
+            # oysa sebep gayet belli ve kullanıcıya söylenmeye değer.
+            logger.info("Arduino komutu reddedildi: %s", hata)
             return {"ok": False, "mesaj": str(hata)}
         except Exception as hata:
             logger.exception("Komut işlenirken hata")
@@ -240,6 +363,26 @@ class Ajan:
             durum = await asyncio.to_thread(self.plc.durum)
             durum["kip"] = self.kip
             durum["arduino"] = self.arduino.bagli
+            # Panelin ihtiyacı olan her şey tek pakette: dizi ilerlemesi,
+            # takılı uç, uç adları ve sensörün bağlı olup olmadığı.
+            durum["dizi"] = dict(self.dizi.durum)
+            durum["uc"] = {
+                **self.uclar.durum,
+                "uclar": [t.get("name") for t in self.uclar.ayar.get("tools", [])],
+                "sensor_var": int(self.uclar.ayar.get("presence_reg", 0) or 0) > 0,
+                "travel_z": self.uclar.ayar.get("travel_z"),
+                "slide_axis": self.uclar.ayar.get("slide_axis"),
+                "alan": self.uclar.ayar.get("tc_area") or {},
+                "alanda": bool(self.uclar.tc_alani_icinde(
+                    (durum.get("konum") or {}).get("x") or 0,
+                    (durum.get("konum") or {}).get("y") or 0)),
+                "z_safe_reg": int(self.uclar.ayar.get("z_safe_reg", 0) or 0),
+                "ayar": {k: self.uclar.ayar.get(k) for k in
+                         ("safe_z", "travel_z", "lift", "approach", "retreat",
+                          "speed", "slide_axis", "lock_dwell", "lock_reg",
+                          "grip_reg", "presence_reg")},
+                "tools": self.uclar.ayar.get("tools", []),
+            }
 
             if durum != self._son_durum and self.ws is not None:
                 self._son_durum = durum
@@ -265,6 +408,7 @@ class Ajan:
 
         self.dongu = asyncio.get_running_loop()
         self.arduino.baslat()
+        self.kamera.baslat()
         # Çakılmadan kalan bir jog mandalını miras almayalım.
         await asyncio.to_thread(self.plc.jog_hepsini_birak)
 
@@ -312,6 +456,7 @@ def main() -> None:
         logger.info("Kapatılıyor")
     finally:
         ajan.arduino.durdur()
+        ajan.kamera.durdur()
         ajan.plc.kapat()
 
 

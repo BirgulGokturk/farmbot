@@ -2,9 +2,8 @@
   "_aciklama": "Bu dosyayı 'ayarlar.json' adıyla kopyalayıp kendi değerlerinizi yazın.",
   "_uyari": "Bu ajan çalışırken PLC'ye BAŞKA hiçbir program yazmamalı. Gantry Studio çalışıyorsa kapatın: sudo systemctl disable --now gantry-studio",
 
-  "_sunucu": "Sunucu Pi'nin kendisinde calisiyorsa asagidaki adres dogrudur. Bulutta barindiriyorsaniz wss://<adres>/ws/ajan yazin.",
-  "sunucu": "ws://127.0.0.1:8000/ws/ajan",
-  "jeton": "SUNUCUDAKI_AJAN_JETONU_ILE_AYNI_OLMALI (pi-kur.sh bunu kendisi doldurur)",
+  "sunucu": "wss://farmbot-api.onrender.com/ws/ajan",
+  "jeton": "SUNUCUDAKI_AJAN_JETONU_ILE_AYNI_OLMALI",
 
   "arduino": {
     "port": "/dev/ttyUSB0",
@@ -27,7 +26,25 @@
 
     "hiz": 20.0,
     "ivme": 100.0,
-    "yavaslama": 100.0
+    "yavaslama": 100.0,
+
+    "home_bekleme_sn": 8.0,
+    "_home_bekleme_sn": "PLC'de 'referans tamam' biti eşlenmediği için her eksene bu kadar süre tanınıyor. En yavaş ekseninizin referans süresinden uzun tutun.",
+
+    "bolge_dosyasi": "bolgeler.json",
+    "uc_dosyasi": "uclar.json",
+    "_dosyalar": "Yasak bölgeler ve uç ayarları ajanda duruyor — panel çökse de koruma çalışsın diye. Panelden düzenlenir, buraya yazılır."
+  },
+
+  "kamera": {
+    "_not": "picamera2 → rpicam-still → libcamera-still → fswebcam sırasıyla denenir. Hiçbiri yoksa kamera kapanır, geri kalan her şey çalışır.",
+    "_pi_kamera": "Şerit kablolu Pi kamera modülü için: sudo apt install -y python3-picamera2 rpicam-apps  ·  test: rpicam-hello --list-cameras",
+    "aktif": true,
+    "aralik_sn": 30.0,
+    "genislik": 640,
+    "kalite": 75,
+    "sahte": false,
+    "cihaz": "/dev/video0"
   },
 
   "durum_araligi_sn": 0.5
