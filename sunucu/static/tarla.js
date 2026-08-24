@@ -191,54 +191,17 @@
       yatakGrup.add(karik);
     }
 
-    // Kenar duvarları
-    const duvarMal = malzeme(RENK.toprakKoyu, { roughness: 0.85 });
-    const duvar = (gx, gz, x, z) => {
-      const m = new THREE.Mesh(new THREE.BoxGeometry(gx, 0.09, gz), duvarMal);
-      m.position.set(x, 0.01, z);
-      yatakGrup.add(m);
-    };
-    duvar(w + 0.06, 0.03, 0, -d / 2 - 0.015);
-    duvar(w + 0.06, 0.03, 0, d / 2 + 0.015);
-    duvar(0.03, d, -w / 2 - 0.015, 0);
-    duvar(0.03, d, w / 2 + 0.015, 0);
+    // Makine gövdesi (kap, çerçeve, ayaklar, raylar, portal) makine.js'te.
+    // Ayrı dosyada duruyor ki görünümü değiştirmek için tasarımcının
+    // mantığına dokunmak gerekmesin.
+    const makine = window.FarmbotMakine.kur(THREE, { w: w, d: d, rayY: rayY });
+    yatakGrup.add(makine.sabit);
 
-    // Köşe direkleri + yan raylar
-    const cerceveMal = malzeme(RENK.cerceve, { roughness: 0.55, metalness: 0.35 });
-    dokuYukle(cerceveMal, "cerceve");
-    const rayMal = malzeme(RENK.ray, { roughness: 0.5, metalness: 0.4 });
-    [[-1, -1], [1, -1], [-1, 1], [1, 1]].forEach(([ix, iz]) => {
-      const direk = new THREE.Mesh(new THREE.BoxGeometry(0.05, rayY, 0.05), cerceveMal);
-      direk.position.set((ix * w) / 2, rayY / 2, (iz * d) / 2);
-      yatakGrup.add(direk);
-    });
-    [-1, 1].forEach((iz) => {
-      const ray = new THREE.Mesh(new THREE.BoxGeometry(w + 0.1, 0.045, 0.045), rayMal);
-      ray.position.set(0, rayY, (iz * d) / 2);
-      yatakGrup.add(ray);
-    });
-
-    // Hareketli portal: kiriş X'te (sahne x), kızak kiriş üzerinde Y'de (sahne z)
     if (portal) sahne.remove(portal);
-    portal = new THREE.Group();
-    const kiris = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.04, d + 0.1), cerceveMal);
-    kiris.position.y = rayY;
-    portal.add(kiris);
-
-    kizak = new THREE.Group();
-    const govde = new THREE.Mesh(new THREE.BoxGeometry(0.11, 0.09, 0.11), malzeme(RENK.ucKoyu, { roughness: 0.6, metalness: 0.3 }));
-    govde.position.y = rayY;
-    kizak.add(govde);
-
-    sutun = new THREE.Mesh(new THREE.BoxGeometry(0.035, 1, 0.035), malzeme(RENK.cerceve, { roughness: 0.5, metalness: 0.35 }));
-    kizak.add(sutun);
-
-    ucKafa = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.038, 0.018, 0.08, 18),
-      malzeme(RENK.uc, { emissive: new THREE.Color(RENK.uc), emissiveIntensity: 0.35, roughness: 0.4 }));
-    kizak.add(ucKafa);
-
-    portal.add(kizak);
+    portal = makine.portal;
+    kizak = makine.kizak;
+    sutun = makine.sutun;
+    ucKafa = makine.ucKafa;
     sahne.add(portal);
     robotuYerlestir();
 
@@ -259,8 +222,10 @@
     const x = k.x == null ? T.sinir.x.min : k.x;
     const y = k.y == null ? T.sinir.y.min : k.y;
     const z = k.z == null ? T.sinir.z.max : k.z;
-    portal.position.x = sx(x);
-    kizak.position.z = sz(y);
+    // Portal raylarda makine Y'sinde yürüyor, kızak kirişte makine X'inde
+    // kayıyor — fotoğraftaki makinede raylar uzun kenarda.
+    portal.position.z = sz(y);
+    kizak.position.x = sx(x);
     // Makine Z'si büyüdükçe uç YUKARI çıkıyor (kalibrasyonda dir = -1,
     // home = 438). Uç ucunu doğrudan o yüksekliğe koyuyoruz.
     const ucY = kis(z, 0, T.sinir.z.max || 550) * MM;

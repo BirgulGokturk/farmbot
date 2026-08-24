@@ -1,0 +1,88 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Makine önizleme</title>
+<!--
+  Makine geometrisini panele girmeden, parola sormadan görmek için.
+  Adres: http://<sunucu>:8000/statik/makine-onizleme.html
+  Sadece görünüm içindir; veri, komut ve bağlantı yoktur.
+-->
+<style>
+  html, body { margin: 0; height: 100%; background: #0e1210; color: #c8d2cc;
+               font: 13px/1.5 system-ui, sans-serif; }
+  canvas { display: block; width: 100%; height: 100%; }
+  #bilgi { position: fixed; left: 12px; top: 12px; opacity: .75; }
+</style>
+<div id="bilgi">Sürükle: döndür · Tekerlek: yakınlaş</div>
+<canvas id="t"></canvas>
+<script src="three.min.js"></script>
+<script src="makine.js"></script>
+<script>
+  const MM = 0.001, w = 425 * MM, d = 600 * MM, rayY = 520 * MM;
+
+  const sahne = new THREE.Scene();
+  sahne.background = new THREE.Color("#0e1210");
+  sahne.add(new THREE.HemisphereLight(0xdfe9e2, 0x2a2f28, 1.15));
+  const isik = new THREE.DirectionalLight(0xffffff, 1.5);
+  isik.position.set(2.4, 3.2, 1.8);
+  sahne.add(isik);
+
+  // Toprak — tarla.js'teki ile aynı ölçü, sahne buna göre oturuyor
+  const toprak = new THREE.Mesh(
+    new THREE.BoxGeometry(w, 0.12, d),
+    new THREE.MeshStandardMaterial({ color: "#4a3b2c", roughness: 1 }));
+  toprak.position.y = -0.06;
+  sahne.add(toprak);
+
+  const m = window.FarmbotMakine.kur(THREE, { w, d, rayY });
+  sahne.add(m.sabit);
+  sahne.add(m.portal);
+
+  // Uç ortada, yarı yükseklikte dursun
+  const ucY = 0.25;
+  m.ucKafa.position.set(0, ucY + 0.04, 0);
+  const boy = Math.max(0.05, rayY - 0.045 - (ucY + 0.08));
+  m.sutun.scale.y = boy;
+  m.sutun.position.set(0, ucY + 0.08 + boy / 2, 0);
+
+  const tuval = document.getElementById("t");
+  const ciz = new THREE.WebGLRenderer({ canvas: tuval, antialias: true });
+  const kam = new THREE.PerspectiveCamera(42, 1, 0.05, 100);
+  let aci = 0.9, yukseklik = 0.55, uzaklik = 1.9;
+
+  function yerlestir() {
+    kam.position.set(
+      Math.sin(aci) * uzaklik,
+      yukseklik * uzaklik,
+      Math.cos(aci) * uzaklik);
+    kam.lookAt(0, 0.15, 0);
+  }
+  function boyutla() {
+    const g = tuval.clientWidth, y = tuval.clientHeight;
+    ciz.setPixelRatio(Math.min(devicePixelRatio || 1, 2));
+    ciz.setSize(g, y, false);
+    kam.aspect = g / y;
+    kam.updateProjectionMatrix();
+  }
+  addEventListener("resize", boyutla);
+
+  let surukle = null;
+  tuval.addEventListener("pointerdown", (e) => { surukle = { x: e.clientX, y: e.clientY }; });
+  addEventListener("pointerup", () => { surukle = null; });
+  addEventListener("pointermove", (e) => {
+    if (!surukle) return;
+    aci -= (e.clientX - surukle.x) * 0.008;
+    yukseklik = Math.max(0.05, Math.min(1.6, yukseklik + (e.clientY - surukle.y) * 0.004));
+    surukle = { x: e.clientX, y: e.clientY };
+  });
+  tuval.addEventListener("wheel", (e) => {
+    e.preventDefault();
+    uzaklik = Math.max(0.6, Math.min(5, uzaklik * (1 + Math.sign(e.deltaY) * 0.1)));
+  }, { passive: false });
+
+  boyutla();
+  (function dongu() {
+    requestAnimationFrame(dongu);
+    yerlestir();
+    ciz.render(sahne, kam);
+  })();
+</script>
