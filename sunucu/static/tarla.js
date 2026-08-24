@@ -222,10 +222,8 @@
     const x = k.x == null ? T.sinir.x.min : k.x;
     const y = k.y == null ? T.sinir.y.min : k.y;
     const z = k.z == null ? T.sinir.z.max : k.z;
-    // Portal raylarda makine Y'sinde yürüyor, kızak kirişte makine X'inde
-    // kayıyor — fotoğraftaki makinede raylar uzun kenarda.
-    portal.position.z = sz(y);
-    kizak.position.x = sx(x);
+    portal.position.x = sx(x);
+    kizak.position.z = sz(y);
     // Makine Z'si büyüdükçe uç YUKARI çıkıyor (kalibrasyonda dir = -1,
     // home = 438). Uç ucunu doğrudan o yüksekliğe koyuyoruz.
     const ucY = kis(z, 0, T.sinir.z.max || 550) * MM;
