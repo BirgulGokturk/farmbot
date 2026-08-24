@@ -139,6 +139,31 @@ aşımı.
 | `GET /api/olcum/konumlu?dakika=1440&azami=400` | Konumu bilinen toprak nemi okumaları — `{ts,x,y,toprak_nem}`. 10 mm'lik hücrelerde en yeni okuma |
 | `GET /api/turler` | Bitki türü kataloğu (`docs/bitki_turleri.json`, 37 tür). Dosya değişmedikçe önbellekten döner; `TUR_YOLU` ile başka bir dosya gösterilebilir |
 
+### `POST /api/toplu?jeton=PAROLA`
+
+Haritada seçilmiş noktalara toplu işlem. Gövde:
+
+```json
+{"islem": "sula", "noktalar": ["fide-1", "fide-2"], "saniye": 3}
+```
+
+| `islem` | Ne yapar |
+|---|---|
+| `sil` | Noktaları depodan siler. Yanıt: `{"ok": true, "silinen": [...]}` |
+| `gez` | Sırayla her noktaya gider |
+| `sula` | Her noktaya gidip su vanasını `saniye` kadar açar |
+
+Sınırlar — ikisi de sunucuda zorlanıyor, panelden gelen değere güvenilmiyor:
+
+* **En fazla 40 nokta.** Üstü hem dizi adım sınırını (200) zorlar hem de
+  yanlışlıkla yapılmış bir seçimi tehlikeli hâle getirir. Aşılırsa `400`.
+* **`saniye` 1-60 arasına kırpılır** (varsayılan 3).
+
+`gez` ve `sula` tek tek hareket komutu göndermez: sunucu, kayıtlı dizilerin
+kullandığı **aynı denetimli adım tipleriyle** geçici bir dizi kurup ajanın
+olagan yürütücüsüne verir. Yani yumuşak sınırlar, Z kilidi, yasak bölgeler ve
+acil durdurma mandalı toplu işlemde de aynen geçerli.
+
 ### `WS /ws/panel?jeton=PAROLA`
 Canlı akış. Bağlanınca ilk paket anlık görüntü, sonrası olay bazlı:
 
