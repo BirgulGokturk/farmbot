@@ -584,7 +584,44 @@
           <button class="dugme" id="d-gorus-ust">Üstten</button>
           <label class="onay"><input type="checkbox" id="tarla-simge" checked> Simgeler</label>
         </span>
+        <button class="dugme" id="d-harita-ayar" aria-expanded="false" title="Harita ayarları">Ayarlar</button>
         <button class="dugme harita-buyut" id="d-harita-buyut" aria-expanded="false">Büyüt</button>
+      </div>
+
+      <!-- HARİTA AYARLARI — makinenin yanında dururken nereden baktığına
+           göre haritayı çevirmek için. Yalnız 2B haritayı etkiliyor: 3B'de
+           zaten sahneyi döndürebiliyorsun. Makinenin sınırlarına ve
+           koordinatlarına DOKUNMUYOR, sadece çizimi çeviriyor. -->
+      <div id="harita-ayar" class="harita-ayar gizli">
+        <div class="ayar-baslik">Harita ayarları <span class="alt-not">2B görünüm</span></div>
+
+        <label class="onay"><input type="checkbox" id="ha-dondur"> Döndür (X ↔ Y)</label>
+
+        <div class="ayar-grup">
+          <span class="grup-ad">Sıfır köşesi</span>
+          <div class="kose-izgara">
+            <button class="dugme" data-kose="sol-ust">↖</button>
+            <button class="dugme" data-kose="sag-ust">↗</button>
+            <button class="dugme" data-kose="sol-alt">↙</button>
+            <button class="dugme" data-kose="sag-alt">↘</button>
+          </div>
+        </div>
+
+        <div class="ayar-grup">
+          <span class="grup-ad">Harita boyutu</span>
+          <div class="satir-8">
+            <button class="dugme secili" id="ha-dinamik">Dinamik</button>
+            <button class="dugme" id="ha-elle">Elle</button>
+          </div>
+          <div class="satir-8" id="ha-elle-alan">
+            <div class="alan"><label for="ha-en">En (mm)</label>
+              <input type="number" id="ha-en" min="50" max="5000" step="5" value="425"></div>
+            <div class="alan"><label for="ha-boy">Boy (mm)</label>
+              <input type="number" id="ha-boy" min="50" max="5000" step="5" value="600"></div>
+          </div>
+        </div>
+
+        <button class="dugme" id="ha-sifirla">Varsayılana dön</button>
       </div>
 
       <div class="tarla-gorunum">

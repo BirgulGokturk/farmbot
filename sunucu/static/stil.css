@@ -692,7 +692,8 @@ table.veri td { color: var(--metin-2); }
    düğmesi tam boya çıkarıyor. */
 @media (max-width: 1100px) {
   main.kabuk { grid-template-columns: minmax(0, 1fr); }
-  .harita { position: static; order: -1; }
+  /* static değil relative: ayar penceresi ve seçim kutusu buna göre konumlanıyor. */
+  .harita { position: relative; order: -1; }
   .harita .harita-buyut { display: inline-flex; }
   .tarla-sahne canvas { height: 34vh; }
   #tarla-tuval2b { height: 34vh; }
@@ -728,6 +729,29 @@ table.veri td { color: var(--metin-2); }
 /* 2B tuval yatağın oranına göre daraltılıyor (bkz. boyutla2b); ortalanıyor. */
 #tarla-sahne2b { display: grid; place-items: center; }
 #tarla-tuval2b { height: min(64vh, 600px); }
+
+/* --------------------------------------------------------- harita ayarları */
+.harita-ayar {
+  position: absolute;
+  z-index: 6;
+  right: var(--b3);
+  top: 52px;
+  width: 224px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--b3);
+  padding: var(--b3);
+  border: 1px solid var(--cizgi-2);
+  border-radius: var(--yaricap);
+  background: rgba(26, 26, 25, .97);
+}
+.harita-ayar.gizli { display: none; }
+.ayar-baslik { font-size: var(--yazi-kucuk); color: var(--metin-2); }
+.ayar-grup { display: flex; flex-direction: column; gap: var(--b2); }
+.ayar-grup .grup-ad { font-size: var(--yazi-kucuk); color: var(--metin-3); }
+.kose-izgara { display: grid; grid-template-columns: 1fr 1fr; gap: var(--b2); }
+.kose-izgara .dugme { justify-content: center; font-size: 16px; }
+#ha-elle-alan .alan { min-width: 0; flex: 1; }
 
 /* ------------------------------------------------- kutu seçimi ve toplu iş */
 .secim-kutusu {

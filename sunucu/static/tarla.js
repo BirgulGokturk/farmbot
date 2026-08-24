@@ -40,6 +40,22 @@
   const KENAR_MM = 150;          // yatak dışına tıklanabilen pay
   const IZ_AZAMI = 240;          // robot izinde saklanan konum sayısı
 
+  /* ------------------------------------------------------- harita ayarları
+   *
+   * Makinenin yanında durup panele bakan biri haritayı kendi baktığı yöne
+   * çevirmek istiyor. Bu ayarlar YALNIZCA 2B çizimi etkiliyor: makinenin
+   * sınırlarına, kalibrasyonuna ya da gönderilen koordinatlara dokunmuyor.
+   * 3B'de zaten sahneyi orbit ile döndürebiliyorsun.
+   *
+   *   dondur   — X ve Y yer değiştiriyor (makinenin yan tarafında durmak)
+   *   koseX/Y  — sıfır noktasının hangi köşede görüneceği (dört çeyrek)
+   *   boyutKip — "dinamik": eksen sınırlarına göre; "elle": girilen mm
+   */
+  const HARITA_VARSAYILAN = {
+    dondur: false, koseX: "sol", koseY: "ust",
+    boyutKip: "dinamik", elleEn: 425, elleBoy: 600,
+  };
+
   const VARSAYILAN_SINIR = { x: { min: 0, max: 425 }, y: { min: 0, max: 600 }, z: { min: 0, max: 550 } };
 
   /* --------------------------------------------------------------- durum */
@@ -61,6 +77,7 @@
     //   "sec"  — sürükleme kutu seçimi çizer, Shift ile tek tek eklenir
     kip: "tasi",
     secim: new Set(),            // seçili nokta ADLARI
+    harita: Object.assign({}, HARITA_VARSAYILAN),
   };
 
   /** Tek seferde işlenebilecek nokta sayısı — sunucudaki sınırla aynı.
@@ -126,8 +143,8 @@
     sx, sz, mmx, mmy, malzeme, kis, say, kacisli, gunluk,
     /** 2B: mm -> tuval pikseli */
     mm2b(x, y) {
-      return { x: (x - T.sinir.x.min) * olcek2b + kaydir2b.x,
-               y: (y - T.sinir.y.min) * olcek2b + kaydir2b.y };
+      const t = haritaDonusum(x, y);
+      return { x: t.u * olcek2b + kaydir2b.x, y: t.v * olcek2b + kaydir2b.y };
     },
     get olcek2b() { return olcek2b; },
     komut: (ad, arg) => P().komutGonder && P().komutGonder(ad, arg),
@@ -319,13 +336,56 @@
    */
   const KENAR2B = { sol: 44, ust: 24, sag: 12, alt: 28 };
 
+  /* ------------------------------------------------- harita dönüşümü (2B)
+   *
+   * Makine mm'si → çizim birimi. Tek yerde: `mm2b` ve `olay2bMM` bunun
+   * gidiş ve dönüş yönü. Katmanlar mm2b'yi çağırdığı için hiçbiri harita
+   * ayarlarını bilmek zorunda değil. */
+
+  /** Haritanın kapsadığı mm alanı — dinamikse eksen sınırları. */
+  function haritaAlani() {
+    const h = T.harita;
+    if (h.boyutKip === "elle") {
+      return { x0: 0, y0: 0,
+               en: kis(Number(h.elleEn) || 425, 50, 5000),
+               boy: kis(Number(h.elleBoy) || 600, 50, 5000) };
+    }
+    return { x0: T.sinir.x.min, y0: T.sinir.y.min,
+             en: T.sinir.x.max - T.sinir.x.min,
+             boy: T.sinir.y.max - T.sinir.y.min };
+  }
+
+  /** Çizim alanının mm ölçüleri — döndürülmüşse en ve boy yer değiştiriyor. */
+  function haritaOlcu() {
+    const a = haritaAlani();
+    return T.harita.dondur ? { U: a.boy, V: a.en } : { U: a.en, V: a.boy };
+  }
+
+  function haritaDonusum(x, y) {
+    const h = T.harita, a = haritaAlani(), o = haritaOlcu();
+    let u = x - a.x0, v = y - a.y0;
+    if (h.dondur) { const g = u; u = v; v = g; }
+    if (h.koseX === "sag") u = o.U - u;
+    if (h.koseY === "alt") v = o.V - v;
+    return { u, v };
+  }
+
+  /** haritaDonusum'un tersi — çizim biriminden makine mm'sine. */
+  function haritaTers(u, v) {
+    const h = T.harita, a = haritaAlani(), o = haritaOlcu();
+    if (h.koseX === "sag") u = o.U - u;
+    if (h.koseY === "alt") v = o.V - v;
+    if (h.dondur) { const g = u; u = v; v = g; }
+    return { x: u + a.x0, y: v + a.y0 };
+  }
+
   function boyutla2b() {
     if (!tuval2b) return;
     // Tuvali yatağın en-boy oranına oturtuyoruz: sabit genişlikte, yatak
     // dar olduğunda ekranın yarısı boş kalıyor ve harita gereksiz küçülüyordu.
     const kapsayici = tuval2b.parentElement;
-    const enMM0 = T.sinir.x.max - T.sinir.x.min;
-    const boyMM0 = T.sinir.y.max - T.sinir.y.min;
+    const o0 = haritaOlcu();
+    const enMM0 = o0.U, boyMM0 = o0.V;
     const yukseklik = tuval2b.clientHeight || 460;
     const istenen = (yukseklik - KENAR2B.ust - KENAR2B.alt) * (enMM0 / boyMM0)
                     + KENAR2B.sol + KENAR2B.sag;
@@ -337,8 +397,7 @@
     tuval2b.height = y * oran;
     c2b.setTransform(oran, 0, 0, oran, 0, 0);
 
-    const enMM = T.sinir.x.max - T.sinir.x.min;
-    const boyMM = T.sinir.y.max - T.sinir.y.min;
+    const { U: enMM, V: boyMM } = haritaOlcu();
     olcek2b = Math.min((g - KENAR2B.sol - KENAR2B.sag) / enMM,
                        (y - KENAR2B.ust - KENAR2B.alt) / boyMM);
     kaydir2b.x = KENAR2B.sol + ((g - KENAR2B.sol - KENAR2B.sag) - enMM * olcek2b) / 2;
@@ -346,46 +405,70 @@
     ciz2bTumu();
   }
 
-  /** mm cetveli — 50 mm'de bir çizgi, 100 mm'de bir sayı. */
+  /** mm cetveli — 50 mm'de bir çizgi, 100 mm'de bir sayı.
+   *
+   * Bütün noktalar `mm2b`den geçiyor: harita döndürülmüş ya da sıfır köşesi
+   * değiştirilmiş olsa da cetvel kendiliğinden doğru yere düşüyor. Sabit X
+   * çizgisi döndürülünce yatay olabiliyor, o yüzden her çizginin İKİ ucu da
+   * dönüşümden geçiriliyor; etiket de uca göre yerleşiyor. */
   function cetvelCiz() {
-    const s = T.sinir;
-    const sol = BAGLAM.mm2b(s.x.min, s.y.min);
-    const sag = BAGLAM.mm2b(s.x.max, s.y.max);
+    const a = haritaAlani();
+    const x1 = a.x0, x2 = a.x0 + a.en, y1 = a.y0, y2 = a.y0 + a.boy;
     c2b.font = "10px ui-monospace, Menlo, Consolas, monospace";
     c2b.fillStyle = "#8a8a80";
-    c2b.strokeStyle = "#2a2a28";
     c2b.lineWidth = 1;
 
-    for (let x = s.x.min; x <= s.x.max + 0.1; x += 50) {
-      const p = BAGLAM.mm2b(x, 0);
-      const buyuk = Math.round(x) % 100 === 0;
+    /** Bir kenardan diğerine giden ızgara çizgisi + ucundaki etiket. */
+    const cizgi = (ax, ay, bx, by, etiket, buyuk) => {
+      const p = BAGLAM.mm2b(ax, ay), q = BAGLAM.mm2b(bx, by);
       c2b.beginPath();
-      c2b.moveTo(p.x, sol.y);
-      c2b.lineTo(p.x, sag.y);
+      c2b.moveTo(p.x, p.y); c2b.lineTo(q.x, q.y);
       c2b.strokeStyle = buyuk ? "#33332f" : "#242422";
       c2b.stroke();
-      if (buyuk) {
-        c2b.textAlign = "center";
-        c2b.fillText(String(Math.round(x)), p.x, sol.y - 8);
-      }
+      if (!buyuk) return;
+      // Etiket, çizginin dış tarafta kalan ucuna: dikey çizgide üste,
+      // yatay çizgide sola.
+      const dikey = Math.abs(q.x - p.x) < Math.abs(q.y - p.y);
+      const u = dikey ? (p.y < q.y ? p : q) : (p.x < q.x ? p : q);
+      c2b.textAlign = dikey ? "center" : "right";
+      c2b.fillText(etiket, dikey ? u.x : u.x - 8, dikey ? u.y - 8 : u.y + 3);
+    };
+
+    for (let x = x1; x <= x2 + 0.1; x += 50) {
+      cizgi(x, y1, x, y2, String(Math.round(x)), Math.round(x) % 100 === 0);
     }
-    for (let y = s.y.min; y <= s.y.max + 0.1; y += 50) {
-      const p = BAGLAM.mm2b(0, y);
-      const buyuk = Math.round(y) % 100 === 0;
-      c2b.beginPath();
-      c2b.moveTo(sol.x, p.y);
-      c2b.lineTo(sag.x, p.y);
-      c2b.strokeStyle = buyuk ? "#33332f" : "#242422";
-      c2b.stroke();
-      if (buyuk) {
-        c2b.textAlign = "right";
-        c2b.fillText(String(Math.round(y)), sol.x - 8, p.y + 3);
-      }
+    for (let y = y1; y <= y2 + 0.1; y += 50) {
+      cizgi(x1, y, x2, y, String(Math.round(y)), Math.round(y) % 100 === 0);
     }
-    // Yatak sınırı
+
+    // Yatağın gerçek sınırı — harita alanı elle büyütülmüşse ikisi ayrışıyor.
+    const s = T.sinir;
+    const k = [BAGLAM.mm2b(s.x.min, s.y.min), BAGLAM.mm2b(s.x.max, s.y.min),
+               BAGLAM.mm2b(s.x.max, s.y.max), BAGLAM.mm2b(s.x.min, s.y.max)];
     c2b.strokeStyle = "#5a5a52";
     c2b.lineWidth = 1.5;
-    c2b.strokeRect(sol.x, sol.y, sag.x - sol.x, sag.y - sol.y);
+    c2b.beginPath();
+    c2b.moveTo(k[0].x, k[0].y);
+    for (let i = 1; i < 4; i++) c2b.lineTo(k[i].x, k[i].y);
+    c2b.closePath();
+    c2b.stroke();
+
+    // Sıfır köşesi ve eksen yönleri — döndürülmüş haritada hangi yön ne,
+    // bakınca anlaşılsın.
+    const sifir = BAGLAM.mm2b(s.x.min, s.y.min);
+    c2b.fillStyle = "#3987e5";
+    c2b.beginPath(); c2b.arc(sifir.x, sifir.y, 3.5, 0, Math.PI * 2); c2b.fill();
+    const okX = BAGLAM.mm2b(s.x.min + 60, s.y.min);
+    const okY = BAGLAM.mm2b(s.x.min, s.y.min + 60);
+    c2b.strokeStyle = "#3987e5"; c2b.lineWidth = 1.5;
+    [[okX, "X"], [okY, "Y"]].forEach(([u, ad]) => {
+      c2b.beginPath(); c2b.moveTo(sifir.x, sifir.y); c2b.lineTo(u.x, u.y); c2b.stroke();
+      c2b.fillStyle = "#3987e5";
+      c2b.textAlign = "center";
+      c2b.fillText(ad, u.x + (u.x - sifir.x) * 0.12, u.y + (u.y - sifir.y) * 0.12 + 3);
+    });
+
+    c2b.fillStyle = "#8a8a80";
     c2b.textAlign = "left";
     c2b.fillText("mm", 6, 14);
   }
@@ -407,8 +490,8 @@
 
   const olay2bMM = (o) => {
     const kutu = tuval2b.getBoundingClientRect();
-    return { x: (o.clientX - kutu.left - kaydir2b.x) / olcek2b + T.sinir.x.min,
-             y: (o.clientY - kutu.top - kaydir2b.y) / olcek2b + T.sinir.y.min };
+    return haritaTers((o.clientX - kutu.left - kaydir2b.x) / olcek2b,
+                      (o.clientY - kutu.top - kaydir2b.y) / olcek2b);
   };
 
   /* ========================================================= etkileşim */
@@ -871,6 +954,13 @@
     /** Deneme yardımcısı — çoklu seçimdeki nokta adları. */
     secimDurumu() { return [...T.secim]; },
 
+    /** Deneme yardımcısı — 2B haritanın ölçeği ve kapsadığı alan. */
+    olcekDurumu() {
+      const a = haritaAlani();
+      return { en: a.en, boy: a.boy, x0: a.x0, y0: a.y0,
+               olcek: olcek2b, ayar: Object.assign({}, T.harita), sinir: T.sinir };
+    },
+
     /** Deneme yardımcısı — katmanların durumu. */
     katmanDurumu() {
       return T.katmanlar.map((k) => ({
@@ -906,7 +996,75 @@
     ekle.textContent = T.ekleme ? "Haritaya tıklayın" : "Bitki ekle";
   }
 
+  /* ------------------------------------------------------- harita ayarları */
+  function haritaAyarOku() {
+    try {
+      const ham = JSON.parse(localStorage.getItem("farmbot_harita_ayar") || "{}");
+      T.harita = Object.assign({}, HARITA_VARSAYILAN, ham);
+    } catch (h) { T.harita = Object.assign({}, HARITA_VARSAYILAN); }
+  }
+
+  function haritaAyarYaz() {
+    localStorage.setItem("farmbot_harita_ayar", JSON.stringify(T.harita));
+    haritaAyarCiz();
+    boyutla2b();          // ölçek ve tuval oranı değişmiş olabilir
+    ciz2bTumu();
+  }
+
+  /** Ayar panelini duruma göre boyar — tek yön: durum → arayüz. */
+  function haritaAyarCiz() {
+    const h = T.harita;
+    const d = $("#ha-dondur");
+    if (d) d.checked = !!h.dondur;
+    document.querySelectorAll("#harita-ayar [data-kose]").forEach((b) => {
+      b.classList.toggle("secili", b.dataset.kose === `${h.koseX}-${h.koseY}`);
+    });
+    const elle = h.boyutKip === "elle";
+    if ($("#ha-dinamik")) $("#ha-dinamik").classList.toggle("secili", !elle);
+    if ($("#ha-elle")) $("#ha-elle").classList.toggle("secili", elle);
+    if ($("#ha-elle-alan")) $("#ha-elle-alan").classList.toggle("gizli", !elle);
+    if ($("#ha-en")) $("#ha-en").value = h.elleEn;
+    if ($("#ha-boy")) $("#ha-boy").value = h.elleBoy;
+  }
+
+  function haritaAyarBagla() {
+    haritaAyarOku();
+    const panel = $("#harita-ayar"), dugme = $("#d-harita-ayar");
+    if (!panel || !dugme) return;
+
+    dugme.onclick = () => {
+      const acik = panel.classList.toggle("gizli");
+      dugme.setAttribute("aria-expanded", String(!acik));
+      dugme.classList.toggle("secili", !acik);
+    };
+
+    $("#ha-dondur").onchange = (o) => { T.harita.dondur = o.target.checked; haritaAyarYaz(); };
+    panel.querySelectorAll("[data-kose]").forEach((b) => {
+      b.onclick = () => {
+        const [kx, ky] = b.dataset.kose.split("-");
+        T.harita.koseX = kx; T.harita.koseY = ky;
+        haritaAyarYaz();
+      };
+    });
+    $("#ha-dinamik").onclick = () => { T.harita.boyutKip = "dinamik"; haritaAyarYaz(); };
+    $("#ha-elle").onclick = () => { T.harita.boyutKip = "elle"; haritaAyarYaz(); };
+    const sayiAl = (alan, anahtar) => {
+      alan.onchange = () => {
+        T.harita[anahtar] = kis(Number(alan.value) || 0, 50, 5000);
+        haritaAyarYaz();
+      };
+    };
+    sayiAl($("#ha-en"), "elleEn");
+    sayiAl($("#ha-boy"), "elleBoy");
+    $("#ha-sifirla").onclick = () => {
+      T.harita = Object.assign({}, HARITA_VARSAYILAN);
+      haritaAyarYaz();
+    };
+    haritaAyarCiz();
+  }
+
   function araclariBagla() {
+    haritaAyarBagla();
     const ekle = $("#d-ekleme-kipi");
     ekle.onclick = () => {
       eklemeKipi(!T.ekleme);
