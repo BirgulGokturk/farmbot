@@ -444,15 +444,29 @@ class Ajan:
             await asyncio.sleep(aralik)
 
     async def _alici(self) -> None:
-        async for ham in self.ws:
-            try:
-                mesaj = json.loads(ham)
-            except json.JSONDecodeError:
-                continue
-            if mesaj.get("tip") != "komut":
-                continue
-            sonuc = await self.komut_isle(mesaj)
-            await self.ws.send(json.dumps({"tip": "sonuc", "id": mesaj.get("id"), **sonuc}, ensure_ascii=False))
+        # Sunucu yeniden baslayinca baglanti 1012 ile kapaniyor ve bu gorev
+        # ConnectionClosed ile bitiyor. Yakalanmazsa asyncio her seferinde
+        # "Task exception was never retrieved" diye tam bir traceback dokuyor;
+        # oysa kapanma normal, calis() zaten yeniden baglaniyor. Gunluge
+        # bakan biri bunu ariza sanip gercek hatalari kaciriyordu.
+        try:
+            async for ham in self.ws:
+                try:
+                    mesaj = json.loads(ham)
+                except json.JSONDecodeError:
+                    continue
+                if mesaj.get("tip") != "komut":
+                    continue
+                sonuc = await self.komut_isle(mesaj)
+                await self.ws.send(json.dumps(
+                    {"tip": "sonuc", "id": mesaj.get("id"), **sonuc}, ensure_ascii=False))
+        except Exception as hata:
+            # Kapanma sessizce gecilir; geri kalan her sey gercek hata,
+            # gorunur kalmali.
+            if "ConnectionClosed" in type(hata).__name__:
+                logger.info("Sunucu bağlantısı kapandı (%s)", hata)
+            else:
+                logger.exception("Alıcı görevinde beklenmeyen hata")
 
     async def calis(self) -> None:
         import websockets
