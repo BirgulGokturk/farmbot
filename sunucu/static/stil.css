@@ -243,7 +243,8 @@ main.kabuk {
   padding: var(--b3);
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
-  grid-template-rows: auto minmax(0, 1fr) auto;
+  /* satır 1 araç çubuğu · 2 boş (sahne görünür kalsın) · 3 toplu işlem · 4 profil */
+  grid-template-rows: auto minmax(0, 1fr) auto auto;
   gap: var(--b3);
 }
 
@@ -283,7 +284,7 @@ main.kabuk {
    daraltmıyor çünkü sahne zaten altında ve tam boy. */
 .yuzen.sol {
   grid-column: 1;
-  grid-row: 1 / span 3;
+  grid-row: 1 / span 4;
   width: var(--sol-en);
 }
 .yuzen-ust {
@@ -427,9 +428,7 @@ main.kabuk {
 .acilir > * + * { margin-top: 0; }
 
 /* Panelin içindeki kartlar dar sütunda tek sıraya düşüyor. */
-.panel .iki-sutun,
-.panel .grafik-izgara { grid-template-columns: minmax(0, 1fr); }
-.panel .olcum-izgara { grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); }
+.panel .iki-sutun { grid-template-columns: minmax(0, 1fr); }
 
 .ust-ic, .bant-ic, .serit-ic {
   margin: 0 auto;
@@ -528,8 +527,6 @@ main.kabuk {
 /* ----------------------------------------------------------------- kartlar */
 .izgara { display: grid; gap: var(--b3); margin-bottom: var(--b3); }
 .izgara:last-child { margin-bottom: 0; }
-.olcum-izgara { grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); }
-.grafik-izgara { grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); }
 /* 1200 px'te iki sütun. 340 px'te üç sütun oluyordu ve içerik eziliyordu:
    bölge formu taşıyor, kalibrasyon tablosu kırpılıyordu. */
 .iki-sutun { grid-template-columns: repeat(auto-fit, minmax(440px, 1fr)); align-items: start; }
@@ -577,7 +574,6 @@ main.kabuk {
 .alt-not { font-size: var(--yazi-kucuk); color: var(--metin-3); margin: 0; }
 .hata-yazi { font-size: var(--yazi-kucuk); color: var(--kritik); }
 
-.grafik-kutu { position: relative; height: 240px; }
 .aciklama { display: flex; gap: var(--b3); flex-wrap: wrap; font-size: var(--yazi-kucuk); color: var(--metin-2); }
 .aciklama i { width: 9px; height: 9px; border-radius: 2px; display: inline-block; margin-right: var(--b2); vertical-align: -1px; }
 
@@ -651,7 +647,10 @@ button.dugme.tehlike.acil-dugme:hover:not(:disabled) { background: #c94545; bord
   gap: var(--b2);
 }
 
-input[type="text"], input[type="number"], input[type="password"], select {
+/* Tür YAZILMAMIŞ input da metin kutusudur; `input[type="text"]` onu
+   tutmuyor ve tarayıcının kendi 1px/2px iç boşluğu devrede kalıyordu.
+   Dışlayarak seçiyoruz: onay kutusu, radyo ve kaydıraç hariç hepsi. */
+input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), select {
   background: var(--yuzey-2);
   color: var(--metin);
   border: 1px solid var(--cizgi-2);
@@ -706,13 +705,14 @@ input:disabled, select:disabled { opacity: .45; }
   font-size: var(--yazi-kucuk);
 }
 
+/* Uyarı rozeti bir DURUM etiketi: ayrım için yalnız zemin. Uyarı rengi
+   zaten ayırıyor, üstüne çerçeve koymak ikinci bir araç. */
 .rozet-uyari {
   display: inline-block;
-  background: #33290e;
-  border: 1px solid #5c4a1a;
+  background: #3a2e10;
   color: #ffe4a3;
   border-radius: var(--b1);
-  padding: 2px var(--b2);
+  padding: var(--b1) var(--b2);
   font-size: var(--yazi-kucuk);
 }
 
@@ -817,9 +817,9 @@ button.dugme.basili { background: var(--vurgu); border-color: var(--vurgu); colo
 .izgara-form .alan { width: 78px; }
 
 /* ---------------------------------------------------------------- bölgeler */
+/* AYRIM: yalnız zemin. */
 .bolge {
-  border: 1px solid var(--cizgi);
-  border-radius: var(--b2);
+  border-radius: var(--yaricap-2);
   padding: var(--b3);
   margin-bottom: var(--b2);
   background: var(--yuzey-2);
@@ -842,16 +842,17 @@ button.dugme.basili { background: var(--vurgu); border-color: var(--vurgu); colo
 .uc-ayar > * + * { margin-top: var(--b3); }
 
 /* --------------------------------------------------------- otomatik sulama */
+/* Kip rozeti bir DURUM etiketi: ayrım için yalnız zemin kullanıyor.
+   Kapalıyken zemin de yok — yalnız gri yazı. */
 .rozet-kip {
   font-size: var(--yazi-kucuk);
   font-weight: 400;
-  padding: 2px var(--b2);
+  padding: var(--b1) var(--b2);
   border-radius: 999px;
-  border: 1px solid var(--cizgi-2);
   color: var(--metin-3);
   margin-left: var(--b2);
 }
-.rozet-kip.acik { color: #b7e8b7; border-color: #2f5f2f; background: #172a17; }
+.rozet-kip.acik { color: #b7e8b7; background: #1b2f1b; }
 
 .kip-secim { display: flex; gap: var(--b2); flex-wrap: wrap; }
 button.dugme.kip-dugme {
@@ -880,8 +881,36 @@ button.dugme.kip-dugme.secili span { color: rgba(255, 255, 255, .85); }
   margin-bottom: var(--b3);
 }
 
+
+/* =============================================== ÖLÇÜM VE GRAFİK BLOKLARI
+ *
+ * Eskiden her ölçüm bir "kart"tı: zemin + çerçeve + köşe. Beş kart yan yana,
+ * altında dört grafik kartı — hepsi aynı ağırlıkta bir kutu ızgarası.
+ * Artık kutu yok: okumayı SAYININ BÜYÜKLÜĞÜ ayırıyor, blokları boşluk. */
+.olcum-izgara {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: var(--b3);
+}
+.olcum { display: flex; flex-direction: column; gap: var(--b1); min-width: 0; }
+.olcum-ad { font-size: var(--yazi-kucuk); color: var(--metin-3); white-space: nowrap;
+            overflow: hidden; text-overflow: ellipsis; }
+.ikincil { font-size: var(--yazi-kucuk); color: var(--metin-3); }
+
+.grafik-izgara { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--b4); }
+.grafik { min-width: 0; display: flex; flex-direction: column; gap: var(--b2); }
+.grafik-bas { font-size: var(--yazi-baslik); font-weight: 600; color: var(--metin-2); }
+.grafik-kutu { position: relative; height: 160px; }
+
+/* Zaman aralığı düğmeleri düz: beşi de çerçeveli olunca bölümdeki asıl
+   içerikten (grafikten) daha çok yer kaplıyorlardı. */
+.araclar .ikon-dugme.secili { color: var(--metin); background: var(--vurgu-sis); }
+
+/* Anahtar (kamera aç/kapa) — bir DURUM değiştiricisi, düğme değil. */
+.anahtar { display: inline-flex; align-items: center; gap: var(--b2); cursor: pointer; }
+
 /* ------------------------------------------------------------------ tablo */
-.tablo-kutu { overflow: auto; max-height: 320px; border: 1px solid var(--cizgi); border-radius: var(--b2); }
+.tablo-kutu { overflow: auto; max-height: 320px; border-radius: var(--yaricap-2); background: var(--yuzey-2); }
 table.veri { width: 100%; border-collapse: collapse; font-size: var(--yazi-kucuk); font-variant-numeric: tabular-nums; }
 table.veri th, table.veri td { padding: var(--b2) var(--b3); text-align: right; white-space: nowrap; }
 table.veri th:first-child, table.veri td:first-child { text-align: left; }
@@ -897,7 +926,7 @@ table.veri tbody tr + tr td { border-top: 1px solid var(--cizgi); }
 table.veri td { color: var(--metin-2); }
 
 /* ----------------------------------------------------------------- kamera */
-#kamera-kutu img { width: 100%; border-radius: var(--b2); display: block; border: 1px solid var(--cizgi); }
+#kamera-kutu img { width: 100%; border-radius: var(--yaricap-2); display: block; }
 
 /* ---------------------------------------------------------- olay günlüğü */
 /* Alt şeritler kabuğun DIŞINDA, sayfa seviyesinde: kabuk esneyip küçülüyor,
@@ -1007,10 +1036,12 @@ table.veri td { color: var(--metin-2); }
 /* Toplu işlem çubuğu ızgarada, panellerin ARASINDAKİ sütunda: sahnenin
    ortasına koymak onu sol panelin altına itiyordu ve "Sula" düğmesi
    tıklanamıyordu. */
+/* Toplu işlem çubuğu EN ALTTA, profilin üstünde. Satır 2'de "alta yaslı"
+   duruyordu ama satır 2 sahnenin ortası: haritanın tıklanabilir kısmını
+   kapatıyor ve altındaki bitkiye tıklamayı yutuyordu. */
 .toplu-cubuk {
   grid-column: 2;
-  grid-row: 2;
-  align-self: end;
+  grid-row: 3;
   justify-self: center;
   z-index: 7;
   display: flex;
@@ -1266,8 +1297,8 @@ table.veri td { color: var(--metin-2); }
      aynı belirginlikte olması gerekiyor, yoksa 36 px'de kalıyor. */
   button.dugme, .dugme { height: 44px; }
   .satir button.dugme, .adim .dugme, .tarla-kart-dugme .dugme { height: 36px; }
-  input[type="text"], input[type="number"], input[type="password"], select { height: 44px; }
-  .satir-8 > input[type="text"] { width: 100%; }
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), select { height: 44px; }
+  .satir-8 > input:not([type="checkbox"]):not([type="radio"]):not([type="range"]) { width: 100%; }
 }
 
 
@@ -1361,10 +1392,11 @@ button.dugme.tehlike:disabled {
 
 /* Çalıştırmadan önce sorulan değerler. Dizi değişken istemiyorsa bu kutu
    hiç görünmüyor. */
+/* AYRIM: yalnız zemin. Soldaki vurgu şeridi çerçeve değil, "bu dizinin
+   değer bekleyen değişkenleri var" durum işareti. */
 .deger-kutu {
-  border: 1px solid var(--cizgi);
   border-left: 2px solid var(--vurgu);
-  border-radius: var(--b2);
+  border-radius: var(--yaricap-2);
   background: var(--yuzey-2);
   padding: var(--b3);
   margin-bottom: var(--b3);
@@ -1422,7 +1454,7 @@ button.dugme.tehlike:disabled {
    ==================================================================== */
 .profil {
   grid-column: 2 / span 2;
-  grid-row: 3;
+  grid-row: 4;
   align-self: end;
   padding: var(--b2) var(--b3);
 }

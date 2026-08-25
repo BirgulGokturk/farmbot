@@ -161,128 +161,195 @@
       <div class="yuzen-govde panel" id="sol-panel-govde">
 
     <!-- ================================ İZLE ================================ -->
+    <!-- ================================ İZLE ================================
+         Ölçüm okumaları hep açık (sayfanın asıl işi bu), grafikler ve tablo
+         katlanabilir. Eskiden beş kart + dört grafik + kamera + tablo aynı
+         anda ekrandaydı ve hepsi aynı görsel ağırlıktaydı. -->
     <section class="sayfa etkin" id="sayfa-izle">
-      <div class="izgara olcum-izgara">
-        <div class="kart" data-kanallar="hava_sicaklik">
-          <h3>Hava sıcaklığı</h3>
-          <div class="deger" id="d-sicaklik">—<span class="birim">°C</span></div>
-          <div class="alt-not" id="a-sicaklik">DHT11</div>
-        </div>
-        <div class="kart" data-kanallar="hava_nem">
-          <h3>Hava nemi</h3>
-          <div class="deger" id="d-nem">—<span class="birim">%</span></div>
-          <div class="alt-not" id="a-nem">DHT11</div>
-        </div>
-        <div class="kart" data-kanallar="toprak_nem">
-          <h3>Toprak nemi</h3>
-          <div class="deger" id="d-toprak">—<span class="birim">%</span></div>
-          <div class="alt-not" id="a-toprak">HW-103</div>
-        </div>
-        <div class="kart" data-kanallar="basinc">
-          <h3>Basınç</h3>
-          <div class="deger" id="d-basinc">—<span class="birim">hPa</span></div>
-          <div class="alt-not" id="a-rakim">BMP180</div>
-        </div>
-        <div class="kart" data-kanallar="servo_aci">
-          <h3>Vana (servo)</h3>
-          <div class="deger" id="d-servo">—<span class="birim">°</span></div>
-          <div class="alt-not" id="a-servo">SG-5010</div>
-        </div>
-      </div>
 
-      <div class="araclar">
-        <span class="etiket">Zaman aralığı</span>
-        <button class="dugme aralik" data-dakika="15">15 dk</button>
-        <button class="dugme aralik secili" data-dakika="60">1 saat</button>
-        <button class="dugme aralik" data-dakika="360">6 saat</button>
-        <button class="dugme aralik" data-dakika="1440">24 saat</button>
-        <button class="dugme aralik" data-dakika="10080">7 gün</button>
-      </div>
-
-      <p class="alt-not gizli" id="veri-yok">
-        Henüz sensör verisi gelmedi — grafikler veri geldikçe görünecek.
-      </p>
-
-      <div class="izgara grafik-izgara">
-        <div class="kart" data-kanallar="hava_sicaklik,bmp_sicaklik">
-          <h3>Sıcaklık <span class="birim-not">°C</span></h3>
-          <div class="aciklama">
-            <span data-kanal="hava_sicaklik"><i style="background:var(--seri-1)"></i>DHT11</span>
-            <span data-kanal="bmp_sicaklik"><i style="background:var(--seri-2)"></i>BMP180</span>
+      <!-- 1. ANLIK OKUMALAR — canlı sayı, sayfanın konusu. -->
+      <section class="bolum" id="bolum-olcum">
+        <div class="bolum-ust">
+          <button class="bolum-bas" aria-expanded="true">
+            <svg class="ikon ok"><use href="#i-ok"/></svg>
+            <span class="bolum-ad">Anlık okumalar</span>
+            <span class="bolum-not" id="olcum-ozet"></span>
+          </button>
+        </div>
+        <div class="bolum-govde">
+          <div class="olcum-izgara">
+            <div class="olcum" data-kanallar="hava_sicaklik">
+              <span class="olcum-ad">Hava sıcaklığı</span>
+              <div class="deger" id="d-sicaklik">—<span class="birim">°C</span></div>
+              <span class="ikincil" id="a-sicaklik">DHT11</span>
+            </div>
+            <div class="olcum" data-kanallar="hava_nem">
+              <span class="olcum-ad">Hava nemi</span>
+              <div class="deger" id="d-nem">—<span class="birim">%</span></div>
+              <span class="ikincil" id="a-nem">DHT11</span>
+            </div>
+            <div class="olcum" data-kanallar="toprak_nem">
+              <span class="olcum-ad">Toprak nemi</span>
+              <div class="deger" id="d-toprak">—<span class="birim">%</span></div>
+              <span class="ikincil" id="a-toprak">HW-103</span>
+            </div>
+            <div class="olcum" data-kanallar="basinc">
+              <span class="olcum-ad">Basınç</span>
+              <div class="deger" id="d-basinc">—<span class="birim">hPa</span></div>
+              <span class="ikincil" id="a-rakim">BMP180</span>
+            </div>
+            <div class="olcum" data-kanallar="servo_aci">
+              <span class="olcum-ad">Vana (servo)</span>
+              <div class="deger" id="d-servo">—<span class="birim">°</span></div>
+              <span class="ikincil" id="a-servo">SG-5010</span>
+            </div>
           </div>
-          <div class="grafik-kutu"><canvas id="g-sicaklik"></canvas></div>
+          <p class="bos-durum gizli" id="veri-yok">
+            Henüz sensör verisi gelmedi.<br>
+            Arduino'nun Pi'ye takılı ve ajanın çalışıyor olması gerekiyor;
+            üst çubuktaki <b>Raspberry Pi</b> ışığı yeşilse veri birkaç
+            saniye içinde düşer.
+          </p>
         </div>
+      </section>
 
-        <div class="kart" data-kanallar="hava_nem,toprak_nem">
-          <h3>Nem <span class="birim-not">%</span></h3>
-          <div class="aciklama">
-            <span data-kanal="hava_nem"><i style="background:var(--seri-1)"></i>Hava nemi</span>
-            <span data-kanal="toprak_nem"><i style="background:var(--seri-2)"></i>Toprak nemi</span>
+      <!-- 2. GRAFİKLER — zaman içindeki gidiş. Katlanabilir: bakılan şey
+           genelde anlık sayı, eğilim ara sıra soruluyor. -->
+      <section class="bolum" id="bolum-grafik">
+        <div class="bolum-ust">
+          <button class="bolum-bas" aria-expanded="true">
+            <svg class="ikon ok"><use href="#i-ok"/></svg>
+            <span class="bolum-ad">Grafikler</span>
+            <span class="bolum-not" id="grafik-ozet"></span>
+          </button>
+        </div>
+        <div class="bolum-govde">
+          <div class="araclar" role="group" aria-label="Zaman aralığı">
+            <button class="ikon-dugme aralik" data-dakika="15">15 dk</button>
+            <button class="ikon-dugme aralik secili" data-dakika="60">1 saat</button>
+            <button class="ikon-dugme aralik" data-dakika="360">6 saat</button>
+            <button class="ikon-dugme aralik" data-dakika="1440">24 saat</button>
+            <button class="ikon-dugme aralik" data-dakika="10080">7 gün</button>
           </div>
-          <div class="grafik-kutu"><canvas id="g-nem"></canvas></div>
-        </div>
 
-        <div class="kart" data-kanallar="basinc">
-          <h3>Basınç <span class="birim-not">hPa</span></h3>
-          <div class="grafik-kutu"><canvas id="g-basinc"></canvas></div>
-        </div>
+          <div class="grafik-izgara">
+            <div class="grafik" data-kanallar="hava_sicaklik,bmp_sicaklik">
+              <div class="grafik-bas">Sıcaklık <span class="ikincil">°C</span></div>
+              <div class="aciklama">
+                <span data-kanal="hava_sicaklik"><i style="background:var(--seri-1)"></i>DHT11</span>
+                <span data-kanal="bmp_sicaklik"><i style="background:var(--seri-2)"></i>BMP180</span>
+              </div>
+              <div class="grafik-kutu"><canvas id="g-sicaklik"></canvas></div>
+            </div>
 
-        <div class="kart" data-kanallar="servo_aci">
-          <h3>Vana açısı <span class="birim-not">°</span></h3>
-          <div class="grafik-kutu"><canvas id="g-servo"></canvas></div>
-        </div>
-      </div>
+            <div class="grafik" data-kanallar="hava_nem,toprak_nem">
+              <div class="grafik-bas">Nem <span class="ikincil">%</span></div>
+              <div class="aciklama">
+                <span data-kanal="hava_nem"><i style="background:var(--seri-1)"></i>Hava nemi</span>
+                <span data-kanal="toprak_nem"><i style="background:var(--seri-2)"></i>Toprak nemi</span>
+              </div>
+              <div class="grafik-kutu"><canvas id="g-nem"></canvas></div>
+            </div>
 
-      <div class="izgara iki-sutun">
-        <div class="kart">
-          <h3>Kamera <button class="yardim" type="button" aria-expanded="false" aria-label="Açıklama">?</button></h3>
-          <p class="yardim-metin gizli">
-            Kare aralığı varsayılan bir saat. Aşağıdaki düğme kamerayı
+            <div class="grafik" data-kanallar="basinc">
+              <div class="grafik-bas">Basınç <span class="ikincil">hPa</span></div>
+              <div class="grafik-kutu"><canvas id="g-basinc"></canvas></div>
+            </div>
+
+            <div class="grafik" data-kanallar="servo_aci">
+              <div class="grafik-bas">Vana açısı <span class="ikincil">°</span></div>
+              <div class="grafik-kutu"><canvas id="g-servo"></canvas></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 3. KAMERA — katlı başlıyor. -->
+      <section class="bolum kapali" id="bolum-kamera">
+        <div class="bolum-ust">
+          <button class="bolum-bas" aria-expanded="false">
+            <svg class="ikon ok"><use href="#i-ok"/></svg>
+            <span class="bolum-ad">Kamera</span>
+            <span class="bolum-not" id="kamera-durum">—</span>
+          </button>
+          <button class="yardim" type="button" aria-expanded="false"
+                  aria-controls="yardim-kamera" aria-label="Açıklama">?</button>
+        </div>
+        <div class="bolum-govde">
+          <p class="yardim-metin gizli" id="yardim-kamera">
+            Kare aralığı varsayılan bir saat. Aşağıdaki anahtar kamerayı
             <b>o an</b> açıp kapatır; ayar dosyasına yazmaz. Her açılışta
             kendiliğinden çalışsın isterseniz <code>ayarlar.json</code> içinde
             <code>"kamera": {"aktif": true}</code> yapın.
           </p>
-          <div class="satir-8">
-            <label class="anahtar">
-              <input type="checkbox" id="a-kamera">
-              <span class="yuva"></span>
-              <span class="alt-not" id="kamera-durum">—</span>
-            </label>
-          </div>
+          <label class="anahtar">
+            <input type="checkbox" id="a-kamera">
+            <span class="yuva"></span>
+            <span class="ikincil">Kamerayı aç</span>
+          </label>
           <div id="kamera-kutu">
-            <p class="alt-not" id="kamera-yok">Henüz kare gelmedi.</p>
+            <p class="bos-durum" id="kamera-yok">Henüz kare gelmedi.<br>
+              Kamerayı yukarıdaki anahtarla açın; ilk kare birkaç saniye
+              içinde düşer.</p>
             <img id="kamera-kare" class="gizli" alt="Kamera görüntüsü">
           </div>
-          <div class="alt-not" id="kamera-zaman"></div>
+          <div class="ikincil sayi" id="kamera-zaman"></div>
         </div>
+      </section>
 
-        <div class="kart">
-          <h3>Son ölçümler <button class="yardim" type="button" aria-expanded="false" aria-label="Açıklama">?</button></h3>
-          <p class="yardim-metin gizli">
+      <!-- 4. SON ÖLÇÜMLER — grafikteki aynı veri, sayı olarak. Katlı. -->
+      <section class="bolum kapali" id="bolum-tablo">
+        <div class="bolum-ust">
+          <button class="bolum-bas" aria-expanded="false">
+            <svg class="ikon ok"><use href="#i-ok"/></svg>
+            <span class="bolum-ad">Son ölçümler</span>
+            <span class="bolum-not">Tablo</span>
+          </button>
+          <button class="yardim" type="button" aria-expanded="false"
+                  aria-controls="yardim-tablo" aria-label="Açıklama">?</button>
+        </div>
+        <div class="bolum-govde">
+          <p class="yardim-metin gizli" id="yardim-tablo">
             Grafikteki aynı veri, sayı olarak. En yeni satır en üstte.
           </p>
           <div class="tablo-kutu">
             <table class="veri">
               <thead>
                 <tr>
-                  <th>Zaman</th><th>Sıcaklık</th><th>BMP</th><th>Hava nemi</th>
-                  <th>Toprak</th><th>Basınç</th><th>Servo</th>
+                  <th>Saat</th><th>Sıcaklık</th><th>Hava nemi</th>
+                  <th>Toprak</th><th>Basınç</th><th>Vana</th>
                 </tr>
               </thead>
               <tbody id="tablo-govde"></tbody>
             </table>
           </div>
         </div>
-      </div>
+      </section>
     </section>
 
-    <!-- ================================= SÜR ================================ -->
-    <section class="sayfa" id="sayfa-sur">
-      <div class="izgara iki-sutun">
 
-        <div class="kart">
-          <h3>Eksen konumu <button class="yardim" type="button" aria-expanded="false" aria-label="Açıklama">?</button></h3>
-          <p class="yardim-metin gizli">
+    <!-- ================================= SÜR ================================ -->
+    <!-- ================================= SÜR ================================
+         Makineyi elle sürmek. Eksen okuması ve jog hep açık — sayfanın işi
+         bu; vana, röle ve konuma-git ara sıra kullanılıyor.
+
+         Eskiden iki büyük kart vardı ve ikincisinin içinde üç ayrı konu
+         (konuma git, servo, röleler) "ara başlık"la üst üste yığılıydı. -->
+    <section class="sayfa" id="sayfa-sur">
+
+      <!-- 1. EKSEN VE JOG — hep açık. -->
+      <section class="bolum" id="bolum-eksen">
+        <div class="bolum-ust">
+          <button class="bolum-bas" aria-expanded="true">
+            <svg class="ikon ok"><use href="#i-ok"/></svg>
+            <span class="bolum-ad">Eksen konumu</span>
+            <span class="bolum-not" id="eksen-ozet"></span>
+          </button>
+          <button class="yardim" type="button" aria-expanded="false"
+                  aria-controls="yardim-eksen" aria-label="Açıklama">?</button>
+        </div>
+        <div class="bolum-govde">
+          <p class="yardim-metin gizli" id="yardim-eksen">
             Jog düğmeleri tıklayınca başlar, tekrar tıklayınca durur. Ok
             tuşları X/Y, PageUp ve PageDown Z, Esc durdurur, boşluk acil
             durdurma. Eksen yumuşak sınıra yaklaşınca ajan kendiliğinden
@@ -331,10 +398,20 @@
             <button class="dugme" id="d-dur">Durdur</button>
           </div>
         </div>
+      </section>
 
-        <div class="kart">
-          <h3>Konuma git <button class="yardim" type="button" aria-expanded="false" aria-label="Açıklama">?</button></h3>
-          <p class="yardim-metin gizli">
+      <!-- 2. KONUMA GİT — hep açık; jog'un yanındaki ikinci sürme yolu. -->
+      <section class="bolum" id="bolum-git">
+        <div class="bolum-ust">
+          <button class="bolum-bas" aria-expanded="true">
+            <svg class="ikon ok"><use href="#i-ok"/></svg>
+            <span class="bolum-ad">Konuma git</span>
+          </button>
+          <button class="yardim" type="button" aria-expanded="false"
+                  aria-controls="yardim-git" aria-label="Açıklama">?</button>
+        </div>
+        <div class="bolum-govde">
+          <p class="yardim-metin gizli" id="yardim-git">
             Hareket sırası Z → Y → X, asla çapraz değil. X/Y yer değiştirecekse
             Z önce güvenli yüksekliğe çıkar. Boş bırakılan eksen olduğu yerde
             kalır; sınır dışı hedef ajanda reddedilir.
@@ -348,31 +425,44 @@
             <button class="dugme birincil" id="d-git">Hedefe git</button>
             <button class="dugme" id="d-buraya">Bulunduğu konumu al</button>
           </div>
+        </div>
+      </section>
 
-          <h3 class="ara-baslik">Vana / servo <button class="yardim" type="button" aria-expanded="false" aria-label="Açıklama">?</button></h3>
-          <p class="yardim-metin gizli">
-            Servo açısını elle verir. Bu komut kipi otomatikten manuele düşürür.
+      <!-- 3. ÇIKIŞLAR — vana, servo, röleler. Ara sıra; katlı başlıyor. -->
+      <section class="bolum kapali" id="bolum-cikis">
+        <div class="bolum-ust">
+          <button class="bolum-bas" aria-expanded="false">
+            <svg class="ikon ok"><use href="#i-ok"/></svg>
+            <span class="bolum-ad">Çıkışlar</span>
+            <span class="bolum-not">Vana, pompa, servo</span>
+          </button>
+          <button class="yardim" type="button" aria-expanded="false"
+                  aria-controls="yardim-cikis" aria-label="Açıklama">?</button>
+        </div>
+        <div class="bolum-govde">
+          <p class="yardim-metin gizli" id="yardim-cikis">
+            Servo açısını elle verir; bu komut kipi otomatikten manuele
+            düşürür. Röleler tıklayınca açılır, tekrar tıklayınca kapanır.
+            Acil durdurma hepsini kapatır.
           </p>
+
+          <h4 class="alt-baslik">Vana / servo</h4>
           <div class="kaydirac-satir">
             <input type="range" id="servo-kaydirac" min="0" max="180" value="0">
             <b id="servo-etiket" class="sayi">0°</b>
             <button class="dugme" id="d-servo-uygula">Uygula</button>
           </div>
-          <p class="alt-not gizli" id="servo-not"></p>
+          <p class="ikincil gizli" id="servo-not"></p>
 
-          <h3 class="ara-baslik">Pompa ve vanalar <button class="yardim" type="button" aria-expanded="false" aria-label="Açıklama">?</button></h3>
-          <p class="yardim-metin gizli">
-            Tıklayınca açılır, tekrar tıklayınca kapanır. Acil durdurma
-            hepsini kapatır.
-          </p>
+          <h4 class="alt-baslik">Pompa ve vanalar</h4>
           <div class="satir-8">
             <button class="dugme role" data-role="su_pompasi">Su pompası</button>
             <button class="dugme role" data-role="hava_pompasi">Hava pompası</button>
             <button class="dugme role" data-role="su_vanasi">Su vanası</button>
           </div>
-          <p class="alt-not gizli" id="role-not"></p>
+          <p class="ikincil gizli" id="role-not"></p>
         </div>
-      </div>
+      </section>
     </section>
 
     <!-- ================================ TARLA =============================== -->
@@ -500,12 +590,23 @@
     </section>
 
     <!-- ============================== OTOMASYON ============================= -->
+    <!-- ============================== OTOMASYON =============================
+         Programlar hep açık (asıl iş), eğriler ve otomatik sulama katlı:
+         ikisi de kurulup bırakılan şeyler. -->
     <section class="sayfa" id="sayfa-otomasyon">
-      <div class="izgara iki-sutun">
 
-        <div class="kart">
-          <h3>Programlar <button class="yardim" type="button" aria-expanded="false" aria-label="Açıklama">?</button></h3>
-          <p class="yardim-metin gizli">
+      <section class="bolum" id="bolum-program">
+        <div class="bolum-ust">
+          <button class="bolum-bas" aria-expanded="true">
+            <svg class="ikon ok"><use href="#i-ok"/></svg>
+            <span class="bolum-ad">Programlar</span>
+            <span class="bolum-not" id="prog-ozet"></span>
+          </button>
+          <button class="yardim" type="button" aria-expanded="false"
+                  aria-controls="yardim-program" aria-label="Açıklama">?</button>
+        </div>
+        <div class="bolum-govde">
+          <p class="yardim-metin gizli" id="yardim-program">
             Adımlar mevcut komutları çağırır — yeni hareket yolu yok. Bir adım
             hata verirse dizi durur ve sebebi burada kalır. Acil durdurma
             diziyi keser; mandal temizlenmeden yeniden başlamaz.<br><br>
@@ -527,9 +628,9 @@
           <!-- Dizi değişken istiyorsa değerleri çalıştırmadan önce burada
                sorulur. İstemiyorsa bu bölüm hiç görünmüyor. -->
           <div id="prog-degerler" class="deger-kutu gizli"></div>
-          <div id="prog-ilerleme" class="onizleme gizli"></div>
+          <div id="prog-ilerleme" class="gomulu gizli"></div>
 
-          <h3 class="ara-baslik">Düzenle</h3>
+          <h4 class="alt-baslik">Düzenle</h4>
           <div class="satir-8 alt-hizali">
             <div class="alan esnek-alan">
               <label for="prog-ad">Program adı</label>
@@ -554,11 +655,23 @@
             <button class="dugme" id="d-adim-ekle">Adım ekle</button>
           </div>
         </div>
+      </section>
 
-        <!-- EĞRİLER — sabit "günde X ml" yerine bitkinin yaşına göre değer. -->
-        <div class="kart">
-          <h3>Eğriler <button class="yardim" type="button" aria-expanded="false" aria-label="Açıklama">?</button></h3>
-          <p class="yardim-metin gizli">
+      <!-- Eğriler açık: bitkinin su/yayılım eğrisi tanımlamak günlük işin
+           parçası, kurulum işi değil. Otomatik sulama bir kez ayarlanıyor,
+           o katlı kalıyor. -->
+      <section class="bolum" id="bolum-egri">
+        <div class="bolum-ust">
+          <button class="bolum-bas" aria-expanded="true">
+            <svg class="ikon ok"><use href="#i-ok"/></svg>
+            <span class="bolum-ad">Eğriler</span>
+            <span class="bolum-not" id="egri-ozet"></span>
+          </button>
+          <button class="yardim" type="button" aria-expanded="false"
+                  aria-controls="yardim-egri" aria-label="Açıklama">?</button>
+        </div>
+        <div class="bolum-govde">
+          <p class="yardim-metin gizli" id="yardim-egri">
             "Günde 250 ml" sabit bir sayı; oysa fide üç günlükken de hasada bir
             hafta kalmışken de aynı suyu istemiyor. Eğri bitkinin <b>yaşına</b>
             göre bir değer veriyor: aradaki günler doğrusal ara değerle
@@ -606,11 +719,20 @@
             <button class="dugme birincil" id="d-egri-kaydet">Kaydet</button>
           </div>
         </div>
+      </section>
 
-        <div class="kart">
-          <h3>Otomatik sulama <span id="kip-rozet" class="rozet-kip">—</span>
-            <button class="yardim" type="button" aria-expanded="false" aria-label="Açıklama">?</button></h3>
-          <p class="yardim-metin gizli">
+      <section class="bolum kapali" id="bolum-oto">
+        <div class="bolum-ust">
+          <button class="bolum-bas" aria-expanded="false">
+            <svg class="ikon ok"><use href="#i-ok"/></svg>
+            <span class="bolum-ad">Otomatik sulama</span>
+            <span class="bolum-not"><span id="kip-rozet" class="rozet-kip">—</span></span>
+          </button>
+          <button class="yardim" type="button" aria-expanded="false"
+                  aria-controls="yardim-oto" aria-label="Açıklama">?</button>
+        </div>
+        <div class="bolum-govde">
+          <p class="yardim-metin gizli" id="yardim-oto">
             Bu karar Arduino'nun içinde duruyor, panelde ya da Pi'de değil.
             Sebebi: Pi kapansa, panel kapansa, ağ gitse bile bitkinin
             sulanması gerekiyor.<br><br>
@@ -644,75 +766,58 @@
             </div>
             <button class="dugme birincil" id="d-oto-kaydet">Kaydet</button>
           </div>
-          <p class="alt-not" id="oto-not"></p>
+          <p class="ikincil" id="oto-not"></p>
         </div>
-      </div>
+      </section>
     </section>
 
+
     <!-- =============================== AYARLAR ============================== -->
+    <!-- =============================== AYARLAR ==============================
+         Sayfanın en "form yığını" olanıydı: dört büyük kart aynı anda açık.
+         Günlük iş YASAK BÖLGELER — bahçe değişince güncelleniyor. Kalanı
+         kurulum işi: bir kez yapılıp bırakılıyor, o yüzden katlı. -->
     <section class="sayfa" id="sayfa-ayarlar">
-      <div class="izgara iki-sutun">
 
-        <!-- KAMERA KALİBRASYONU — fotoğrafı haritaya oturtan sayılar.
-             Kalibre edilmeden kare haritada yalnız bir işaret olarak duruyor;
-             yanlış ölçekli bir fotoğrafı doğruymuş gibi göstermiyoruz. -->
-        <div class="kart">
-          <h3>Kamera kalibrasyonu <span id="kalib-durum" class="birim-not"></span>
-            <button class="yardim" type="button" aria-expanded="false" aria-label="Açıklama">?</button></h3>
-          <p class="yardim-metin gizli">
-            Kamera uç kafasında; her kare çekildiği eksen konumuyla saklanıyor.
-            Kareyi haritanın doğru yerine, doğru ölçekte ve açıda koyabilmek
-            için bir pikselin kaç mm olduğunu ve kameranın makine eksenine
-            göre açısını bilmek gerekiyor.<br><br>
-            <b>İki kare yöntemi</b> bunları kendisi hesaplıyor: makineyi
-            bilinen bir mesafe oynatıp iki kare çekiyorsunuz, her iki karede de
-            <i>aynı</i> toprak parçasına tıklıyorsunuz. Piksel farkı ile mm
-            farkı hem ölçeği hem açıyı veriyor. En az 20 mm hareket ve 12
-            piksel fark gerekiyor — daha azı gürültüye karışıyor.<br><br>
-            <b>Kayma</b> kamera merkezinin uç ucundan ne kadar uzakta
-            olduğudur; kareyi haritada kaydırır, elle girilir.
-          </p>
-
-          <div class="satir-8 alt-hizali">
-            <div class="alan"><label for="kalib-mmpx">mm / piksel</label>
-              <input type="number" id="kalib-mmpx" step="0.001" min="0" max="20" value="0"></div>
-            <div class="alan"><label for="kalib-donme">Açı (°)</label>
-              <input type="number" id="kalib-donme" step="0.1" min="-180" max="180" value="0"></div>
-          </div>
-          <div class="satir-8 alt-hizali">
-            <div class="alan"><label for="kalib-ofx">Kayma X (mm)</label>
-              <input type="number" id="kalib-ofx" step="0.5" min="-500" max="500" value="0"></div>
-            <div class="alan"><label for="kalib-ofy">Kayma Y (mm)</label>
-              <input type="number" id="kalib-ofy" step="0.5" min="-500" max="500" value="0"></div>
-          </div>
-          <div class="satir-8">
-            <label class="onay"><input type="checkbox" id="kalib-ayna-x"> Yatay ayna</label>
-            <label class="onay"><input type="checkbox" id="kalib-ayna-y"> Dikey ayna</label>
-            <span class="esnek"></span>
-            <button class="dugme birincil" id="d-kalib-kaydet">Kaydet</button>
-          </div>
-
-          <h3 class="ara-baslik">İki kare ile hesapla</h3>
-          <p class="alt-not" id="kalib-yonerge">
-            1. Makineyi bir yere götürün, kare gelsin, aşağıda bir toprak
-            parçasına tıklayın. 2. Makineyi en az 20 mm oynatın, yeni kare
-            gelsin, <i>aynı</i> yere tıklayın.
-          </p>
-          <div class="kalib-tuval-kutu">
-            <img id="kalib-kare" alt="Son kamera karesi">
-            <canvas id="kalib-tuval"></canvas>
-          </div>
-          <div class="satir-8 alt-hizali">
-            <button class="dugme" id="d-kalib-kare1">1. kareyi işaretle</button>
-            <button class="dugme" id="d-kalib-kare2">2. kareyi işaretle</button>
-            <button class="dugme" id="d-kalib-temizle">Sıfırla</button>
-          </div>
-          <div id="kalib-sonuc" class="onizleme gizli"></div>
+      <section class="bolum" id="bolum-bolge">
+        <div class="bolum-ust">
+          <button class="bolum-bas" aria-expanded="true">
+            <svg class="ikon ok"><use href="#i-ok"/></svg>
+            <span class="bolum-ad">Yasak bölgeler</span>
+            <span class="bolum-not" id="bolge-ozet"></span>
+          </button>
+          <button class="yardim" type="button" aria-expanded="false"
+                  aria-controls="yardim-bolge" aria-label="Açıklama">?</button>
         </div>
+        <div class="bolum-govde">
+          <p class="yardim-metin gizli" id="yardim-bolge">
+            Dikdörtgen alan (X/Y) + geçiş koşulu. Hedefi ya da yolu alanın
+            içine düşen hareket, koşul doğru değilse ajanda reddedilir — panel
+            kapalı olsa da.<br><br>
+            Değişkenler: <code>z, x, y, prox, tool, safe_z, zmax</code>.
+            Örnek: <code>z&gt;=safe_z</code> · <code>tool!='laser'</code>
+          </p>
+          <div id="bolge-liste"></div>
+          <div class="satir-8">
+            <button class="dugme" id="d-bolge-ekle">Bölge ekle</button>
+            <button class="dugme birincil" id="d-bolge-kaydet">Kaydet</button>
+            <span id="bolge-esnetme" class="rozet-uyari gizli">Yuva esnetmesi açık</span>
+          </div>
+        </div>
+      </section>
 
-        <div class="kart">
-          <h3>Uç değiştirme <button class="yardim" type="button" aria-expanded="false" aria-label="Açıklama">?</button></h3>
-          <p class="yardim-metin gizli">
+      <section class="bolum kapali" id="bolum-uc">
+        <div class="bolum-ust">
+          <button class="bolum-bas" aria-expanded="false">
+            <svg class="ikon ok"><use href="#i-ok"/></svg>
+            <span class="bolum-ad">Uç değiştirme</span>
+            <span class="bolum-not">Yuva konumları ve dizi</span>
+          </button>
+          <button class="yardim" type="button" aria-expanded="false"
+                  aria-controls="yardim-uc" aria-label="Açıklama">?</button>
+        </div>
+        <div class="bolum-govde">
+          <p class="yardim-metin gizli" id="yardim-uc">
             Yandan yaklaşım: bütün X/Y yolculukları taşıma yüksekliğinde
             yapılır, alçak Z'deki tek yatay hareket uca girip çıkan kısa
             kaymadır. Her adımın sonunda konum doğrulanır; varılmadıysa dizi
@@ -740,8 +845,8 @@
             <button class="dugme" id="d-uc-temizle">Durumu temizle</button>
           </div>
 
-          <div id="uc-onizleme" class="onizleme gizli"></div>
-          <div id="uc-ilerleme" class="onizleme gizli"></div>
+          <div id="uc-onizleme" class="gomulu gizli"></div>
+          <div id="uc-ilerleme" class="gomulu gizli"></div>
 
           <details class="uc-ayar">
             <summary>Uç ayarları ve değiştirme alanı</summary>
@@ -785,27 +890,83 @@
             </div>
           </details>
         </div>
+      </section>
 
-        <div class="kart">
-          <h3>Yasak bölgeler <button class="yardim" type="button" aria-expanded="false" aria-label="Açıklama">?</button></h3>
-          <p class="yardim-metin gizli">
-            Dikdörtgen alan (X/Y) + geçiş koşulu. Hedefi ya da yolu alanın
-            içine düşen hareket, koşul doğru değilse ajanda reddedilir — panel
-            kapalı olsa da.<br><br>
-            Değişkenler: <code>z, x, y, prox, tool, safe_z, zmax</code>.
-            Örnek: <code>z&gt;=safe_z</code> · <code>tool!='laser'</code>
-          </p>
-          <div id="bolge-liste"></div>
-          <div class="satir-8">
-            <button class="dugme" id="d-bolge-ekle">Bölge ekle</button>
-            <button class="dugme birincil" id="d-bolge-kaydet">Kaydet</button>
-            <span id="bolge-esnetme" class="rozet-uyari gizli">Yuva esnetmesi açık</span>
-          </div>
+      <section class="bolum kapali" id="bolum-kamera-kalib">
+        <div class="bolum-ust">
+          <button class="bolum-bas" aria-expanded="false">
+            <svg class="ikon ok"><use href="#i-ok"/></svg>
+            <span class="bolum-ad">Kamera kalibrasyonu</span>
+            <span class="bolum-not" id="kalib-durum"></span>
+          </button>
+          <button class="yardim" type="button" aria-expanded="false"
+                  aria-controls="yardim-kalib" aria-label="Açıklama">?</button>
         </div>
+        <div class="bolum-govde">
+          <p class="yardim-metin gizli" id="yardim-kalib">
+            Kamera uç kafasında; her kare çekildiği eksen konumuyla saklanıyor.
+            Kareyi haritanın doğru yerine, doğru ölçekte ve açıda koyabilmek
+            için bir pikselin kaç mm olduğunu ve kameranın makine eksenine
+            göre açısını bilmek gerekiyor.<br><br>
+            <b>İki kare yöntemi</b> bunları kendisi hesaplıyor: makineyi
+            bilinen bir mesafe oynatıp iki kare çekiyorsunuz, her iki karede de
+            <i>aynı</i> toprak parçasına tıklıyorsunuz. Piksel farkı ile mm
+            farkı hem ölçeği hem açıyı veriyor. En az 20 mm hareket ve 12
+            piksel fark gerekiyor — daha azı gürültüye karışıyor.<br><br>
+            <b>Kayma</b> kamera merkezinin uç ucundan ne kadar uzakta
+            olduğudur; kareyi haritada kaydırır, elle girilir.
+          </p>
 
-        <div class="kart">
-          <h3>Kalibrasyon ve sınırlar <button class="yardim" type="button" aria-expanded="false" aria-label="Açıklama">?</button></h3>
-          <p class="yardim-metin gizli">
+          <div class="satir-8 alt-hizali">
+            <div class="alan"><label for="kalib-mmpx">mm / piksel</label>
+              <input type="number" id="kalib-mmpx" step="0.001" min="0" max="20" value="0"></div>
+            <div class="alan"><label for="kalib-donme">Açı (°)</label>
+              <input type="number" id="kalib-donme" step="0.1" min="-180" max="180" value="0"></div>
+          </div>
+          <div class="satir-8 alt-hizali">
+            <div class="alan"><label for="kalib-ofx">Kayma X (mm)</label>
+              <input type="number" id="kalib-ofx" step="0.5" min="-500" max="500" value="0"></div>
+            <div class="alan"><label for="kalib-ofy">Kayma Y (mm)</label>
+              <input type="number" id="kalib-ofy" step="0.5" min="-500" max="500" value="0"></div>
+          </div>
+          <div class="satir-8">
+            <label class="onay"><input type="checkbox" id="kalib-ayna-x"> Yatay ayna</label>
+            <label class="onay"><input type="checkbox" id="kalib-ayna-y"> Dikey ayna</label>
+            <span class="esnek"></span>
+            <button class="dugme birincil" id="d-kalib-kaydet">Kaydet</button>
+          </div>
+
+          <h4 class="alt-baslik">İki kare ile hesapla</h4>
+          <p class="ikincil" id="kalib-yonerge">
+            1. Makineyi bir yere götürün, kare gelsin, aşağıda bir toprak
+            parçasına tıklayın. 2. Makineyi en az 20 mm oynatın, yeni kare
+            gelsin, <i>aynı</i> yere tıklayın.
+          </p>
+          <div class="kalib-tuval-kutu">
+            <img id="kalib-kare" alt="Son kamera karesi">
+            <canvas id="kalib-tuval"></canvas>
+          </div>
+          <div class="satir-8 alt-hizali">
+            <button class="dugme" id="d-kalib-kare1">1. kareyi işaretle</button>
+            <button class="dugme" id="d-kalib-kare2">2. kareyi işaretle</button>
+            <button class="dugme" id="d-kalib-temizle">Sıfırla</button>
+          </div>
+          <div id="kalib-sonuc" class="gomulu gizli"></div>
+        </div>
+      </section>
+
+      <section class="bolum kapali" id="bolum-sinir">
+        <div class="bolum-ust">
+          <button class="bolum-bas" aria-expanded="false">
+            <svg class="ikon ok"><use href="#i-ok"/></svg>
+            <span class="bolum-ad">Kalibrasyon ve sınırlar</span>
+            <span class="bolum-not">Makineden okunuyor</span>
+          </button>
+          <button class="yardim" type="button" aria-expanded="false"
+                  aria-controls="yardim-sinir" aria-label="Açıklama">?</button>
+        </div>
+        <div class="bolum-govde">
+          <p class="yardim-metin gizli" id="yardim-sinir">
             Ajanın o an kullandığı değerler — salt okunur. Değiştirmek için
             Pi'de <code>ajan/gantry_calib.json</code> düzenlenir ve ajan
             yeniden başlatılır. <code>cpm</code> = adım/mm, <code>dir</code> =
@@ -817,13 +978,13 @@
                 <tr><th>Eksen</th><th>cpm</th><th>dir</th><th>home</th><th>min</th><th>max</th></tr>
               </thead>
               <tbody id="kalib-govde">
-                <tr><td colspan="6" class="alt-not">Ajan bağlanınca dolacak.</td></tr>
+                <tr><td colspan="6" class="ikincil">Ajan bağlanınca dolacak.</td></tr>
               </tbody>
             </table>
           </div>
-          <div class="alt-not" id="kalib-ek"></div>
+          <div class="ikincil" id="kalib-ek"></div>
         </div>
-      </div>
+      </section>
     </section>
       </div><!-- /.yuzen-govde -->
     </aside>

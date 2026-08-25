@@ -451,7 +451,7 @@
    * penceresini kaydırıyoruz. Panel katlanınca pay kendiliğinden sıfırlanıyor
    * ve makine boşalan yeri kullanıyor. */
   function panelPayi() {
-    const bos = { sol: 0, sag: 0 };
+    const bos = { sol: 0, sag: 0, ust: 0, alt: 0 };
     // Ölçü SAHNE KUTUSUNDAN alınıyor, tuvalden değil: 2B'ye geçince 3B tuvali
     // display:none oluyor ve ölçüsü sıfırlanıyor — pay da sıfır çıkıyordu,
     // harita panelin altına kayıyordu.
@@ -459,26 +459,37 @@
     if (!kutu) return bos;
     const t = kutu.getBoundingClientRect();
     if (!t.width || !t.height) return bos;
+    /** Bir yüzen kutunun sahneden yediği pay. Kesişmiyorsa sıfır — telefonda
+     *  paneller sahnenin ALTINDA duruyor ve pay istemiyorlar. */
     const olc = (sec, taraf) => {
       const e = $(sec);
       if (!e) return 0;
       const r = e.getBoundingClientRect();
-      // Telefonda paneller sahnenin ALTINDA: dikey kesişme yoksa pay yok.
-      if (!r.width || !r.height || r.top >= t.bottom - 1 || r.bottom <= t.top + 1) return 0;
-      return taraf === "sol" ? kis(r.right - t.left, 0, t.width)
-                             : kis(t.right - r.left, 0, t.width);
+      if (!r.width || !r.height) return 0;
+      if (r.top >= t.bottom - 1 || r.bottom <= t.top + 1) return 0;
+      if (r.left >= t.right - 1 || r.right <= t.left + 1) return 0;
+      if (taraf === "sol") return kis(r.right - t.left, 0, t.width);
+      if (taraf === "sag") return kis(t.right - r.left, 0, t.width);
+      if (taraf === "ust") return kis(r.bottom - t.top, 0, t.height);
+      return kis(t.bottom - r.top, 0, t.height);
     };
     bos.sol = olc("#sol-panel", "sol");
     // Sağda kalıcı duran tek kutu seçili öğenin kartı; katman rafı ve
     // harita ayarı açılır panel oldu, açıkken onlar da pay istiyor.
     bos.sag = Math.max(olc("#tarla-kart", "sag"), olc("#katman-kutu", "sag"),
                        olc("#harita-ayar", "sag"));
-    // İkisi birden tuvali yerse ortada bir şey kalmıyor; payı geri çekiyoruz.
+    // Dikey pay da şart: araç çubuğu üstte, toplu işlem ve profil altta
+    // duruyor. Yalnız yatay payı hesaplarken haritanın alt ucu profilin
+    // altında kalıyor ve oradaki bitkiye tıklanamıyordu.
+    bos.ust = olc("#sahne-cubuk", "ust");
+    bos.alt = Math.max(olc("#toplu-cubuk", "alt"), olc("#profil", "alt"));
+    // Paylar sahneyi yerse ortada bir şey kalmıyor; geri çekiyoruz.
     if (bos.sol + bos.sag > t.width * 0.8) { bos.sol = 0; bos.sag = 0; }
+    if (bos.ust + bos.alt > t.height * 0.8) { bos.ust = 0; bos.alt = 0; }
     return bos;
   }
 
-  function kamerayiSigdir(enSerbest) {
+  function kamerayiSigdir(enSerbest, olcek) {
     kirlet("kamera-sigdir");
     const yukseklikM = BAGLAM.makine.ray_yuksekligi * MM;
     // Bakılan nokta yatağa yakın: asıl konu bahçe, portal değil.
@@ -496,7 +507,8 @@
     // sığdırmak, makinenin yarısını panelin altında bırakıyordu.
     const en = enSerbest || kamera.aspect || 1.6;
     const yariYatay = Math.atan(Math.tan(yariFov) * en);
-    kam.r = kis(Math.max(R / Math.sin(yariFov), R / Math.sin(yariYatay)) * 1.02, 0.5, 12);
+    kam.r = kis(Math.max(R / Math.sin(yariFov), R / Math.sin(yariYatay))
+                * 1.02 * (olcek || 1), 0.5, 12);
     kam.hedef.set(0, hedefY, 0);
   }
 
@@ -508,28 +520,35 @@
     const en = g / Math.max(1, y);
 
     const pay = panelPayi();
-    const serbest = Math.max(160, g - pay.sol - pay.sag);
-    const enSerbest = serbest / Math.max(1, y);
-    // Görüntüyü panellerin arasına ortalıyoruz. setViewOffset tuvalin
+    const serbestEn = Math.max(160, g - pay.sol - pay.sag);
+    const serbestBoy = Math.max(160, y - pay.ust - pay.alt);
+    const enSerbest = serbestEn / Math.max(1, serbestBoy);
+    // Görüntüyü panellerin ARASINA ortalıyoruz. setViewOffset tuvalin
     // tamamını çizmeye devam ediyor, yalnız hangi pencereyi çizdiğini
     // kaydırıyor — sahne arka planda kesintisiz kalıyor.
-    const kaydir = (pay.sol - pay.sag) / 2;
+    const kaydirX = (pay.sol - pay.sag) / 2;
+    const kaydirY = (pay.ust - pay.alt) / 2;
+    const kaydirVar = kaydirX || kaydirY;
+    // Küçülen serbest alana sığdırmak için görüntüyü de o oranda geriye
+    // çekiyoruz: pencereyi kaydırmak tek başına yetmiyor, yoksa makine
+    // panellerin altına taşıyor.
+    const olcek = Math.max(g / serbestEn, y / serbestBoy);
 
     kamera.aspect = en;
-    if (kaydir) kamera.setViewOffset(g, y, -kaydir, 0, g, y);
+    if (kaydirVar) kamera.setViewOffset(g, y, -kaydirX, -kaydirY, g, y);
     else kamera.clearViewOffset();
     kamera.updateProjectionMatrix();
 
-    const yariY = Math.max((derinlikM / 2) * 1.32,
-                           (genislikM / 2) * 1.32 / enSerbest) / kam.yakinlik;
+    const yariY = Math.max((derinlikM / 2) * 1.32 * olcek,
+                           (genislikM / 2) * 1.32 * olcek / en) / kam.yakinlik;
     const yariX = yariY * en;
     kameraUst.left = -yariX; kameraUst.right = yariX;
     kameraUst.top = yariY; kameraUst.bottom = -yariY;
-    if (kaydir) kameraUst.setViewOffset(g, y, -kaydir, 0, g, y);
+    if (kaydirVar) kameraUst.setViewOffset(g, y, -kaydirX, -kaydirY, g, y);
     else kameraUst.clearViewOffset();
     kameraUst.updateProjectionMatrix();
 
-    if (!kam.elleZoom) kamerayiSigdir(enSerbest);
+    if (!kam.elleZoom) kamerayiSigdir(enSerbest, olcek);
     boyutla2b();
   }
 
@@ -649,13 +668,16 @@
     const pay = panelPayi();
     kapsayici.style.paddingLeft = pay.sol + "px";
     kapsayici.style.paddingRight = pay.sag + "px";
+    kapsayici.style.paddingTop = pay.ust + "px";
+    kapsayici.style.paddingBottom = pay.alt + "px";
     // Kutu ölçüsünü SAHNEDEN alıyoruz. clientWidth iç boşluğu da içeriyor,
     // yani payı kendisi düşmüyor; ayrıca tuvale "height: 100%" demek
     // ızgarada döngüye giriyordu (satır tuvale, tuval satıra bakıyor).
     const sahne = $("#harita");
     const kutuEn = Math.max(160, (sahne ? sahne.clientWidth : kapsayici.clientWidth)
                                  - pay.sol - pay.sag);
-    const kutuBoy = Math.max(160, sahne ? sahne.clientHeight : (tuval2b.clientHeight || 460));
+    const kutuBoy = Math.max(160, (sahne ? sahne.clientHeight : (tuval2b.clientHeight || 460))
+                                  - pay.ust - pay.alt);
     tuval2b.style.height = kutuBoy + "px";
 
     const o0 = haritaOlcu();
