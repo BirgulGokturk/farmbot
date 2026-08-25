@@ -468,14 +468,36 @@ class Ajan:
             else:
                 logger.exception("Alıcı görevinde beklenmeyen hata")
 
+    async def _jog_birak_sinirli(self, neden: str) -> None:
+        """Jog mandallarını bırakır ama PLC yanıt vermezse takılıp kalmaz.
+
+        PLC erişilemezken her Modbus yazması kendi zaman aşımını bekliyor;
+        altı yazma toplamda dakikalara çıkabiliyor. Buraya bir üst sınır
+        koyuyoruz: bırakma denemesi yapılır, olmazsa geçilir. Güvenlik
+        açığı değil — ajandaki jog bekçisi zaten 1,2 saniyede bitleri
+        düşürüyor, bu yalnızca erken bir temizlik.
+        """
+        try:
+            await asyncio.wait_for(
+                asyncio.to_thread(self.plc.jog_hepsini_birak), timeout=5.0)
+        except asyncio.TimeoutError:
+            logger.warning("Jog bırakma (%s) PLC yanıt vermediği için atlandı", neden)
+        except Exception as hata:
+            logger.warning("Jog bırakma (%s) başarısız: %s", neden, hata)
+
     async def calis(self) -> None:
         import websockets
 
         self.dongu = asyncio.get_running_loop()
         self.arduino.baslat()
         self.kamera.baslat()
-        # Çakılmadan kalan bir jog mandalını miras almayalım.
-        await asyncio.to_thread(self.plc.jog_hepsini_birak)
+        # Çakılmadan kalan bir jog mandalını miras almayalım. AMA bunu
+        # beklemeden: PLC erişilemezken (kablo çıkmış, PLC kapalı) altı Modbus
+        # yazması tek tek zaman aşımına düşüyor ve ajan sunucuya bağlanmaya
+        # DAKİKALARCA sıra getiremiyordu. Panel de o sırada "Raspberry Pi
+        # sunucuya bağlı değil" diyordu — oysa panel, PLC arızasını teşhis
+        # edeceğimiz yer; ona muhtaç olmamalı.
+        asyncio.create_task(self._jog_birak_sinirli("açılış"))
 
         adres = f"{self.ayar['sunucu']}?jeton={self.ayar['jeton']}"
         bekleme = 1.0
@@ -502,10 +524,7 @@ class Ajan:
                 # Bağlantı koptu: jog mandalı açık kalmış olabilir ve panelden
                 # "bırak" komutu artık gelemez. Bekçi zaten 1.2 sn'de düşürür
                 # ama beklemenin anlamı yok — hemen bırakıyoruz.
-                try:
-                    await asyncio.to_thread(self.plc.jog_hepsini_birak)
-                except Exception:
-                    pass
+                await self._jog_birak_sinirli("bağlantı koptu")
 
             logger.info("%.0f saniye sonra yeniden denenecek", bekleme)
             await asyncio.sleep(bekleme)
