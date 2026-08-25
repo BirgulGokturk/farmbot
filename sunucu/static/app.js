@@ -1043,7 +1043,10 @@ const TANI_YEREL = {
       "AJAN_JETONU sunucudakiyle aynı değil — bağlantı reddediliyor.",
     ],
     adimlar: [
-      "Pi'ye bağlanın:  ssh batupi@192.168.1.20   (Tailscale: 100.99.57.110)",
+      // Adresi sabit yazmak yanlis yonlendiriyordu: Pi yeniden kurulunca
+      // Tailscale adresi degisti ve tani olu bir adresi onermeye devam etti.
+      // Tarayici zaten dogru adresten baglandi; onu soyluyoruz.
+      `Pi'ye bağlanın:  ssh batupi@${location.hostname}`,
       "Servisi kontrol edin:  systemctl status farmbot-ajan",
       "Günlüğe bakın:  journalctl -u farmbot-ajan -n 50",
       "Pi'nin internetini deneyin:  ping -c3 1.1.1.1",

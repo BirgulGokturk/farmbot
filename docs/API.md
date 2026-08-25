@@ -15,7 +15,7 @@ Arduino ──seri──> ajan ──WebSocket──> sunucu ──HTTP/WS──
 | Nereden | Adres |
 |---|---|
 | Ev ağı | `http://batupi.local:8000` |
-| Tailscale (ev dışı, telefon) | `http://100.99.57.110:8000` |
+| Tailscale (ev dışı, telefon) | Pi'de `tailscale ip -4` ile öğrenilir |
 
 ## Kimlik doğrulama
 
