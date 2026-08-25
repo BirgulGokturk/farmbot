@@ -326,6 +326,17 @@ class Ajan:
                 self.kip = deger
                 return {"ok": True, "mesaj": f"Kip: {deger}"}
 
+            if ad == "kamera":
+                # Calisma aninda ac/kapat. Ayar dosyasina yazmiyoruz: kalici
+                # olsun istenirse ayarlar.json'daki "aktif" elle degistirilir.
+                # Boylece panelden yapilan gecici bir deneme, yeniden
+                # baslatmada beklenmedik bir davranisa donusmuyor.
+                acik = bool(arg.get("acik"))
+                if "aralik_sn" in arg:
+                    self.kamera.ayar["aralik_sn"] = max(2.0, float(arg["aralik_sn"]))
+                ok, mesaj = self.kamera.ac() if acik else self.kamera.kapat()
+                return {"ok": ok, "mesaj": mesaj}
+
             if ad == "oto_esik":
                 # Panel yüzde gösteriyor, Arduino ham ADC ile karşılaştırıyor;
                 # çeviri panelde yapılıyor, buraya ham değer geliyor.
@@ -396,6 +407,7 @@ class Ajan:
             durum["tanilar"] = tanilar
             # Panelin ihtiyacı olan her şey tek pakette: dizi ilerlemesi,
             # takılı uç, uç adları ve sensörün bağlı olup olmadığı.
+            durum["kamera"] = self.kamera.durum()
             durum["dizi"] = dict(self.dizi.durum)
             durum["uc"] = {
                 **self.uclar.durum,

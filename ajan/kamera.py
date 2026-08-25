@@ -40,7 +40,7 @@ logger = logging.getLogger("ajan.kamera")
 
 VARSAYILAN = {
     "aktif": False,
-    "aralik_sn": 30.0,
+    "aralik_sn": 3600.0,   # saatte bir kare
     "genislik": 640,
     "kalite": 75,
     "sahte": False,
@@ -55,6 +55,9 @@ class Kamera:
         self.gonder = gonder
         self.gunluk_cb = gunluk_cb or (lambda m, s="bilgi": None)
         self._calisiyor = False
+        # Bekleme time.sleep degil Event.wait ile: saatlik aralikta "kapat"
+        # dendiginde is parcaciginin bir saat beklemesi kabul edilemez.
+        self._dur = threading.Event()
         self._yontem: str | None = None
         self._picam = None
         self.son_hata: str | None = None
@@ -157,8 +160,26 @@ class Kamera:
 
     # --- döngü ---
     def baslat(self) -> None:
+        """Ajan acilirken cagrilir; ayarda kapaliysa dokunmaz."""
         if not self.ayar.get("aktif"):
+            self.gunluk_cb("Kamera kapali - panelden acilabilir", "bilgi")
             return
+        self.ac()
+
+    def durum(self) -> dict[str, Any]:
+        """Panelin dugmeyi dogru gostermesi icin."""
+        return {
+            "acik": self._calisiyor,
+            "yontem": self._yontem,
+            "aralik_sn": float(self.ayar.get("aralik_sn", 3600.0)),
+            "hata": self.son_hata,
+        }
+
+    def ac(self) -> tuple[bool, str]:
+        """Calisma aninda ac. Ayar dosyasi degismez; kalici olsun istenirse
+        ayarlar.json'daki "aktif" elle true yapilir."""
+        if self._calisiyor:
+            return True, "Kamera zaten acik"
         self._yontem = self._yontem_sec()
         if not self._yontem:
             # Kamera yoksa ajan çalışmaya devam etmeli: kamera bir eklenti,
@@ -166,13 +187,23 @@ class Kamera:
             self.gunluk_cb(
                 "Kamera bulunamadı (picamera2 / rpicam-still / libcamera-still / "
                 "fswebcam yok) — kamera kapalı, diğer her şey çalışıyor", "uyari")
-            return
+            return False, "Kamera bulunamadi (picamera2 / rpicam-still / fswebcam yok)"
         self._calisiyor = True
+        self._dur.clear()
         self.gunluk_cb(f"Kamera açıldı ({self._yontem})", "bilgi")
         threading.Thread(target=self._dongu, name="kamera", daemon=True).start()
+        return True, f"Kamera acildi ({self._yontem})"
+
+    def kapat(self) -> tuple[bool, str]:
+        if not self._calisiyor:
+            return True, "Kamera zaten kapali"
+        self.durdur()
+        self.gunluk_cb("Kamera kapatildi", "bilgi")
+        return True, "Kamera kapatildi"
 
     def durdur(self) -> None:
         self._calisiyor = False
+        self._dur.set()
         if self._picam is not None:
             try:
                 self._picam.stop()
@@ -180,7 +211,6 @@ class Kamera:
                 pass
 
     def _dongu(self) -> None:
-        aralik = max(2.0, float(self.ayar.get("aralik_sn", 30.0)))
         hata_sayaci = 0
         while self._calisiyor:
             try:
@@ -195,4 +225,8 @@ class Kamera:
                 # doldurur. İlk hatayı ve sonra seyrek olarak bildiriyoruz.
                 if hata_sayaci == 1 or hata_sayaci % 20 == 0:
                     self.gunluk_cb(f"Kare alınamadı ({hata_sayaci}. kez): {hata}", "hata")
-            time.sleep(aralik)
+            # Aralik her turda okunuyor: panelden degistirilirse bir sonraki
+            # turda gecerli oluyor, yeniden baslatmak gerekmiyor.
+            aralik = max(2.0, float(self.ayar.get("aralik_sn", 3600.0)))
+            if self._dur.wait(aralik):
+                break

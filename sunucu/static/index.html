@@ -146,9 +146,15 @@
         <div class="kart">
           <h3>Kamera <button class="yardim" type="button" aria-expanded="false" aria-label="Açıklama">?</button></h3>
           <p class="yardim-metin gizli">
-            Kare aralığı varsayılan 30 saniye. Kamera <code>ayarlar.json</code>
-            içinde <code>"kamera": {"aktif": true}</code> ile açılır.
+            Kare aralığı varsayılan bir saat. Aşağıdaki düğme kamerayı
+            <b>o an</b> açıp kapatır; ayar dosyasına yazmaz. Her açılışta
+            kendiliğinden çalışsın isterseniz <code>ayarlar.json</code> içinde
+            <code>"kamera": {"aktif": true}</code> yapın.
           </p>
+          <div class="satir-8">
+            <button class="dugme" id="d-kamera-ac">Kamerayı aç</button>
+            <span class="alt-not" id="kamera-durum">—</span>
+          </div>
           <div id="kamera-kutu">
             <p class="alt-not" id="kamera-yok">Henüz kare gelmedi.</p>
             <img id="kamera-kare" class="gizli" alt="Kamera görüntüsü">

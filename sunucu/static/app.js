@@ -1122,6 +1122,24 @@ function diziGuncelle(d) {
 }
 
 /* ------------------------------------------------------------------ kamera */
+// Kamera bir eklenti: kapaliyken makinenin hicbir islevi etkilenmiyor.
+// Dugme calisma anini degistiriyor, ayar dosyasina yazmiyor — panelden
+// yapilan gecici bir deneme yeniden baslatmada surpriz olmasin.
+function kameraDurumYaz(k) {
+  const dugme = $("#d-kamera-ac");
+  const not = $("#kamera-durum");
+  if (!dugme || !not) return;
+  const acik = !!(k && k.acik);
+  dugme.textContent = acik ? "Kamerayı kapat" : "Kamerayı aç";
+  dugme.classList.toggle("birincil", !acik);
+  if (!k) { not.textContent = "—"; return; }
+  const dk = Math.round((k.aralik_sn || 3600) / 60);
+  not.textContent = acik
+    ? `açık · ${k.yontem || "?"} · ${dk} dakikada bir kare`
+    : "kapalı";
+  if (k.hata) not.textContent += ` · son hata: ${k.hata}`;
+}
+
 // Kare WebSocket'ten gelmiyor; sunucu haber veriyor, tarayıcı <img> ile
 // çekiyor. Böylece büyük base64 dizeleri panel soketini tıkamıyor.
 function kareyiTazele(ts) {
@@ -1509,6 +1527,8 @@ function durumGuncelle(d) {
   rozetYaz("#rozet-kip", d.kip === "manuel" ? "uyari-rengi" : "canli", `Kip: ${d.kip || "—"}`);
   kipGuncelle(d.kip);
 
+  kameraDurumYaz(d.kamera);
+
   S.ajanBagli = !!d.bagli;
   S.sonKonum = d.konum || null;
   if (d.guvenli_z != null) S.guvenliZ = Number(d.guvenli_z);
@@ -1726,6 +1746,12 @@ function olaylariBagla() {
   $("#d-dur").onclick = () => { jogDurdur(); komutGonder("dur"); };
   $("#d-enable").onclick = () => komutGonder("enable", { deger: !S.enable });
   $("#d-acil-temizle").onclick = () => komutGonder("acil_temizle");
+  $("#d-kamera-ac").onclick = () => {
+    // Dugmenin o anki metni degil, ajanin bildirdigi durum belirleyici:
+    // iki sekme acikken biri kapatirsa digeri yanlis komut gondermesin.
+    const acik = $("#d-kamera-ac").textContent.indexOf("kapat") >= 0;
+    komutGonder("kamera", { acik: !acik });
+  };
   $("#d-buraya").onclick = () => {
     ["x", "y", "z"].forEach((eksen) => {
       const metin = $(`#k-${eksen}`).textContent.replace(/[^\d.,-]/g, "").replace(",", ".");

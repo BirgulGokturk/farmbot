@@ -75,6 +75,7 @@ IZINLI_KOMUTLAR = {
     "dizi_durdur",   # {}
     "servo",         # {"aci": 90}
     "kip",           # {"deger": "oto" | "manuel"}
+    "kamera",        # {"acik": true|false, "aralik_sn": 3600}
     "oto_esik",      # {"ham": 600}                  — otomatik sulama eşiği (ADC)
     "oto_cikis",     # {"ad": "yok"|"servo"|"su_vanasi"|"su_pompasi"}
     "role",          # {"ad": "su_pompasi"|"hava_pompasi"|"su_vanasi", "durum": true}

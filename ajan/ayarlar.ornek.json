@@ -1,51 +1,41 @@
 {
   "_aciklama": "Bu dosyayı 'ayarlar.json' adıyla kopyalayıp kendi değerlerinizi yazın.",
   "_uyari": "Bu ajan çalışırken PLC'ye BAŞKA hiçbir program yazmamalı. Gantry Studio çalışıyorsa kapatın: sudo systemctl disable --now gantry-studio",
-
   "sunucu": "wss://farmbot-api.onrender.com/ws/ajan",
   "jeton": "SUNUCUDAKI_AJAN_JETONU_ILE_AYNI_OLMALI",
-
   "arduino": {
     "port": "/dev/ttyUSB0",
     "baud": 9600,
     "sahte": false
   },
-
   "plc": {
     "_not": "sahte:true iken PLC yerine register davranışını taklit eden bir sanal PLC kullanılır. Güvenlik mantığının aynısı çalışır, sadece hareket sanaldır.",
     "sahte": false,
     "ip": "192.168.1.88",
     "port": 502,
     "birim": 1,
-
     "_kalibrasyon": "Gantry Studio'nun gantry_calib.json dosyasını bu klasöre kopyalayın. Sıra [X, Y, Z]; cpm = count/mm, dir = +1/-1, home = home switch'teki mm değeri, min/max = yumuşak sınırlar. Dosya yoksa koddaki ölçülmüş varsayılanlar kullanılır.",
     "kalibrasyon_dosyasi": "gantry_calib.json",
-
     "guvenli_z": 340.0,
     "_guvenli_z": "X/Y hareketi için Z'nin bulunması gereken en düşük yükseklik. Gantry Studio'daki safe_z ile aynı olmalı; uçların en yükseği 272 mm, 340 mm 68 mm boşluk bırakıyor.",
-
     "hiz": 20.0,
     "ivme": 100.0,
     "yavaslama": 100.0,
-
     "home_bekleme_sn": 8.0,
     "_home_bekleme_sn": "PLC'de 'referans tamam' biti eşlenmediği için her eksene bu kadar süre tanınıyor. En yavaş ekseninizin referans süresinden uzun tutun.",
-
     "bolge_dosyasi": "bolgeler.json",
     "uc_dosyasi": "uclar.json",
     "_dosyalar": "Yasak bölgeler ve uç ayarları ajanda duruyor — panel çökse de koruma çalışsın diye. Panelden düzenlenir, buraya yazılır."
   },
-
   "kamera": {
-    "_not": "picamera2 → rpicam-still → libcamera-still → fswebcam sırasıyla denenir. Hiçbiri yoksa kamera kapanır, geri kalan her şey çalışır.",
+    "_not": "picamera2 -> rpicam-still -> libcamera-still -> fswebcam sirasiyla denenir. aktif=false ise ajan acilirken kamera baslamaz; panelden acilabilir ama bu gecicidir, kalici olmasi icin burayi true yapin.",
     "_pi_kamera": "Şerit kablolu Pi kamera modülü için: sudo apt install -y python3-picamera2 rpicam-apps  ·  test: rpicam-hello --list-cameras",
-    "aktif": true,
-    "aralik_sn": 30.0,
+    "aktif": false,
+    "aralik_sn": 3600.0,
     "genislik": 640,
     "kalite": 75,
     "sahte": false,
     "cihaz": "/dev/video0"
   },
-
   "durum_araligi_sn": 0.5
 }
