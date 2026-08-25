@@ -127,7 +127,6 @@ aşımı.
 | `GET /api/noktalar` | Kayıtlı noktalar |
 | `POST /api/noktalar` | `{ad,x,y,z,ustune_yaz}` — aynı isim 409 döner. `tur` ve `ekim` alanları verilirse nokta bir **bitki** olur (tarla tasarımcısı bunu kullanıyor). `ozel: {alan: sayı}` **tek bitki düzeyinde** ezme: yalnız o bitkiyi etkiler, türün geri kalanı katalogdaki değerde kalır. Aralık dışı bir alan sessizce atılır, kaydın tamamı reddedilmez. `ustune_yaz` bütün kaydı değiştirdiği için gönderilmeyen alan silinir — panel her yazmada `egri_*` ve `ozel` alanlarını da yollar |
 | `DELETE /api/noktalar?ad=…` | Siler |
-| `POST /api/toplu` | Haritada seçilen noktalara toplu işlem: `{islem:"sil"\|"sula"\|"gez", noktalar:[ad…], saniye?}`. `sil` doğrudan depodan siler; `sula` ve `gez` adım listesini **sunucuda** kurup ajanın olağan dizi yoluna verir — panel tek tek hareket komutu göndermiyor, sıralama ve güvenlik denetimi ajanda kalıyor. Tek seferde en fazla **40** nokta; bir nokta çözülemezse dizi hiç başlamaz |
 | `POST /api/izgara/onizle` | `{x0,y0,z,dx,dy,satir,sutun,onek}` → sayım + sınır dışı + üzerine yazılacaklar |
 | `POST /api/izgara/uygula` | Aynı gövde; noktaları depoya yazar |
 | `GET/POST /api/programlar` | Program listesi / kaydet |
@@ -141,6 +140,31 @@ aşımı.
 | `GET /api/turler` | `{turler, alanlar}`. Türler = katalog (`docs/bitki_turleri.json`, 37 tür) + tür ezmeleri birleşmiş hâli; her tür `ezili: {alan: katalog_degeri}` taşır — boşsa katalogdan hiç sapılmamış demektir. `alanlar` = düzenlenebilir dört alanın başlık/birim/alt/üst tanımı. Katalog dosyası değişmedikçe önbellekten döner; `TUR_YOLU` ile başka bir dosya gösterilebilir |
 | `POST /api/turler` | `{slug, alanlar:{spread_mm?, sow_depth_mm?, days_to_harvest?, water_ml_per_day?}}` — **tür düzeyinde** ezme. Katalog dosyasına YAZILMAZ; ezmeler `tur_ezme.json` dosyasında (`TUR_EZME_YOLU`, yoksa `VERI_YOLU`nun klasörü) tutulur. Katalogdakiyle aynı değer ezme sayılmaz, kaydedilmez |
 | `DELETE /api/turler?slug=…&alan=…` | `alan` verilirse o alanı, verilmezse türün bütün ezmelerini katalog değerine döndürür |
+
+### `POST /api/toplu?jeton=PAROLA`
+
+Haritada seçilmiş noktalara toplu işlem. Gövde:
+
+```json
+{"islem": "sula", "noktalar": ["fide-1", "fide-2"], "saniye": 3}
+```
+
+| `islem` | Ne yapar |
+|---|---|
+| `sil` | Noktaları depodan siler. Yanıt: `{"ok": true, "silinen": [...]}` |
+| `gez` | Sırayla her noktaya gider |
+| `sula` | Her noktaya gidip su vanasını `saniye` kadar açar |
+
+Sınırlar — ikisi de sunucuda zorlanıyor, panelden gelen değere güvenilmiyor:
+
+* **En fazla 40 nokta.** Üstü hem dizi adım sınırını (200) zorlar hem de
+  yanlışlıkla yapılmış bir seçimi tehlikeli hâle getirir. Aşılırsa `400`.
+* **`saniye` 1-60 arasına kırpılır** (varsayılan 3).
+
+`gez` ve `sula` tek tek hareket komutu göndermez: sunucu, kayıtlı dizilerin
+kullandığı **aynı denetimli adım tipleriyle** geçici bir dizi kurup ajanın
+olagan yürütücüsüne verir. Yani yumuşak sınırlar, Z kilidi, yasak bölgeler ve
+acil durdurma mandalı toplu işlemde de aynen geçerli.
 
 ### `WS /ws/panel?jeton=PAROLA`
 Canlı akış. Bağlanınca ilk paket anlık görüntü, sonrası olay bazlı:
