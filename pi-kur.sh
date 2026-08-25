@@ -31,7 +31,10 @@ sudo apt-get install -y -qq python3-venv python3-pip
 # --- 2. Sanal ortamlar -------------------------------------------------------
 venv_kur() {
     local klasor="$1"
-    local sistem="$2"          # "sistem" ise apt ile gelen paketler de görünür
+    # Ikinci parametre istege bagli: sunucu venv'i yalitilmis kaliyor,
+    # yalnizca ajan "sistem" diyerek apt paketlerini goruyor. set -u
+    # altinda "$2" dogrudan okunursa tek argumanli cagri betigi dusuruyor.
+    local sistem="${2:-}"
     if [ ! -x "$klasor/.venv/bin/python" ]; then
         echo "      sanal ortam kuruluyor: $(basename "$klasor")"
         if [ "$sistem" = "sistem" ]; then
