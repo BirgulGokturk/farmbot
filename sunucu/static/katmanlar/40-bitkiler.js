@@ -177,7 +177,11 @@ Tarla.katman({
 
   sil(o, b) {
     o.api(`/api/noktalar?ad=${encodeURIComponent(b.nokta.ad)}`, { method: "DELETE" })
-      .then(() => { o.gunluk(`✓ '${b.nokta.ad}' silindi`, "ok"); return o.noktalariYukle(); })
+      .then((y) => {
+        o.gunluk(`✓ '${b.nokta.ad}' silindi`, "ok");
+        o.geriAlGoster(y && y.geri_al);      // 30 sn geri alınabilir
+        return o.noktalariYukle();
+      })
       .catch((h) => o.gunluk(`✕ Silinemedi: ${h.message}`, "hata"));
   },
 

@@ -24,6 +24,7 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import plc as plc_modulu  # noqa: E402
+import tani  # noqa: E402
 
 YESIL, KIRMIZI, SARI, GRI, BITIS = "\033[92m", "\033[91m", "\033[93m", "\033[90m", "\033[0m"
 TAMAM, HATA, UYARI = f"{YESIL}✓{BITIS}", f"{KIRMIZI}✗{BITIS}", f"{SARI}⚠{BITIS}"
@@ -31,6 +32,23 @@ TAMAM, HATA, UYARI = f"{YESIL}✓{BITIS}", f"{KIRMIZI}✗{BITIS}", f"{SARI}⚠{B
 
 def baslik(metin: str) -> None:
     print(f"\n{metin}\n" + "─" * len(metin))
+
+
+def tani_yaz(t: dict) -> None:
+    """Eyleme dönük tanıyı basar. Metinler `tani.py`de — panel de aynı
+    tablodan besleniyor, ipuçları iki yerde ayrışmasın diye."""
+    print(f"{HATA} {t['baslik']}")
+    print(f"{GRI}   {t['ne_koptu']}{BITIS}")
+    if t.get("ham"):
+        print(f"{GRI}   Ham hata: {t['ham']}{BITIS}")
+    if t.get("sebepler"):
+        print(f"{GRI}   Olası sebep:{BITIS}")
+        for sebep in t["sebepler"]:
+            print(f"{GRI}     - {sebep}{BITIS}")
+    if t.get("adimlar"):
+        print(f"{SARI}   Ne yapmalı:{BITIS}")
+        for i, adim in enumerate(t["adimlar"], 1):
+            print(f"{SARI}     {i}. {adim}{BITIS}")
 
 
 def ayar_oku(yol: str) -> dict:
@@ -52,8 +70,7 @@ def seri_portlari_bul() -> list[str]:
     baslik("1. SERİ PORTLAR")
     adaylar = sorted(glob.glob("/dev/ttyUSB*") + glob.glob("/dev/ttyACM*"))
     if not adaylar:
-        print(f"{HATA} Hiç USB seri port yok.")
-        print(f"{GRI}   Arduino takılı mı? Takıp çıkarıp 'dmesg | tail' ile bakın.{BITIS}")
+        tani_yaz(tani.arduino_port_yok())
         return []
     for port in adaylar:
         try:
@@ -63,7 +80,7 @@ def seri_portlari_bul() -> list[str]:
         if okunur:
             print(f"{TAMAM} {port} (erişim var)")
         else:
-            print(f"{HATA} {port} — erişim yok. 'sudo usermod -aG dialout $USER' ve yeniden başlatma gerekiyor.")
+            tani_yaz(tani.arduino_izin_yok(port))
     return adaylar
 
 
@@ -78,7 +95,10 @@ def arduino_dinle(port: str, baud: int, saniye: float = 12.0) -> dict | None:
     try:
         seri = serial.Serial(port, baud, timeout=2)
     except Exception as hata:
-        print(f"{HATA} Port açılamadı: {hata}")
+        if "ermission" in str(hata):
+            tani_yaz(tani.arduino_izin_yok(port, str(hata)))
+        else:
+            tani_yaz(tani.arduino_port_yok(str(hata)))
         return None
 
     # Seri port açılınca Arduino kendini sıfırlar; ilk saniyedeki yarım
@@ -107,8 +127,7 @@ def arduino_dinle(port: str, baud: int, saniye: float = 12.0) -> dict | None:
     seri.close()
 
     if not ham_satirlar:
-        print(f"{HATA} Hiç satır gelmedi.")
-        print(f"{GRI}   Baud hızı sketch'teki Serial.begin ile aynı mı? (sketch: 9600){BITIS}")
+        tani_yaz(tani.arduino_veri_yok(port, baud, "hiç satır gelmedi"))
         return None
 
     print(f"{GRI}   Son satırlar:{BITIS}")
@@ -116,8 +135,7 @@ def arduino_dinle(port: str, baud: int, saniye: float = 12.0) -> dict | None:
         print(f"{GRI}     {satir[:110]}{BITIS}")
 
     if veri is None:
-        print(f"{HATA} VERI: satırı yok — karttaki sketch güncel değil.")
-        print(f"{GRI}   firmware/farmbot_sensors/farmbot_sensors.ino dosyasını yükleyin.{BITIS}")
+        tani_yaz(tani.arduino_veri_yok(port, baud, "VERI: satırı yok"))
         return None
 
     print(f"{TAMAM} VERI satırı okundu.")
@@ -147,10 +165,7 @@ def plc_kontrol(ayar: dict) -> None:
             pass
         print(f"{TAMAM} TCP bağlantısı açıldı: {ip}:{port}")
     except Exception as hata:
-        print(f"{HATA} {ip}:{port} adresine ulaşılamıyor — {hata}")
-        print(f"{GRI}   Pi ile PLC aynı ağda mı? Kontrol: ip addr | grep inet   ve   ping {ip}{BITIS}")
-        print(f"{GRI}   Pi'nin adresi 192.168.137.x ise PLC'nin 192.168.1.x ağına ayrı bir{BITIS}")
-        print(f"{GRI}   arayüzden bağlı olması gerekir (eth0). 'ip route' çıktısını kontrol edin.{BITIS}")
+        tani_yaz(tani.plc_ulasilamiyor(ip, port, str(hata)))
         return
 
     gantry = plc_modulu.Gantry({**p, "sahte": False})
@@ -159,8 +174,7 @@ def plc_kontrol(ayar: dict) -> None:
         print(f"{TAMAM} Modbus okuma çalışıyor. Enable (reg {plc_modulu.ENABLE_REG}) = {enable}"
               f" ({'sürücüler AÇIK' if enable else 'sürücüler kapalı'})")
     except Exception as hata:
-        print(f"{HATA} Modbus okunamadı: {hata}")
-        print(f"{GRI}   Gantry Studio hâlâ çalışıyor olabilir. Kontrol: systemctl status gantry-studio{BITIS}")
+        tani_yaz(tani.plc_modbus(ip, port, str(hata)))
         return
 
     print(f"\n{GRI}   Eksen   ham count      mm      sınırlar        cpm / dir / home{BITIS}")

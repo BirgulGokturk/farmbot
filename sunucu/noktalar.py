@@ -182,15 +182,57 @@ def ekle(ad: str, x: float, y: float, z: float, ustune_yaz: bool = False,
 
 
 def sil(ad: str) -> bool:
-    ad = str(ad or "").strip()
+    return bool(sil_coklu([ad]))
+
+
+def sil_coklu(adlar: list[str]) -> list[dict[str, Any]]:
+    """Verilen noktaları siler ve SİLİNEN TAM KAYITLARI döndürür.
+
+    Kayıtları döndürmesi geri alma içindir (bkz. `geri_al.py`): 30 saniye
+    sonra kalıcı olacak bir silmenin, o süre boyunca geri konabilmesi için
+    ad ve konumun yanı sıra etiket, tür, ekim tarihi ve eğri bağlarının da
+    saklanması gerekiyor.
+
+    Tek tek `sil` çağırmak 12 noktalık bir seçimde dosyayı 12 kez baştan
+    yazmak olurdu; burada tek yazma var.
+    """
+    istenen = {str(a or "").strip() for a in adlar}
+    istenen.discard("")
+    if not istenen:
+        return []
     with _KILIT:
         veri = oku()
-        once = len(veri["noktalar"])
-        veri["noktalar"] = [n for n in veri["noktalar"] if n.get("ad") != ad]
-        if len(veri["noktalar"]) == once:
-            return False
+        silinen = [dict(n) for n in veri["noktalar"] if n.get("ad") in istenen]
+        if not silinen:
+            return []
+        veri["noktalar"] = [n for n in veri["noktalar"] if n.get("ad") not in istenen]
         yaz(veri)
-    return True
+    return silinen
+
+
+def geri_koy(kayitlar: list[dict[str, Any]]) -> list[str]:
+    """Silinen kayıtları olduğu gibi geri yazar — geri almanın karşılığı.
+
+    Aynı isim bu arada yeniden kullanılmışsa o kayıt ATLANIYOR: kullanıcının
+    silmeden sonra oluşturduğu bir noktayı sessizce ezmek, geri almanın
+    düzeltmesi gereken hatadan daha kötü olur.
+    """
+    if not kayitlar:
+        return []
+    with _KILIT:
+        veri = oku()
+        mevcut = {n.get("ad") for n in veri["noktalar"]}
+        konan = []
+        for kayit in kayitlar:
+            ad = kayit.get("ad")
+            if not ad or ad in mevcut:
+                continue
+            veri["noktalar"].append(dict(kayit))
+            mevcut.add(ad)
+            konan.append(ad)
+        if konan:
+            yaz(veri)
+    return konan
 
 
 def toplu_ekle(yeni: list[dict[str, Any]]) -> dict[str, int]:

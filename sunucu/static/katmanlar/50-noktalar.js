@@ -81,7 +81,11 @@ Tarla.katman({
     kok.querySelector("#d-nokta-git").onclick = () => o.komut("git", { x: n.x, y: n.y, z: n.z });
     kok.querySelector("#d-nokta-sil").onclick = () =>
       o.api(`/api/noktalar?ad=${encodeURIComponent(n.ad)}`, { method: "DELETE" })
-        .then(() => { o.gunluk(`✓ '${n.ad}' silindi`, "ok"); return o.noktalariYukle(); })
+        .then((y) => {
+          o.gunluk(`✓ '${n.ad}' silindi`, "ok");
+          o.geriAlGoster(y && y.geri_al);    // 30 sn geri alınabilir
+          return o.noktalariYukle();
+        })
         .catch((h) => o.gunluk(`✕ Silinemedi: ${h.message}`, "hata"));
   },
 

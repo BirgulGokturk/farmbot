@@ -824,6 +824,27 @@
 
   </main>
 
+  <!-- BAĞLANTI TANILARI — ham hata değil, ne koptu / olası sebep / ne yapmalı.
+       Metinler ajanda `tani.py` içinde tek yerde duruyor; `tanila.py` de
+       aynı tablodan okuyor. Panelin kendi bildiği tek arıza "ajan bağlı
+       değil" (o sırada ajandan bir şey gelemiyor) — onun metni app.js'te. -->
+  <div id="tani-bant" class="gizli">
+    <div class="bant-ic"><div id="tani-liste" class="tani-liste"></div></div>
+  </div>
+
+  <!-- GERİ ALMA ŞERİDİ — silinen noktalar 30 saniye geri alınabilir.
+       Sayfa seviyesinde: hangi sekmede olursanız olun görünür, çünkü
+       silme haritadan da nokta listesinden de yapılabiliyor. -->
+  <div id="geri-al-serit" class="gizli">
+    <div class="bant-ic">
+      <span id="geri-al-metin"></span>
+      <span class="geri-al-sayac" id="geri-al-sayac"></span>
+      <span class="esnek"></span>
+      <button class="dugme" id="d-geri-al">Geri al</button>
+      <button class="dugme geri-al-kapat" id="d-geri-al-kapat" aria-label="Kapat">✕</button>
+    </div>
+  </div>
+
   <!-- OLAY GÜNLÜĞÜ — sayfa seviyesinde: hangi sekmede olursanız olun komutun
        sonucunu görürsünüz. Varsayılan kapalı; kapalıyken son olay tek satırda. -->
   <div id="gunluk-serit" class="kapali">

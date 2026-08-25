@@ -8,23 +8,33 @@ Monitör'ünden sistemi izlemeye devam edebilirsiniz.
 
 from __future__ import annotations
 
+import glob
 import json
 import logging
+import os
 import math
 import random
 import threading
 import time
 from typing import Any, Callable
 
+import tani
+
 logger = logging.getLogger("ajan.arduino")
 
 ONEK = "VERI:"
+# Port açıldıktan sonra bu kadar süre VERI satırı gelmezse sketch eski ya da
+# baud hızı tutmuyor demektir; sessizce beklemek yerine söylüyoruz.
+VERI_BEKLEME_SN = 15.0
 
 
 class Arduino:
     """Seri portu kendi iş parçacığında okur, kopunca kendi kendine döner."""
 
     def __init__(self, port: str, baud: int = 9600, geri_cagir: Callable[[dict[str, Any]], None] | None = None):
+        # Eyleme dönük arıza tanısı — panel bunu gösteriyor. None = sorun yok.
+        self.tani: dict[str, Any] | None = None
+        self._ilk_veri_bekleniyor = 0.0
         self.port = port
         self.baud = baud
         self.geri_cagir = geri_cagir
@@ -61,7 +71,25 @@ class Arduino:
         # gelen satırlar yarım olur; bu yüzden bekleyip tamponu boşaltıyoruz.
         time.sleep(2.0)
         self._seri.reset_input_buffer()
+        self.tani = None                  # açıldı — varsa eski tanı düşsün
+        self._ilk_veri_bekleniyor = time.time()
         logger.info("Arduino açıldı: %s @ %d", self.port, self.baud)
+
+    def _acilamadi(self, hata: Exception) -> None:
+        """Port neden açılamadı — eyleme dönük tanıyı buradan alıyoruz.
+
+        Üç ayrı durum, üç ayrı iş listesi: port hiç yok, port var ama izin
+        yok, port açıldı ama VERI satırı gelmiyor. Hepsini "seri port hatası"
+        diye tek satıra toplamak, kabloyu boşuna kontrol ettiriyor.
+        """
+        metin = str(hata)
+        varmi = os.path.exists(self.port)
+        if not varmi and not glob.glob("/dev/ttyUSB*") and not glob.glob("/dev/ttyACM*"):
+            self.tani = tani.arduino_port_yok(metin)
+        elif "ermission" in metin or (varmi and not os.access(self.port, os.R_OK | os.W_OK)):
+            self.tani = tani.arduino_izin_yok(self.port, metin)
+        else:
+            self.tani = tani.arduino_port_yok(metin)
 
     def _dongu(self) -> None:
         while self._calisiyor:
@@ -75,11 +103,19 @@ class Arduino:
                 if not satir:
                     continue
                 if satir.startswith(ONEK):
+                    self._ilk_veri_bekleniyor = 0.0
+                    self.tani = None      # veri akıyor — arıza yok
                     self._veri_isle(satir[len(ONEK):])
                 else:
                     logger.debug("Arduino: %s", satir)
+                # Port açık ama uzun süredir VERI satırı yoksa sketch eski ya
+                # da baud hızı tutmuyor; bunu da söylemek gerekiyor.
+                if (self._ilk_veri_bekleniyor and self.tani is None
+                        and time.time() - self._ilk_veri_bekleniyor > VERI_BEKLEME_SN):
+                    self.tani = tani.arduino_veri_yok(self.port, self.baud)
             except Exception as hata:
                 logger.warning("Seri port hatası (%s), 3 sn sonra yeniden denenecek", hata)
+                self._acilamadi(hata)
                 try:
                     if self._seri is not None:
                         self._seri.close()

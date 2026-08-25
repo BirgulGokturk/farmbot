@@ -384,6 +384,16 @@ class Ajan:
             durum = await asyncio.to_thread(self.plc.durum)
             durum["kip"] = self.kip
             durum["arduino"] = self.arduino.bagli
+
+            # ETKİN TANILAR — panel bunları "ne koptu / olası sebep / ne
+            # yapmalı" olarak gösteriyor. Metinler `tani.py`de, tek yerde;
+            # `tanila.py` de aynı tablodan okuyor.
+            tanilar = []
+            if durum.get("tani"):
+                tanilar.append(durum.pop("tani"))
+            if getattr(self.arduino, "tani", None):
+                tanilar.append(self.arduino.tani)
+            durum["tanilar"] = tanilar
             # Panelin ihtiyacı olan her şey tek pakette: dizi ilerlemesi,
             # takılı uç, uç adları ve sensörün bağlı olup olmadığı.
             durum["dizi"] = dict(self.dizi.durum)

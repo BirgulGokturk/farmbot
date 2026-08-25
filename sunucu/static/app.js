@@ -29,6 +29,7 @@ const S = {
   sekme: localStorage.getItem("farmbot_sekme") || "izle",
   kalibImza: "",         // kalibrasyon tablosunu boşuna yeniden çizmemek için
   guvenliZ: null,        // X/Y hareketi için gereken en düşük Z (ajandan)
+  taniImzasi: "",        // etkin tanılar — aynıysa DOM'a dokunmuyoruz
   kip: null,             // Arduino'nun kipi: "oto" | "manuel"
   otoDuzenleniyor: false,   // kullanıcı ayarla oynarken ölçüm üstüne yazmasın
   sonKonum: null,
@@ -174,8 +175,9 @@ function noktalariCiz() {
     d.onclick = async () => {
       const n = S.noktalar[Number(d.dataset.i)];
       try {
-        await apiIste(`/api/noktalar?ad=${encodeURIComponent(n.ad)}`, { method: "DELETE" });
+        const y = await apiIste(`/api/noktalar?ad=${encodeURIComponent(n.ad)}`, { method: "DELETE" });
         gunluk(`✓ '${n.ad}' silindi`, "ok");
+        geriAlGoster(y.geri_al);
         await noktalariYukle();
       } catch (hata) {
         gunluk(`✕ Silinemedi: ${hata.message}`, "hata");
@@ -942,6 +944,135 @@ function egriBagla() {
   egriNoktalariCiz([[0, 20], [30, 150]]);
 }
 
+
+/* ============================================================== geri alma
+ *
+ * Silme HEMEN uygulanıyor — yarı silinmiş bir nokta diziye, sınır denetimine
+ * ve haritaya "var" görünürdü. Kayıtlar sunucuda 30 saniye bekliyor; bu şerit
+ * o pencereyi gösteriyor ve geri sayım bitince kendini kapatıyor.
+ *
+ * Onay penceresinin yerine geçiyor: "12 nokta silinecek, emin misiniz?"
+ * sorusu hangi 12 olduğunu göstermiyor, geri alma ise gösteriyor.
+ */
+const GERI = { kimlik: null, biter: 0, sayac: null };
+
+function geriAlKapat() {
+  GERI.kimlik = null;
+  if (GERI.sayac) { clearInterval(GERI.sayac); GERI.sayac = null; }
+  const serit = $("#geri-al-serit");
+  if (serit) serit.classList.add("gizli");
+}
+
+/** Sunucudan gelen `geri_al` özetini şeride koyuyor. */
+function geriAlGoster(parti) {
+  if (!parti || !parti.kimlik) return;
+  const serit = $("#geri-al-serit");
+  if (!serit) return;
+  if (GERI.sayac) clearInterval(GERI.sayac);
+
+  GERI.kimlik = parti.kimlik;
+  GERI.biter = Date.now() + (Number(parti.kalan_sn) || 0) * 1000;
+
+  const adlar = (parti.adlar || []).filter(Boolean);
+  const kuyruk = parti.adet > adlar.length ? ` … ve ${parti.adet - adlar.length} tane daha` : "";
+  $("#geri-al-metin").innerHTML =
+    `<b>${kacisli(parti.aciklama)}</b>` +
+    (adlar.length ? ` <span class="alt-not">${kacisli(adlar.join(", "))}${kacisli(kuyruk)}</span>` : "");
+  serit.classList.remove("gizli");
+
+  const tik = () => {
+    const kalan = Math.max(0, Math.ceil((GERI.biter - Date.now()) / 1000));
+    $("#geri-al-sayac").textContent = `${kalan} sn`;
+    if (kalan <= 0) geriAlKapat();
+  };
+  tik();
+  GERI.sayac = setInterval(tik, 250);
+}
+
+async function geriAlUygula() {
+  const kimlik = GERI.kimlik;
+  if (!kimlik) return;
+  geriAlKapat();
+  try {
+    const y = await apiIste("/api/geri-al", {
+      method: "POST", body: JSON.stringify({ kimlik }),
+    });
+    gunluk(`✓ ${y.mesaj}`, "ok");
+    await noktalariYukle();
+  } catch (hata) {
+    gunluk(`✕ Geri alınamadı: ${hata.message}`, "hata");
+  }
+}
+
+
+/* ======================================================= bağlantı tanıları
+ *
+ * Panel eskiden ham hatayı gösteriyordu:
+ *
+ *     PLC ile konuşulamadı (192.168.1.88:502): timed out
+ *
+ * Bu cümle neyin koptuğunu söylüyor ama ne yapılacağını söylemiyor. Metinler
+ * artık ajandaki `tani.py` tablosunda; ajan durum paketiyle hazır hâlde
+ * gönderiyor, panel yalnız çiziyor. Aynı tablodan `tanila.py` de okuduğu
+ * için komut satırındaki ipucu ile buradaki hiçbir zaman ayrışmıyor.
+ *
+ * TEK istisna aşağıdaki: ajan sunucuya bağlanamadığında ajandan bir şey
+ * gelemez, o yüzden bu arızayı panel kendi biliyor.
+ */
+const TANI_YEREL = {
+  ajan_yok: {
+    kimlik: "ajan_yok",
+    baslik: "Raspberry Pi sunucuya bağlı değil",
+    ne_koptu: "Panel sunucusu çalışıyor ama ajandan haber gelmiyor — " +
+              "makineye hiçbir komut ulaşmıyor.",
+    sebepler: [
+      "Pi kapalı, uyanmamış ya da ağdan düşmüş.",
+      "Ajan servisi çalışmıyor ya da çökmüş.",
+      "Pi'nin internet erişimi yok (bulut sunucusuna ulaşamıyor).",
+      "AJAN_JETONU sunucudakiyle aynı değil — bağlantı reddediliyor.",
+    ],
+    adimlar: [
+      "Pi'ye bağlanın:  ssh batupi@192.168.1.20   (Tailscale: 100.99.57.110)",
+      "Servisi kontrol edin:  systemctl status farmbot-ajan",
+      "Günlüğe bakın:  journalctl -u farmbot-ajan -n 50",
+      "Pi'nin internetini deneyin:  ping -c3 1.1.1.1",
+      "Jetonu karşılaştırın: ayarlar.json'daki `jeton` ile sunucudaki " +
+      "AJAN_JETONU aynı olmalı.",
+    ],
+  },
+};
+
+function taniKarti(t) {
+  const liste = (dizi, sinif) => (dizi || []).length
+    ? `<ul class="${sinif}">${dizi.map((x) => `<li>${kacisli(x)}</li>`).join("")}</ul>` : "";
+  return `<div class="tani">
+    <div class="tani-bas">⚠ ${kacisli(t.baslik)}</div>
+    <div class="tani-ne">${kacisli(t.ne_koptu)}</div>
+    ${t.ham ? `<div class="tani-ham"><code>${kacisli(t.ham)}</code></div>` : ""}
+    <div class="tani-govde">
+      <div><span class="tani-etiket">Olası sebep</span>${liste(t.sebepler, "tani-sebep")}</div>
+      <div><span class="tani-etiket">Ne yapmalı</span>${liste(t.adimlar, "tani-adim")}</div>
+    </div>
+  </div>`;
+}
+
+/** Etkin tanıları çiziyor. Boşsa bant hiç görünmüyor. */
+function tanilariCiz(d) {
+  const bant = $("#tani-bant");
+  if (!bant) return;
+  const hepsi = [];
+  // Ajan bağlı değilse ajandan tanı gelemez — bunu panel kendi söylüyor.
+  if (!d || !d.bagli) hepsi.push(TANI_YEREL.ajan_yok);
+  else (d.tanilar || []).forEach((t) => t && t.baslik && hepsi.push(t));
+
+  const imza = hepsi.map((t) => t.kimlik + (t.ham || "")).join("|");
+  if (imza === S.taniImzasi) return;      // aynı tanı — DOM'a dokunma
+  S.taniImzasi = imza;
+
+  bant.classList.toggle("gizli", !hepsi.length);
+  $("#tani-liste").innerHTML = hepsi.map(taniKarti).join("");
+}
+
 async function programlariYukle(secilecek) {
   try {
     const govde = await apiIste("/api/programlar");
@@ -1423,6 +1554,7 @@ function durumGuncelle(d) {
   ucGuncelle(d.uc);
   diziGuncelle(d.dizi);
   kalibrasyonCiz(d);
+  tanilariCiz(d);
   // Tarla sahnesi yatak ölçüsünü ve robot konumunu buradan alıyor.
   if (window.Tarla) window.Tarla.durumDegisti(d);
 
@@ -1825,7 +1957,8 @@ function kalibrasyonCiz(d) {
  * olan birkaç şey burada açıkça dışarı veriliyor. Böylece iki dosya arasındaki
  * bağ tek satırda görülebiliyor.
  */
-window.Panel = { S, komutGonder, apiIste, gunluk, noktalariYukle, egrileriYukle };
+window.Panel = { S, komutGonder, apiIste, gunluk, noktalariYukle, egrileriYukle,
+                 geriAlGoster, tanilariCiz };
 
 /* -------------------------------------------------------------------- açılış */
 async function basla() {
@@ -1839,6 +1972,8 @@ async function basla() {
     $$(".grafik-kutu").forEach((k) => { k.innerHTML = '<p class="alt-not">Grafik kütüphanesi yüklenemedi.</p>'; });
   }
   olaylariBagla();
+  $("#d-geri-al").onclick = geriAlUygula;
+  $("#d-geri-al-kapat").onclick = geriAlKapat;
   kalibBagla();
   kalibrasyonYukle();
   egriBagla();

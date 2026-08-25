@@ -1133,3 +1133,72 @@ button.dugme.tehlike:disabled {
 .egri-satir .egri-nokta-sil { margin-left: auto; }
 /* Bitki kartındaki eğri satırları: açılır liste + bugünkü değer */
 .egri-tablo select { max-width: 150px; }
+
+/* ====================================================================
+   GERİ ALMA ŞERİDİ — silinen noktalar 30 saniye geri alınabilir.
+   Acil bandıyla aynı yerde ama farklı renk: bu bir uyarı değil, bir fırsat.
+   ==================================================================== */
+#geri-al-serit {
+  background: var(--yuzey-2);
+  border-bottom: 1px solid var(--cizgi-2);
+  border-left: 3px solid var(--vurgu);
+  position: sticky;
+  top: 94px;
+  z-index: 18;
+  padding: var(--b2) 0;
+}
+#geri-al-serit .bant-ic { gap: var(--b2); }
+#geri-al-metin { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.geri-al-sayac {
+  font-variant-numeric: tabular-nums;
+  font-size: var(--yazi-kucuk);
+  color: var(--metin-3);
+  white-space: nowrap;
+  flex: none;
+}
+.geri-al-kapat { flex: none; }
+#geri-al-serit .dugme { flex: none; }
+
+/* ====================================================================
+   BAĞLANTI TANILARI — ham hata değil, ne koptu / olası sebep / ne yapmalı.
+   Uyarı rengi: bu bir arıza, ama acil durdurma kadar sert değil.
+   ==================================================================== */
+#tani-bant {
+  background: rgba(217, 165, 32, .08);
+  border-bottom: 1px solid var(--cizgi-2);
+  border-left: 3px solid var(--uyari);
+  padding: var(--b3) 0;
+}
+#tani-bant .bant-ic { align-items: stretch; }
+.tani-liste { display: flex; flex-direction: column; gap: var(--b3); width: 100%; }
+
+.tani { display: flex; flex-direction: column; gap: var(--b2); }
+.tani-bas { font-weight: 600; color: var(--uyari); }
+.tani-ne { color: var(--metin-2); max-width: var(--metin-en); }
+.tani-ham code { color: var(--metin-3); }
+
+.tani-govde {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(280px, 100%), 1fr));
+  gap: var(--b3);
+  margin-top: var(--b1);
+}
+.tani-etiket {
+  display: block;
+  font-size: var(--yazi-kucuk);
+  color: var(--metin-3);
+  margin-bottom: var(--b1);
+}
+.tani-sebep, .tani-adim {
+  margin: 0;
+  padding-left: var(--b4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--b1);
+  font-size: var(--yazi-kucuk);
+  color: var(--metin-2);
+}
+/* Ne yapmalı sırayla: numaralı liste "önce şunu dene" demenin en kısa yolu. */
+.tani-adim { list-style: decimal; }
+.tani-sebep { list-style: disc; }
+.tani-adim li { font-family: ui-monospace, Menlo, Consolas, monospace; line-height: 1.6; }

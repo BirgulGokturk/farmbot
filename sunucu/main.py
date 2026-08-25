@@ -27,6 +27,7 @@ from fastapi.staticfiles import StaticFiles
 
 import depo
 import egriler
+import geri_al
 import kalibrasyon
 import kareler
 import noktalar
@@ -415,9 +416,42 @@ async def api_nokta_sil(ad: str = Query(...), jeton: str = Query(default="")):
     # Adres yolunda değil sorgu parametresinde: nokta adları Türkçe karakter
     # ve boşluk içerebiliyor, yol kodlaması gereksiz bir hata kaynağı.
     _parola_dogrula(jeton)
-    if not await asyncio.to_thread(noktalar.sil, ad):
+    silinen = await asyncio.to_thread(noktalar.sil_coklu, [ad])
+    if not silinen:
         raise HTTPException(status_code=404, detail=f"'{ad}' adında nokta yok")
-    return {"ok": True}
+    # Tek nokta da geri alınabilir: yanlış bitkiye tıklamak, yanlış kutuyu
+    # sürüklemek kadar kolay.
+    parti = geri_al.ekle(silinen, f"'{ad}' silindi")
+    return {"ok": True, "geri_al": parti}
+
+
+# --------------------------------------------------------------------------- #
+# Geri alma — silinen noktalar 30 saniye geri alınabilir kalıyor
+#
+# Silme HEMEN uygulanıyor (yarı silinmiş bir nokta diziye ve sınır denetimine
+# "var" görünürdü); kayıtlar `geri_al.py` içinde bekliyor.
+# --------------------------------------------------------------------------- #
+@app.get("/api/geri-al")
+async def api_geri_al_liste(jeton: str = Query(default="")):
+    _parola_dogrula(jeton)
+    return {"bekleyen": geri_al.bekleyenler(), "pencere": geri_al.PENCERE_SN}
+
+
+@app.post("/api/geri-al")
+async def api_geri_al(govde: dict[str, Any], jeton: str = Query(default="")):
+    _parola_dogrula(jeton)
+    kayitlar = geri_al.al(str(govde.get("kimlik", "")))
+    if kayitlar is None:
+        raise HTTPException(
+            status_code=410,
+            detail=f"Geri alma süresi doldu ({geri_al.PENCERE_SN:.0f} sn) — "
+                   "noktalar kalıcı olarak silindi")
+    konan = await asyncio.to_thread(noktalar.geri_koy, kayitlar)
+    atlanan = len(kayitlar) - len(konan)
+    mesaj = f"{len(konan)} nokta geri kondu"
+    if atlanan:
+        mesaj += f" · {atlanan} tanesi atlandı (aynı adla yeni nokta var)"
+    return {"ok": True, "konan": konan, "atlanan": atlanan, "mesaj": mesaj}
 
 
 # --------------------------------------------------------------------------- #
@@ -449,10 +483,12 @@ async def api_toplu(govde: dict[str, Any], jeton: str = Query(default="")):
                    f"(seçili: {len(adlar)})")
 
     if islem == "sil":
-        silinen = [ad for ad in adlar if await asyncio.to_thread(noktalar.sil, ad)]
+        silinen = await asyncio.to_thread(noktalar.sil_coklu, adlar)
         if not silinen:
             raise HTTPException(status_code=404, detail="Seçilen noktaların hiçbiri bulunamadı")
-        return {"ok": True, "silinen": silinen,
+        parti = geri_al.ekle(silinen, f"{len(silinen)} nokta silindi")
+        return {"ok": True, "silinen": [n.get("ad") for n in silinen],
+                "geri_al": parti,
                 "mesaj": f"{len(silinen)} nokta silindi"}
 
     if islem == "dizi":

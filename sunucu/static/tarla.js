@@ -70,6 +70,7 @@
     sinir: VARSAYILAN_SINIR,
     guvenliZ: 280,
     sonNoktaImzasi: "",
+    sonDurumImzasi: "",
     ekleme: false,
 
     // İKİ KİP (FarmBot'un move/select ayrımı).
@@ -78,6 +79,11 @@
     kip: "tasi",
     secim: new Set(),            // seçili nokta ADLARI
     harita: Object.assign({}, HARITA_VARSAYILAN),
+
+    // Çizim döngüsü yalnız bu işaretliyken çiziyor (bkz. kirlet).
+    kirli: true,
+    cizilenKare: 0,              // ölçüm için — kaç kare gerçekten çizildi
+    kirletKaynak: {},            // ölçüm için — hangi olay kaç kez işaretledi
   };
 
   /** Tek seferde işlenebilecek nokta sayısı — sunucudaki sınırla aynı.
@@ -176,7 +182,9 @@
     komut: (ad, arg) => P().komutGonder && P().komutGonder(ad, arg),
     api: (yol, sec) => P().apiIste(yol, sec),
     noktalariYukle: () => P().noktalariYukle && P().noktalariYukle(),
-    tazele: () => ciz2bTumu(),
+    /** Silme yanıtındaki geri alma özetini şeride veriyor — 30 sn pencere. */
+    geriAlGoster: (parti) => P().geriAlGoster && P().geriAlGoster(parti),
+    tazele: () => { kirlet("tazele"); ciz2bTumu(); },
     /** Bir katmanın grubunu temizler — nesneler her güncellemede yeniden kurulur. */
     bosalt(grup) {
       while (grup.children.length) {
@@ -221,6 +229,7 @@
       try { k.tanim.guncelle(katmanBaglami(k)); }
       catch (h) { console.error("katman guncelle:", k.tanim.kimlik, h); }
     });
+    kirlet("katman-guncelle");    // sahnedeki nesneler değişti
     ciz2bTumu();
     if (window.Profil) window.Profil.tazele();
   }
@@ -238,6 +247,7 @@
       BAGLAM.bosalt(kayit.grup);                   // bellekte de durmasın
       if (T.secili && T.secili.katman === kayit) secimiKapat();
     }
+    kirlet("katman-ackapa");
     ciz2bTumu();
   }
 
@@ -310,6 +320,7 @@
 
   /* ============================================================ 3B çizim */
   function kamerayiSigdir() {
+    kirlet("kamera-sigdir");
     const yukseklikM = BAGLAM.makine.ray_yuksekligi * MM;
     const R = 0.5 * Math.hypot(genislikM, derinlikM, yukseklikM);
     const yariFov = (kamera.fov * Math.PI) / 360;
@@ -321,6 +332,7 @@
 
   function boyutla() {
     if (!ciz || !tuval) return;
+    kirlet("boyutla");
     const g = tuval.clientWidth || 800, y = tuval.clientHeight || 460;
     ciz.setSize(g, y, false);
     const en = g / Math.max(1, y);
@@ -337,9 +349,44 @@
     boyutla2b();
   }
 
+  /* ==================================================== kirli bayrağı
+   *
+   * Döngü eskiden hiçbir şey değişmese de saniyede 60 kare çiziyordu. Pi
+   * aynı anda Modbus yokluyor, seri port okuyor ve kamera karesi alıyor;
+   * boşa dönen render bunlarla yarışıyor. Artık yalnız İŞARETLİYKEN
+   * çiziliyor. (farmbot-web'de Viewer3D.tsx aynı işi invalidate() ile
+   * yapıyor.)
+   *
+   * İşaretleyenler: kamera oynaması, veri gelmesi, robotun kımıldaması,
+   * katman açılıp kapanması, seçim ve ölçü değişikliği.
+   *
+   * ROBOT HAREKET HALİNDEYKEN sürekli işaretli kalıyor: durum paketleri
+   * arasında konum ara değerlenmese de, hareket biterken gelen son paketi
+   * kaçırmamak ve akıcılığı bozmamak için hareket bitene kadar çiziyoruz. */
+  function kirlet(kaynak) {
+    T.kirli = true;
+    // Hangi olayın çizdirdiğini sayıyoruz: boşa dönen bir kaynak çıkarsa
+    // ölçümle bulunabilsin (bkz. Tarla.cizimDurumu).
+    const k = kaynak || "?";
+    T.kirletKaynak[k] = (T.kirletKaynak[k] || 0) + 1;
+  }
+
+  /** Robot hareket ediyor mu — durum paketinden. */
+  function hareketVar() {
+    const d = VERI.durum || {};
+    return !!(d.hareket || (d.jog && d.jog.length) ||
+              (d.dizi && d.dizi.calisiyor) || (d.uc && d.uc.calisiyor));
+  }
+
   function dongu() {
     requestAnimationFrame(dongu);
     if (!T.gorunur || T.gorunum !== "3b") return;   // gizliyken GPU yakma
+
+    // Hareket sürerken her kare çiziliyor; durunca ilk temiz karede bırakıyoruz.
+    if (hareketVar()) T.kirli = true;
+    if (!T.kirli) return;                          // değişen bir şey yok
+    T.kirli = false;
+    T.cizilenKare++;
 
     const k = etkinKamera();
     if (kam.ust) {
@@ -617,6 +664,7 @@
   }
 
   function secimiCiz() {
+    kirlet("secim");
     const cubuk = $("#toplu-cubuk");
     const sayi = $("#toplu-sayi");
     if (cubuk) cubuk.classList.toggle("gizli", T.secim.size === 0);
@@ -731,7 +779,8 @@
   async function topluIslem(islem) {
     const adlar = [...T.secim];
     if (!adlar.length) return;
-    if (islem === "sil" && !confirm(`${adlar.length} nokta silinecek. Emin misiniz?`)) return;
+    // Onay penceresi yok: "12 nokta silinecek, emin misiniz?" sorusu hangi 12
+    // olduğunu göstermiyor. Silme uygulanıyor, 30 saniye geri alınabiliyor.
     const govde = { islem, noktalar: adlar };
     if (islem === "dizi") {
       govde.dizi = ($("#toplu-dizi") || {}).value || "";
@@ -744,6 +793,7 @@
       });
       gunluk(y.mesaj || `Toplu işlem başlatıldı — ${adlar.length} nokta`, "iyi");
       if (islem === "sil") {
+        BAGLAM.geriAlGoster(y.geri_al);
         T.secim.clear();
         await P().noktalariYukle();
       }
@@ -758,6 +808,7 @@
     if (!katman.tanim.tasi) return;
     try { katman.tanim.tasi(katmanBaglami(katman), kayit, mm, bitti); }
     catch (h) { console.error(h); }
+    kirlet("surukle");            // öğe yer değiştirdi — sahne yeniden çizilmeli
     ciz2bTumu();
   }
 
@@ -808,9 +859,11 @@
           const ileri = new THREE.Vector3(Math.sin(kam.theta), 0, Math.cos(kam.theta));
           kam.hedef.copy(bas.hedefKopya)
             .addScaledVector(sag, -dx * olcek).addScaledVector(ileri, -dy * olcek);
+          kirlet("kaydir");
         } else if (ucBoyutlu && !kam.ust) {
           kam.theta = bas.theta - dx * 0.006;
           kam.phi = kis(bas.phi - dy * 0.006, 0.08, Math.PI / 2.15);
+          kirlet("dondur");
         }
       });
 
@@ -861,6 +914,7 @@
       kam.elleZoom = true;
       if (kam.ust) { kam.yakinlik = kis(kam.yakinlik * (o.deltaY > 0 ? 0.9 : 1.1), 0.4, 6); boyutla(); }
       else kam.r = kis(kam.r * (o.deltaY > 0 ? 1.1 : 0.9), 0.35, 12);
+      kirlet("zoom");
     }, { passive: false });
 
     window.addEventListener("keydown", (o) => {
@@ -1022,6 +1076,19 @@
           if (VERI.iz.length > IZ_AZAMI) VERI.iz.shift();
         }
       }
+
+      // Durum paketi saniyede birkaç kez geliyor; çoğunda ÇİZİLEN hiçbir şey
+      // değişmiyor. Katmanları her pakette yeniden kurmak Pi'de boşuna iş —
+      // noktalarda olduğu gibi burada da imza karşılaştırıyoruz.
+      const imza = JSON.stringify([
+        VERI.konum && [Math.round(VERI.konum.x * 10), Math.round(VERI.konum.y * 10),
+                       Math.round(VERI.konum.z * 10)],
+        VERI.iz.length,
+        d.bolgeler, (d.uc || {}).uc, (d.uc || {}).tools_konum, (d.uc || {}).calisiyor,
+        d.acil && d.acil.acik, d.esnetme_acik,
+      ]);
+      if (imza === T.sonDurumImzasi) return;
+      T.sonDurumImzasi = imza;
       katmanlariGuncelle();
     },
 
@@ -1053,6 +1120,18 @@
 
     /** app.js dizileri yükledikçe çağırıyor — "Dizi uygula" listesi. */
     dizilerDegisti(programlar) { dizileriTazele(programlar); },
+
+    /** Deneme yardımcısı — kaç kare GERÇEKTEN çizildi, şu an kirli mi. */
+    cizimDurumu() {
+      const d = VERI.durum || {};
+      return { kare: T.cizilenKare, kirli: T.kirli, gorunum: T.gorunum,
+               gorunur: T.gorunur, hareket: hareketVar(),
+               ham: { hareket: !!d.hareket, jog: (d.jog || []).length,
+                      dizi: !!(d.dizi && d.dizi.calisiyor),
+                      uc: !!(d.uc && d.uc.calisiyor) },
+               kaynak: { ...T.kirletKaynak },
+               imza: T.sonDurumImzasi.slice(0, 60) };
+    },
 
     /** Deneme yardımcısı — çoklu seçimdeki nokta adları. */
     secimDurumu() { return [...T.secim]; },
@@ -1098,7 +1177,7 @@
 
     gorunurluk(acik) {
       T.gorunur = !!acik;
-      if (acik) { boyutla(); Tarla.noktalarDegisti(); yanVeriTazele(); }
+      if (acik) { kirlet("gorunurluk"); boyutla(); Tarla.noktalarDegisti(); yanVeriTazele(); }
     },
   };
 
@@ -1111,7 +1190,7 @@
     $("#d-gorunum-2b").classList.toggle("secili", hangi === "2b");
     $("#tarla-3b-arac").classList.toggle("gizli", hangi !== "3b");
     if (hangi === "2b") boyutla2b();
-    else boyutla();
+    else { boyutla(); kirlet("gorunum"); }
   }
 
   function eklemeKipi(acik) {
@@ -1211,12 +1290,12 @@
     $("#d-gorunum-3b").onclick = () => gorunumSec("3b");
     $("#d-gorunum-2b").onclick = () => gorunumSec("2b");
     $("#d-gorus-ust").onclick = () => {
-      kam.ust = true; boyutla();
+      kam.ust = true; boyutla(); kirlet("gorus");
       $("#d-gorus-ust").classList.add("secili");
       $("#d-gorus-serbest").classList.remove("secili");
     };
     $("#d-gorus-serbest").onclick = () => {
-      kam.ust = false;
+      kam.ust = false; kirlet("gorus");
       $("#d-gorus-serbest").classList.add("secili");
       $("#d-gorus-ust").classList.remove("secili");
     };

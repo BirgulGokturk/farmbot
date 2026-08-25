@@ -34,6 +34,8 @@ import threading
 import time
 from typing import Any, Callable
 
+import tani
+
 logger = logging.getLogger("ajan.plc")
 
 # --------------------------------------------------------------------------- #
@@ -127,7 +129,12 @@ class Modbus:
                 except Exception as hata:
                     son_hata = hata
                     self.kapat()
-            raise PLCHatasi(f"PLC ile konuşulamadı ({self.ip}:{self.port}): {son_hata}")
+            # Ham hatanın yanına EYLEME DÖNÜK tanıyı da iliştiriyoruz: panel
+            # "timed out" yerine ne koptu / olası sebep / ne yapmalı gösteriyor.
+            # Metinler tek yerde (tani.py), tanila.py da oradan okuyor.
+            hata = PLCHatasi(f"PLC ile konuşulamadı ({self.ip}:{self.port}): {son_hata}")
+            hata.tani = tani.plc_hatasindan(self.ip, self.port, son_hata)
+            raise hata
 
     def oku(self, adres: int, adet: int) -> list[int]:
         veri = self._islem(3, struct.pack(">HH", adres, adet))
@@ -397,8 +404,12 @@ class Gantry:
             }
         except Exception as hata:
             self.son_hata = str(hata)
+            # Ham metnin yanına ne koptu / olası sebep / ne yapmalı: panel
+            # "timed out" yerine bunu gösteriyor.
+            t = getattr(hata, "tani", None) or tani.plc_hatasindan(
+                self.mb.ip, self.mb.port, hata)
             return {"plc": "kopuk", "konum": {"x": None, "y": None, "z": None},
-                    "acil": dict(self.acil_mandal), "hata": str(hata)}
+                    "acil": dict(self.acil_mandal), "hata": str(hata), "tani": t}
 
     # --- düşük seviye hareket -------------------------------------------
     def _hiz_ivme_yaz(self, i: int, hiz_mm_s: float) -> None:
