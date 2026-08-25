@@ -1,36 +1,36 @@
 {
  "safe_z": 280,
  "travel_z": 280,
- "home_z": 280.0,
+ "home_z": 280,
  "slide_axis": "Y",
- "approach": -55,
- "retreat": -20,
+ "approach": -70,
+ "retreat": null,
  "lift": 80,
  "speed": 20,
  "lock_reg": 0,
- "lock_dwell": 1500,
+ "lock_dwell": 1.5,
  "grip_reg": 0,
  "grip_dwell": 1000,
  "presence_reg": 0,
  "z_safe_reg": 0,
  "tc_area": {
-  "on": true,
+  "on": false,
   "pts": [
    [
     0,
     0
    ],
    [
-    80,
+    40,
     0
    ],
    [
-    80,
-    300
+    40,
+    220
    ],
    [
     0,
-    300
+    220
    ]
   ]
  },
@@ -44,21 +44,23 @@
   },
   {
    "name": "tool2",
-   "x": 5.0,
-   "y": 150.0,
-   "z": 200.0
+   "x": 10.5,
+   "y": 265.0,
+   "z": 154.3
   },
   {
    "name": "tool3",
-   "x": 5.0,
-   "y": 250.0,
-   "z": 250.0
+   "x": 11.8,
+   "y": 474.0,
+   "z": 152.8
   }
  ],
  "_aciklama": "Uç değiştirme ayarları. Sahadan gelen gerçek değerler.",
  "_z": "travel_z, en yüksek ucun kavrama yüksekliğinden (250) yukarıda olmalı — baş yan geçerken uçlara sürtmesin.",
- "_retreat": "Çıkış ofseti. null ise approach kullanılır.",
+ "_retreat": "Cikis ofseti. Gercek makinede iki eksenli: {x:40, y:20}. Kod su an tek eksen destekliyor, o yuzden bos birakildi ve approach kullanilir. Iki eksenli cikis eklenmeden gercek uc degistirme denenmemeli.",
  "_dwell": "Milisaniye. 50'nin altındaki değerler saniye kabul edilir (referans program 1.5 kullanıyordu).",
  "_reg": "0 = donanım bağlı değil. presence_reg 0 iken dizi 'başarılı' değil 'doğrulanamadı' der.",
- "_tc_area": "İçinde X/Y jog için Z güvenlik şartı devre dışı. Kapalıyken hiçbir muafiyet yok."
+ "_tc_area": "İçinde X/Y jog için Z güvenlik şartı devre dışı. Kapalıyken hiçbir muafiyet yok.",
+ "_release": "gantry_tools.json'da release {dx:0, dy:8} var — ucu birakirken uygulanan kucuk ofset. Bizde karsiligi yok, eklenmeli.",
+ "_kaynak": "Degerler sevgilinin gantry_tools.json dosyasindan alindi (25.08.2026)."
 }
