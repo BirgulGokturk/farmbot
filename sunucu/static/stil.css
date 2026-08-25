@@ -1202,3 +1202,28 @@ button.dugme.tehlike:disabled {
 .tani-adim { list-style: decimal; }
 .tani-sebep { list-style: disc; }
 .tani-adim li { font-family: ui-monospace, Menlo, Consolas, monospace; line-height: 1.6; }
+
+/* ---------------------------------------------------------------- anahtar
+ * Dugme "bir sey yapar", anahtar "bir durum tutar". Kamera acik/kapali bir
+ * durum, o yuzden dugme degil anahtar: sag acik, sol kapali.
+ */
+.anahtar { display: inline-flex; align-items: center; gap: var(--b2); cursor: pointer; }
+.anahtar input { position: absolute; opacity: 0; width: 0; height: 0; }
+.anahtar .yuva {
+  flex: none; position: relative;
+  width: 38px; height: 22px; border-radius: 11px;
+  background: var(--yuzey-2); border: 1px solid var(--cizgi-2);
+  transition: background .15s, border-color .15s;
+}
+.anahtar .yuva::after {
+  content: ""; position: absolute; top: 2px; left: 2px;
+  width: 16px; height: 16px; border-radius: 50%;
+  background: var(--metin-3);
+  transition: transform .15s, background .15s;
+}
+.anahtar input:checked + .yuva { background: var(--iyi); border-color: var(--iyi); }
+.anahtar input:checked + .yuva::after { transform: translateX(16px); background: #fff; }
+.anahtar input:focus-visible + .yuva { outline: 2px solid var(--vurgu); outline-offset: 2px; }
+.anahtar input:disabled + .yuva { opacity: .5; }
+.anahtar input:disabled ~ * { opacity: .5; }
+

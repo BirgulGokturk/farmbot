@@ -1125,19 +1125,32 @@ function diziGuncelle(d) {
 // Kamera bir eklenti: kapaliyken makinenin hicbir islevi etkilenmiyor.
 // Dugme calisma anini degistiriyor, ayar dosyasina yazmiyor — panelden
 // yapilan gecici bir deneme yeniden baslatmada surpriz olmasin.
+function kameraGoruntuTemizle() {
+  // Kamera kapaninca ekranda eski kare kalmamali: "kapali" yazip yaninda
+  // canliymis gibi duran bir goruntu birakmak yanlis bilgi.
+  const img = $("#kamera-kare");
+  if (img) { img.removeAttribute("src"); img.classList.add("gizli"); }
+  const yok = $("#kamera-yok");
+  if (yok) { yok.textContent = "Kamera kapalı."; yok.classList.remove("gizli"); }
+  const zaman = $("#kamera-zaman");
+  if (zaman) zaman.textContent = "";
+}
+
 function kameraDurumYaz(k) {
-  const dugme = $("#d-kamera-ac");
+  const anahtar = $("#a-kamera");
   const not = $("#kamera-durum");
-  if (!dugme || !not) return;
+  if (!anahtar || !not) return;
   const acik = !!(k && k.acik);
-  dugme.textContent = acik ? "Kamerayı kapat" : "Kamerayı aç";
-  dugme.classList.toggle("birincil", !acik);
+  // Kullanici anahtari surukluyorken altindan degistirmeyelim.
+  if (document.activeElement !== anahtar) anahtar.checked = acik;
+  anahtar.disabled = !k;
   if (!k) { not.textContent = "—"; return; }
   const dk = Math.round((k.aralik_sn || 3600) / 60);
   not.textContent = acik
     ? `açık · ${k.yontem || "?"} · ${dk} dakikada bir kare`
     : "kapalı";
   if (k.hata) not.textContent += ` · son hata: ${k.hata}`;
+  if (!acik) kameraGoruntuTemizle();
 }
 
 // Kare WebSocket'ten gelmiyor; sunucu haber veriyor, tarayıcı <img> ile
@@ -1746,11 +1759,10 @@ function olaylariBagla() {
   $("#d-dur").onclick = () => { jogDurdur(); komutGonder("dur"); };
   $("#d-enable").onclick = () => komutGonder("enable", { deger: !S.enable });
   $("#d-acil-temizle").onclick = () => komutGonder("acil_temizle");
-  $("#d-kamera-ac").onclick = () => {
-    // Dugmenin o anki metni degil, ajanin bildirdigi durum belirleyici:
-    // iki sekme acikken biri kapatirsa digeri yanlis komut gondermesin.
-    const acik = $("#d-kamera-ac").textContent.indexOf("kapat") >= 0;
-    komutGonder("kamera", { acik: !acik });
+  $("#a-kamera").onchange = (e) => {
+    const acik = e.target.checked;
+    if (!acik) kameraGoruntuTemizle();   // beklemeden kapansin
+    komutGonder("kamera", { acik });
   };
   $("#d-buraya").onclick = () => {
     ["x", "y", "z"].forEach((eksen) => {
