@@ -431,12 +431,46 @@
   }
 
   /* ============================================================ 3B çizim */
-  function kamerayiSigdir() {
+  /* PANEL PAYI — sahne arka plan olduğundan tuval bütün kabuğu kaplıyor, ama
+   * gerçekte görülen şerit panellerin ARASINDA kalan kısım. Makineyi tuvalin
+   * ortasına koymak onu sol panelin altına itmek demek olurdu.
+   *
+   * Tuvali daraltmıyoruz (paneller sahneyi küçültmeyecek): kameranın
+   * penceresini kaydırıyoruz. Panel katlanınca pay kendiliğinden sıfırlanıyor
+   * ve makine boşalan yeri kullanıyor. */
+  function panelPayi() {
+    const bos = { sol: 0, sag: 0 };
+    // Ölçü SAHNE KUTUSUNDAN alınıyor, tuvalden değil: 2B'ye geçince 3B tuvali
+    // display:none oluyor ve ölçüsü sıfırlanıyor — pay da sıfır çıkıyordu,
+    // harita panelin altına kayıyordu.
+    const kutu = $("#harita") || tuval;
+    if (!kutu) return bos;
+    const t = kutu.getBoundingClientRect();
+    if (!t.width || !t.height) return bos;
+    const olc = (sec, taraf) => {
+      const e = $(sec);
+      if (!e) return 0;
+      const r = e.getBoundingClientRect();
+      // Telefonda paneller sahnenin ALTINDA: dikey kesişme yoksa pay yok.
+      if (!r.width || !r.height || r.top >= t.bottom - 1 || r.bottom <= t.top + 1) return 0;
+      return taraf === "sol" ? kis(r.right - t.left, 0, t.width)
+                             : kis(t.right - r.left, 0, t.width);
+    };
+    bos.sol = olc("#sol-panel", "sol");
+    bos.sag = olc("#sag-raf", "sag");
+    // İkisi birden tuvali yerse ortada bir şey kalmıyor; payı geri çekiyoruz.
+    if (bos.sol + bos.sag > t.width * 0.8) { bos.sol = 0; bos.sag = 0; }
+    return bos;
+  }
+
+  function kamerayiSigdir(enSerbest) {
     kirlet("kamera-sigdir");
     const yukseklikM = BAGLAM.makine.ray_yuksekligi * MM;
     const R = 0.5 * Math.hypot(genislikM, derinlikM, yukseklikM);
     const yariFov = (kamera.fov * Math.PI) / 360;
-    const en = kamera.aspect || 1.6;
+    // Sığdırma panellerin ARASINDAKİ şeride göre: tuvalin tamamına
+    // sığdırmak, makinenin yarısını panelin altında bırakıyordu.
+    const en = enSerbest || kamera.aspect || 1.6;
     const yariYatay = Math.atan(Math.tan(yariFov) * en);
     kam.r = kis(Math.max(R / Math.sin(yariFov), R / Math.sin(yariYatay)) * 1.05, 0.5, 12);
     kam.hedef.set(0, yukseklikM * 0.35, 0);
@@ -448,16 +482,30 @@
     const g = tuval.clientWidth || 800, y = tuval.clientHeight || 460;
     ciz.setSize(g, y, false);
     const en = g / Math.max(1, y);
+
+    const pay = panelPayi();
+    const serbest = Math.max(160, g - pay.sol - pay.sag);
+    const enSerbest = serbest / Math.max(1, y);
+    // Görüntüyü panellerin arasına ortalıyoruz. setViewOffset tuvalin
+    // tamamını çizmeye devam ediyor, yalnız hangi pencereyi çizdiğini
+    // kaydırıyor — sahne arka planda kesintisiz kalıyor.
+    const kaydir = (pay.sol - pay.sag) / 2;
+
     kamera.aspect = en;
+    if (kaydir) kamera.setViewOffset(g, y, -kaydir, 0, g, y);
+    else kamera.clearViewOffset();
     kamera.updateProjectionMatrix();
 
-    const yariY = Math.max((derinlikM / 2) * 1.32, (genislikM / 2) * 1.32 / en) / kam.yakinlik;
+    const yariY = Math.max((derinlikM / 2) * 1.32,
+                           (genislikM / 2) * 1.32 / enSerbest) / kam.yakinlik;
     const yariX = yariY * en;
     kameraUst.left = -yariX; kameraUst.right = yariX;
     kameraUst.top = yariY; kameraUst.bottom = -yariY;
+    if (kaydir) kameraUst.setViewOffset(g, y, -kaydir, 0, g, y);
+    else kameraUst.clearViewOffset();
     kameraUst.updateProjectionMatrix();
 
-    if (!kam.elleZoom) kamerayiSigdir();
+    if (!kam.elleZoom) kamerayiSigdir(enSerbest);
     boyutla2b();
   }
 
@@ -571,12 +619,26 @@
     // Tuvali yatağın en-boy oranına oturtuyoruz: sabit genişlikte, yatak
     // dar olduğunda ekranın yarısı boş kalıyor ve harita gereksiz küçülüyordu.
     const kapsayici = tuval2b.parentElement;
+    // 3B'deki panel payının 2B karşılığı: haritayı tuvalin değil, panellerin
+    // ARASINDAKİ şeridin ortasına oturtuyoruz. İç boşluk kapsayıcıya
+    // veriliyor, ortalamayı yine CSS (place-items: center) yapıyor.
+    const pay = panelPayi();
+    kapsayici.style.paddingLeft = pay.sol + "px";
+    kapsayici.style.paddingRight = pay.sag + "px";
+    // Kutu ölçüsünü SAHNEDEN alıyoruz. clientWidth iç boşluğu da içeriyor,
+    // yani payı kendisi düşmüyor; ayrıca tuvale "height: 100%" demek
+    // ızgarada döngüye giriyordu (satır tuvale, tuval satıra bakıyor).
+    const sahne = $("#harita");
+    const kutuEn = Math.max(160, (sahne ? sahne.clientWidth : kapsayici.clientWidth)
+                                 - pay.sol - pay.sag);
+    const kutuBoy = Math.max(160, sahne ? sahne.clientHeight : (tuval2b.clientHeight || 460));
+    tuval2b.style.height = kutuBoy + "px";
+
     const o0 = haritaOlcu();
     const enMM0 = o0.U, boyMM0 = o0.V;
-    const yukseklik = tuval2b.clientHeight || 460;
-    const istenen = (yukseklik - KENAR2B.ust - KENAR2B.alt) * (enMM0 / boyMM0)
+    const istenen = (kutuBoy - KENAR2B.ust - KENAR2B.alt) * (enMM0 / boyMM0)
                     + KENAR2B.sol + KENAR2B.sag;
-    tuval2b.style.width = Math.min(istenen, kapsayici.clientWidth) + "px";
+    tuval2b.style.width = Math.min(istenen, kutuEn) + "px";
 
     const g = tuval2b.clientWidth || 600, y = tuval2b.clientHeight || 400;
     const oran = Math.min(window.devicePixelRatio || 1, 2);
@@ -1370,6 +1432,16 @@
       if (!kayit) return false;
       k.tanim.tasi(o, kayit, { x, y }, true);
       return true;
+    },
+
+    /** Deneme yardımcısı — kamera açısı ve panel payı.
+     *  Kabuk düzeni değişiminde "kamera açısı korundu mu" bununla ölçülüyor. */
+    kameraDurumu() {
+      const pay = panelPayi();
+      const t = tuval ? tuval.getBoundingClientRect() : { width: 0, height: 0 };
+      return { theta: kam.theta, phi: kam.phi, r: kam.r, ust: kam.ust,
+               yakinlik: kam.yakinlik, elleZoom: kam.elleZoom,
+               pay, tuval: { en: Math.round(t.width), boy: Math.round(t.height) } };
     },
 
     /** Deneme yardımcısı — katmanların durumu. */

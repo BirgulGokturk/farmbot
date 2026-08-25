@@ -26,30 +26,40 @@
 
 <div id="uygulama" class="gizli">
 
-  <!-- ÜST ÇUBUK — her sekmede sabit. Acil durdurma buradan çıkmıyor:
-       makineyi durdurmak, hangi sekmede olduğunuza bağlı olmamalı. -->
+  <!-- ÜST ÇUBUK — bağlantı ışıkları, sekmeler ve acil durdurma tek şeritte.
+       Sekmeler eskiden ayrı bir şeritteydi; sahne arka plana geçince o şerit
+       sahneden yer çalan ikinci bir çubuk oldu. Acil durdurma buradan
+       çıkmıyor: makineyi durdurmak, hangi sekmede olduğunuza bağlı olmamalı. -->
   <header>
     <div class="ust-ic">
       <div class="marka">🌱<span> Farmbot</span></div>
+
+      <nav class="sekmeler">
+        <button data-sayfa="izle" class="etkin">İzle</button>
+        <button data-sayfa="sur">Sür</button>
+        <button data-sayfa="tarla">Tarla</button>
+        <button data-sayfa="otomasyon">Otomasyon</button>
+      </nav>
+
+      <span class="esnek"></span>
+
       <div class="rozetler">
         <div class="rozet" id="rozet-sunucu"><i class="nokta"></i><span>Sunucu</span></div>
         <div class="rozet" id="rozet-ajan"><i class="nokta"></i><span>Raspberry Pi</span></div>
         <div class="rozet" id="rozet-plc"><i class="nokta"></i><span>PLC</span></div>
         <div class="rozet" id="rozet-kip"><i class="nokta"></i><span>Kip: —</span></div>
       </div>
+
+      <!-- Ayarlar da bir sekme, ama üst çubuğun sağ ucunda ayrı duruyor:
+           günlük iş değil, ara sıra açılan bir yer. Açıldığında sahneyi
+           kapatmıyor — soldaki yüzen panelde çıkıyor. -->
+      <nav class="sekmeler ayar-sekme">
+        <button data-sayfa="ayarlar" title="Ayarlar">⚙<span class="ad"> Ayarlar</span></button>
+      </nav>
+
       <button class="dugme tehlike acil-dugme" id="d-acil">Acil durdurma</button>
     </div>
   </header>
-
-  <nav class="sekmeler">
-    <div class="sekme-ic">
-      <button data-sayfa="izle" class="etkin">İzle</button>
-      <button data-sayfa="sur">Sür</button>
-      <button data-sayfa="tarla">Tarla</button>
-      <button data-sayfa="otomasyon">Otomasyon</button>
-      <button data-sayfa="ayarlar">Ayarlar</button>
-    </div>
-  </nav>
 
   <!-- Acil durdurma mandalı sayfa seviyesinde: hangi sekmede olursanız olun
        görünür ve temizlenmeden hiçbir hareket komutu geçmez. -->
@@ -60,14 +70,80 @@
     </div>
   </div>
 
-  <!-- KABUK — solda sekmeye göre değişen panel, sağda HİÇ KAYBOLMAYAN harita.
-       Eskiden her sekme bütün ekranı değiştiriyordu: Tarla'ya geçince
-       kontroller, Sür'e geçince tarla kayboluyordu. Artık sahne sabit; yalnız
-       yanındaki panelin içeriği değişiyor. Tuval hiçbir zaman DOM'dan
-       çıkarılmıyor — WebGL bağlamı ve kamera açısı olduğu gibi kalıyor. -->
+  <!-- BAĞLANTI TANILARI — ham hata değil, ne koptu / olası sebep / ne yapmalı.
+       Metinler ajanda `tani.py` içinde tek yerde duruyor; `tanila.py` de
+       aynı tablodan okuyor. Panelin kendi bildiği tek arıza "ajan bağlı
+       değil" (o sırada ajandan bir şey gelemiyor) — onun metni app.js'te. -->
+  <div id="tani-bant" class="gizli">
+    <div class="bant-ic"><div id="tani-liste" class="tani-liste"></div></div>
+  </div>
+
+  <!-- KABUK — SAHNE ARKA PLAN, paneller üstünde yüzüyor.
+       Referans: FarmBot'un Farm Designer'ı. Eskiden sahne bir kartın içinde
+       küçük bir kutuydu ve panel onu yarı yarıya daraltıyordu; artık sahne
+       bütün çalışma alanını kaplıyor, paneller sahnenin ÜSTÜNDE duruyor ve
+       onu küçültmüyor. Her panel katlanabiliyor — sahneyi tam görmek
+       istediğinizde kapatabilirsiniz.
+
+       Tuval hiçbir zaman DOM'dan ÇIKARILMIYOR: sekme değişince, panel
+       katlanınca, ayar açılınca aynı <canvas> yerinde kalıyor. WebGL
+       bağlamı ve kamera açısı böylece korunuyor. -->
   <main class="kabuk">
 
-    <div class="panel">
+    <!-- ============================== SAHNE ==============================
+         Kabuğun tamamını kaplıyor ve en altta duruyor; paneller onun
+         üstünde yüzüyor. Sekmeden bağımsız, hiçbir geçişte gizlenmiyor. -->
+    <div class="sahne-alan" id="harita">
+      <div class="tarla-gorunum">
+        <div class="tarla-sahne" id="tarla-sahne3b">
+          <canvas id="tarla-tuval"></canvas>
+          <div id="tarla-ipucu" class="tarla-ipucu"></div>
+        </div>
+        <div class="tarla-sahne gizli" id="tarla-sahne2b">
+          <canvas id="tarla-tuval2b"></canvas>
+        </div>
+
+        <!-- Kutu seçimi dikdörtgeni — sürüklerken çiziliyor. -->
+        <div id="secim-kutusu" class="secim-kutusu gizli"></div>
+
+      </div>
+      <div id="tarla-uyari" class="uyari-kutu gizli"></div>
+    </div>
+
+    <!-- TOPLU İŞLEM ÇUBUĞU — seçim boşken görünmüyor. Komutlar tek tek
+         hareket olarak değil, sunucuda diziye çevrilip ajana veriliyor:
+         sıralama ve güvenlik denetimi ajanda kalıyor. -->
+    <div id="toplu-cubuk" class="toplu-cubuk gizli">
+      <span id="toplu-sayi" class="toplu-sayi"></span>
+      <button class="dugme birincil" id="d-toplu-sula">Sula</button>
+      <button class="dugme" id="d-toplu-gez">Sırayla gez</button>
+      <!-- Nokta değişkeni tanımlı bir dizi seçime uygulanıyor: dizi seçili
+           her nokta için bir kez, o noktayla çalışıyor. -->
+      <select id="toplu-dizi" class="toplu-dizi" title="Seçime uygulanacak dizi"></select>
+      <!-- Dizinin nokta dışındaki değişkenleri varsa değerleri burada
+           soruluyor; yoksa bu alan boş kalıyor. -->
+      <span id="toplu-degerler" class="toplu-degerler"></span>
+      <button class="dugme" id="d-toplu-dizi">Dizi uygula</button>
+      <button class="dugme tehlike" id="d-toplu-sil">Sil</button>
+      <button class="dugme" id="d-toplu-temizle">Bırak</button>
+    </div>
+
+    <!-- ========================= SOL LİSTE PANELİ =========================
+         Sekmenin içeriği: bitkiler, noktalar, programlar, ayarlar. Sahnenin
+         üstünde yüzüyor; katlanınca sahne tamamen görünür oluyor. -->
+    <aside class="yuzen sol" id="sol-panel">
+      <div class="yuzen-ust">
+        <span class="yuzen-ad" id="sol-panel-ad">İzle</span>
+        <span class="esnek"></span>
+        <button class="yuzen-dugme" id="d-sol-genis" aria-pressed="false"
+                title="Paneli genişlet">⇔</button>
+        <button class="yuzen-dugme" id="d-sol-katla" aria-expanded="true"
+                aria-controls="sol-panel-govde" title="Paneli katla">◀</button>
+      </div>
+      <!-- Katlıyken görünen tek şey: paneli geri açan tutamak. -->
+      <button class="yuzen-tutamak" id="d-sol-ac" title="Paneli aç">▶</button>
+
+      <div class="yuzen-govde panel" id="sol-panel-govde">
 
     <!-- ================================ İZLE ================================ -->
     <section class="sayfa etkin" id="sayfa-izle">
@@ -704,147 +780,113 @@
         </div>
       </div>
     </section>
-    </div><!-- /.panel -->
-
-    <!-- ============================ KALICI HARİTA =========================
-         Sekmeden bağımsız. Hiçbir sekme geçişinde gizlenmiyor, DOM'dan
-         çıkarılmıyor ve yeniden kurulmuyor. -->
-    <aside class="harita" id="harita">
-      <div class="harita-ust">
-        <span class="harita-ad">Tarla <span id="tarla-olcu" class="birim-not"></span></span>
-        <!-- İKİ KİP — Taşı: sürükleyip döndürmek, tek öğe seçmek.
-             Seç: kutuyla çoklu seçim ve seçime toplu işlem. -->
-        <button class="dugme secili" id="d-kip-tasi">Taşı</button>
-        <button class="dugme" id="d-kip-sec">Seç</button>
-        <span class="esnek"></span>
-        <button class="dugme secili" id="d-gorunum-3b">3B sahne</button>
-        <button class="dugme" id="d-gorunum-2b">2B harita</button>
-        <span id="tarla-3b-arac" class="satir-8">
-          <button class="dugme secili" id="d-gorus-serbest">Serbest</button>
-          <button class="dugme" id="d-gorus-ust">Üstten</button>
-          <label class="onay"><input type="checkbox" id="tarla-simge" checked> Simgeler</label>
-        </span>
-        <button class="dugme" id="d-harita-ayar" aria-expanded="false" title="Harita ayarları">Ayarlar</button>
-        <button class="dugme harita-buyut" id="d-harita-buyut" aria-expanded="false">Büyüt</button>
-      </div>
-
-      <!-- HARİTA AYARLARI — makinenin yanında dururken nereden baktığına
-           göre haritayı çevirmek için. Yalnız 2B haritayı etkiliyor: 3B'de
-           zaten sahneyi döndürebiliyorsun. Makinenin sınırlarına ve
-           koordinatlarına DOKUNMUYOR, sadece çizimi çeviriyor. -->
-      <div id="harita-ayar" class="harita-ayar gizli">
-        <div class="ayar-baslik">Harita ayarları <span class="alt-not">2B görünüm</span></div>
-
-        <label class="onay"><input type="checkbox" id="ha-dondur"> Döndür (X ↔ Y)</label>
-
-        <div class="ayar-grup">
-          <span class="grup-ad">Sıfır köşesi</span>
-          <div class="kose-izgara">
-            <button class="dugme" data-kose="sol-ust">↖</button>
-            <button class="dugme" data-kose="sag-ust">↗</button>
-            <button class="dugme" data-kose="sol-alt">↙</button>
-            <button class="dugme" data-kose="sag-alt">↘</button>
-          </div>
-        </div>
-
-        <div class="ayar-grup">
-          <span class="grup-ad">Harita boyutu</span>
-          <div class="satir-8">
-            <button class="dugme secili" id="ha-dinamik">Dinamik</button>
-            <button class="dugme" id="ha-elle">Elle</button>
-          </div>
-          <div class="satir-8" id="ha-elle-alan">
-            <div class="alan"><label for="ha-en">En (mm)</label>
-              <input type="number" id="ha-en" min="50" max="5000" step="5" value="425"></div>
-            <div class="alan"><label for="ha-boy">Boy (mm)</label>
-              <input type="number" id="ha-boy" min="50" max="5000" step="5" value="600"></div>
-          </div>
-        </div>
-
-        <button class="dugme" id="ha-sifirla">Varsayılana dön</button>
-      </div>
-
-      <div class="tarla-gorunum">
-        <div class="tarla-sahne" id="tarla-sahne3b">
-          <canvas id="tarla-tuval"></canvas>
-          <div id="tarla-ipucu" class="tarla-ipucu"></div>
-        </div>
-        <div class="tarla-sahne gizli" id="tarla-sahne2b">
-          <canvas id="tarla-tuval2b"></canvas>
-        </div>
-        <div id="tarla-kart" class="tarla-kart gizli"></div>
-
-        <!-- Kutu seçimi dikdörtgeni — sürüklerken çiziliyor. -->
-        <div id="secim-kutusu" class="secim-kutusu gizli"></div>
-
-        <!-- TOPLU İŞLEM ÇUBUĞU — seçim boşken görünmüyor. Komutlar tek tek
-             hareket olarak değil, sunucuda diziye çevrilip ajana veriliyor:
-             sıralama ve güvenlik denetimi ajanda kalıyor. -->
-        <div id="toplu-cubuk" class="toplu-cubuk gizli">
-          <span id="toplu-sayi" class="toplu-sayi"></span>
-          <button class="dugme birincil" id="d-toplu-sula">Sula</button>
-          <button class="dugme" id="d-toplu-gez">Sırayla gez</button>
-          <!-- Nokta değişkeni tanımlı bir dizi seçime uygulanıyor: dizi seçili
-               her nokta için bir kez, o noktayla çalışıyor. -->
-          <select id="toplu-dizi" class="toplu-dizi" title="Seçime uygulanacak dizi"></select>
-          <!-- Dizinin nokta dışındaki değişkenleri varsa değerleri burada
-               soruluyor; yoksa bu alan boş kalıyor. -->
-          <span id="toplu-degerler" class="toplu-degerler"></span>
-          <button class="dugme" id="d-toplu-dizi">Dizi uygula</button>
-          <button class="dugme tehlike" id="d-toplu-sil">Sil</button>
-          <button class="dugme" id="d-toplu-temizle">Bırak</button>
-        </div>
-
-        <!-- KATMAN RAFI — her katman bağımsız, tercih localStorage'da.
-             Kapalı katman hiç çizilmiyor; liste `/api/katmanlar`dan yüklenen
-             dosyaların kendi kaydından üretiliyor. Sahnenin üstünde duruyor:
-             hangi katmanların açık olduğu, sahneye bakarken görülebilmeli. -->
-        <aside class="katman-kutu" id="katman-kutu">
-          <button class="katman-baslik" id="d-katman-ac" aria-expanded="true">
-            <span class="ok">▾</span> Katmanlar
-          </button>
-          <div id="katman-liste"></div>
-          <div class="katman-dip">
-            <span id="tarla-sayi" class="alt-not"></span>
-            <span id="tarla-konum" class="alt-not sayi"></span>
-          </div>
-        </aside>
-      </div>
-
-      <div id="tarla-uyari" class="uyari-kutu gizli"></div>
-
-      <!-- PROFİL GÖRÜNTÜLEYİCİ — Z'yi üstten görünümde anlamanın tek yolu.
-           Haritada bir yere tıklayınca o koordinattan geçen X ya da Y
-           kesitini gösteriyor: güvenli yükseklik, toprak yüzeyi, yakındaki
-           noktalar ve kesişen yasak bölgeler. -->
-      <div id="profil" class="profil kapali">
-        <div class="profil-ust">
-          <button id="d-profil-ac" aria-expanded="false">
-            <span class="ok">▾</span> Profil
-          </button>
-          <span id="profil-konum" class="alt-not sayi"></span>
-          <span class="esnek"></span>
-          <button class="dugme secili" id="d-profil-x">X kesiti</button>
-          <button class="dugme" id="d-profil-y">Y kesiti</button>
-          <div class="alan dar"><label for="profil-bant">Bant (mm)</label>
-            <input type="number" id="profil-bant" min="5" max="300" step="5" value="60"></div>
-        </div>
-        <div class="profil-govde">
-          <canvas id="profil-tuval"></canvas>
-          <p class="alt-not" id="profil-bos">Haritada bir yere tıklayın — o noktadan geçen kesit burada çizilir.</p>
-        </div>
-      </div>
+      </div><!-- /.yuzen-govde -->
     </aside>
 
-  </main>
+    <!-- ========================== SAHNE ÇUBUĞU ===========================
+         Sahnenin kendi araçları sahnenin üstünde duruyor, üst çubukta değil:
+         hangi kipte olduğunu sahneye bakarken görmek gerekiyor. -->
+    <div class="harita-ust" id="sahne-cubuk">
+      <span class="harita-ad">Tarla <span id="tarla-olcu" class="birim-not"></span></span>
+      <!-- İKİ KİP — Taşı: sürükleyip döndürmek, tek öğe seçmek.
+           Seç: kutuyla çoklu seçim ve seçime toplu işlem. -->
+      <button class="dugme secili" id="d-kip-tasi">Taşı</button>
+      <button class="dugme" id="d-kip-sec">Seç</button>
+      <span class="ayirac"></span>
+      <button class="dugme secili" id="d-gorunum-3b">3B sahne</button>
+      <button class="dugme" id="d-gorunum-2b">2B harita</button>
+      <span id="tarla-3b-arac" class="satir-8">
+        <button class="dugme secili" id="d-gorus-serbest">Serbest</button>
+        <button class="dugme" id="d-gorus-ust">Üstten</button>
+        <label class="onay"><input type="checkbox" id="tarla-simge" checked> Simgeler</label>
+      </span>
+      <button class="dugme" id="d-harita-ayar" aria-expanded="false" title="Harita ayarları">Ayarlar</button>
+      <button class="dugme harita-buyut" id="d-harita-buyut" aria-expanded="false">Büyüt</button>
+    </div>
 
-  <!-- BAĞLANTI TANILARI — ham hata değil, ne koptu / olası sebep / ne yapmalı.
-       Metinler ajanda `tani.py` içinde tek yerde duruyor; `tanila.py` de
-       aynı tablodan okuyor. Panelin kendi bildiği tek arıza "ajan bağlı
-       değil" (o sırada ajandan bir şey gelemiyor) — onun metni app.js'te. -->
-  <div id="tani-bant" class="gizli">
-    <div class="bant-ic"><div id="tani-liste" class="tani-liste"></div></div>
-  </div>
+    <!-- HARİTA AYARLARI — makinenin yanında dururken nereden baktığına
+         göre haritayı çevirmek için. Yalnız 2B haritayı etkiliyor: 3B'de
+         zaten sahneyi döndürebiliyorsun. Makinenin sınırlarına ve
+         koordinatlarına DOKUNMUYOR, sadece çizimi çeviriyor. -->
+    <div id="harita-ayar" class="harita-ayar gizli">
+      <div class="ayar-baslik">Harita ayarları <span class="alt-not">2B görünüm</span></div>
+
+      <label class="onay"><input type="checkbox" id="ha-dondur"> Döndür (X ↔ Y)</label>
+
+      <div class="ayar-grup">
+        <span class="grup-ad">Sıfır köşesi</span>
+        <div class="kose-izgara">
+          <button class="dugme" data-kose="sol-ust">↖</button>
+          <button class="dugme" data-kose="sag-ust">↗</button>
+          <button class="dugme" data-kose="sol-alt">↙</button>
+          <button class="dugme" data-kose="sag-alt">↘</button>
+        </div>
+      </div>
+
+      <div class="ayar-grup">
+        <span class="grup-ad">Harita boyutu</span>
+        <div class="satir-8">
+          <button class="dugme secili" id="ha-dinamik">Dinamik</button>
+          <button class="dugme" id="ha-elle">Elle</button>
+        </div>
+        <div class="satir-8" id="ha-elle-alan">
+          <div class="alan"><label for="ha-en">En (mm)</label>
+            <input type="number" id="ha-en" min="50" max="5000" step="5" value="425"></div>
+          <div class="alan"><label for="ha-boy">Boy (mm)</label>
+            <input type="number" id="ha-boy" min="50" max="5000" step="5" value="600"></div>
+        </div>
+      </div>
+
+      <button class="dugme" id="ha-sifirla">Varsayılana dön</button>
+    </div>
+
+    <!-- ============================ SAĞ RAF ==============================
+         KATMAN RAFI — her katman bağımsız, tercih localStorage'da. Kapalı
+         katman hiç çizilmiyor; liste `/api/katmanlar`dan yüklenen dosyaların
+         kendi kaydından üretiliyor. Sahnenin üstünde duruyor: hangi
+         katmanların açık olduğu, sahneye bakarken görülebilmeli.
+
+         Seçilen öğenin kartı da bu sütunda, rafın altında: sahnenin ortasını
+         kapatmıyor ve iki yüzen kutu üst üste binmiyor. -->
+    <aside class="yuzen sag" id="sag-raf">
+      <div class="katman-kutu" id="katman-kutu">
+        <button class="katman-baslik" id="d-katman-ac" aria-expanded="true">
+          <span class="ok">▾</span> Katmanlar
+        </button>
+        <div id="katman-liste"></div>
+        <div class="katman-dip">
+          <span id="tarla-sayi" class="alt-not"></span>
+          <span id="tarla-konum" class="alt-not sayi"></span>
+        </div>
+      </div>
+
+      <div id="tarla-kart" class="tarla-kart gizli"></div>
+    </aside>
+
+    <!-- PROFİL GÖRÜNTÜLEYİCİ — Z'yi üstten görünümde anlamanın tek yolu.
+         Haritada bir yere tıklayınca o koordinattan geçen X ya da Y
+         kesitini gösteriyor: güvenli yükseklik, toprak yüzeyi, yakındaki
+         noktalar ve kesişen yasak bölgeler. Sahnenin altında yüzüyor ve
+         kapalıyken tek satır yer kaplıyor. -->
+    <div id="profil" class="profil kapali">
+      <div class="profil-ust">
+        <button id="d-profil-ac" aria-expanded="false">
+          <span class="ok">▾</span> Profil
+        </button>
+        <span id="profil-konum" class="alt-not sayi"></span>
+        <span class="esnek"></span>
+        <button class="dugme secili" id="d-profil-x">X kesiti</button>
+        <button class="dugme" id="d-profil-y">Y kesiti</button>
+        <div class="alan dar"><label for="profil-bant">Bant (mm)</label>
+          <input type="number" id="profil-bant" min="5" max="300" step="5" value="60"></div>
+      </div>
+      <div class="profil-govde">
+        <canvas id="profil-tuval"></canvas>
+        <p class="alt-not" id="profil-bos">Haritada bir yere tıklayın — o noktadan geçen kesit burada çizilir.</p>
+      </div>
+    </div>
+
+  </main>
 
   <!-- GERİ ALMA ŞERİDİ — silinen noktalar 30 saniye geri alınabilir.
        Sayfa seviyesinde: hangi sekmede olursanız olun görünür, çünkü

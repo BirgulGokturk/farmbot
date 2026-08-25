@@ -94,18 +94,20 @@ kbd {
 }
 
 /* ------------------------------------------------------------- üst çubuk */
+/* Bağlantı ışıkları, sekmeler ve acil durdurma TEK şeritte. Eskiden sekmeler
+   ayrı bir şeritteydi; sahne arka plana geçince o şerit sahneden yer çalan
+   ikinci bir çubuk oldu. */
 header {
   padding: var(--b2) 0;
   background: var(--yuzey);
   border-bottom: 1px solid var(--cizgi);
-  position: sticky;
-  top: 0;
   z-index: 20;
+  flex: none;
 }
 
 .marka { font-size: var(--yazi-baslik); font-weight: 600; white-space: nowrap; }
 
-.rozetler { display: flex; gap: var(--b2); flex: 1; overflow-x: auto; scrollbar-width: none; }
+.rozetler { display: flex; gap: var(--b2); overflow-x: auto; scrollbar-width: none; }
 .rozetler::-webkit-scrollbar { display: none; }
 
 .rozet {
@@ -126,21 +128,10 @@ header {
 .rozet.uyari-rengi .nokta { background: var(--uyari); }
 
 /* Acil durdurma üst çubukta: hangi sekmede olursanız olun tek tık uzakta. */
-.acil-dugme { white-space: nowrap; font-weight: 600; }
+.acil-dugme { white-space: nowrap; font-weight: 600; flex: none; }
 
 /* --------------------------------------------------------------- sekmeler */
-nav.sekmeler {
-  background: var(--yuzey);
-  border-bottom: 1px solid var(--cizgi);
-  position: sticky;
-  top: 53px;
-  z-index: 19;
-  overflow-x: auto;
-  scrollbar-width: none;
-}
-nav.sekmeler::-webkit-scrollbar { display: none; }
-.sekme-ic { gap: 0; overflow-x: auto; scrollbar-width: none; }
-.sekme-ic::-webkit-scrollbar { display: none; }
+nav.sekmeler { display: flex; gap: 0; flex: none; }
 nav.sekmeler button {
   background: none;
   border: none;
@@ -158,64 +149,171 @@ nav.sekmeler button:hover { color: var(--metin-2); }
 /* Etkin sekme yalnızca alt çizgiyle belli oluyor; metin vurgu rengine
    boyanmıyor — vurgu rengi eylem düğmelerine ayrıldı. */
 nav.sekmeler button.etkin { color: var(--metin); border-bottom-color: var(--metin); }
+/* Ayarlar sekmesi çubuğun sağ ucunda, diğerlerinden ayrı: günlük iş değil. */
+nav.sekmeler.ayar-sekme button { padding: var(--b2); }
 
-/* İçerik genişliği tek yerde. Üst çubuk, sekmeler, acil şeridi ve içerik
-   aynı ölçüyü kullanıyor ki kenarlar hizalı olsun. */
-/* KABUK — solda panel, sağda kalıcı harita.
+/* ===================================================================== KABUK
  *
- * Harita hiçbir sekme geçişinde kaybolmuyor; yalnız soldaki panelin içeriği
- * değişiyor. Harita sütunu yapışkan: panel uzun olduğunda aşağı kaydırırken
- * de sahne ekranda kalıyor.
+ * SAHNE ARKA PLAN. Referans: FarmBot'un Farm Designer'ı — tüm ekranı kaplayan
+ * bir bahçe ve üstünde yüzen paneller. Bizimki bir kartın içinde küçük bir
+ * sahneydi; panel sahneyi yarı yarıya daraltıyordu.
  *
- * Panel 620 px'te tutuluyor — okunabilirlik turunda konulan "metin satırı 70
- * karakteri geçmesin" kuralı bu genişlikte kendiliğinden sağlanıyor. */
-main.kabuk {
-  padding: var(--b3);
-  padding-bottom: 56px;
-  max-width: var(--kabuk);
-  margin: 0 auto;
-  display: grid;
-  grid-template-columns: minmax(0, var(--panel-en)) minmax(0, 1fr);
-  gap: var(--b3);
-  align-items: start;
+ * Yerleşim ızgarayla kuruluyor ama sahne ızgaranın DIŞINDA (mutlak, inset 0):
+ * böylece paneller yer kaplasa da sahne bütün alanı kaplamaya devam ediyor.
+ * Panelleri "sahnenin üstünde" tutmanın sihirli sayı gerektirmeyen yolu bu:
+ * bir panel katlanınca ızgara hücresi daralıyor, sahne hiç değişmiyor.
+ *
+ *      sütun 1        sütun 2            sütun 3
+ *   ┌────────────┬──────────────────┬──────────────┐
+ *   │            │                  │ sahne çubuğu │ satır 1 (auto)
+ *   │ sol panel  ├──────────────────┼──────────────┤
+ *   │            │                  │ katman rafı  │ satır 2 (1fr)
+ *   │            │                  │ + öğe kartı  │
+ *   │            ├──────────────────┴──────────────┤
+ *   │            │            profil                │ satır 3 (auto)
+ *   └────────────┴──────────────────────────────────┘
+ */
+#uygulama {
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
-.panel { min-width: 0; }
 
-.harita {
-  min-width: 0;
-  position: sticky;
-  top: calc(var(--ust-yuk) + var(--b3));
-  /* Yapışkan sütun ekrandan uzun olursa altı hiç görünmez — profil şeridi
-     oraya düşüyordu. Kendi içinde kaydırılabiliyor. */
-  max-height: calc(100vh - var(--ust-yuk) - var(--b4));
-  overflow-y: auto;
+main.kabuk {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  padding: var(--b2);
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: var(--b2);
+}
+
+/* Sahne — ızgaranın altında, bütün kabuğu kaplıyor. */
+#tarla-uyari {
+  position: absolute;
+  left: 50%;
+  top: var(--b3);
+  transform: translateX(-50%);
+  max-width: 80%;
+}
+.sahne-alan {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  background: #0e1210;
+}
+
+/* Yüzen paneller — sahnenin üstünde, kendi içinde kaydırılabilir. */
+.yuzen {
+  z-index: 5;
   display: flex;
   flex-direction: column;
   gap: var(--b2);
-  background: var(--yuzey);
+  min-height: 0;
+  background: rgba(26, 26, 25, .96);
   border: 1px solid var(--cizgi);
   border-radius: var(--yaricap);
+}
+.yuzen.sol {
+  grid-column: 1;
+  grid-row: 1 / span 3;
+  width: min(var(--panel-en), 46vw);
+  padding: var(--b2) 0 0;
+}
+.yuzen.sag {
+  grid-column: 3;
+  grid-row: 2;
+  align-self: start;
+  justify-self: end;
+  width: 300px;
+  max-height: 100%;
+  overflow-y: auto;
+  background: none;
+  border: none;
+}
+.yuzen-ust {
+  display: flex;
+  align-items: center;
+  gap: var(--b2);
+  padding: 0 var(--b2) var(--b2);
+  border-bottom: 1px solid var(--cizgi);
+  flex: none;
+}
+.yuzen-ad { font-size: var(--yazi-kucuk); color: var(--metin-3); }
+.yuzen-dugme {
+  background: none;
+  border: 1px solid transparent;
+  border-radius: var(--b1);
+  color: var(--metin-3);
+  cursor: pointer;
+  font: var(--yazi-kucuk) inherit;
+  padding: 2px var(--b2);
+}
+.yuzen-dugme:hover { color: var(--metin); border-color: var(--cizgi-2); }
+.yuzen-dugme[aria-pressed="true"] { color: var(--metin); border-color: var(--vurgu); }
+.yuzen-govde {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
   padding: var(--b3);
 }
+
+/* KATLI PANEL — sahneyi tam görmek için. Gövde gizleniyor, yerinde yalnız
+   paneli geri açan dar bir tutamak kalıyor. Sahne DEĞİŞMİYOR: zaten hep
+   bütün alanı kaplıyordu, panel yalnız üstünden çekiliyor. */
+.yuzen-tutamak {
+  display: none;
+  background: none;
+  border: none;
+  color: var(--metin-3);
+  cursor: pointer;
+  font: var(--yazi-kucuk) inherit;
+  padding: var(--b2) var(--b1);
+}
+.yuzen-tutamak:hover { color: var(--metin); }
+.yuzen.sol.katli { width: auto; padding: 0; align-self: start; }
+.yuzen.sol.katli .yuzen-ust,
+.yuzen.sol.katli .yuzen-govde { display: none; }
+.yuzen.sol.katli .yuzen-tutamak { display: block; }
+/* Ayarlar gibi geniş sayfalar için: aynı panel, iki kat genişlik. */
+.yuzen.sol.genis { width: min(880px, 62vw); }
+
+/* Sahne çubuğu — sahnenin araçları, sahnenin üstünde yüzüyor. */
 .harita-ust {
+  grid-column: 2 / span 2;
+  grid-row: 1;
+  justify-self: end;
+  z-index: 5;
   display: flex;
   align-items: center;
   gap: var(--b2);
   flex-wrap: wrap;
+  justify-content: flex-end;
+  max-width: 100%;
+  padding: var(--b2);
+  background: rgba(26, 26, 25, .96);
+  border: 1px solid var(--cizgi);
+  border-radius: var(--yaricap);
 }
 .harita-ad { font-size: var(--yazi-kucuk); color: var(--metin-3); white-space: nowrap; }
-/* Yalnız dar ekranda işe yarıyor. Seçici .dugme kadar ağır olmalı, yoksa
-   düğmenin kendi display kuralı bunu yeniyor. */
-.harita .harita-buyut { display: none; }
+.harita-ust .ayirac { width: 1px; height: 20px; background: var(--cizgi); flex: none; }
+/* Yalnız dar ekranda işe yarıyor: geniş ekranda sahne zaten tam boy. */
+.harita-ust .harita-buyut { display: none; }
 
-/* Panelin içindeki kartlar dar sütunda tek sıraya düşüyor: 440 px'lik iki
-   sütun kuralı 620 px'lik panelde içeriği eziyordu. */
+/* Panelin içindeki kartlar dar sütunda tek sıraya düşüyor. */
 .panel .iki-sutun,
 .panel .grafik-izgara { grid-template-columns: minmax(0, 1fr); }
 .panel .olcum-izgara { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); }
+/* Panel genişletildiğinde iki sütuna çıkabiliyor — ayarlar sayfası uzun. */
+.yuzen.sol.genis .panel .iki-sutun,
+.yuzen.sol.genis .panel .grafik-izgara {
+  grid-template-columns: repeat(auto-fit, minmax(min(340px, 100%), 1fr));
+}
 
-.ust-ic, .sekme-ic, .bant-ic, .serit-ic {
-  max-width: var(--kabuk);
+.ust-ic, .bant-ic, .serit-ic {
   margin: 0 auto;
   padding: 0 var(--b3);
   display: flex;
@@ -386,8 +484,7 @@ input:disabled, select:disabled { opacity: .45; }
   border-bottom: 1px solid #7a3030;
   color: #ffd7d7;
   padding: var(--b2) 0;
-  position: sticky;
-  top: 89px;
+  flex: none;
   z-index: 18;
 }
 #acil-bant .bant-ic { justify-content: space-between; flex-wrap: wrap; gap: var(--b2); }
@@ -395,6 +492,7 @@ input:disabled, select:disabled { opacity: .45; }
 
 .uyari-kutu {
   background: #33290e;
+  z-index: 6;
   border: 1px solid #5c4a1a;
   color: #ffe4a3;
   border-radius: var(--b2);
@@ -587,9 +685,10 @@ table.veri td { color: var(--metin-2); }
 #kamera-kutu img { width: 100%; border-radius: var(--b2); display: block; border: 1px solid var(--cizgi); }
 
 /* ---------------------------------------------------------- olay günlüğü */
+/* Alt şeritler kabuğun DIŞINDA, sayfa seviyesinde: kabuk esneyip küçülüyor,
+   şerit sabit kalıyor. Yapışkanlığa gerek yok — #uygulama zaten ekran boyu. */
 #gunluk-serit {
-  position: sticky;
-  bottom: 0;
+  flex: none;
   background: var(--yuzey);
   border-top: 1px solid var(--cizgi);
   z-index: 15;
@@ -631,27 +730,24 @@ table.veri td { color: var(--metin-2); }
 #giris .kart { width: min(360px, 100%); }
 
 /* ---------------------------------------------------------- tarla haritası */
-.tarla-gorunum { position: relative; min-width: 0; }
+/* Sahne kabuğun tamamını kaplıyor; tuval de öyle. Ölçüler CSS'ten geliyor,
+   tarla.js clientWidth/clientHeight okuyor — sahneyi büyütmek için JS'e
+   dokunmak gerekmiyor. */
+.tarla-gorunum { position: absolute; inset: 0; min-width: 0; }
 
-/* KATMAN RAFI — sahnenin sol üstünde duruyor: hangi katmanların açık olduğu,
-   sahneye bakarken göz ucuyla görülebilmeli. Sahnenin üstünde yüzdüğü için
-   haritadan yer çalmıyor; başlığa basınca katlanıyor. */
+/* KATMAN RAFI — sağ sütunda, sahnenin üstünde yüzüyor. Hangi katmanların
+   açık olduğu, sahneye bakarken göz ucuyla görülebilmeli. Başlığa basınca
+   katlanıyor; katlıyken sahne tamamen görünür oluyor. */
 .katman-kutu {
-  position: absolute;
-  left: var(--b2);
-  top: var(--b2);
-  z-index: 3;
-  width: 168px;
-  max-height: calc(100% - var(--b3));
-  overflow-y: auto;
   border: 1px solid var(--cizgi);
   border-radius: var(--b2);
-  background: rgba(26, 26, 25, .92);
+  background: rgba(26, 26, 25, .96);
   padding: var(--b2);
+  flex: none;
 }
 .katman-kutu.katli #katman-liste,
 .katman-kutu.katli .katman-dip { display: none; }
-.katman-kutu.katli { width: auto; }
+.katman-kutu.katli { align-self: flex-end; }
 .katman-kutu.katli .katman-baslik .ok { transform: rotate(-90deg); }
 
 .katman-baslik {
@@ -691,55 +787,30 @@ table.veri td { color: var(--metin-2); }
 }
 .kare-onizleme { width: 100%; border-radius: var(--b2); margin-top: var(--b2); display: block; }
 
-/* Dar ekran: iki sütun sığmıyor. Harita tek sütunun ÜSTÜNE alınıyor ve
-   kısalıyor — yine hiçbir sekmede kaybolmuyor, yalnız küçülüyor. "Büyüt"
-   düğmesi tam boya çıkarıyor. */
-@media (max-width: 1100px) {
-  main.kabuk { grid-template-columns: minmax(0, 1fr); }
-  /* static değil relative: ayar penceresi ve seçim kutusu buna göre konumlanıyor. */
-  .harita { position: relative; order: -1; }
-  .harita .harita-buyut { display: inline-flex; }
-  .tarla-sahne canvas { height: 34vh; }
-  #tarla-tuval2b { height: 34vh; }
-  .harita.buyuk .tarla-sahne canvas { height: min(70vh, 620px); }
-  .harita.buyuk #tarla-tuval2b { height: min(70vh, 620px); }
-  /* min(...) şart: çıplak minmax(400px,1fr) 390 px telefonda sütunu 400'de
-     tutup sayfayı yana taşırıyor. */
-  .panel .iki-sutun { grid-template-columns: repeat(auto-fit, minmax(min(400px, 100%), 1fr)); }
-  .panel .grafik-izgara { grid-template-columns: repeat(auto-fit, minmax(min(340px, 100%), 1fr)); }
-}
-
-@media (max-width: 720px) {
-  /* Harita araçları alt alta dizilince ekranın yarısını yiyordu; tek satırda
-     kalıp yana kayıyorlar. */
-  .harita-ust { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
-  .harita-ust::-webkit-scrollbar { display: none; }
-  .harita-ust > * { flex: none; }
-  .harita-ust .esnek { display: none; }
-  .katman-kutu { width: 150px; }
-}
-
 /* ------------------------------------------------------- tarla tasarımcısı */
 .tarla-arac .alan { min-width: 200px; }
+/* Sahne, kabuğun tamamı. Kenarlık ve köşe yuvarlaması YOK: bu bir kart değil,
+   arka plan. */
 .tarla-sahne {
-  position: relative;
-  border: 1px solid var(--cizgi);
-  border-radius: var(--b2);
+  position: absolute;
+  inset: 0;
   overflow: hidden;
   background: #0e1210;
 }
-.tarla-sahne canvas { display: block; width: 100%; height: min(56vh, 520px); touch-action: none; }
+.tarla-sahne canvas { display: block; width: 100%; height: 100%; touch-action: none; }
 .tarla-sahne.gizli { display: none; }
 /* 2B tuval yatağın oranına göre daraltılıyor (bkz. boyutla2b); ortalanıyor. */
 #tarla-sahne2b { display: grid; place-items: center; }
-#tarla-tuval2b { height: min(64vh, 600px); }
+/* Yükseklik JS'ten geliyor (bkz. boyutla2b): "100%" ızgara satırıyla
+   döngüye giriyor. */
+#tarla-tuval2b { max-height: 100%; }
 
 /* --------------------------------------------------------- harita ayarları */
 .harita-ayar {
   position: absolute;
-  z-index: 6;
-  right: var(--b3);
-  top: 52px;
+  z-index: 7;
+  right: var(--b2);
+  top: 60px;
   width: 224px;
   display: flex;
   flex-direction: column;
@@ -769,12 +840,15 @@ table.veri td { color: var(--metin-2); }
 
 /* Seçim boşken çubuk hiç görünmüyor: boş bir eylem çubuğu haritadan yer
    çalmaktan başka bir işe yaramıyor. */
+/* Toplu işlem çubuğu ızgarada, panellerin ARASINDAKİ sütunda: sahnenin
+   ortasına koymak onu sol panelin altına itiyordu ve "Sula" düğmesi
+   tıklanamıyordu. */
 .toplu-cubuk {
-  position: absolute;
-  z-index: 5;
-  left: 50%;
-  bottom: var(--b3);
-  transform: translateX(-50%);
+  grid-column: 2;
+  grid-row: 2;
+  align-self: end;
+  justify-self: center;
+  z-index: 7;
   display: flex;
   align-items: center;
   gap: var(--b2);
@@ -816,13 +890,11 @@ table.veri td { color: var(--metin-2); }
 }
 .tarla-ipucu.gorunur { opacity: 1; }
 
+/* Öğe kartı sağ sütunda, katman rafının ALTINDA: ikisi de sağda yüzüyor ama
+   üst üste binmiyorlar ve sahnenin ortası açık kalıyor. */
 .tarla-kart {
-  position: absolute;
-  top: var(--b2);
-  right: var(--b2);
-  /* Düzenlenebilir alanlar geldiğinden beri biraz geniş: sayı kutusu,
-     birim ve "türden farklı" işareti aynı satıra sığsın. */
-  width: min(330px, calc(100% - var(--b3)));
+  flex: none;
+  width: 100%;
   padding: var(--b3);
   border-radius: var(--b2);
   background: rgba(26, 26, 25, .96);
@@ -895,9 +967,76 @@ table.veri td { color: var(--metin-2); }
 .adim input[type="text"] { width: 110px; }
 .adim .dugme { height: 30px; padding: 0 var(--b2); font-size: var(--yazi-kucuk); }
 
+
+/* ============================================================ DAR EKRAN
+ *
+ * Telefonda üç sütunlu ızgara yok: SAHNE ÜSTTE kalıyor, paneller onun
+ * ALTINA yığılıyor ve sayfa normal şekilde kaydırılıyor. Sahnenin üstüne
+ * yüzen bir panel koymak 390 px'de sahneyi tamamen kapatmak demek.
+ *
+ * Sahne yine DOM'dan çıkmıyor — yalnız mutlak konumdan normal akışa geçiyor,
+ * aynı <canvas>, aynı WebGL bağlamı.
+ */
+@media (max-width: 900px) {
+  #uygulama { height: auto; overflow: visible; }
+  header { position: sticky; top: 0; }
+
+  main.kabuk {
+    display: flex;
+    flex-direction: column;
+    gap: var(--b2);
+    padding: var(--b2);
+  }
+
+  .sahne-alan {
+    position: relative;
+    inset: auto;
+    order: -1;
+    flex: none;
+    height: 42vh;
+    border: 1px solid var(--cizgi);
+    border-radius: var(--yaricap);
+    overflow: hidden;
+  }
+  /* "Büyüt" telefonda anlamını koruyor: sahne şeridi tam boya çıkıyor. */
+  .sahne-alan.buyuk { height: min(76vh, 620px); }
+  .harita-ust .harita-buyut { display: inline-flex; }
+
+  /* Yüzen paneller normal akışa giriyor: yığılıyorlar, sahneyi kapatmıyorlar. */
+  .yuzen.sol, .yuzen.sag, .harita-ust, .profil {
+    position: static;
+    width: auto;
+    max-width: none;
+    max-height: none;
+    justify-self: stretch;
+    align-self: stretch;
+  }
+  .yuzen.sol { width: auto; }
+  .yuzen.sol.genis { width: auto; }
+  .yuzen-govde { overflow: visible; padding: var(--b2); }
+  .harita-ust { order: -1; justify-content: flex-start; flex-wrap: nowrap;
+                overflow-x: auto; scrollbar-width: none; }
+  .harita-ust::-webkit-scrollbar { display: none; }
+  .harita-ust > * { flex: none; }
+  .harita-ayar { position: absolute; right: var(--b2); top: 60px; }
+  .yuzen.sag { background: none; border: none; overflow: visible; }
+  .profil.kapali { justify-self: stretch; }
+
+  /* min(...) şart: çıplak minmax(400px,1fr) 390 px telefonda sütunu 400'de
+     tutup sayfayı yana taşırıyor. */
+  .panel .iki-sutun { grid-template-columns: repeat(auto-fit, minmax(min(400px, 100%), 1fr)); }
+  .panel .grafik-izgara { grid-template-columns: repeat(auto-fit, minmax(min(340px, 100%), 1fr)); }
+}
+
 /* --------------------------------------------------------------------- mobil */
 @media (max-width: 720px) {
   header { gap: var(--b2); padding: var(--b2); }
+  /* 390 px'de marka + sekmeler + ışıklar + acil tek satıra sığmıyor ve acil
+     durdurma ekranın dışına taşıyordu. Sekmeler alt satıra iniyor. */
+  .ust-ic { flex-wrap: wrap; gap: var(--b2); padding: 0 var(--b2); }
+  nav.sekmeler:not(.ayar-sekme) { order: 5; flex: 1 1 100%; }
+  nav.sekmeler.ayar-sekme .ad { display: none; }
+  .ust-ic .esnek { flex: 1; }
   .marka { font-size: var(--yazi-govde); }
   .rozetler { gap: var(--b1); }
   .rozet span { display: none; }          /* ışık kalsın, yazı yer kaplamasın */
@@ -905,7 +1044,7 @@ table.veri td { color: var(--metin-2); }
   .acil-dugme { padding: 0 var(--b2); font-size: var(--yazi-kucuk); }
 
   /* Sekmeler tek satırda: ikon üstte, kısa metin altta. */
-  nav.sekmeler { top: 49px; padding: 0 var(--b1); }
+  nav.sekmeler { padding: 0; }
   nav.sekmeler button {
     flex: 1;
     flex-direction: column;
@@ -915,7 +1054,6 @@ table.veri td { color: var(--metin-2); }
   }
   nav.sekmeler button i { font-size: var(--yazi-baslik); }
 
-  #acil-bant { top: 100px; font-size: var(--yazi-kucuk); }
   main { padding: var(--b2); }
   .izgara { gap: var(--b2); margin-bottom: var(--b2); }
   .kart { padding: var(--b3) var(--b2); }
@@ -948,12 +1086,6 @@ table.veri td { color: var(--metin-2); }
   .satir button.dugme, .adim .dugme, .tarla-kart-dugme .dugme { height: 36px; }
   input[type="text"], input[type="number"], input[type="password"], select { height: 44px; }
   .satir-8 > input[type="text"] { width: 100%; }
-  /* Harita artık HER sekmenin üstünde duruyor; telefonda 52vh kaplarsa
-     panelden geriye bir şey kalmıyor. Bakmaya yetecek kadarı görünüyor,
-     gerisi "Büyüt" düğmesinde. */
-  .tarla-sahne canvas, #tarla-tuval2b { height: 30vh; }
-  .harita.buyuk .tarla-sahne canvas,
-  .harita.buyuk #tarla-tuval2b { height: min(70vh, 620px); }
 }
 
 
@@ -1102,13 +1234,16 @@ button.dugme.tehlike:disabled {
    Varsayılan kapalı: her zaman açık durması haritadan yer çalıyor.
    ==================================================================== */
 .profil {
-  border-top: 1px solid var(--cizgi);
-  margin-top: var(--b2);
-  padding-top: var(--b2);
-  display: flex;
-  flex-direction: column;
-  gap: var(--b2);
+  grid-column: 2 / span 2;
+  grid-row: 3;
+  align-self: end;
+  z-index: 5;
+  border: 1px solid var(--cizgi);
+  border-radius: var(--yaricap);
+  background: rgba(26, 26, 25, .96);
+  padding: var(--b2) var(--b3);
 }
+.profil.kapali { justify-self: start; padding: var(--b1) var(--b2); }
 .profil-ust { display: flex; align-items: center; gap: var(--b2); flex-wrap: wrap; }
 .profil-ust #d-profil-ac {
   background: none;
@@ -1171,8 +1306,7 @@ button.dugme.tehlike:disabled {
   background: var(--yuzey-2);
   border-bottom: 1px solid var(--cizgi-2);
   border-left: 3px solid var(--vurgu);
-  position: sticky;
-  top: 94px;
+  flex: none;
   z-index: 18;
   padding: var(--b2) 0;
 }
@@ -1197,6 +1331,9 @@ button.dugme.tehlike:disabled {
   border-bottom: 1px solid var(--cizgi-2);
   border-left: 3px solid var(--uyari);
   padding: var(--b3) 0;
+  flex: none;
+  max-height: 40vh;
+  overflow-y: auto;
 }
 #tani-bant .bant-ic { align-items: stretch; }
 .tani-liste { display: flex; flex-direction: column; gap: var(--b3); width: 100%; }

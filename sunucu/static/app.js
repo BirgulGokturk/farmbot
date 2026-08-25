@@ -1673,15 +1673,56 @@ function olaylariBagla() {
       $(`#sayfa-${dugme.dataset.sayfa}`).classList.add("etkin");
       S.sekme = dugme.dataset.sayfa;
       localStorage.setItem("farmbot_sekme", S.sekme);
+      // Sekme adı panelin başlığına yazılıyor: sekme çubuğu artık üstte,
+      // panelin kendisi hangi sayfada olduğunu söylemeli.
+      const ad = $("#sol-panel-ad");
+      if (ad) ad.textContent = (dugme.textContent || "").trim() || dugme.dataset.sayfa;
+      // Katlı panelde sekmeye basmak "aç" demek; yoksa tıklama sessiz kalırdı.
+      solPanelKatla(false);
       // Gizliyken çizilen grafik yanlış ölçüde kalıyor; sekmeye dönünce tazele.
       Object.values(S.grafikler).forEach((g) => g.resize());
-      // HARİTA KAYBOLMUYOR: sahne sekmeden bağımsız, hep açık kalıyor.
-      // Sütun genişliği sekmeye göre değişebildiği için yalnız yeniden
-      // ölçülmesini istiyoruz.
+      // SAHNE KAYBOLMUYOR: arka planda duruyor, sekmeden bağımsız. Yalnız
+      // yeniden ölçülmesini istiyoruz (telefonda sahne şeridi kayabiliyor).
       if (window.Tarla) window.Tarla.gorunurluk(true);
+      // Panel kendi içinde kaydırılıyor; sayfa değil.
+      const govde = $("#sol-panel-govde");
+      if (govde) govde.scrollTop = 0;
       window.scrollTo({ top: 0 });
     };
   });
+
+  /* SOL PANEL — katlanabilir ve genişletilebilir.
+   *
+   * Katlamak sahneyi BÜYÜTMÜYOR: sahne zaten bütün kabuğu kaplıyor, panel
+   * yalnız üstünden çekiliyor. Bu yüzden katlarken tuvale dokunmaya da
+   * gerek yok — WebGL bağlamı ve kamera açısı olduğu gibi kalıyor. */
+  const solPanel = $("#sol-panel");
+  function solPanelKatla(katli) {
+    if (!solPanel) return;
+    solPanel.classList.toggle("katli", katli);
+    localStorage.setItem("farmbot_sol_panel", katli ? "katli" : "acik");
+    const d = $("#d-sol-katla");
+    if (d) d.setAttribute("aria-expanded", String(!katli));
+    // Telefonda panel akışın içinde: katlanınca sahne şeridi yer değiştiriyor.
+    if (window.Tarla) window.Tarla.gorunurluk(true);
+  }
+  if (solPanel) {
+    $("#d-sol-katla").onclick = () => solPanelKatla(true);
+    $("#d-sol-ac").onclick = () => solPanelKatla(false);
+    if (localStorage.getItem("farmbot_sol_panel") === "katli") solPanelKatla(true);
+
+    // Ayarlar gibi uzun sayfalar dar panelde eziliyor; aynı panel iki kat
+    // genişliyor. Tercih saklanıyor — bir kez ayarlayan her açılışta bulur.
+    const genisDugme = $("#d-sol-genis");
+    const genisYaz = (genis) => {
+      solPanel.classList.toggle("genis", genis);
+      genisDugme.setAttribute("aria-pressed", String(genis));
+      localStorage.setItem("farmbot_sol_genis", genis ? "1" : "0");
+      Object.values(S.grafikler).forEach((g) => g.resize());
+    };
+    genisDugme.onclick = () => genisYaz(!solPanel.classList.contains("genis"));
+    if (localStorage.getItem("farmbot_sol_genis") === "1") genisYaz(true);
+  }
 
   // "?" açıklama düğmeleri — her biri kendinden sonraki .yardim-metin'i açar.
   // Tek tek bağlamak yerine tek kural: yeni bir bölüm eklendiğinde JS'e
@@ -1716,7 +1757,7 @@ function olaylariBagla() {
   if (rafKutu && rafDugme) {
     const rafTercih = localStorage.getItem("farmbot_katman_rafi");
     // Dar ekranda raf, sahnenin yarısını kapatıyor: tercih yoksa katlı açılıyor.
-    if (rafTercih === "katli" || (rafTercih === null && window.innerWidth < 1100)) {
+    if (rafTercih === "katli" || (rafTercih === null && window.innerWidth < 900)) {
       rafKutu.classList.add("katli");
     }
     // Açılıştaki katlama ekran genişliğinden geliyor; tercih olarak YAZILMIYOR,
@@ -1730,7 +1771,8 @@ function olaylariBagla() {
     rafDugme.onclick = () => { rafKutu.classList.toggle("katli"); rafYaz(true); };
   }
 
-  // Dar ekranda harita kısalıyor ama kaybolmuyor; "Büyüt" tam boya çıkarıyor.
+  // Geniş ekranda sahne zaten tam boy; telefonda şerit hâlinde ve "Büyüt"
+  // onu tam boya çıkarıyor. Düğme yalnız dar ekranda görünüyor.
   const haritaKutu = $("#harita");
   const buyutDugme = $("#d-harita-buyut");
   if (haritaKutu && buyutDugme) {
@@ -1747,6 +1789,11 @@ function olaylariBagla() {
   // işin ortasında can sıkıcı.
   const kayitli = $(`nav.sekmeler button[data-sayfa="${S.sekme}"]`);
   if (kayitli && S.sekme !== "izle") kayitli.click();
+  else {
+    // İzle'deysek yukarıdaki tıklama hiç olmuyor; başlığı yine de yaz.
+    const ad = $("#sol-panel-ad"), ilk = $('nav.sekmeler button.etkin');
+    if (ad && ilk) ad.textContent = (ilk.textContent || "").trim();
+  }
 
   $$(".aralik").forEach((dugme) => {
     dugme.onclick = () => {
