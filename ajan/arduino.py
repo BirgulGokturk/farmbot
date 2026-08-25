@@ -73,6 +73,7 @@ class Arduino:
         self._seri.reset_input_buffer()
         self.tani = None                  # açıldı — varsa eski tanı düşsün
         self._ilk_veri_bekleniyor = time.time()
+        self._hata_sayaci = 0        # acildi, sayac sifirlansin
         logger.info("Arduino açıldı: %s @ %d", self.port, self.baud)
 
     def _acilamadi(self, hata: Exception) -> None:
@@ -114,7 +115,15 @@ class Arduino:
                         and time.time() - self._ilk_veri_bekleniyor > VERI_BEKLEME_SN):
                     self.tani = tani.arduino_veri_yok(self.port, self.baud)
             except Exception as hata:
-                logger.warning("Seri port hatası (%s), 3 sn sonra yeniden denenecek", hata)
+                # Arduino takili degilse bu hata her 3 saniyede bir tekrarlar.
+                # Her seferinde uyari yazmak gunlugu doldurup ise yarar
+                # satirlari goremez hale getiriyordu: ilkini yaz, sonra
+                # seyrelt (yaklasik dakikada bir).
+                self._hata_sayaci = getattr(self, "_hata_sayaci", 0) + 1
+                if self._hata_sayaci == 1 or self._hata_sayaci % 20 == 0:
+                    logger.warning(
+                        "Seri port hatası (%s), 3 sn sonra yeniden denenecek "
+                        "(%d. deneme)", hata, self._hata_sayaci)
                 self._acilamadi(hata)
                 try:
                     if self._seri is not None:
