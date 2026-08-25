@@ -1145,12 +1145,25 @@ function kameraDurumYaz(k) {
   if (document.activeElement !== anahtar) anahtar.checked = acik;
   anahtar.disabled = !k;
   if (!k) { not.textContent = "—"; return; }
-  const dk = Math.round((k.aralik_sn || 3600) / 60);
-  not.textContent = acik
-    ? `açık · ${k.yontem || "?"} · ${dk} dakikada bir kare`
-    : "kapalı";
-  if (k.hata) not.textContent += ` · son hata: ${k.hata}`;
-  if (!acik) kameraGoruntuTemizle();
+  const sn = k.aralik_sn || 3600;
+  const aralik = sn >= 3600 ? `${Math.round(sn / 3600)} saatte`
+    : sn >= 60 ? `${Math.round(sn / 60)} dakikada`
+    : `${Math.round(sn)} saniyede`;
+  not.textContent = acik ? `açık · ${k.yontem || "?"} · ${aralik} bir kare` : "kapalı";
+
+  // Ham hata metnini duruma yapistirmiyoruz: libcamera'nin ciktisi satirlarca
+  // surer ve karti okunmaz hale getirir. Kisa bir isaret yeter, ayrintisi
+  // zaten olay gunlugune dusuyor.
+  const kutu = $("#kamera-yok");
+  if (!acik) {
+    kameraGoruntuTemizle();
+  } else if (k.hata) {
+    not.textContent += " · kare alınamıyor";
+    if (kutu) { kutu.textContent = "Kare alınamıyor — ayrıntı olay günlüğünde."; kutu.classList.remove("gizli"); }
+  } else if (kutu && !kutu.classList.contains("gizli")) {
+    // Acik ama henuz kare yok: "Kamera kapali" yazip durmasin.
+    kutu.textContent = "Henüz kare gelmedi.";
+  }
 }
 
 // Kare WebSocket'ten gelmiyor; sunucu haber veriyor, tarayıcı <img> ile

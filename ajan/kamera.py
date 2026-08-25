@@ -79,8 +79,23 @@ class Kamera:
             return True
         except Exception as hata:
             logger.warning("picamera2 açılamadı: %s", hata)
-            self._picam = None
+            # KAPATMADAN birakmak kamerayi kilitli birakiyordu: Picamera2()
+            # basarili olup sonraki adim patlayinca nesne cihazi tutmaya devam
+            # ediyor, arkasindan rpicam-still "Pipeline handler in use by
+            # another process" diyor. Bu yol basarisizsa cihaz serbest kalmali.
+            self._picam_kapat()
             return False
+
+    def _picam_kapat(self) -> None:
+        """picamera2 nesnesini durdurup kapatir ve birakir."""
+        if self._picam is None:
+            return
+        for adim in ("stop", "close"):
+            try:
+                getattr(self._picam, adim)()
+            except Exception:
+                pass
+        self._picam = None
 
     def _picamera2_kare(self) -> bytes:
         tampon = io.BytesIO()
@@ -204,11 +219,11 @@ class Kamera:
     def durdur(self) -> None:
         self._calisiyor = False
         self._dur.set()
-        if self._picam is not None:
-            try:
-                self._picam.stop()
-            except Exception:
-                pass
+        # Yalnizca stop() demek yetmiyordu: nesne cihazi tutmaya devam edip
+        # bir sonraki acilisi engelliyordu. Kapatip birakiyoruz.
+        self._picam_kapat()
+        self._yontem = None
+        self.son_hata = None
 
     def _dongu(self) -> None:
         hata_sayaci = 0
