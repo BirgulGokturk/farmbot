@@ -39,8 +39,10 @@ Tarla.katman({
     const y = k.y == null ? o.sinir.y.min : k.y;
     const z = k.z == null ? o.sinir.z.max : k.z;
 
-    p.portal.position.x = o.sx(x);
-    p.kizak.position.z = o.sz(y);
+    // Kopru uzun kenar boyunca yuruyor (makine Y), kizak kiriste kisa kenar
+    // boyunca kayiyor (makine X). Gercek makinedeki duzen bu.
+    p.portal.position.z = o.sz(y);
+    p.kizak.position.x = o.sx(x);
     // Makine Z'si büyüdükçe uç YUKARI çıkıyor (kalibrasyonda dir = -1,
     // home = 438). Uç ucunu doğrudan o yüksekliğe koyuyoruz.
     const ucY = o.kis(z, 0, o.sinir.z.max || 550) * MM;

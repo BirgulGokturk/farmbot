@@ -217,39 +217,61 @@
       sabit.add(karik);
     }
 
-    /* --- yan raylar: köprü bunların üzerinde X'te yürür ------------------ */
-    [-1, 1].forEach((iz) => {
-      sabit.add(profil(THREE, [w, P, P * 2], [0, rayYuk, (iz * d) / 2]));
+    /* --- yan raylar: uzun kenar boyunca -----------------------------------
+     * Gercek makinede raylar yatagin UZUN kenarinda; kopru kisa kenari
+     * kapliyor ve uzun kenar boyunca yuruyor. Onceki surumde tersiydi.
+     */
+    [-1, 1].forEach((ix) => {
+      sabit.add(profil(THREE, [P * 2, P, d], [(ix * w) / 2, rayYuk, 0]));
     });
+
+    /* --- tohumluk: uclarin ilerisinde, kose disinda ------------------------
+     * Fotograftaki delikli fide tepsisi. Konumu yaklasik; gercek koordinat
+     * verilirse buraya baglanir.
+     */
+    const tepsi = new THREE.Group();
+    tepsi.add(kutu(THREE, [0.11, 0.03, 0.16], [0, 0, 0],
+      { color: "#26292e", roughness: 0.85, metalness: 0.1 }));
+    const delikMal = mal(THREE, { color: "#15181b", roughness: 0.95 });
+    for (let i = 0; i < 3; i++) {
+      for (let j = 0; j < 4; j++) {
+        const delik = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.013, 0.011, 0.026, 10), delikMal);
+        delik.position.set(-0.033 + i * 0.033, 0.006, -0.055 + j * 0.037);
+        tepsi.add(delik);
+      }
+    }
+    tepsi.position.set(-w / 2 - 0.085, tabla + 0.015, d / 2 - 0.1);
+    sabit.add(tepsi);
     }  /* sabitIster */
 
     if (!hareketliIster) {
       return { sabit: sabit, portal: null, kizak: null, sutun: null, ucKafa: null };
     }
 
-    /* --- hareketli köprü (makine X'inde yürür) --------------------------- */
+    /* --- hareketli köprü (uzun kenar boyunca, makine Y'sinde yürür) ------ */
     const portal = new THREE.Group();
     const sutunBoy = rayY - rayYuk;
-    [-1, 1].forEach((iz) => {
-      const z = (iz * d) / 2;
+    [-1, 1].forEach((ix) => {
+      const x = (ix * w) / 2;
       // dikey sütun
-      portal.add(profil(THREE, [P, sutunBoy, P], [0, rayYuk + sutunBoy / 2, z]));
+      portal.add(profil(THREE, [P, sutunBoy, P], [x, rayYuk + sutunBoy / 2, 0]));
       // sütunu taşıyıcıya bağlayan çapraz destek
-      const capraz = kutu(THREE, [P * 3.2, P * 0.4, P * 1.2],
-        [P * 1.4, rayYuk + sutunBoy * 0.18, z]);
-      capraz.rotation.z = -Math.PI / 4;
+      const capraz = kutu(THREE, [P * 1.2, P * 0.4, P * 3.2],
+        [x, rayYuk + sutunBoy * 0.18, P * 1.4]);
+      capraz.rotation.x = Math.PI / 4;
       portal.add(capraz);
       // ray üzerindeki taşıyıcı ve tekerlekleri
-      portal.add(kutu(THREE, [P * 3.4, P * 1.4, P * 1.6], [0, rayYuk + P * 0.6, z]));
-      portal.add(tekerlek(THREE, [-P * 1.1, rayYuk + P * 0.6, z + P * 0.9]));
-      portal.add(tekerlek(THREE, [P * 1.1, rayYuk + P * 0.6, z + P * 0.9]));
+      portal.add(kutu(THREE, [P * 1.6, P * 1.4, P * 3.4], [x, rayYuk + P * 0.6, 0]));
+      portal.add(tekerlek(THREE, [x + P * 0.9, rayYuk + P * 0.6, -P * 1.1]));
+      portal.add(tekerlek(THREE, [x + P * 0.9, rayYuk + P * 0.6, P * 1.1]));
     });
-    // üst çapraz kiriş
-    portal.add(profil(THREE, [P, P * 2, d + P * 2], [0, rayY, 0]));
-    // kirişin ucundaki Y motoru
-    portal.add(motor(THREE, [0, rayY, -d / 2 - P * 2.2]));
+    // üst kiriş: kısa kenarı kaplıyor
+    portal.add(profil(THREE, [w + P * 2, P * 2, P], [0, rayY, 0]));
+    // kirişin ucundaki X motoru
+    portal.add(motor(THREE, [-w / 2 - P * 2.2, rayY, 0]));
 
-    /* --- kızak: kirişte makine Y'sinde kayar ----------------------------- */
+    /* --- kızak: kirişte makine X'inde kayar ----------------------------- */
     const kizak = new THREE.Group();
     kizak.add(kutu(THREE, [P * 2.2, P * 3, P * 2.6], [0, rayY, 0]));
     kizak.add(tekerlek(THREE, [P * 1.3, rayY + P * 0.9, 0]));
