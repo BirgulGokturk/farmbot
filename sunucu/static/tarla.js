@@ -94,7 +94,8 @@
      2B ve 3B aynı nesneleri okuyor. */
   const VERI = {
     noktalar: [],     // nokta deposu (bitkiler de burada, `tur` alanıyla)
-    turler: {},       // slug -> tür kaydı
+    turler: {},       // slug -> tür kaydı (katalog + tür ezmesi birleşmiş)
+    turAlanlari: {},  // düzenlenebilir alanların başlık/birim/sınır tanımı
     durum: {},        // ajandan gelen son durum
     konum: null,      // {x,y,z}
     iz: [],           // [{x,y,ts}] — robotun geçtiği yerler
@@ -136,6 +137,79 @@
       color: new THREE.Color(renk), roughness: 0.9, metalness: 0.05, ...(opt || {}) });
   }
 
+  /* ============================================ tür / bitki özellikleri
+   *
+   * Bir bitkinin çapı üç yerden gelebiliyor ve sıra şu:
+   *
+   *   bitkinin `ozel` alanı  >  türün ezmesi  >  kurtarılmış katalog
+   *
+   * Bu sıralamayı tek bir yerde çözüyoruz. Katmanlar `Number(t.spread_mm)`
+   * diye kendi hesabını yaparsa üç katmandan biri gözden kaçıyor ve halka
+   * ile kart farklı sayı gösteriyor.
+   */
+  const TUR_TABAN = { spread_mm: 200, sow_depth_mm: 10, days_to_harvest: 60,
+                      water_ml_per_day: 100 };
+
+  /** Bir alanın çözülmüş değeri + nereden geldiği.
+   *  `ozelMi`: bitki türünden farklı. `turEzik`: tür katalogdan farklı. */
+  function turAlani(nokta, alan) {
+    const tur = (nokta && nokta.tur && VERI.turler[nokta.tur]) || null;
+    const sayi = (v) => (v == null || v === "" ? null : Number(v));
+    const turDeger = tur ? sayi(tur[alan]) : null;
+    const katalog = tur && tur.ezili && tur.ezili[alan] != null
+      ? sayi(tur.ezili[alan]) : turDeger;
+    const ozel = nokta && nokta.ozel ? sayi(nokta.ozel[alan]) : null;
+    const taban = turDeger != null ? turDeger : TUR_TABAN[alan];
+    return {
+      deger: ozel != null ? ozel : taban,
+      tur: taban, katalog, ozel,
+      ozelMi: ozel != null,
+      turEzik: !!(tur && tur.ezili && tur.ezili[alan] != null),
+    };
+  }
+
+  /** Bitkinin TAM kaydını yazar. "Üstüne yaz" bütün kaydı değiştirdiği
+   *  için eksik gönderilen her alan siliniyor; tek yerden göndermek bu
+   *  sınıftaki hataları bitiriyor. */
+  function bitkiYaz(n, degisim) {
+    const govde = {
+      ad: n.ad, x: n.x, y: n.y, z: n.z, etiket: n.etiket || "bitki",
+      tur: n.tur, ekim: n.ekim, ustune_yaz: true,
+      egri_su: n.egri_su || "", egri_yayilim: n.egri_yayilim || "",
+      egri_yukseklik: n.egri_yukseklik || "",
+      ozel: n.ozel || {},
+      ...(degisim || {}),
+    };
+    return P().apiIste("/api/noktalar", { method: "POST", body: JSON.stringify(govde) });
+  }
+
+  /** Tek bitkiyi ez ya da (deger null ise) türe döndür. */
+  async function bitkiEzme(n, alan, deger) {
+    // Depodaki TAZE kaydı okuyoruz: karttaki kayıt nesnesi eskimiş
+    // olabiliyor ve eski `ozel` ile yazmak, az önce sıfırlanmış bir
+    // değeri geri diriltirdi.
+    const taze = VERI.noktalar.find((x) => x.ad === n.ad) || n;
+    const ozel = { ...(taze.ozel || {}) };
+    if (deger == null) delete ozel[alan];
+    else ozel[alan] = Number(deger);
+    await bitkiYaz(taze, { ozel });
+    await P().noktalariYukle();
+  }
+
+  async function turKaydet(slug, alanlar) {
+    await P().apiIste("/api/turler", { method: "POST",
+      body: JSON.stringify({ slug, alanlar }) });
+    await turleriYukle();
+    katmanlariGuncelle();
+  }
+
+  async function turSifirla(slug, alan) {
+    const q = alan ? `&alan=${encodeURIComponent(alan)}` : "";
+    await P().apiIste(`/api/turler?slug=${encodeURIComponent(slug)}${q}`, { method: "DELETE" });
+    await turleriYukle();
+    katmanlariGuncelle();
+  }
+
   /* Bağlam — katmanların gördüğü tek arayüz. */
   const BAGLAM = {
     THREE: null, MM, veri: VERI, makine: null,
@@ -165,6 +239,8 @@
       return n[n.length - 1][1];
     },
     get egriler() { return VERI.egriler; },
+    get turAlanlari() { return VERI.turAlanlari; },
+    turAlani, bitkiYaz, turKaydet, turSifirla, bitkiEzme,
     /** 2B: mm -> tuval pikseli */
     mm2b(x, y) {
       const t = haritaDonusum(x, y);
@@ -230,8 +306,44 @@
       catch (h) { console.error("katman guncelle:", k.tanim.kimlik, h); }
     });
     kirlet("katman-guncelle");    // sahnedeki nesneler değişti
+    kartTazele();
     ciz2bTumu();
     if (window.Profil) window.Profil.tazele();
+  }
+
+  /** Açık kartı yeni veriyle yeniden çizer.
+   *
+   * Katman kayıtları her güncellemede sıfırdan kuruluyor, elimizdeki kayıt
+   * eskimiş oluyor. Kartın içinden bir değer değiştirildiğinde ("türden
+   * farklı" işareti, ↺ düğmesi) kart kapanıp açılmadan tazelenmezse
+   * kullanıcı değişikliğin işlediğini göremiyor. Aynı noktayı katmandan
+   * yeniden soruyoruz; kimlik doğrulaması ada bakarak. */
+  function kartTazele() {
+    const s = T.secili;
+    if (!s || !s.katman.acik || !s.kayit || !s.kayit.nokta || !s.katman.tanim.vur) return;
+    const kutu0 = $("#tarla-kart");
+    if (!kutu0) return;
+    // Kullanıcı kartın içindeki bir ALANA yazıyorsa dokunmuyoruz: arka
+    // planda dönen tazeleme yazılan sayıyı silmesin. Düğme odaktaysa
+    // tazeliyoruz — ↺'ye basınca odak düğmede kalıyor ve kart eski
+    // değerle donuyordu; donmuş kart bir sonraki düzenlemede silinmiş
+    // ezmeyi geri diriltiyordu.
+    const odak = document.activeElement;
+    if (odak && kutu0.contains(odak) && /^(INPUT|SELECT|TEXTAREA)$/.test(odak.tagName)) return;
+    const ad = s.kayit.nokta.ad;
+    const o = katmanBaglami(s.katman);
+    let taze = null;
+    try { taze = s.katman.tanim.vur(o, { x: s.kayit.nokta.x, y: s.kayit.nokta.y }); }
+    catch (h) { return; }
+    if (!taze || !taze.nokta || taze.nokta.ad !== ad) return;   // silinmiş ya da başkası
+    s.kayit = taze;
+    const kutu = $("#tarla-kart");
+    kutu.innerHTML = s.katman.tanim.kart(o, taze) +
+      '<button class="kapat" id="d-tarla-kapat" title="Kapat">✕</button>';
+    $("#d-tarla-kapat").onclick = secimiKapat;
+    if (s.katman.tanim.baglan) {
+      try { s.katman.tanim.baglan(o, kutu, taze); } catch (h) { console.error(h); }
+    }
   }
 
   function katmanAcKapa(kayit, acik) {
@@ -974,14 +1086,69 @@
   /* ------------------------------------------------------- veri toplama */
   async function turleriYukle() {
     let liste = [];
-    try { liste = (await P().apiIste("/api/turler")).turler || []; }
-    catch (h) { gunluk(`✕ Bitki türleri okunamadı: ${h.message}`, "hata"); }
+    try {
+      const y = await P().apiIste("/api/turler");
+      liste = y.turler || [];
+      VERI.turAlanlari = y.alanlar || {};
+    } catch (h) { gunluk(`✕ Bitki türleri okunamadı: ${h.message}`, "hata"); }
     VERI.turler = {};
     liste.forEach((t) => { VERI.turler[t.slug] = t; });
     const sec = $("#tur-secim");
+    const onceki = sec.value;
     sec.innerHTML = liste.slice().sort((a, b) => String(a.name_tr).localeCompare(String(b.name_tr), "tr"))
-      .map((t) => `<option value="${kacisli(t.slug)}">${kacisli(t.icon || "🌱")} ${kacisli(t.name_tr)} · ${say(t.spread_mm, 0)} mm</option>`)
+      .map((t) => `<option value="${kacisli(t.slug)}">${kacisli(t.icon || "🌱")} ${kacisli(t.name_tr)} · ${say(t.spread_mm, 0)} mm${t.ezili && Object.keys(t.ezili).length ? " ✎" : ""}</option>`)
       .join("");
+    if (onceki && VERI.turler[onceki]) sec.value = onceki;
+    turFormuCiz();
+  }
+
+  /* ------------------------------------------------- tür düzenleme formu
+   *
+   * Seçili TÜRÜN varsayılanlarını değiştiriyor: bundan sonra eklenen
+   * bitkiler bunu kullanıyor, mevcut bitkiler de (kendi ezmesi yoksa)
+   * anında yeni değere geçiyor. Katalog dosyasına yazılmıyor; sunucu ayrı
+   * bir dosyada tutuyor ve buradaki ✎ işareti "katalogdan farklı" demek.
+   */
+  function turFormuCiz() {
+    const kutu = $("#tur-duzen");
+    if (!kutu) return;
+    const slug = $("#tur-secim").value;
+    const t = VERI.turler[slug];
+    const alanlar = VERI.turAlanlari || {};
+    if (!t || !Object.keys(alanlar).length) { kutu.innerHTML = ""; return; }
+    const ezik = Object.keys(t.ezili || {}).length;
+    kutu.innerHTML = `<div class="tur-duzen-bas">
+        <b>${kacisli(t.icon || "🌱")} ${kacisli(t.name_tr)}</b> varsayılanları
+        ${ezik ? `<span class="rozet-fark">katalogdan farklı</span>
+          <button class="dugme kucuk" id="d-tur-sifirla">↺ Türü sıfırla</button>` : ""}
+      </div>
+      <table class="tarla-ozellik">${Object.entries(alanlar).map(([a, b]) => {
+        const farkli = t.ezili && t.ezili[a] != null;
+        return `<tr><td>${kacisli(b.baslik)}</td><td>
+          <input type="number" class="tur-alan" data-alan="${a}" value="${say(t[a], 2)}"
+                 min="${b.alt}" max="${b.ust}" step="any">
+          <span class="alt-not">${kacisli(b.birim)}</span>
+          ${farkli ? `<button class="rozet-fark rozet-dugme tur-alan-sifirla" data-alan="${a}"
+              title="Katalog değerine dön: ${say(t.ezili[a], 0)} ${kacisli(b.birim)}"
+              >katalogdan farklı ↺</button>` : ""}
+        </td></tr>`;
+      }).join("")}</table>
+      <div class="alt-not">Katalog dosyası değişmiyor; bu değerler ayrı tutuluyor.</div>`;
+
+    kutu.querySelectorAll(".tur-alan").forEach((g) => {
+      g.onchange = async () => {
+        g.blur();
+        try { await turKaydet(slug, { [g.dataset.alan]: g.value }); gunluk(`✓ ${t.name_tr} güncellendi`, "ok"); }
+        catch (h) { gunluk(`✕ Tür kaydedilemedi: ${h.message}`, "hata"); turFormuCiz(); }
+      };
+    });
+    kutu.querySelectorAll(".tur-alan-sifirla").forEach((d) => {
+      d.onclick = () => turSifirla(slug, d.dataset.alan)
+        .catch((h) => gunluk(`✕ Sıfırlanamadı: ${h.message}`, "hata"));
+    });
+    const hepsiSif = kutu.querySelector("#d-tur-sifirla");
+    if (hepsiSif) hepsiSif.onclick = () => turSifirla(slug, "")
+      .catch((h) => gunluk(`✕ Sıfırlanamadı: ${h.message}`, "hata"));
   }
 
   /** Kamera kareleri ve sensör okumaları — yalnızca ilgili katman AÇIKSA. */
@@ -1045,7 +1212,11 @@
     noktalarDegisti() {
       if (!T.hazir) return;
       VERI.noktalar = (P().S && P().S.noktalar) || [];
-      const imza = JSON.stringify(VERI.noktalar.map((n) => [n.ad, n.x, n.y, n.z, n.tur, n.ekim]));
+      // `ozel` imzada: tek bitkinin çapı değiştiğinde halkanın ve çakışma
+      // uyarısının anında güncellenmesi buna bağlı.
+      const imza = JSON.stringify(VERI.noktalar.map(
+        (n) => [n.ad, n.x, n.y, n.z, n.tur, n.ekim, n.ozel || null,
+                n.egri_su, n.egri_yayilim, n.egri_yukseklik]));
       if (imza === T.sonNoktaImzasi) return;
       T.sonNoktaImzasi = imza;
       katmanlariGuncelle();
@@ -1166,6 +1337,41 @@
                olcek: olcek2b, ayar: Object.assign({}, T.harita), sinir: T.sinir };
     },
 
+    /** Bir alanın çözülmüş değeri — bitki > tür > katalog.
+     *  Panelin dışından da (deneme, konsol) sorulabilsin diye açık. */
+    turDegeri(nokta, alan) { return turAlani(nokta, alan); },
+
+    /** Deneme yardımcısı — yayılım katmanının hesabı. */
+    yayilimDurumu() {
+      const k = T.katmanlar.find((x) => x.tanim.kimlik === "yayilim");
+      if (!k || !k.tanim.hesapla) return [];
+      return k.tanim.hesapla(katmanBaglami(k)).map((b) => ({
+        ad: b.nokta.ad, r: b.r, ozelMi: !!b.ozelMi, egriden: !!b.egriden,
+        cakisma: b.cakisma.map((c) => c.ad), disi: b.disi }));
+    },
+
+    /** Deneme yardımcısı — adı verilen öğenin kartını açar. */
+    secKart(ad) {
+      const n = VERI.noktalar.find((x) => x.ad === ad);
+      if (!n) return false;
+      const v = vurTara({ x: n.x, y: n.y });
+      if (!v) return false;
+      sec(v);
+      return true;
+    },
+
+    /** Deneme yardımcısı — bitkiyi sürükleyip bırakmış gibi taşır. */
+    bitkiTasiDeneme(ad, x, y) {
+      const k = T.katmanlar.find((z) => z.tanim.kimlik === "bitkiler");
+      const n = VERI.noktalar.find((z) => z.ad === ad);
+      if (!k || !n) return false;
+      const o = katmanBaglami(k);
+      const kayit = k.tanim.vur(o, { x: n.x, y: n.y });
+      if (!kayit) return false;
+      k.tanim.tasi(o, kayit, { x, y }, true);
+      return true;
+    },
+
     /** Deneme yardımcısı — katmanların durumu. */
     katmanDurumu() {
       return T.katmanlar.map((k) => ({
@@ -1275,6 +1481,17 @@
       eklemeKipi(!T.ekleme);
       // Ekleme ve seçme ikisi de sol tıkla çalışıyor: biri açılınca diğeri kapanıyor.
       if (T.ekleme && T.kip === "sec") kipSec("tasi");
+    };
+
+    const turSec = $("#tur-secim");
+    if (turSec) turSec.onchange = () => turFormuCiz();
+    const turAc = $("#d-tur-duzen");
+    if (turAc) turAc.onclick = () => {
+      const k = $("#tur-duzen");
+      const acik = k.classList.toggle("gizli");
+      turAc.classList.toggle("secili", !acik);
+      turAc.setAttribute("aria-expanded", String(!acik));
+      if (!acik) turFormuCiz();
     };
 
     $("#d-kip-tasi").onclick = () => kipSec("tasi");

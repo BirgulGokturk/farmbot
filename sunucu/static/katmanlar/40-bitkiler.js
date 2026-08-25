@@ -13,12 +13,16 @@ Tarla.katman({
     return o.veri.noktalar.filter((n) => n && n.tur).map((n) => ({
       nokta: n,
       tur: o.veri.turler[n.tur] || { name_tr: n.tur, spread_mm: 200, color: "#5f9e46", icon: "🌱" },
+      // Çözülmüş değerler: bitkinin ezmesi > türün ezmesi > katalog.
+      // Türün ham alanını okuyan hiçbir hesap kalmasın; yoksa kart bir
+      // sayı, halka başka bir sayı gösteriyor.
+      d: (alan) => o.turAlani(n, alan),
     }));
   },
 
   /** Yaşa göre olgunluk 0..1 — hasat gününe yaklaştıkça bitki büyüyor. */
   olgunluk(b) {
-    const gun = Number(b.tur.days_to_harvest) || 60;
+    const gun = b.d("days_to_harvest").deger || 60;
     if (!b.nokta.ekim) return 1;
     return Math.max(0.06, Math.min(1, (Date.now() / 1000 - Number(b.nokta.ekim)) / 86400 / gun));
   },
@@ -35,7 +39,7 @@ Tarla.katman({
 
   gorsel(o, b, ol) {
     const grup = new o.THREE.Group();
-    const rM = Math.max(0.02, ((Number(b.tur.spread_mm) || 200) / 2) * o.MM);
+    const rM = Math.max(0.02, (b.d("spread_mm").deger / 2) * o.MM);
     const tacR = rM * (0.10 + 0.85 * ol);
     const boy = Math.max(0.015, rM * (0.12 + 0.70 * ol));
     const renk = new o.THREE.Color(b.tur.color || "#5f9e46");
@@ -118,7 +122,7 @@ Tarla.katman({
     document.querySelector("#tarla-sayi").textContent = (() => {
       const b = this.bitkiler(o);
       if (!b.length) return "Henüz bitki yok";
-      const su = b.reduce((t, x) => t + (Number(x.tur.water_ml_per_day) || 0), 0);
+      const su = b.reduce((t, x) => t + (x.d("water_ml_per_day").deger || 0), 0);
       return `${b.length} bitki · günlük ${o.say(su / 1000, 1)} L su`;
     })();
   },
@@ -153,7 +157,7 @@ Tarla.katman({
     let en = null, mesafe = 1e9;
     this.bitkiler(o).forEach((b) => {
       const d = Math.hypot(b.nokta.x - mm.x, b.nokta.y - mm.y);
-      const esik = o.kis(((Number(b.tur.spread_mm) || 200) / 2) * 0.35, 22, 55);
+      const esik = o.kis((b.d("spread_mm").deger / 2) * 0.35, 22, 55);
       if (d < esik && d < mesafe) { mesafe = d; en = b; }
     });
     return en;
@@ -166,11 +170,7 @@ Tarla.katman({
     const n = b.nokta;
     // Eğri alanları da gönderiliyor: "üstüne yaz" bütün kaydı değiştiriyor,
     // göndermezsek bitkiyi sürüklemek bağlı eğrileri siler.
-    o.api("/api/noktalar", { method: "POST", body: JSON.stringify({
-      ad: n.ad, x: n.x, y: n.y, z: n.z, etiket: n.etiket || "bitki",
-      tur: n.tur, ekim: n.ekim, ustune_yaz: true,
-      egri_su: n.egri_su || "", egri_yayilim: n.egri_yayilim || "",
-      egri_yukseklik: n.egri_yukseklik || "" }) })
+    o.bitkiYaz(n)
       .catch((h) => o.gunluk(`✕ Taşınamadı: ${h.message}`, "hata"))
       .then(() => o.noktalariYukle());
   },
@@ -189,25 +189,45 @@ Tarla.katman({
     const t = b.tur, n = b.nokta;
     const ol = this.olgunluk(b);
     const gun = n.ekim ? Math.floor((Date.now() / 1000 - Number(n.ekim)) / 86400) : null;
-    const hasat = Number(t.days_to_harvest) || null;
+    const hasat = b.d("days_to_harvest").deger || null;
     const kalan = gun != null && hasat ? Math.max(0, hasat - gun) : null;
+    const ekstra = { days_to_harvest: kalan != null ? `(${kalan} kaldı)` : "" };
     return `<div class="tarla-kart-bas">
         <span class="simge">${o.kacisli(t.icon || "🌱")}</span>
         <div><b>${o.kacisli(t.name_tr || n.tur)}</b>
           <div class="alt-not">${o.kacisli(n.ad)} · X${o.say(n.x, 1)} Y${o.say(n.y, 1)} Z${o.say(n.z, 1)}</div>
         </div></div>
       <table class="tarla-ozellik">
-        <tr><td>Ekim derinliği</td><td><b>${o.say(t.sow_depth_mm, 0)} mm</b></td></tr>
-        <tr><td>Hasat süresi</td><td><b>${o.say(t.days_to_harvest, 0)} gün</b>${kalan != null ? ` <span class="alt-not">(${kalan} kaldı)</span>` : ""}</td></tr>
-        <tr><td>Günlük su</td><td><b>${o.say(t.water_ml_per_day, 0)} ml</b></td></tr>
-        <tr><td>Yayılım</td><td><b>${o.say(t.spread_mm, 0)} mm</b></td></tr>
+        ${this.ozellikSatirlari(o, b, ekstra)}
         <tr><td>Büyüme</td><td><b>%${o.say(ol * 100, 0)}</b>${gun != null ? ` <span class="alt-not">(${gun}. gün)</span>` : ""}</td></tr>
       </table>
+      <div class="alt-not">Buradaki değerler YALNIZ bu bitkiye işler. Türün
+        tamamını değiştirmek için Tarla sekmesindeki “Tür özellikleri”.</div>
       ${this.egriBolumu(o, n, gun)}
       <div class="tarla-kart-dugme">
         <button class="dugme birincil" id="d-tarla-git">Buraya git</button>
         <button class="dugme tehlike" id="d-tarla-sil">Sil</button>
       </div>`;
+  },
+
+  /** Düzenlenebilir özellik satırları — tek bitki düzeyi.
+   *
+   * Türden farklı olan alan işaretli geliyor ve yanındaki ↺ türe döndürüyor;
+   * "bu sayıyı ben mi koydum, katalogdan mı geldi" sorusu kartta cevaplı. */
+  ozellikSatirlari(o, b, ekstra) {
+    const alanlar = o.turAlanlari || {};
+    return Object.entries(alanlar).map(([a, bilgi]) => {
+      const c = b.d(a);
+      return `<tr><td>${o.kacisli(bilgi.baslik)}</td><td>
+        <input type="number" class="bitki-alan" data-alan="${a}" value="${o.say(c.deger, 2)}"
+               min="${bilgi.alt}" max="${bilgi.ust}" step="any">
+        <span class="alt-not">${o.kacisli(bilgi.birim)}</span>
+        ${(ekstra && ekstra[a]) ? `<span class="alt-not">${o.kacisli(ekstra[a])}</span>` : ""}
+        ${c.ozelMi ? `<button class="rozet-fark rozet-dugme bitki-alan-sifirla" data-alan="${a}"
+            title="Türün değerine dön: ${o.say(c.tur, 0)} ${o.kacisli(bilgi.birim)}"
+            >türden farklı ↺</button>` : ""}
+      </td></tr>`;
+    }).join("");
   },
 
   /** Bitkiye bağlanabilen eğriler ve bugünkü değerleri.
@@ -244,14 +264,28 @@ Tarla.katman({
       sec.onchange = () => {
         const n = b.nokta;
         n[sec.dataset.alan] = sec.value;
-        o.api("/api/noktalar", { method: "POST", body: JSON.stringify({
-          ad: n.ad, x: n.x, y: n.y, z: n.z, etiket: n.etiket || "bitki",
-          tur: n.tur, ekim: n.ekim, ustune_yaz: true,
-          egri_su: n.egri_su || "", egri_yayilim: n.egri_yayilim || "",
-          egri_yukseklik: n.egri_yukseklik || "" }) })
+        o.bitkiYaz(n)
           .then(() => { o.gunluk(`✓ '${n.ad}' eğrisi güncellendi`, "ok"); return o.noktalariYukle(); })
           .catch((h) => o.gunluk(`✕ Eğri bağlanamadı: ${h.message}`, "hata"));
       };
+    });
+
+    // Tek bitki düzeyinde ezme. Türün geri kalanı etkilenmiyor.
+    kok.querySelectorAll(".bitki-alan").forEach((g) => {
+      g.onchange = () => {
+        const alan = g.dataset.alan;
+        // Odağı bırakıyoruz: kart tazelenirken yazılan alana dokunulmuyor,
+        // Enter'a basıldığında odak alanda kalırsa işaret hiç görünmezdi.
+        g.blur();
+        o.bitkiEzme(b.nokta, alan, g.value)
+          .then(() => o.gunluk(`✓ '${b.nokta.ad}' özelliği güncellendi`, "ok"))
+          .catch((h) => o.gunluk(`✕ Kaydedilemedi: ${h.message}`, "hata"));
+      };
+    });
+    kok.querySelectorAll(".bitki-alan-sifirla").forEach((d) => {
+      d.onclick = () => (d.blur(), o.bitkiEzme(b.nokta, d.dataset.alan, null))
+        .then(() => o.gunluk(`✓ '${b.nokta.ad}' türün değerine döndü`, "ok"))
+        .catch((h) => o.gunluk(`✕ Sıfırlanamadı: ${h.message}`, "hata"));
     });
   },
 });

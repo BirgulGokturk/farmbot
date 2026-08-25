@@ -30,6 +30,8 @@ import threading
 import time
 from typing import Any
 
+import turler
+
 _KILIT = threading.RLock()
 
 # İsim uzunluğu sınırı: panelde okunabilir kalsın ve dosya şişmesin.
@@ -127,13 +129,35 @@ def bul(ad: str) -> dict[str, Any] | None:
 # depoya yazılıyor: "şu noktaya git", program adımı ve sınır denetimi bir
 # bitki için de aynen çalışsın diye. Paralel bir nokta kavramı öğrenmek
 # gerekmiyor; bitki, tür bilgisi taşıyan bir noktadan ibaret.
-BITKI_ALANLARI = ("tur", "ekim", "egri_su", "egri_yayilim", "egri_yukseklik")
+BITKI_ALANLARI = ("tur", "ekim", "egri_su", "egri_yayilim", "egri_yukseklik", "ozel")
 
 # Eğri alanları bir eğrinin ADINI tutuyor, değerini değil: eğri düzenlenince
 # ona bağlı bütün bitkiler kendiliğinden yeni değeri kullanıyor. Eğri
 # silinmişse alan eski adı taşımaya devam eder ve panel "eğri yok" der —
 # noktayı bozmaktansa.
 EGRI_ALANLARI = ("egri_su", "egri_yayilim", "egri_yukseklik")
+
+
+def _ozel_suz(kaynak: Any) -> dict[str, float]:
+    """Tek bitki düzeyindeki ezmeler — "şu marul cılız kaldı, çapı 120".
+
+    Türün kendisine dokunmuyor. Aralık denetimi türlerdekiyle aynı yerden
+    geliyor (turler.alan_dogrula); iki ayrı sınır listesi tutmak, birini
+    değiştirip diğerini unutmak demek olurdu. Geçersiz alan atılıyor,
+    noktanın tamamı reddedilmiyor: bir bitkinin çapı yüzünden kaydın
+    kaybolması, değerin katalogdan gelmesinden daha kötü.
+    """
+    if not isinstance(kaynak, dict):
+        return {}
+    cikti: dict[str, float] = {}
+    for alan, deger in kaynak.items():
+        if alan not in turler.DUZENLENEBILIR or deger is None:
+            continue
+        try:
+            cikti[alan] = turler.alan_dogrula(alan, deger)
+        except turler.TurHatasi:
+            continue
+    return cikti
 
 
 def _ekstra_suz(kaynak: dict[str, Any]) -> dict[str, Any]:
@@ -149,6 +173,9 @@ def _ekstra_suz(kaynak: dict[str, Any]) -> dict[str, Any]:
         # Boş metin "eğri bağlı değil" demek; alanı hiç yazmıyoruz.
         if kaynak.get(alan):
             cikti[alan] = str(kaynak[alan])[:40]
+    ozel = _ozel_suz(kaynak.get("ozel"))
+    if ozel:
+        cikti["ozel"] = ozel
     return cikti
 
 

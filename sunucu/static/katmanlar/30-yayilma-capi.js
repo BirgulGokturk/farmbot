@@ -20,8 +20,12 @@ Tarla.katman({
       // bitkinin o günkü yaşındaki değer. Bağlı değilse eski davranış.
       const gun = n.ekim ? (Date.now() / 1000 - Number(n.ekim)) / 86400 : 0;
       const egriCap = n.egri_yayilim ? o.egriDeger(n.egri_yayilim, gun) : null;
-      const cap = egriCap != null ? egriCap : (Number(t.spread_mm) || 200);
+      // Eğri yoksa çap üç katmandan çözülüyor: bitkinin kendi ezmesi >
+      // türün ezmesi > katalog. Hesabı burada tekrarlamıyoruz.
+      const cozum = o.turAlani(n, "spread_mm");
+      const cap = egriCap != null ? egriCap : cozum.deger;
       return { nokta: n, tur: t, r: cap / 2, egriden: egriCap != null,
+               ozelMi: egriCap == null && cozum.ozelMi,
                cakisma: [], disi: null };
     });
     const s = o.sinir;
@@ -83,7 +87,11 @@ Tarla.katman({
       const renk = this.renk(b);
       c.beginPath(); c.arc(p.x, p.y, r, 0, Math.PI * 2);
       c.fillStyle = renk + "22"; c.fill();
-      c.strokeStyle = renk; c.lineWidth = 1; c.stroke();
+      // Kesik çizgi = bu bitkinin çapı türünden farklı. Kartı açmadan da
+      // hangi bitkinin elle ayarlandığı haritada görünüyor.
+      c.setLineDash(b.ozelMi ? [4, 3] : []);
+      c.strokeStyle = renk; c.lineWidth = b.ozelMi ? 1.6 : 1; c.stroke();
+      c.setLineDash([]);
     });
   },
 

@@ -820,7 +820,9 @@ table.veri td { color: var(--metin-2); }
   position: absolute;
   top: var(--b2);
   right: var(--b2);
-  width: min(290px, calc(100% - var(--b3)));
+  /* Düzenlenebilir alanlar geldiğinden beri biraz geniş: sayı kutusu,
+     birim ve "türden farklı" işareti aynı satıra sığsın. */
+  width: min(330px, calc(100% - var(--b3)));
   padding: var(--b3);
   border-radius: var(--b2);
   background: rgba(26, 26, 25, .96);
@@ -843,6 +845,33 @@ table.veri td { color: var(--metin-2); }
 .tarla-ozellik td { padding: 2px 0; color: var(--metin-3); }
 .tarla-ozellik td:last-child { text-align: right; color: var(--metin-2); font-variant-numeric: tabular-nums; }
 .tarla-ozellik b { color: var(--metin); }
+/* Düzenlenebilir özellikler — tür ve tek bitki düzeyi.
+ *
+ * "türden farklı" / "katalogdan farklı" rozeti mavi: uyarı değil, bilgi.
+ * Kırmızı yapmak, elle ayarlanmış her değeri bir arıza gibi gösterirdi. */
+.tarla-ozellik td:last-child { display: flex; align-items: center; justify-content: flex-end;
+  gap: var(--b1); flex-wrap: wrap; }
+.tarla-ozellik td:first-child { white-space: nowrap; padding-right: var(--b2); }
+.tarla-ozellik input[type="number"] {
+  width: 74px; height: 26px; padding: 0 var(--b2); text-align: right;
+  background: var(--yuzey-2); color: var(--metin);
+  border: 1px solid var(--cizgi); border-radius: var(--b1);
+  font-size: var(--yazi-kucuk); font-variant-numeric: tabular-nums;
+}
+.tarla-ozellik input[type="number"]:focus { outline: none; border-color: var(--vurgu); }
+.rozet-fark {
+  display: inline-block; background: #12263c; border: 1px solid #27496f;
+  color: #a9cdf5; border-radius: var(--b1); padding: 1px var(--b2);
+  font-size: var(--yazi-kucuk); white-space: nowrap;
+}
+/* İşaret ve "geri al" aynı öğe: dar kartta ikisi ayrı durunca ↺ alt satıra
+   düşüyordu. Tek tıkla türün/kataloğun değerine dönüyor. */
+.rozet-dugme { cursor: pointer; font-family: inherit; }
+.rozet-dugme:hover { background: #1a3350; border-color: #3a6699; color: #cfe4fb; }
+.dugme.kucuk { height: 26px; min-width: 26px; padding: 0 var(--b2); font-size: var(--yazi-kucuk); }
+#tur-duzen .tur-duzen-bas { display: flex; align-items: center; gap: var(--b2);
+  flex-wrap: wrap; margin-bottom: var(--b2); }
+
 .tarla-kart-dugme { display: flex; gap: var(--b2); }
 .tarla-kart-dugme .dugme { flex: 1; height: 30px; padding: 0 var(--b2); font-size: var(--yazi-kucuk); }
 .cakisma-satir { margin-top: var(--b1); font-variant-numeric: tabular-nums; }

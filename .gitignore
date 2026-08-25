@@ -3,5 +3,11 @@ __pycache__/
 .venv/
 ajan/ayarlar.json
 sunucu/farmbot.db*
-sunucu/ortam
-*.tar.gz
+sunucu/noktalar.json
+sunucu/egriler.json
+sunucu/programlar.json
+sunucu/tur_ezme.json
+sunucu/kareler/
+
+# Aktarım sırasında kalan geçici arşivler
+fb-*.tar.gz

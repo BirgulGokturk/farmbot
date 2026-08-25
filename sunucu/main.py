@@ -32,6 +32,7 @@ import kalibrasyon
 import kareler
 import noktalar
 import programlar
+import turler
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger("farmbot")
@@ -820,39 +821,6 @@ async def api_kare(damga: str, jeton: str = Query(default="")):
     return Response(content=kare, media_type="image/jpeg")
 
 
-# --------------------------------------------------------------------------- #
-# Bitki türleri
-#
-# Veri `docs/bitki_turleri.json` içinde ve elle bakımı yapılıyor; sunucu
-# yalnızca okuyup panele veriyor. Türleri koda gömmek, yeni bir tür eklemek
-# için sürüm çıkmak demek olurdu.
-# --------------------------------------------------------------------------- #
-_TUR_ONBELLEK: dict[str, Any] = {"ts": 0.0, "veri": []}
-
-
-def _turleri_oku() -> list[dict[str, Any]]:
-    yol = os.environ.get("TUR_YOLU") or os.path.join(
-        os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "docs", "bitki_turleri.json")
-    try:
-        damga = os.path.getmtime(yol)
-    except OSError:
-        return []
-    # Dosya değişmediyse yeniden okumuyoruz; her panel açılışında 10 KB JSON
-    # ayrıştırmanın anlamı yok.
-    if damga == _TUR_ONBELLEK["ts"] and _TUR_ONBELLEK["veri"]:
-        return _TUR_ONBELLEK["veri"]
-    try:
-        with open(yol, encoding="utf-8") as dosya:
-            veri = json.load(dosya)
-    except (json.JSONDecodeError, OSError) as hata:
-        logger.warning("Bitki türleri okunamadı (%s): %s", yol, hata)
-        return []
-    if not isinstance(veri, list):
-        return []
-    _TUR_ONBELLEK.update(ts=damga, veri=veri)
-    return veri
-
-
 @app.get("/api/olcum/konumlu")
 async def api_olcum_konumlu(dakika: int = Query(default=1440), azami: int = Query(default=400),
                             jeton: str = Query(default="")):
@@ -888,10 +856,46 @@ async def api_katmanlar(jeton: str = Query(default="")):
     return {"katmanlar": adlar}
 
 
+# --------------------------------------------------------------------------- #
+# Bitki türleri
+#
+# Kaynak veri `docs/bitki_turleri.json` — kurtarılmış, SALT OKUNUR. Kullanıcı
+# bir değeri değiştirdiğinde kaynağın üstüne yazmıyoruz, ayrı bir dosyaya
+# (tur_ezme.json) yazıyoruz; böylece hangi değerin elle konduğu ve neye
+# dönüleceği her zaman belli. Ayrıntı: turler.py başlığı.
+# --------------------------------------------------------------------------- #
 @app.get("/api/turler")
 async def api_turler(jeton: str = Query(default="")):
     _parola_dogrula(jeton)
-    return {"turler": await asyncio.to_thread(_turleri_oku)}
+    return {"turler": await asyncio.to_thread(turler.hepsi),
+            "alanlar": turler.alan_bilgisi()}
+
+
+@app.post("/api/turler")
+async def api_turler_kaydet(govde: dict[str, Any], jeton: str = Query(default="")):
+    """Tür düzeyinde ezme — o türden EKLENECEK bitkiler de bunu kullanır."""
+    _parola_dogrula(jeton)
+    slug = str(govde.get("slug") or "").strip()
+    alanlar = govde.get("alanlar")
+    if not isinstance(alanlar, dict):
+        raise HTTPException(status_code=400, detail="alanlar bir nesne olmalı")
+    try:
+        tur = await asyncio.to_thread(turler.kaydet, slug, alanlar)
+    except turler.TurHatasi as hata:
+        raise HTTPException(status_code=400, detail=str(hata))
+    return {"tur": tur}
+
+
+@app.delete("/api/turler")
+async def api_turler_sifirla(slug: str = Query(default=""), alan: str = Query(default=""),
+                             jeton: str = Query(default="")):
+    """Tek alanı ya da (alan boşsa) türün bütün ezmelerini katalog değerine döndürür."""
+    _parola_dogrula(jeton)
+    try:
+        tur = await asyncio.to_thread(turler.sifirla, slug, alan or None)
+    except turler.TurHatasi as hata:
+        raise HTTPException(status_code=400, detail=str(hata))
+    return {"tur": tur}
 
 
 @app.get("/saglik")

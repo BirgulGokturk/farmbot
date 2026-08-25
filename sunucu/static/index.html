@@ -309,7 +309,12 @@
             <select id="tur-secim"></select>
           </div>
           <button class="dugme" id="d-ekleme-kipi">Bitki ekle</button>
+          <!-- Tür varsayılanları burada düzenleniyor: kaynak katalog dosyası
+               salt okunur kalıyor, değişiklik sunucuda ayrı tutuluyor. -->
+          <button class="dugme" id="d-tur-duzen" aria-expanded="false"
+                  aria-controls="tur-duzen">Tür özellikleri</button>
         </div>
+        <div id="tur-duzen" class="onizleme gizli"></div>
 
         <!-- Sahne ve katman listesi bu kartta DEĞİL: sağdaki kalıcı harita
              sütununda duruyorlar, çünkü sekme değişince kaybolmamaları
