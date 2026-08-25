@@ -77,7 +77,10 @@ Tarla.katman({
       grup.add(yaprak);
     }
 
-    if (document.querySelector("#tarla-simge") && document.querySelector("#tarla-simge").checked) {
+    // Simge anahtarı artık ikonlu bir düğme (aria-checked); eski onay
+    // kutusu biçimi de destekleniyor.
+    const simgeAc = document.querySelector("#tarla-simge");
+    if (simgeAc && (simgeAc.checked || simgeAc.getAttribute("aria-checked") === "true")) {
       const s = new o.THREE.Sprite(new o.THREE.SpriteMaterial({
         map: this.simge(b.tur.icon), transparent: true, depthTest: false }));
       s.scale.setScalar(o.kis(rM * 0.45, 0.03, 0.075));
@@ -119,12 +122,14 @@ Tarla.katman({
       halka.raycast = () => {};
       o.grup.add(halka);
     }
-    document.querySelector("#tarla-sayi").textContent = (() => {
-      const b = this.bitkiler(o);
-      if (!b.length) return "Henüz bitki yok";
-      const su = b.reduce((t, x) => t + (x.d("water_ml_per_day").deger || 0), 0);
-      return `${b.length} bitki · günlük ${o.say(su / 1000, 1)} L su`;
-    })();
+    const b = this.bitkiler(o);
+    const su = b.reduce((t, x) => t + (x.d("water_ml_per_day").deger || 0), 0);
+    document.querySelector("#tarla-sayi").textContent =
+      b.length ? `${b.length} bitki · günlük ${o.say(su / 1000, 1)} L su` : "Henüz bitki yok";
+    // Panel bölümünün başlığındaki özet: bölüm katlıyken de kaç bitki
+    // olduğu görünsün.
+    const ozet = document.querySelector("#bitki-ozet");
+    if (ozet) ozet.textContent = b.length ? `${b.length} bitki` : "";
   },
 
   ciz2b(o, c) {

@@ -348,6 +348,7 @@
 
   function katmanAcKapa(kayit, acik) {
     kayit.acik = acik;
+    katmanSayaciYaz();
     localStorage.setItem("farmbot_katman_" + kayit.tanim.kimlik, acik ? "1" : "0");
     if (acik) {
       kokGrup.add(kayit.grup);
@@ -374,6 +375,17 @@
     kutu.querySelectorAll("input").forEach((g) => {
       g.onchange = () => katmanAcKapa(T.katmanlar[Number(g.dataset.i)], g.checked);
     });
+    katmanSayaciYaz();
+  }
+
+  /** Çubuktaki "Katmanlar" düğmesinin yanındaki sayaç.
+   *  Raf artık açılır panel; kaç katmanın açık olduğu paneli açmadan da
+   *  görünsün diye sayı düğmenin üstünde duruyor. */
+  function katmanSayaciYaz() {
+    const s = $("#katman-sayac");
+    if (!s) return;
+    const acik = T.katmanlar.filter((k) => k.acik).length;
+    s.textContent = `${acik}/${T.katmanlar.length}`;
   }
 
   /* ======================================================== sahne kurma */
@@ -457,7 +469,10 @@
                              : kis(t.right - r.left, 0, t.width);
     };
     bos.sol = olc("#sol-panel", "sol");
-    bos.sag = olc("#sag-raf", "sag");
+    // Sağda kalıcı duran tek kutu seçili öğenin kartı; katman rafı ve
+    // harita ayarı açılır panel oldu, açıkken onlar da pay istiyor.
+    bos.sag = Math.max(olc("#tarla-kart", "sag"), olc("#katman-kutu", "sag"),
+                       olc("#harita-ayar", "sag"));
     // İkisi birden tuvali yerse ortada bir şey kalmıyor; payı geri çekiyoruz.
     if (bos.sol + bos.sag > t.width * 0.8) { bos.sol = 0; bos.sag = 0; }
     return bos;
@@ -466,14 +481,23 @@
   function kamerayiSigdir(enSerbest) {
     kirlet("kamera-sigdir");
     const yukseklikM = BAGLAM.makine.ray_yuksekligi * MM;
-    const R = 0.5 * Math.hypot(genislikM, derinlikM, yukseklikM);
+    // Bakılan nokta yatağa yakın: asıl konu bahçe, portal değil.
+    const hedefY = yukseklikM * 0.30;
+    // Kuşatan küre HEDEFİN etrafında ölçülüyor. Eskiden yarıçap orijinden
+    // hesaplanıyor ama kamera hedefe bakıyordu; aradaki fark kadar üst
+    // kırpılıyordu — portalın tepesi ekranın dışında kalıyordu.
+    // Üstte pay var: Z kızağı ve uç kafası rayın ÜSTÜNE çıkıyor, kuşatan
+    // kutuyu ray yüksekliğiyle sınırlamak portalın tepesini kırpıyordu.
+    const tepeM = yukseklikM * 1.22;
+    const R = Math.hypot(genislikM / 2, derinlikM / 2,
+                         Math.max(hedefY, tepeM - hedefY));
     const yariFov = (kamera.fov * Math.PI) / 360;
     // Sığdırma panellerin ARASINDAKİ şeride göre: tuvalin tamamına
     // sığdırmak, makinenin yarısını panelin altında bırakıyordu.
     const en = enSerbest || kamera.aspect || 1.6;
     const yariYatay = Math.atan(Math.tan(yariFov) * en);
-    kam.r = kis(Math.max(R / Math.sin(yariFov), R / Math.sin(yariYatay)) * 1.05, 0.5, 12);
-    kam.hedef.set(0, yukseklikM * 0.35, 0);
+    kam.r = kis(Math.max(R / Math.sin(yariFov), R / Math.sin(yariYatay)) * 1.02, 0.5, 12);
+    kam.hedef.set(0, hedefY, 0);
   }
 
   function boyutla() {
@@ -1271,7 +1295,7 @@
       yanVeriTazele();
     },
 
-    noktalarDegisti() {
+    noktalarDegisti(zorla) {
       if (!T.hazir) return;
       VERI.noktalar = (P().S && P().S.noktalar) || [];
       // `ozel` imzada: tek bitkinin çapı değiştiğinde halkanın ve çakışma
@@ -1279,7 +1303,8 @@
       const imza = JSON.stringify(VERI.noktalar.map(
         (n) => [n.ad, n.x, n.y, n.z, n.tur, n.ekim, n.ozel || null,
                 n.egri_su, n.egri_yayilim, n.egri_yukseklik]));
-      if (imza === T.sonNoktaImzasi) return;
+      // `zorla`: veri aynı ama ÇİZİM kuralı değişti (simge anahtarı gibi).
+      if (imza === T.sonNoktaImzasi && !zorla) return;
       T.sonNoktaImzasi = imza;
       katmanlariGuncelle();
     },
@@ -1515,11 +1540,8 @@
     const panel = $("#harita-ayar"), dugme = $("#d-harita-ayar");
     if (!panel || !dugme) return;
 
-    dugme.onclick = () => {
-      const acik = panel.classList.toggle("gizli");
-      dugme.setAttribute("aria-expanded", String(!acik));
-      dugme.classList.toggle("secili", !acik);
-    };
+    // Açma/kapama app.js'teki ortak "açılır panel" düzeneğinde: aynı anda
+    // yalnız bir panel açık kalsın diye tek elden yönetiliyor.
 
     $("#ha-dondur").onchange = (o) => { T.harita.dondur = o.target.checked; haritaAyarYaz(); };
     panel.querySelectorAll("[data-kose]").forEach((b) => {

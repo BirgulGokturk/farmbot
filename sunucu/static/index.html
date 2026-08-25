@@ -12,6 +12,27 @@
 </head>
 <body>
 
+<!-- İKON SETİ — tek dosyada, dış kaynak yok.
+     Neden <symbol>: ikon fontu bir dosya daha ve yanlış yüklenince kutu
+     gösteriyor; satır içi SVG her yerde currentColor'ı alıyor ve düğmenin
+     rengiyle birlikte değişiyor. -->
+<svg class="ikon-seti" aria-hidden="true" focusable="false"><defs>
+  <symbol id="i-tasi" viewBox="0 0 16 16"><path d="M8 2v12M2 8h12M8 2 6.2 3.8M8 2l1.8 1.8M8 14l-1.8-1.8M8 14l1.8-1.8M2 8l1.8-1.8M2 8l1.8 1.8M14 8l-1.8-1.8M14 8l-1.8 1.8"/></symbol>
+  <symbol id="i-sec" viewBox="0 0 16 16"><path d="M2.5 5.5v-3h3M10.5 2.5h3v3M13.5 10.5v3h-3M5.5 13.5h-3v-3"/></symbol>
+  <symbol id="i-3b" viewBox="0 0 16 16"><path d="M8 2 14 5.2v5.6L8 14l-6-3.2V5.2L8 2Zm0 3.6v8.4m0-8.4 6-2.6m-6 2.6L2 5.2"/></symbol>
+  <symbol id="i-2b" viewBox="0 0 16 16"><path d="M2 4.4 6 3l4 1.4L14 3v8.6L10 13l-4-1.4L2 13V4.4ZM6 3v8.6M10 4.4V13"/></symbol>
+  <symbol id="i-serbest" viewBox="0 0 16 16"><path d="M8 3.4a4.6 4.6 0 1 0 0 9.2 4.6 4.6 0 0 0 0-9.2Z"/><path d="M2 8c0-1.4 2.7-2.4 6-2.4S14 6.6 14 8s-2.7 2.4-6 2.4S2 9.4 2 8Z"/></symbol>
+  <symbol id="i-ustten" viewBox="0 0 16 16"><path d="M3 3h10v10H3z"/><path d="M8 7.1a.9.9 0 1 0 0 1.8.9.9 0 0 0 0-1.8Z"/></symbol>
+  <symbol id="i-simge" viewBox="0 0 16 16"><path d="M2.6 8.6 8.2 3h4.4v4.4L7 13 2.6 8.6Z"/><path d="M10.4 5.4h.01"/></symbol>
+  <symbol id="i-katman" viewBox="0 0 16 16"><path d="m8 2 6 3-6 3-6-3 6-3ZM2 8.4 8 11.4l6-3M2 11 8 14l6-3"/></symbol>
+  <symbol id="i-ayar" viewBox="0 0 16 16"><path d="M8 5.8a2.2 2.2 0 1 0 0 4.4 2.2 2.2 0 0 0 0-4.4Z"/><path d="M13 8a5 5 0 0 0-.1-.9l1.3-1-1.3-2.2-1.5.6a5 5 0 0 0-1.6-.9L9.5 2h-3l-.3 1.6a5 5 0 0 0-1.6.9l-1.5-.6L1.8 6.1l1.3 1A5 5 0 0 0 3 8a5 5 0 0 0 .1.9l-1.3 1 1.3 2.2 1.5-.6a5 5 0 0 0 1.6.9l.3 1.6h3l.3-1.6a5 5 0 0 0 1.6-.9l1.5.6 1.3-2.2-1.3-1A5 5 0 0 0 13 8Z"/></symbol>
+  <symbol id="i-buyut" viewBox="0 0 16 16"><path d="M6.5 2.5h-4v4M9.5 2.5h4v4M6.5 13.5h-4v-4M9.5 13.5h4v-4"/></symbol>
+  <symbol id="i-ok" viewBox="0 0 16 16"><path d="m4.5 6.2 3.5 3.6 3.5-3.6"/></symbol>
+  <symbol id="i-artı" viewBox="0 0 16 16"><path d="M8 3v10M3 8h10"/></symbol>
+  <symbol id="i-kapat" viewBox="0 0 16 16"><path d="m4 4 8 8M12 4l-8 8"/></symbol>
+</defs></svg>
+
+
 <!-- Panel parolası ayarlıysa önce bu ekran gelir -->
 <div id="giris">
   <div class="kart">
@@ -26,38 +47,34 @@
 
 <div id="uygulama" class="gizli">
 
-  <!-- ÜST ÇUBUK — bağlantı ışıkları, sekmeler ve acil durdurma tek şeritte.
-       Sekmeler eskiden ayrı bir şeritteydi; sahne arka plana geçince o şerit
-       sahneden yer çalan ikinci bir çubuk oldu. Acil durdurma buradan
-       çıkmıyor: makineyi durdurmak, hangi sekmede olduğunuza bağlı olmamalı. -->
+  <!-- ÜST ÇUBUK — üç bölge: solda kimlik, ORTADA sekmeler, sağda durum.
+       Sekmeler ortada mutlak hizalı; yan grupların genişliği değişse de
+       sekme şeridi kaymıyor. Işıklar metin taşımıyor, üstüne gelince adı
+       ve durumu çıkıyor: dört rozet dört kelimeyle çubuğun yarısını
+       yiyordu ve hepsi aynı görsel ağırlıktaydı. -->
   <header>
     <div class="ust-ic">
-      <div class="marka">🌱<span> Farmbot</span></div>
+      <div class="ust-sol">
+        <div class="marka">🌱<span>Farmbot</span></div>
+      </div>
 
-      <nav class="sekmeler">
+      <nav class="sekmeler" aria-label="Sayfalar">
         <button data-sayfa="izle" class="etkin">İzle</button>
         <button data-sayfa="sur">Sür</button>
         <button data-sayfa="tarla">Tarla</button>
         <button data-sayfa="otomasyon">Otomasyon</button>
+        <button data-sayfa="ayarlar">Ayarlar</button>
       </nav>
 
-      <span class="esnek"></span>
-
-      <div class="rozetler">
-        <div class="rozet" id="rozet-sunucu"><i class="nokta"></i><span>Sunucu</span></div>
-        <div class="rozet" id="rozet-ajan"><i class="nokta"></i><span>Raspberry Pi</span></div>
-        <div class="rozet" id="rozet-plc"><i class="nokta"></i><span>PLC</span></div>
-        <div class="rozet" id="rozet-kip"><i class="nokta"></i><span>Kip: —</span></div>
+      <div class="ust-sag">
+        <div class="isiklar" role="status" aria-label="Bağlantı durumu">
+          <span class="isik" id="rozet-sunucu" tabindex="0"><i class="nokta"></i><span class="ad">Sunucu</span></span>
+          <span class="isik" id="rozet-ajan" tabindex="0"><i class="nokta"></i><span class="ad">Raspberry Pi</span></span>
+          <span class="isik" id="rozet-plc" tabindex="0"><i class="nokta"></i><span class="ad">PLC</span></span>
+          <span class="isik" id="rozet-kip" tabindex="0"><i class="nokta"></i><span class="ad">Kip: —</span></span>
+        </div>
+        <button class="dugme tehlike acil-dugme" id="d-acil">Acil durdurma</button>
       </div>
-
-      <!-- Ayarlar da bir sekme, ama üst çubuğun sağ ucunda ayrı duruyor:
-           günlük iş değil, ara sıra açılan bir yer. Açıldığında sahneyi
-           kapatmıyor — soldaki yüzen panelde çıkıyor. -->
-      <nav class="sekmeler ayar-sekme">
-        <button data-sayfa="ayarlar" title="Ayarlar">⚙<span class="ad"> Ayarlar</span></button>
-      </nav>
-
-      <button class="dugme tehlike acil-dugme" id="d-acil">Acil durdurma</button>
     </div>
   </header>
 
@@ -135,8 +152,6 @@
       <div class="yuzen-ust">
         <span class="yuzen-ad" id="sol-panel-ad">İzle</span>
         <span class="esnek"></span>
-        <button class="yuzen-dugme" id="d-sol-genis" aria-pressed="false"
-                title="Paneli genişlet">⇔</button>
         <button class="yuzen-dugme" id="d-sol-katla" aria-expanded="true"
                 aria-controls="sol-panel-govde" title="Paneli katla">◀</button>
       </div>
@@ -361,47 +376,62 @@
     </section>
 
     <!-- ================================ TARLA =============================== -->
+    <!-- ================================ TARLA ===============================
+         Referans: FarmBot Farm Designer. Panel bir "form yığını" değil,
+         katlanabilir bölümler listesi: aynı anda en fazla ikisi açık,
+         gerisi tek satır. Kart çerçevesi yok — bölümler birbirinden
+         BOŞLUKLA ayrılıyor, çünkü zemin zaten yüzen panelin kendisi ve
+         üstüne bir kutu daha koymak ikinci bir kabuk demek. -->
     <section class="sayfa" id="sayfa-tarla">
-      <div class="kart">
-        <h3>Bitkiler
-          <button class="yardim" type="button" aria-expanded="false" aria-label="Açıklama">?</button></h3>
-        <p class="yardim-metin gizli">
-          Tür seçip <b>Bitki ekle</b> ile yatağa tıklayın. Bitkiyi sürükleyerek
-          taşıyabilir, üstüne tıklayarak kartını açabilirsiniz. Halka türün
-          yayılım çapıdır; iki halka kesişirse ikisi de uyarı rengine döner ve
-          kaç mm iç içe olduğu aşağıda yazar. Bitkiler ayrı bir yere değil
-          nokta deposuna kaydedilir.<br><br>
-          <b>3B sahne</b> izlemek için, <b>2B harita</b> hassas yerleştirme
-          için: milimetre cetvelli, tıklanan yerin koordinatı altta yazıyor.
-          İki görünüm aynı veriyi kullanıyor — birinde taşınan bitki
-          diğerinde de taşınmış oluyor.<br><br>
-          Sol tuş döndürür, Shift ile kaydırır, tekerlek yakınlaştırır.
-          Seçili öğe <kbd>Delete</kbd> ile silinir. Soldaki listeden
-          katmanlar tek tek kapatılabilir; kapalı katman hiç çizilmez.
-        </p>
-        <div class="araclar tarla-arac">
-          <div class="alan">
-            <label for="tur-secim">Tür</label>
-            <select id="tur-secim"></select>
-          </div>
-          <button class="dugme" id="d-ekleme-kipi">Bitki ekle</button>
-          <!-- Tür varsayılanları burada düzenleniyor: kaynak katalog dosyası
-               salt okunur kalıyor, değişiklik sunucuda ayrı tutuluyor. -->
-          <button class="dugme" id="d-tur-duzen" aria-expanded="false"
-                  aria-controls="tur-duzen">Tür özellikleri</button>
+
+      <!-- 1. BİTKİLER — sayfanın asıl işi, hep açık. -->
+      <section class="bolum" id="bolum-bitkiler">
+        <div class="bolum-ust">
+          <button class="bolum-bas" aria-expanded="true">
+            <svg class="ikon ok"><use href="#i-ok"/></svg>
+            <span class="bolum-ad">Bitkiler</span>
+            <span class="bolum-not" id="bitki-ozet"></span>
+          </button>
+          <button class="yardim" type="button" aria-expanded="false"
+                  aria-controls="yardim-bitkiler" aria-label="Açıklama">?</button>
         </div>
-        <div id="tur-duzen" class="onizleme gizli"></div>
+        <div class="bolum-govde">
+          <p class="yardim-metin gizli" id="yardim-bitkiler">
+            Tür seçip <b>Bitki ekle</b> ile yatağa tıklayın. Bitkiyi sürükleyerek
+            taşıyabilir, üstüne tıklayarak kartını açabilirsiniz. Halka türün
+            yayılım çapıdır; iki halka kesişirse ikisi de uyarı rengine döner ve
+            kaç mm iç içe olduğu aşağıda yazar. Bitkiler ayrı bir yere değil
+            nokta deposuna kaydedilir. Sol tuş döndürür, Shift ile kaydırır,
+            tekerlek yakınlaştırır; seçili öğe <kbd>Delete</kbd> ile silinir.
+          </p>
+          <div class="satir-8 alt-hizali">
+            <div class="alan esnek-alan">
+              <label for="tur-secim">Tür</label>
+              <select id="tur-secim"></select>
+            </div>
+            <button class="dugme birincil" id="d-ekleme-kipi">
+              <svg class="ikon"><use href="#i-artı"/></svg>Bitki ekle</button>
+          </div>
+          <button class="baglanti-dugme" id="d-tur-duzen" aria-expanded="false"
+                  aria-controls="tur-duzen">Tür varsayılanlarını düzenle</button>
+          <div id="tur-duzen" class="gomulu gizli"></div>
+          <div id="tarla-cakisma" class="gomulu gizli"></div>
+        </div>
+      </section>
 
-        <!-- Sahne ve katman listesi bu kartta DEĞİL: sağdaki kalıcı harita
-             sütununda duruyorlar, çünkü sekme değişince kaybolmamaları
-             gerekiyor. Burada yalnız bitki araçları kalıyor. -->
-        <div id="tarla-cakisma" class="onizleme gizli"></div>
-      </div>
-
-      <div class="izgara iki-sutun">
-        <div class="kart">
-          <h3>Kayıtlı noktalar <button class="yardim" type="button" aria-expanded="false" aria-label="Açıklama">?</button></h3>
-          <p class="yardim-metin gizli">
+      <!-- 2. KAYITLI NOKTALAR -->
+      <section class="bolum" id="bolum-noktalar">
+        <div class="bolum-ust">
+          <button class="bolum-bas" aria-expanded="true">
+            <svg class="ikon ok"><use href="#i-ok"/></svg>
+            <span class="bolum-ad">Kayıtlı noktalar</span>
+            <span class="bolum-not" id="nokta-ozet"></span>
+          </button>
+          <button class="yardim" type="button" aria-expanded="false"
+                  aria-controls="yardim-noktalar" aria-label="Açıklama">?</button>
+        </div>
+        <div class="bolum-govde">
+          <p class="yardim-metin gizli" id="yardim-noktalar">
             "Git" mevcut hareket komutunu kullanır — sıra Z → Y → X, sınır ve
             Z kilidi denetimleri aynen geçerli.
           </p>
@@ -413,12 +443,27 @@
             <button class="dugme birincil" id="d-nokta-kaydet">Konumu kaydet</button>
           </div>
           <div id="nokta-liste" class="liste">
-            <p class="alt-not">Henüz kayıtlı nokta yok.</p>
+            <p class="bos-durum">Henüz kayıtlı nokta yok.<br>
+              Makineyi bir yere götürün, üstteki kutuya bir ad yazıp
+              <b>Konumu kaydet</b> deyin — o konum buraya düşer ve
+              programlarda kullanılabilir.</p>
           </div>
         </div>
+      </section>
 
-        <div class="kart">
-          <h3>Tohum ızgarası <button class="yardim" type="button" aria-expanded="false" aria-label="Açıklama">?</button></h3>
+      <!-- 3. GELİŞMİŞ — ara sıra açılan işler. Varsayılan KATLI: bir
+           ekranda aynı anda en fazla üç ana blok görünsün. -->
+      <section class="bolum kapali" id="bolum-gelismis">
+        <div class="bolum-ust">
+          <button class="bolum-bas" aria-expanded="false">
+            <svg class="ikon ok"><use href="#i-ok"/></svg>
+            <span class="bolum-ad">Gelişmiş</span>
+            <span class="bolum-not">Tohum ızgarası</span>
+          </button>
+        </div>
+        <div class="bolum-govde">
+          <h4 class="alt-baslik">Tohum ızgarası
+            <button class="yardim" type="button" aria-expanded="false" aria-label="Açıklama">?</button></h4>
           <p class="yardim-metin gizli">
             1 numaralı nokta başlangıçta. Sütunlar X'te, satırlar Y'de ilerler;
             numaralandırma satır-öncelikli: <code>s1, s2, s3…</code>
@@ -427,31 +472,31 @@
           <div class="izgara-form">
             <div class="grup">
               <span class="grup-ad">Başlangıç</span>
-              <div class="alan"><label>X</label><input type="number" id="iz-x0" step="0.1" value="60"></div>
-              <div class="alan"><label>Y</label><input type="number" id="iz-y0" step="0.1" value="80"></div>
+              <div class="alan"><label for="iz-x0">X</label><input type="number" id="iz-x0" step="0.1" value="60"></div>
+              <div class="alan"><label for="iz-y0">Y</label><input type="number" id="iz-y0" step="0.1" value="80"></div>
             </div>
             <div class="grup">
               <span class="grup-ad">Aralık</span>
-              <div class="alan"><label>X</label><input type="number" id="iz-dx" step="0.1" value="40"></div>
-              <div class="alan"><label>Y</label><input type="number" id="iz-dy" step="0.1" value="40"></div>
+              <div class="alan"><label for="iz-dx">X</label><input type="number" id="iz-dx" step="0.1" value="40"></div>
+              <div class="alan"><label for="iz-dy">Y</label><input type="number" id="iz-dy" step="0.1" value="40"></div>
             </div>
             <div class="grup">
               <span class="grup-ad">Boyut</span>
-              <div class="alan"><label>Satır</label><input type="number" id="iz-satir" min="1" value="3"></div>
-              <div class="alan"><label>Sütun</label><input type="number" id="iz-sutun" min="1" value="4"></div>
+              <div class="alan"><label for="iz-satir">Satır</label><input type="number" id="iz-satir" min="1" value="3"></div>
+              <div class="alan"><label for="iz-sutun">Sütun</label><input type="number" id="iz-sutun" min="1" value="4"></div>
             </div>
             <div class="grup">
               <span class="grup-ad">Ad</span>
-              <div class="alan"><label>Önek</label><input type="text" id="iz-onek" maxlength="12" value="s"></div>
+              <div class="alan"><label for="iz-onek">Önek</label><input type="text" id="iz-onek" maxlength="12" value="s"></div>
             </div>
           </div>
           <div class="satir-8">
             <button class="dugme" id="d-izgara-onizle">Önizle</button>
             <button class="dugme birincil gizli" id="d-izgara-uygula">Uygula</button>
           </div>
-          <div id="izgara-onizleme" class="onizleme gizli"></div>
+          <div id="izgara-onizleme" class="gomulu gizli"></div>
         </div>
-      </div>
+      </section>
     </section>
 
     <!-- ============================== OTOMASYON ============================= -->
@@ -783,33 +828,81 @@
       </div><!-- /.yuzen-govde -->
     </aside>
 
-    <!-- ========================== SAHNE ÇUBUĞU ===========================
-         Sahnenin kendi araçları sahnenin üstünde duruyor, üst çubukta değil:
-         hangi kipte olduğunu sahneye bakarken görmek gerekiyor. -->
-    <div class="harita-ust" id="sahne-cubuk">
-      <span class="harita-ad">Tarla <span id="tarla-olcu" class="birim-not"></span></span>
+    <!-- ===================== SAHNE ARAÇ ÇUBUĞU ==========================
+         Sahnenin bütün denetimleri TEK yüzen çubukta: kip, görünüm,
+         katmanlar, harita ayarı. Eskiden görünüm düğmeleri bir çubukta,
+         katman rafı ayrı bir kutudaydı — sahnenin üstünde iki ayrı yüzen
+         kutu vardı ve ikisi de aynı görsel ağırlıktaydı.
+
+         Katmanlar ve harita ayarı çubuktan AÇILAN panellerde: sahnenin
+         üstünde sürekli duran bir liste, bakılan şeyin yarısını kapatıyor. -->
+    <div class="sahne-cubuk" id="sahne-cubuk">
+      <span class="sahne-ad">Tarla <span id="tarla-olcu" class="ikincil"></span></span>
+
       <!-- İKİ KİP — Taşı: sürükleyip döndürmek, tek öğe seçmek.
            Seç: kutuyla çoklu seçim ve seçime toplu işlem. -->
-      <button class="dugme secili" id="d-kip-tasi">Taşı</button>
-      <button class="dugme" id="d-kip-sec">Seç</button>
-      <span class="ayirac"></span>
-      <button class="dugme secili" id="d-gorunum-3b">3B sahne</button>
-      <button class="dugme" id="d-gorunum-2b">2B harita</button>
-      <span id="tarla-3b-arac" class="satir-8">
-        <button class="dugme secili" id="d-gorus-serbest">Serbest</button>
-        <button class="dugme" id="d-gorus-ust">Üstten</button>
-        <label class="onay"><input type="checkbox" id="tarla-simge" checked> Simgeler</label>
-      </span>
-      <button class="dugme" id="d-harita-ayar" aria-expanded="false" title="Harita ayarları">Ayarlar</button>
-      <button class="dugme harita-buyut" id="d-harita-buyut" aria-expanded="false">Büyüt</button>
+      <div class="dugme-grup" role="group" aria-label="Kip">
+        <button class="ikon-dugme secili" id="d-kip-tasi" title="Taşı — sürükle, döndür, tek öğe seç">
+          <svg class="ikon"><use href="#i-tasi"/></svg><span class="ad">Taşı</span></button>
+        <button class="ikon-dugme" id="d-kip-sec" title="Seç — kutuyla çoklu seçim">
+          <svg class="ikon"><use href="#i-sec"/></svg><span class="ad">Seç</span></button>
+      </div>
+
+      <div class="dugme-grup" role="group" aria-label="Görünüm">
+        <button class="ikon-dugme secili" id="d-gorunum-3b" title="3B sahne">
+          <svg class="ikon"><use href="#i-3b"/></svg><span class="ad">3B</span></button>
+        <button class="ikon-dugme" id="d-gorunum-2b" title="2B harita — milimetre cetvelli">
+          <svg class="ikon"><use href="#i-2b"/></svg><span class="ad">2B</span></button>
+      </div>
+
+      <div class="dugme-grup" id="tarla-3b-arac" role="group" aria-label="Kamera">
+        <button class="ikon-dugme secili" id="d-gorus-serbest" title="Serbest kamera">
+          <svg class="ikon"><use href="#i-serbest"/></svg></button>
+        <button class="ikon-dugme" id="d-gorus-ust" title="Üstten bak">
+          <svg class="ikon"><use href="#i-ustten"/></svg></button>
+        <button class="ikon-dugme secili" id="tarla-simge" role="checkbox" aria-checked="true"
+                title="Bitki simgeleri">
+          <svg class="ikon"><use href="#i-simge"/></svg></button>
+      </div>
+
+      <span class="cubuk-ayirac"></span>
+
+      <button class="ikon-dugme" id="d-katman-ac" aria-expanded="false" aria-controls="katman-kutu"
+              title="Katmanlar">
+        <svg class="ikon"><use href="#i-katman"/></svg><span class="ad">Katmanlar</span>
+        <span class="sayac" id="katman-sayac"></span></button>
+      <button class="ikon-dugme" id="d-harita-ayar" aria-expanded="false" aria-controls="harita-ayar"
+              title="Harita ayarları">
+        <svg class="ikon"><use href="#i-ayar"/></svg></button>
+      <button class="ikon-dugme harita-buyut" id="d-harita-buyut" aria-expanded="false"
+              title="Sahneyi büyüt">
+        <svg class="ikon"><use href="#i-buyut"/></svg></button>
+    </div>
+
+    <!-- KATMAN RAFI — çubuktan açılan panel. Her katman bağımsız, tercih
+         localStorage'da. Kapalı katman hiç çizilmiyor; liste
+         `/api/katmanlar`dan yüklenen dosyaların kendi kaydından üretiliyor. -->
+    <div class="acilir" id="katman-kutu" hidden>
+      <div class="acilir-bas">Katmanlar
+        <button class="ikon-dugme acilir-kapat" data-hedef="#katman-kutu" title="Kapat">
+          <svg class="ikon"><use href="#i-kapat"/></svg></button>
+      </div>
+      <div id="katman-liste"></div>
+      <div class="acilir-dip">
+        <span id="tarla-sayi" class="ikincil"></span>
+        <span id="tarla-konum" class="ikincil sayi"></span>
+      </div>
     </div>
 
     <!-- HARİTA AYARLARI — makinenin yanında dururken nereden baktığına
          göre haritayı çevirmek için. Yalnız 2B haritayı etkiliyor: 3B'de
          zaten sahneyi döndürebiliyorsun. Makinenin sınırlarına ve
          koordinatlarına DOKUNMUYOR, sadece çizimi çeviriyor. -->
-    <div id="harita-ayar" class="harita-ayar gizli">
-      <div class="ayar-baslik">Harita ayarları <span class="alt-not">2B görünüm</span></div>
+    <div id="harita-ayar" class="acilir gizli">
+      <div class="acilir-bas">Harita ayarları <span class="ikincil">2B görünüm</span>
+        <button class="ikon-dugme acilir-kapat" data-hedef="#harita-ayar" title="Kapat">
+          <svg class="ikon"><use href="#i-kapat"/></svg></button>
+      </div>
 
       <label class="onay"><input type="checkbox" id="ha-dondur"> Döndür (X ↔ Y)</label>
 
@@ -840,28 +933,8 @@
       <button class="dugme" id="ha-sifirla">Varsayılana dön</button>
     </div>
 
-    <!-- ============================ SAĞ RAF ==============================
-         KATMAN RAFI — her katman bağımsız, tercih localStorage'da. Kapalı
-         katman hiç çizilmiyor; liste `/api/katmanlar`dan yüklenen dosyaların
-         kendi kaydından üretiliyor. Sahnenin üstünde duruyor: hangi
-         katmanların açık olduğu, sahneye bakarken görülebilmeli.
-
-         Seçilen öğenin kartı da bu sütunda, rafın altında: sahnenin ortasını
-         kapatmıyor ve iki yüzen kutu üst üste binmiyor. -->
-    <aside class="yuzen sag" id="sag-raf">
-      <div class="katman-kutu" id="katman-kutu">
-        <button class="katman-baslik" id="d-katman-ac" aria-expanded="true">
-          <span class="ok">▾</span> Katmanlar
-        </button>
-        <div id="katman-liste"></div>
-        <div class="katman-dip">
-          <span id="tarla-sayi" class="alt-not"></span>
-          <span id="tarla-konum" class="alt-not sayi"></span>
-        </div>
-      </div>
-
-      <div id="tarla-kart" class="tarla-kart gizli"></div>
-    </aside>
+    <!-- Seçilen öğenin kartı — sahnenin sağında yüzüyor. -->
+    <div id="tarla-kart" class="tarla-kart gizli"></div>
 
     <!-- PROFİL GÖRÜNTÜLEYİCİ — Z'yi üstten görünümde anlamanın tek yolu.
          Haritada bir yere tıklayınca o koordinattan geçen X ya da Y

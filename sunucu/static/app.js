@@ -150,17 +150,28 @@ async function noktalariYukle() {
 function noktalariCiz() {
   const kutu = $("#nokta-liste");
   if (!S.noktalar.length) {
-    kutu.innerHTML = '<p class="alt-not">Henüz kayıtlı nokta yok.</p>';
+    // BOŞ DURUM: boş bir kutu değil, ne yapılacağı.
+    kutu.innerHTML = '<p class="bos-durum">Henüz kayıtlı nokta yok.<br>' +
+      'Makineyi bir yere götürün, üstteki kutuya bir ad yazıp ' +
+      '<b>Konumu kaydet</b> deyin — o konum buraya düşer ve programlarda ' +
+      'kullanılabilir.</p>';
+    const ozet = $("#nokta-ozet");
+    if (ozet) ozet.textContent = "";
     return;
   }
+  const ozet = $("#nokta-ozet");
+  if (ozet) ozet.textContent = `${S.noktalar.length} nokta`;
   kutu.innerHTML = S.noktalar.map((n, i) => {
     const disi = sinirDisi(n);
+    // Satır eylemleri DÜZ düğme: bir listede on iki çerçeveli düğme, hepsi
+    // asıl işmiş gibi duruyor ve göz nereye bakacağını bilmiyordu.
     return `<div class="satir${disi ? " sinir-disi" : ""}">
       <span class="ad">${n.tur ? "🌱 " : ""}${kacisli(n.ad)}</span>
       <span class="koordinat">X${sayi(n.x)} Y${sayi(n.y)} Z${sayi(n.z)}</span>
       ${disi ? `<span class="rozet-uyari" title="Bu nokta makinenin yumuşak sınırlarının dışında; hareket ajanda reddedilir. Kayıt silinmedi.">⚠ ${disi} sınır dışı</span>` : ""}
-      <button class="dugme nokta-git" data-i="${i}"${disi ? ` disabled data-sinir-disi="1"` : ""}>Git</button>
-      <button class="dugme nokta-sil" data-i="${i}">Sil</button>
+      <button class="ikon-dugme nokta-git" data-i="${i}" title="Bu noktaya git"${disi ? ` disabled data-sinir-disi="1"` : ""}>Git</button>
+      <button class="ikon-dugme tehlike nokta-sil" data-i="${i}" title="Sil">
+        <svg class="ikon"><use href="#i-kapat"/></svg></button>
     </div>`;
   }).join("");
 
@@ -1532,10 +1543,19 @@ function otoAyarGuncelle(o) {
     : "Manuel kipte bu ayarlar beklemede.";
 }
 
+/** Bir durum ışığı — renk ve (üstüne gelince çıkan) ad.
+ *
+ * Metin artık çubukta durmuyor: dört rozet dört kelimeyle üst çubuğun
+ * yarısını yiyordu ve dördü de aynı görsel ağırlıktaydı. Işık ancak
+ * bozulduğunda dikkat çekmeli; adı merak eden üstüne geliyor. Ad `title`
+ * olarak da yazılıyor ki dokunmatikte ve ekran okuyucuda kaybolmasın. */
 function rozetYaz(kimlik, sinif, metin) {
   const el = $(kimlik);
-  el.className = `rozet ${sinif}`;
-  el.querySelector("span").textContent = metin;
+  if (!el) return;
+  el.className = `isik ${sinif}`;
+  el.title = metin;
+  const ad = el.querySelector(".ad");
+  if (ad) ad.textContent = metin;
 }
 
 let _sonHata = "";
@@ -1711,26 +1731,21 @@ function olaylariBagla() {
     $("#d-sol-katla").onclick = () => solPanelKatla(true);
     $("#d-sol-ac").onclick = () => solPanelKatla(false);
     if (localStorage.getItem("farmbot_sol_panel") === "katli") solPanelKatla(true);
-
-    // Ayarlar gibi uzun sayfalar dar panelde eziliyor; aynı panel iki kat
-    // genişliyor. Tercih saklanıyor — bir kez ayarlayan her açılışta bulur.
-    const genisDugme = $("#d-sol-genis");
-    const genisYaz = (genis) => {
-      solPanel.classList.toggle("genis", genis);
-      genisDugme.setAttribute("aria-pressed", String(genis));
-      localStorage.setItem("farmbot_sol_genis", genis ? "1" : "0");
-      Object.values(S.grafikler).forEach((g) => g.resize());
-    };
-    genisDugme.onclick = () => genisYaz(!solPanel.classList.contains("genis"));
-    if (localStorage.getItem("farmbot_sol_genis") === "1") genisYaz(true);
   }
 
   // "?" açıklama düğmeleri — her biri kendinden sonraki .yardim-metin'i açar.
   // Tek tek bağlamak yerine tek kural: yeni bir bölüm eklendiğinde JS'e
   // dokunmak gerekmesin.
   $$(".yardim").forEach((d) => {
-    d.onclick = () => {
-      const metin = d.closest("h3").nextElementSibling;
+    d.onclick = (o) => {
+      o.stopPropagation();
+      // Metni bulmanın iki yolu: açıkça aria-controls verilmişse o, yoksa
+      // başlığın hemen ardındaki paragraf. Bölüm başlıkları artık bir
+      // düğme olduğu için "?" onların DIŞINDA duruyor ve eski kural
+      // (h3'ün kardeşi) tek başına yetmiyor.
+      const hedef = d.getAttribute("aria-controls");
+      const metin = hedef ? document.getElementById(hedef)
+                          : (d.closest("h3, h4, .bolum-ust") || {}).nextElementSibling;
       if (!metin || !metin.classList.contains("yardim-metin")) return;
       const acik = metin.classList.toggle("gizli");
       d.setAttribute("aria-expanded", String(!acik));
@@ -1751,26 +1766,81 @@ function olaylariBagla() {
     $("#d-gunluk-ac").setAttribute("aria-expanded", String(!kapali));
   };
 
-  // Katman rafı katlanabiliyor: dar ekranda sahnenin sol üstünü kapatması
-  // can sıkıcı. Tercih katman tercihleriyle aynı yerde saklanıyor.
-  const rafKutu = $("#katman-kutu");
-  const rafDugme = $("#d-katman-ac");
-  if (rafKutu && rafDugme) {
-    const rafTercih = localStorage.getItem("farmbot_katman_rafi");
-    // Dar ekranda raf, sahnenin yarısını kapatıyor: tercih yoksa katlı açılıyor.
-    if (rafTercih === "katli" || (rafTercih === null && window.innerWidth < 900)) {
-      rafKutu.classList.add("katli");
-    }
-    // Açılıştaki katlama ekran genişliğinden geliyor; tercih olarak YAZILMIYOR,
-    // yoksa telefonda bir kez açılan panel masaüstünde de katlı kalırdı.
-    const rafYaz = (kaydet) => {
-      const katli = rafKutu.classList.contains("katli");
-      rafDugme.setAttribute("aria-expanded", String(!katli));
-      if (kaydet) localStorage.setItem("farmbot_katman_rafi", katli ? "katli" : "acik");
-    };
-    rafYaz(false);
-    rafDugme.onclick = () => { rafKutu.classList.toggle("katli"); rafYaz(true); };
+  /* AÇILIR PANELLER — katman rafı ve harita ayarı sahnenin üstünde sürekli
+   * durmuyor, çubuktaki düğmeden açılıyor. Sürekli açık bir liste, bakılan
+   * şeyin bir kısmını kapatıyor; asıl iş sahnede.
+   *
+   * Aynı anda tek panel: ikisi birden açıkken üst üste biniyorlardı. */
+  function acilirKapat(hepsi) {
+    (hepsi || ["#katman-kutu", "#harita-ayar"]).forEach((sec) => {
+      const k = $(sec);
+      if (!k) return;
+      k.hidden = true;
+      k.classList.add("gizli");
+      const d = $(`[aria-controls="${sec.slice(1)}"]`);
+      if (d) { d.setAttribute("aria-expanded", "false"); d.classList.remove("secili"); }
+    });
   }
+
+  function acilirBagla(secici, dugmeSecici) {
+    const kutu = $(secici), dugme = $(dugmeSecici);
+    if (!kutu || !dugme) return;
+    acilirKapat([secici]);
+    dugme.onclick = () => {
+      const acikti = !kutu.hidden && !kutu.classList.contains("gizli");
+      acilirKapat();
+      if (acikti) return;
+      kutu.hidden = false;
+      kutu.classList.remove("gizli");
+      dugme.setAttribute("aria-expanded", "true");
+      dugme.classList.add("secili");
+    };
+  }
+  acilirBagla("#katman-kutu", "#d-katman-ac");
+  acilirBagla("#harita-ayar", "#d-harita-ayar");
+
+  /* Bitki simgeleri — eskiden bir onay kutusuydu; sahne çubuğunda etiketli
+   * bir kutu, ikonlu düğmelerin arasında yamalı duruyordu. Rol yine
+   * onay kutusu (ekran okuyucu için aria-checked), görünüşü düğme. */
+  const simgeDugme = $("#tarla-simge");
+  if (simgeDugme) {
+    simgeDugme.onclick = () => {
+      const acik = simgeDugme.getAttribute("aria-checked") !== "true";
+      simgeDugme.setAttribute("aria-checked", String(acik));
+      simgeDugme.classList.toggle("secili", acik);
+      if (window.Tarla) window.Tarla.noktalarDegisti(true);
+    };
+  }
+  $$(".acilir-kapat").forEach((d) => {
+    const hedef = d.getAttribute("data-hedef");
+    d.onclick = () => acilirKapat([hedef]);
+  });
+  /* Boşluğa tıklayınca KAPANMIYOR — bilerek. Bu paneller sahneye BAKARKEN
+   * kullanılıyor: bir katmanı kapat, sahneye bak, bir tane daha kapat.
+   * Her sahne tıklamasında kapanan bir panel, her seferinde yeniden
+   * açılmayı gerektiriyordu. Kapatmak için: aynı düğme, ✕ ya da Esc. */
+  document.addEventListener("keydown", (o) => { if (o.key === "Escape") acilirKapat(); });
+
+  /* KATLANABİLİR BÖLÜMLER — panel bir form yığını değil, bölüm listesi.
+   * Aynı anda en fazla üç blok görünsün diye "Gelişmiş" katlı başlıyor;
+   * kullanıcının açtığı/kapattığı her bölüm hatırlanıyor. */
+  $$(".bolum").forEach((bolum) => {
+    const basDugme = bolum.querySelector(".bolum-bas");
+    if (!basDugme) return;
+    const anahtar = "farmbot_bolum_" + bolum.id;
+    const kayitli = localStorage.getItem(anahtar);
+    if (kayitli === "kapali") bolum.classList.add("kapali");
+    if (kayitli === "acik") bolum.classList.remove("kapali");
+    const yaz = () => basDugme.setAttribute(
+      "aria-expanded", String(!bolum.classList.contains("kapali")));
+    yaz();
+    basDugme.onclick = () => {
+      bolum.classList.toggle("kapali");
+      localStorage.setItem(anahtar, bolum.classList.contains("kapali") ? "kapali" : "acik");
+      yaz();
+      Object.values(S.grafikler).forEach((g) => g.resize());
+    };
+  });
 
   // Geniş ekranda sahne zaten tam boy; telefonda şerit hâlinde ve "Büyüt"
   // onu tam boya çıkarıyor. Düğme yalnız dar ekranda görünüyor.
