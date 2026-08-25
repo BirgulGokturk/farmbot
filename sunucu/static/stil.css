@@ -1336,11 +1336,25 @@ button.dugme.tehlike:disabled {
   overflow-y: auto;
 }
 #tani-bant .bant-ic { align-items: stretch; }
-.tani-liste { display: flex; flex-direction: column; gap: var(--b3); width: 100%; }
+.tani-liste { display: flex; flex-direction: column; gap: var(--b2); width: 100%; }
 
 .tani { display: flex; flex-direction: column; gap: var(--b2); }
-.tani-bas { font-weight: 600; color: var(--uyari); }
-.tani-ne { color: var(--metin-2); max-width: var(--metin-en); }
+.tani-bas {
+  font-weight: 600; color: var(--uyari);
+  cursor: pointer; list-style: none;
+  display: flex; align-items: baseline; gap: var(--b2);
+}
+.tani-bas::-webkit-details-marker { display: none; }
+.tani-bas::after { content: "▸"; color: var(--metin-3); margin-left: auto; }
+.tani[open] > .tani-bas::after { content: "▾"; }
+.tani-bas:hover { color: #f0c04a; }
+/* Ozet satirinda tek satir, acikken tam metin */
+.tani-ne {
+  color: var(--metin-2); max-width: var(--metin-en);
+  font-weight: 400; overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap;
+}
+.tani[open] .tani-ne { white-space: normal; overflow: visible; }
 .tani-ham code { color: var(--metin-3); }
 
 .tani-govde {

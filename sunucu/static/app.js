@@ -1045,15 +1045,16 @@ const TANI_YEREL = {
 function taniKarti(t) {
   const liste = (dizi, sinif) => (dizi || []).length
     ? `<ul class="${sinif}">${dizi.map((x) => `<li>${kacisli(x)}</li>`).join("")}</ul>` : "";
-  return `<div class="tani">
-    <div class="tani-bas">⚠ ${kacisli(t.baslik)}</div>
-    <div class="tani-ne">${kacisli(t.ne_koptu)}</div>
+  // Katlanabilir: acikken tani ekranin yarisini yiyip sahneyi kose sikistiriyordu.
+  // Ozet satiri neyin koptugunu zaten soyluyor; ayrinti isteyen aciyor.
+  return `<details class="tani">
+    <summary class="tani-bas">⚠ ${kacisli(t.baslik)} <span class="tani-ne">${kacisli(t.ne_koptu)}</span></summary>
     ${t.ham ? `<div class="tani-ham"><code>${kacisli(t.ham)}</code></div>` : ""}
     <div class="tani-govde">
       <div><span class="tani-etiket">Olası sebep</span>${liste(t.sebepler, "tani-sebep")}</div>
       <div><span class="tani-etiket">Ne yapmalı</span>${liste(t.adimlar, "tani-adim")}</div>
     </div>
-  </div>`;
+  </details>`;
 }
 
 /** Etkin tanıları çiziyor. Boşsa bant hiç görünmüyor. */
