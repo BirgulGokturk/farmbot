@@ -167,6 +167,41 @@ StandardError=journal
 WantedBy=multi-user.target
 BIRIM
 
+# Otomatik guncelleme: zamanlayici 5 dakikada bir GitHub'a bakar. Makine
+# mesgulken (hareket/jog/dizi) atlar, bir sonraki turda tekrar dener.
+# Istenmiyorsa:  sudo systemctl disable --now farmbot-guncelle.timer
+sudo tee /etc/systemd/system/farmbot-guncelle.service >/dev/null <<BIRIM
+[Unit]
+Description=Farmbot otomatik guncelleme
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=$KULLANICI
+WorkingDirectory=$KOK
+ExecStart=/usr/bin/env bash $KOK/oto-guncelle.sh
+BIRIM
+
+sudo tee /etc/systemd/system/farmbot-guncelle.timer >/dev/null <<BIRIM
+[Unit]
+Description=Farmbot guncellemesini duzenli kontrol et
+
+[Timer]
+OnBootSec=3min
+OnUnitActiveSec=5min
+Unit=farmbot-guncelle.service
+
+[Install]
+WantedBy=timers.target
+BIRIM
+
+# Betik servisleri yeniden baslatiyor; parolasiz sudo yalnizca bu iki komut
+# icin veriliyor, genel sudo yetkisi acilmiyor.
+sudo tee /etc/sudoers.d/farmbot-guncelle >/dev/null <<KURAL
+$KULLANICI ALL=(root) NOPASSWD: /usr/bin/systemctl restart farmbot-sunucu farmbot-ajan
+KURAL
+sudo chmod 440 /etc/sudoers.d/farmbot-guncelle
+
 sudo systemctl daemon-reload
 
 # --- 6. Seri port izni -------------------------------------------------------
@@ -186,6 +221,11 @@ Kurulum bitti.
   Sunucuyu başlat : sudo systemctl enable --now farmbot-sunucu
   Panel           : http://$IP:8000
   Kayıtlar        : journalctl -u farmbot-sunucu -f
+
+Otomatik guncelleme (istege bagli — GitHub'daki her yeniligi kendi ceker):
+
+  sudo systemctl enable --now farmbot-guncelle.timer
+  journalctl -t farmbot-guncelle -f
 
 Panel açıldıktan sonra ajanı başlatın:
 
