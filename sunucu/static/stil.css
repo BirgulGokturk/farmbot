@@ -187,6 +187,30 @@ header {
 }
 .isik:hover .ad, .isik:focus-visible .ad { opacity: 1; }
 
+/* BOZUK IŞIK ADINI GÖSTERİYOR.
+ * "Işık ancak bozulduğunda dikkat çekmeli" diyorduk ama 8 piksellik bir
+ * nokta bunu yapamıyor: koyu zeminde kırmızı ile yeşil göz ucuyla
+ * ayırt edilemiyor ve ekran görüntüsünde kopuk bir Pi "her şey yolunda"
+ * gibi okundu. Sağlıklı ışık sessiz bir nokta olarak kalıyor, kopan ışık
+ * adını yanına yazıyor — ekranda yer kaplayan tek ışık, bakılması gereken. */
+.isik.kopuk {
+  background: rgba(224, 82, 82, .14);
+  border-radius: 999px;
+  padding: var(--b1) var(--b2) var(--b1) var(--b1);
+  gap: var(--b2);
+  align-items: center;
+}
+.isik.kopuk .ad {
+  position: static;
+  opacity: 1;
+  background: none;
+  box-shadow: none;
+  padding: 0;
+  color: #f0b4b4;
+  font-size: var(--yazi-kucuk);
+  white-space: nowrap;
+}
+
 /* Acil durdurma üst çubukta: hangi sekmede olursanız olun tek tık uzakta.
    Ekrandaki TEK kırmızı dolu düğme. */
 .acil-dugme { white-space: nowrap; font-weight: 600; flex: none; height: 30px; padding: 0 var(--b3); }
@@ -1264,8 +1288,9 @@ table.veri td { color: var(--metin-2); }
   .marka span { display: none; }   /* simge kalıyor, yazı yer açıyor */
   .isiklar { gap: var(--b1); }
   .acil-dugme { padding: 0 var(--b2); font-size: var(--yazi-kucuk); }
-  /* İpucu balonu dokunmatikte işe yaramıyor; ışıklar zaten renk taşıyor. */
-  .isik .ad { display: none; }
+  /* İpucu balonu dokunmatikte işe yaramıyor; ışıklar zaten renk taşıyor.
+     KOPUK ışığın adı telefonda da duruyor — asıl gösterilmesi gereken o. */
+  .isik:not(.kopuk) .ad { display: none; }
 
   main { padding: var(--b2); }
   .izgara { gap: var(--b2); margin-bottom: var(--b2); }
@@ -1492,13 +1517,13 @@ button.dugme.tehlike:disabled {
 
 /* ------------------------------------------------------------- eğriler */
 .egri-onizleme { margin: var(--b3) 0 var(--b2); }
+/* AYRIM: yalnız zemin — eğri çizimi zaten bir grafik, çerçeveye gerek yok. */
 .egri-onizleme canvas {
   display: block;
   width: 100%;
   height: 150px;
   background: var(--yuzey-2);
-  border: 1px solid var(--cizgi);
-  border-radius: var(--b2);
+  border-radius: var(--yaricap-2);
 }
 .egri-noktalar { display: flex; flex-direction: column; gap: var(--b1); }
 .egri-satir {

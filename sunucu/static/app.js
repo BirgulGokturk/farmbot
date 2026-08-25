@@ -1571,7 +1571,13 @@ function durumGuncelle(d) {
     : d.hareket ? "PLC: hareket ediyor"
     : d.enable ? "PLC: hazır" : "PLC: sürücüler kapalı";
   rozetYaz("#rozet-plc", plcSinif, plcMetin);
-  rozetYaz("#rozet-kip", d.kip === "manuel" ? "uyari-rengi" : "canli", `Kip: ${d.kip || "—"}`);
+  // Kip ışığı: oto = yeşil, manuel = sarı, BİLİNMİYOR = gri.
+  // Eskiden "manuel değilse yeşil" deniyordu; ajan çevrimdışıyken kip
+  // "bilinmiyor" oluyor ve ışık YEŞİL yanıyordu — makineyle hiç konuşulamazken
+  // "her şey yolunda" diyen bir ışık, yanlış bilginin en kötü türü.
+  const kipSinif = !d.bagli || !d.kip || d.kip === "bilinmiyor" ? ""
+                 : d.kip === "manuel" ? "uyari-rengi" : "canli";
+  rozetYaz("#rozet-kip", kipSinif, `Kip: ${d.kip || "—"}`);
   kipGuncelle(d.kip);
 
   kameraDurumYaz(d.kamera);
