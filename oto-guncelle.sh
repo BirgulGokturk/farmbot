@@ -36,5 +36,11 @@ if [ "$mesgul" = "evet" ]; then
 fi
 
 git pull -q --ff-only origin main || { kayit "pull başarısız"; exit 0; }
-sudo systemctl restart farmbot-sunucu farmbot-ajan
+# Sira onemli — bkz. guncelle.sh'daki aciklama.
+sudo systemctl restart farmbot-sunucu
+for i in $(seq 20); do
+    curl -sf -m 1 http://127.0.0.1:8000/saglik >/dev/null 2>&1 && break
+    sleep 0.5
+done
+sudo systemctl restart farmbot-ajan
 kayit "Güncellendi: $(git log --oneline -1)"

@@ -17,7 +17,16 @@ if ! git pull --ff-only; then
 fi
 
 echo "[2/3] Servisler yenileniyor"
-sudo systemctl restart farmbot-sunucu farmbot-ajan
+# SIRA ONEMLI: ikisini ayni anda yeniden baslatmak, ajanin kapanmakta olan
+# eski sunucu surecine baglanip orada takili kalmasina yol aciyor — ajan
+# "bagliyim" derken yeni sunucu onu hic gormuyor. Once sunucu ayaga kalksin,
+# sonra ajan baglansin.
+sudo systemctl restart farmbot-sunucu
+for i in $(seq 20); do
+    curl -sf -m 1 http://127.0.0.1:8000/saglik >/dev/null 2>&1 && break
+    sleep 0.5
+done
+sudo systemctl restart farmbot-ajan
 sleep 4
 
 echo "[3/3] Durum"

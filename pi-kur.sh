@@ -198,7 +198,7 @@ BIRIM
 # Betik servisleri yeniden baslatiyor; parolasiz sudo yalnizca bu iki komut
 # icin veriliyor, genel sudo yetkisi acilmiyor.
 sudo tee /etc/sudoers.d/farmbot-guncelle >/dev/null <<KURAL
-$KULLANICI ALL=(root) NOPASSWD: /usr/bin/systemctl restart farmbot-sunucu farmbot-ajan
+$KULLANICI ALL=(root) NOPASSWD: /usr/bin/systemctl restart farmbot-sunucu, /usr/bin/systemctl restart farmbot-ajan, /usr/bin/systemctl restart farmbot-sunucu farmbot-ajan
 KURAL
 sudo chmod 440 /etc/sudoers.d/farmbot-guncelle
 
