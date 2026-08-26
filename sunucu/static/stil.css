@@ -92,11 +92,36 @@
 
 * { box-sizing: border-box; }
 
+/* ------------------------------------------------------------------ emoji
+ * Raspberry Pi OS emoji fontuyla gelmiyor; Pi'nin kendi ekraninda bitki
+ * ikonlari bos kutu cikiyordu. Fontu isletim sistemine kurmak yerine panelle
+ * birlikte gonderiyoruz — boylece hangi cihazdan bakilirsa bakilsin ayni
+ * gorunuyor ve Pi'ye kurulum gerekmiyor.
+ *
+ * Tam Noto Color Emoji 11 MB. Bu dosya yalnizca kullandigimiz 24 bitki
+ * emojisini iceren alt kume: 46 KB. Panelin toplam yukunu bozmuyor.
+ *
+ * Yazi yiginin SONUNDA duruyor: normal harfler sistem fontuyla ciziliyor,
+ * yalnizca sistemde bulunmayan emoji glifleri buradan geliyor.
+ *
+ * Kaynak: github.com/googlefonts/noto-emoji · SIL Open Font License 1.1
+ * Lisans metni: bitki-emoji.LISANS.txt
+ */
+@font-face {
+  font-family: "BitkiEmoji";
+  src: url("/statik/bitki-emoji.woff2") format("woff2");
+  font-display: swap;
+  /* Yalnizca gercekten kullandigimiz araliklar istensin. */
+  unicode-range: U+FE0F, U+1F330-1F343, U+1F345-1F349, U+1F353, U+1F360,
+                 U+1F383, U+1F952-1F955, U+1F966, U+1F96C, U+1F9C4-1F9C5,
+                 U+1FAD8, U+1FADB;
+}
+
 body {
   margin: 0;
   background: var(--zemin);
   color: var(--metin);
-  font: var(--yazi-govde)/1.5 ui-sans-serif, system-ui, "Segoe UI", Roboto, Arial, sans-serif;
+  font: var(--yazi-govde)/1.5 ui-sans-serif, system-ui, "Segoe UI", Roboto, Arial, sans-serif, "BitkiEmoji";
   -webkit-font-smoothing: antialiased;
 }
 
