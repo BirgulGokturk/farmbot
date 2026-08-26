@@ -1,4 +1,4 @@
-/* Farmbot paneli — canlı veri, grafikler ve hareket kontrolü.
+/* Tarım Robotu paneli — canlı veri, grafikler ve hareket kontrolü.
  *
  * Tek dosya, derleme adımı yok: Pi'ye ya da buluta kopyalanan HTML doğrudan
  * çalışıyor. Veri iki yoldan geliyor:

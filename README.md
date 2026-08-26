@@ -1,4 +1,4 @@
-# Farmbot — akıllı tarım robotu paneli
+# Tarım Robotu — akıllı tarım robotu paneli
 
 Bu ilk sürüm bilerek küçük tutuldu: **hareket ettirme** ve **sensör grafikleri**.
 Çalıştığını gördükten sonra üzerine ekleme yapacağız.

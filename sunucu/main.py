@@ -37,7 +37,7 @@ import programlar
 import turler
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
-logger = logging.getLogger("farmbot")
+logger = logging.getLogger("tarim")
 
 # Ajanın kendini tanıtırken kullandığı gizli anahtar. Bulutta çalışan bir
 # adres herkese açık olduğu için bu zorunlu; boş bırakılırsa sunucu açılmaz.
