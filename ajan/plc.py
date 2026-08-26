@@ -73,6 +73,11 @@ class PLCHatasi(Exception):
 # --------------------------------------------------------------------------- #
 # Modbus TCP — çıplak soket
 # --------------------------------------------------------------------------- #
+# PLC erişilemez sayıldıktan sonra bir sonraki gerçek denemeye kadar geçen
+# süre. Kısa tutuluyor: kablo takılınca panelin toparlaması bu kadar sürüyor.
+SOGUMA_SN = 3.0
+
+
 class Modbus:
     """Minik Modbus TCP istemcisi: fonksiyon 3 (oku) ve 6 (tek register yaz).
 
@@ -87,6 +92,9 @@ class Modbus:
         self._soket: socket.socket | None = None
         self._tid = 0
         self._kilit = threading.RLock()
+        # SOĞUMA — bkz. SOGUMA_SN.
+        self._soguma_bitis = 0.0
+        self._soguma_hata: Exception | None = None
 
     def kapat(self) -> None:
         with self._kilit:
@@ -108,6 +116,29 @@ class Modbus:
 
     def _islem(self, fonksiyon: int, govde: bytes) -> bytes:
         with self._kilit:
+            # SOĞUMA: PLC erişilemez olduğu BİLİNİYORSA sokete hiç dokunmadan,
+            # anında son hatayı veriyoruz.
+            #
+            # Neden: cevap vermeyen bir PLC'de her işlem iki bağlantı denemesi
+            # × 1,5 sn = 3 sn bekliyor ve bunu Modbus KİLİDİNİ TUTARAK yapıyor.
+            # Durum döngüsü yarım saniyede bir yokluyor, yani kilit sürekli
+            # dolu; araya giren bir kullanıcı komutu hem kendi denemelerini
+            # hem yoklamaları bekliyor. Ölçüldü: enable(True) tek başına
+            # 12 sn (8 bağlantı denemesi) — sunucunun 20 sn'lik komut zaman
+            # aşımını aşıyor ve panelde "Ajan komuta zamanında yanıt vermedi"
+            # yazıyordu. Oysa gerçek sebep "PLC'ye ulaşılamıyor" ve panel
+            # tam da bunu teşhis edeceğimiz yer.
+            #
+            # Soğuma boyunca TEK bir gerçek deneme bile yapılmıyor; süre
+            # dolunca bir deneme yapılıyor. Kablo takılınca en geç SOGUMA_SN
+            # içinde kendiliğinden toparlıyor.
+            #
+            # Güvenlik: erişilemez bir PLC'ye zaten hiçbir yazma ulaşmıyor —
+            # değişen tek şey bunu ne kadar çabuk öğrendiğimiz. Hızlı hata,
+            # yavaş sessizlikten güvenli: çağıranlar (dizi, uç değiştirme)
+            # hatayı iptal sebebi sayıyor.
+            if self._soguma_bitis and time.monotonic() < self._soguma_bitis:
+                raise self._soguma_hata
             son_hata = None
             # İki deneme: ilk paket kopmuş bir sokete gidiyorsa ikincisi
             # tazelenmiş bağlantıdan geçer. Fazlası hatayı geciktirmekten
@@ -125,6 +156,8 @@ class Modbus:
                     cevap = self._al(uzunluk - 1)
                     if cevap[0] & 0x80:
                         raise IOError("Modbus istisnası %d" % cevap[1])
+                    self._soguma_bitis = 0.0        # konuşabildik: soğuma bitti
+                    self._soguma_hata = None
                     return cevap[1:]
                 except Exception as hata:
                     son_hata = hata
@@ -134,6 +167,9 @@ class Modbus:
             # Metinler tek yerde (tani.py), tanila.py da oradan okuyor.
             hata = PLCHatasi(f"PLC ile konuşulamadı ({self.ip}:{self.port}): {son_hata}")
             hata.tani = tani.plc_hatasindan(self.ip, self.port, son_hata)
+            # İki deneme de tükendi: PLC'yi erişilemez sayıp soğumaya alıyoruz.
+            self._soguma_bitis = time.monotonic() + SOGUMA_SN
+            self._soguma_hata = hata
             raise hata
 
     def oku(self, adres: int, adet: int) -> list[int]:
