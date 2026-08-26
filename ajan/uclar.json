@@ -1,14 +1,14 @@
 {
- "safe_z": 280,
- "travel_z": 280,
- "home_z": 280,
+ "safe_z": 390,
+ "travel_z": 390,
+ "home_z": 390,
  "slide_axis": "Y",
- "approach": -70,
+ "approach": -60,
  "retreat": null,
- "lift": 80,
- "speed": 20,
+ "lift": 110,
+ "speed": 40,
  "lock_reg": 0,
- "lock_dwell": 1.5,
+ "lock_dwell": 2000,
  "grip_reg": 0,
  "grip_dwell": 1000,
  "presence_reg": 0,
@@ -38,21 +38,21 @@
  "tools": [
   {
    "name": "tool1",
-   "x": 10.0,
-   "y": 70.5,
-   "z": 150.0
+   "x": 43.0,
+   "y": 66.0,
+   "z": 194.9
   },
   {
    "name": "tool2",
-   "x": 10.5,
-   "y": 265.0,
-   "z": 154.3
+   "x": 41.0,
+   "y": 262.0,
+   "z": 193.0
   },
   {
    "name": "tool3",
-   "x": 11.8,
-   "y": 474.0,
-   "z": 152.8
+   "x": 38.0,
+   "y": 460.0,
+   "z": 193.0
   }
  ],
  "_aciklama": "Uç değiştirme ayarları. Sahadan gelen gerçek değerler.",
@@ -62,5 +62,7 @@
  "_reg": "0 = donanım bağlı değil. presence_reg 0 iken dizi 'başarılı' değil 'doğrulanamadı' der.",
  "_tc_area": "İçinde X/Y jog için Z güvenlik şartı devre dışı. Kapalıyken hiçbir muafiyet yok.",
  "_release": "gantry_tools.json'da release {dx:0, dy:8} var — ucu birakirken uygulanan kucuk ofset. Bizde karsiligi yok, eklenmeli.",
- "_kaynak": "Degerler sevgilinin gantry_tools.json dosyasindan alindi (25.08.2026)."
+ "_kaynak": "Degerler Gantry Studio ekranindan alindi (26.08.2026).",
+ "drop_extra_z": 4,
+ "_drop_extra_z": "Birakmada servo biraktiktan SONRA bu kadar daha inilir, sonra yandan cikilir — kafa ucun kenarina takilmasin diye."
 }

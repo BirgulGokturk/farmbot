@@ -52,6 +52,10 @@ VARSAYILAN = {
     # program saniye kullanıyordu (1.5). İkisini de kabul ediyoruz — bkz.
     # `_bekleme_sn`. 1500 saniyelik bir bekleme 25 dakika sürerdi.
     "lock_reg": 0, "lock_dwell": 1500,   # 0 = donanım bağlı değil
+    # BIRAKMADA fazladan iniş: servo bıraktıktan sonra kafa bu kadar
+    # daha aşağı iniyor, sonra yandan çıkıyor. Amaç kafanın ucun
+    # kenarına takılmadan sıyrılması. 0 = kapalı.
+    "drop_extra_z": 0.0,
     "grip_reg": 0, "grip_dwell": 1000,
     "presence_reg": 0,
     # PLC'den "Z güvenli yükseklikte" durumunu okuyan register. 0 ise
@@ -377,6 +381,8 @@ class Uclar:
         # çıkış daha kısa ya da ters yönde). `retreat` boşsa `approach`.
         cx, cy = self._cikis_noktasi(uc)
         kayma_ekseni = 0 if str(self.ayar.get("slide_axis", "Y")).upper() == "X" else 1
+        fazla = max(0.0, float(self.ayar.get("drop_extra_z", 0.0) or 0.0))
+        toplam = 7 if fazla > 0 else 6
 
         self.durum.update(calisiyor=True, dizi=f"'{ad}' bırakılıyor", hata="", dogrulandi=None)
         if self.bolgeler:
@@ -399,11 +405,20 @@ class Uclar:
             self.plc.eksen_git_dogrula(2, ze, hiz)
             self._kesildi_kontrol()
 
-            self._adim(5, 6, "Servo bırakılıyor")
+            self._adim(5, toplam, "Servo bırakılıyor")
             self._servo(False)
             self._kesildi_kontrol()
 
-            self._adim(6, 6, f"{'X' if kayma_ekseni == 0 else 'Y'} ekseninde altından çık")
+            if fazla > 0:
+                # Sıra önemli: fazladan iniş servo BIRAKTIKTAN sonra. Uç
+                # yuvada duruyor, aşağı inen yalnız kafa; böylece yandan
+                # çıkarken ucun kenarına takılmıyor. Servo bırakmadan önce
+                # inseydik ucu yuvaya bastırmış olurduk.
+                self._adim(6, toplam, f"Z {fazla:.0f} mm daha in — kafa sıyrılarak çıksın")
+                self.plc.eksen_git_dogrula(2, ze - fazla, hiz)
+                self._kesildi_kontrol()
+
+            self._adim(toplam, toplam, f"{'X' if kayma_ekseni == 0 else 'Y'} ekseninde altından çık")
             self.plc.eksen_git_dogrula(kayma_ekseni, cx if kayma_ekseni == 0 else cy, hiz)
             self.plc.eksen_git_dogrula(2, self._cikis_yuksekligi(), hiz)
 
