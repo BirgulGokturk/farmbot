@@ -10,7 +10,7 @@
  * yerde tekrarlanır, üstelik "yatağın dibinde seyrek, uzakta sık" olması
  * imkânsız olurdu — tekrarlanan bir karo mesafeyi bilmiyor. Maliyeti de
  * korkulan yerde değil: bütün çiçekler tek ağda birleşiyor (1 çizim
- * çağrısı, ~1,4 bin üçgen) ve ekranda kapladıkları piksel alanı çok
+ * çağrısı, ~10 bin üçgen) ve ekranda kapladıkları piksel alanı çok
  * küçük. Ölçüm: açıkken/kapalıyken kare hızı aynı (bkz. commit notu).
  *
  * Kapatınca hepsi gidiyor: çekirdek grubu boşaltıp geometriyi atıyor.
@@ -32,7 +32,7 @@ Tarla.katman({
    *  bittiği için ötesini çizmek boşuna. */
   IC: 0.55,
   DIS: 9.0,
-  ADET: 3000,
+  ADET: 5200,
 
   guncelle(o) {
     const THREE = o.THREE;
@@ -40,8 +40,8 @@ Tarla.katman({
     if (!D) return;
     const zeminY = (o.makine.tabla - o.makine.ayak) * o.MM + 0.004;
     // İmza: zemin yüksekliği ve yatak ölçüsü. Nokta eklenip silindikçe
-    // katmanlar yeniden güncelleniyor; 700 çiçeği her seferinde kurmak
-    // Pi'de boşuna iş.
+    // katmanlar yeniden güncelleniyor; binlerce çiçeği her seferinde
+    // kurmak Pi'de boşuna iş.
     const imza = `${zeminY.toFixed(4)}|${o.genislikM}|${o.derinlikM}`;
     if (imza === this._imza && o.grup.children.length) return;
     this._imza = imza;
@@ -64,11 +64,11 @@ Tarla.katman({
       const r = this.IC + (this.DIS - this.IC) * Math.sqrt(rast());
       const x = Math.cos(a) * r, z = Math.sin(a) * r;
       if (Math.abs(x) < yariEn + 0.12 && Math.abs(z) < yariBoy + 0.12) continue;
-      // Yoğunluk payı: yatağın dibinde ~%30, 4 m'den sonra tam.
+      // Yoğunluk payı: yatağın dibinde ~%45, 4 m'den sonra tam.
       // Kare değil doğrusal olsaydı geçiş fark edilmez, kübik olsaydı
       // yatağın çevresinde çiçeksiz bir halka görünürdü.
       const pay = o.kis((r - this.IC) / 3.2, 0, 1);
-      if (rast() > 0.30 + 0.70 * pay * pay) continue;
+      if (rast() > 0.45 + 0.55 * pay * pay) continue;
       yer.push([x, z]);
     }
 
@@ -86,14 +86,19 @@ Tarla.katman({
 
     for (let i = 0; i < n; i++) {
       const [x, z] = yer[i];
-      // 2-5 cm denendi: gerçek papatya ölçüsü ama ekranda birkaç piksel,
-      // çiçek olduğu okunmuyordu. 3,5-7,5 cm biraz iri ama sahne
-      // ölçeğinde renk lekesi olarak işini görüyor.
-      const boy = 0.035 + rast() * 0.040;
+      /* 2-5 cm gerçek papatya ölçüsü ama ekranda birkaç piksel: çiçek
+       * olduğu okunmuyordu. 3,5-7,5 cm de yetmedi — kamera yataktan
+       * ~1,5 m uzakta, çiçek alanı 9 m'ye kadar gidiyor, yani çiçeklerin
+       * çoğu zaten uzakta. 6-12 cm tek bir çiçek başı için iri ama sahne
+       * ölçeğinde bir çiçek TUTAMI kadar; renk lekesi olarak okunması
+       * bundan önemli. */
+      const boy = 0.060 + rast() * 0.060;
       const sapma = rast() * Math.PI * 2;
-      // Eğim: 0 = çime yapışık, π/2 = dik. 25°-55° arası, hem tepeden
-      // hem yandan bakışta çiçek başı olarak okunuyor.
-      const egim = 0.44 + rast() * 0.52;
+      /* Eğim: 0 = çime yapışık, π/2 = dik. 7°-33° arası, yani çoğunlukla
+       * YUKARI bakıyorlar. 25°-55° denendi: panelin varsayılan kamerası
+       * zaten yukarıdan bakıyor, o kadar dik duran çiçeklerin yarısı
+       * yandan görünüp ince bir dilime iniyordu. */
+      const egim = 0.12 + rast() * 0.45;
       const cs = Math.cos(egim), sn = Math.sin(egim);
       const d = [Math.sin(sapma), 0, Math.cos(sapma)];        // yatay yön
       const sag = [Math.cos(sapma), 0, -Math.sin(sapma)];
