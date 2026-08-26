@@ -104,57 +104,152 @@
 
   const kis = (v, a, b) => (v < a ? a : v > b ? b : v);
 
+  /* ====================================================== kesek yığma
+   *
+   * Toprağın "boyut dağılımı" bir gürültü alanından çıkmıyor. fBm her
+   * ölçekte aynı yumuşaklıkta olduğu için yüzey düzgün ve tek tonlu
+   * kalıyor — kahverengi mermer gibi. Gerçek toprakta ise ayrık
+   * PARÇALAR var: birkaç iri kesek, çok sayıda orta tane, aralarını
+   * dolduran ince toz.
+   *
+   * Burada onun için yığma kullanılıyor: farklı yarıçaplarda kubbeler
+   * tohumlu konumlara serpilip yükseklikleri toplanıyor. Kubbeler
+   * sarmalanarak konduğu için doku kenarında kesilmiyor.
+   */
+  function kubbe(h, en, cx, cy, r, genlik) {
+    const r2 = r * r;
+    const x0 = Math.floor(cx - r), x1 = Math.ceil(cx + r);
+    const y0 = Math.floor(cy - r), y1 = Math.ceil(cy + r);
+    for (let y = y0; y <= y1; y++) {
+      const dy = y - cy;
+      const yy = ((y % en) + en) % en;
+      for (let x = x0; x <= x1; x++) {
+        const dx = x - cx;
+        const d2 = dx * dx + dy * dy;
+        if (d2 >= r2) continue;
+        const t = 1 - d2 / r2;
+        const xx = ((x % en) + en) % en;
+        h[yy * en + xx] += genlik * t * t;
+      }
+    }
+  }
+
+  /** Üç ölçekli kesek alanı, 0..1'e normalleştirilmiş. */
+  function kesekAlani(en, tohum) {
+    const h = new Float32Array(en * en);
+    const rast = uretec(tohum);
+    // [adet payı, en küçük yarıçap, en büyük yarıçap, genlik]
+    const kat = [
+      [2600, 0.045, 0.085, 1.00],   // iri kesek: birkaç tane, yüzeyin iskeleti
+      [300, 0.016, 0.034, 0.55],   // orta tane
+      [40, 0.005, 0.012, 0.28],   // ince toz
+    ];
+    for (const [pay, r0, r1, g] of kat) {
+      const adet = Math.max(1, Math.round((en * en) / pay));
+      for (let i = 0; i < adet; i++) {
+        const r = en * (r0 + rast() * (r1 - r0));
+        kubbe(h, en, rast() * en, rast() * en, r, g * (0.6 + rast() * 0.8));
+      }
+    }
+    let enAz = Infinity, enCok = -Infinity;
+    for (let i = 0; i < h.length; i++) {
+      if (h[i] < enAz) enAz = h[i];
+      if (h[i] > enCok) enCok = h[i];
+    }
+    const olcek = enCok > enAz ? 1 / (enCok - enAz) : 1;
+    for (let i = 0; i < h.length; i++) h[i] = (h[i] - enAz) * olcek;
+    return h;
+  }
+
   /* ============================================================= toprak
    *
-   * Üç katman: koyu-açık kahve lekeleri (düşük frekans), tanecik gürültüsü
-   * (yüksek frekans) ve arada birkaç küçük çakıl. Düz kahverengi levha
-   * görüntüsünü bitiren şey lekelerin BÜYÜK olması — yüksek frekanslı
-   * gürültü tek başına gri kum efekti veriyor.
+   * Renk tek kahve değil: aynı yatakta yer yer kızılımsı (demir oksit),
+   * yer yer griye çalan (kil, kuru kül) lekeler var. İkisi ayrı düşük
+   * frekanslı alanlardan geliyor ve birbirinden bağımsız — tek bir
+   * gürültüyü hem koyuluk hem renk için kullanmak, koyu yerlerin hep
+   * aynı renkte olmasına yol açıyordu.
+   *
+   * Kesek kenarları: yükseklik alanının EĞİMİNDEN. Işığa bakan yamaç
+   * açılıyor, arka yüzü koyuluyor; ayrıca çukurlar kapalı alan olduğu
+   * için genel olarak koyu (basit bir örtme payı). Bu ikisi olmadan
+   * yüzey doğru renkte ama yassı görünüyor.
    */
   function toprakDoku(THREE, en) {
     en = en || 512;
-    const leke = alan(en, 4, tohumla("toprak-leke"));
-    const tane = alan(en, 2, tohumla("toprak-tane"));
-    const cakil = alan(en, 5, tohumla("toprak-cakil"));
+    const kesek = kesekAlani(en, tohumla("toprak-kesek"));
+    const toz = alan(en, 3, tohumla("toprak-toz"), 3);     // ince tanecik
+    const kizil = alan(en, 3, tohumla("toprak-kizil"));      // kızılımsı lekeler
+    const gri = alan(en, 3, tohumla("toprak-gri"));        // griye çalan lekeler
+    const cakil = alan(en, 4, tohumla("toprak-cakil"), 2);
+
+    // Işık yönü doku düzleminde. Sahnedeki güneş +x/+z'den geliyor;
+    // dokunun u ekseni +x, v ekseni +z olduğu için (0.7, 0.7).
+    const Lx = 0.7, Ly = 0.7;
 
     const c = kanvas(en), g = c.getContext("2d");
     const im = g.createImageData(en, en);
-    for (let i = 0; i < en * en; i++) {
-      // Ana ton: 0.0 en koyu (#241b12) → 1.0 en açık (#63492f).
-      // Açık uç önce #7a6045'ti: ton eşlemeden sonra toprak kum
-      // rengine kaçıyor, ıslak-kuru farkı okunmuyordu.
-      const t = kis(leke[i] * 1.25 - 0.12, 0, 1);
-      let r = 0x24 + t * (0x63 - 0x24);
-      let y = 0x1b + t * (0x49 - 0x1b);
-      let m = 0x12 + t * (0x2f - 0x12);
-      // Tanecik: ±%9, renk kanallarına eşit binerse gri değil parlaklık
-      const tn = (tane[i] - 0.5) * 0.18;
-      r *= 1 + tn; y *= 1 + tn; m *= 1 + tn;
-      // Çakıl: seyrek, açık gri benekler
-      if (cakil[i] > 0.86) {
-        const k = (cakil[i] - 0.86) / 0.14;
-        r += k * 38; y += k * 36; m += k * 33;
+    for (let y = 0; y < en; y++) {
+      const yUst = ((y - 1) + en) % en, yAlt = (y + 1) % en;
+      for (let x = 0; x < en; x++) {
+        const i = y * en + x;
+        const xSol = ((x - 1) + en) % en, xSag = (x + 1) % en;
+        // Eğim: kesek yüzeyinin bu noktadaki yokuşu
+        const gx = kesek[y * en + xSag] - kesek[y * en + xSol];
+        const gy = kesek[yAlt * en + x] - kesek[yUst * en + x];
+        // Ölçek ve pay bilerek ölçülü: 9.0/0.55 denendi, kesekler ışıklı
+        // yüzü bembeyaz çıkan çakıl taşlarına dönüşüyor, toprak değil
+        // dere yatağı gibi duruyordu.
+        const yamac = -(gx * Lx + gy * Ly) * 5.5;
+        const ortme = 0.70 + 0.30 * kesek[i];              // çukur kapalı, tepe açık
+        const parlak = kis(ortme * (1 + kis(yamac, -0.8, 0.8) * 0.34), 0.20, 1.45);
+
+        // Ana ton: kesek yüksekliği + ince toz
+        // Ton keseğin yüksekliğini AZ izliyor: çok izlerse renk tamamen
+        // kabartmanın kopyası oluyor ve toprak tek bir taşın fotoğrafı
+        // gibi duruyor. Renk çeşidini asıl aşağıdaki iki leke veriyor.
+        const t = kis(0.16 + kesek[i] * 0.46 + (toz[i] - 0.5) * 0.34, 0, 1);
+        let r = 0x21 + t * (0x5e - 0x21);
+        let ye = 0x18 + t * (0x47 - 0x18);
+        let m = 0x10 + t * (0x2e - 0x10);
+
+        // Kızıl leke: kırmızıyı yukarı, maviyi aşağı
+        // Kızıl payı ölçülü: 46'da lekeler paslı turuncuya kaçıp toprak
+        // değil kiremit gibi duruyordu.
+        const k = kis((kizil[i] - 0.46) * 2.6, 0, 1);
+        r += 34 * k; ye += 5 * k; m -= 11 * k;
+        // Gri leke: kanalları ortalamaya çekiyor, hafif de açıyor
+        const gr = kis((gri[i] - 0.52) * 2.9, 0, 1);
+        const ort = (r + ye + m) / 3;
+        r += (ort - r) * 0.55 * gr; ye += (ort - ye) * 0.55 * gr; m += (ort - m) * 0.55 * gr;
+        r += 8 * gr; ye += 9 * gr; m += 12 * gr;
+
+        // Çakıl: keseklerin tepesinde, seyrek açık gri benek
+        if (cakil[i] > 0.86 && kesek[i] > 0.60) {
+          const q = (cakil[i] - 0.86) / 0.14;
+          r += q * 30; ye += q * 29; m += q * 27;
+        }
+
+        const p = i * 4;
+        im.data[p] = kis(r * parlak, 0, 255);
+        im.data[p + 1] = kis(ye * parlak, 0, 255);
+        im.data[p + 2] = kis(m * parlak, 0, 255);
+        im.data[p + 3] = 255;
       }
-      const p = i * 4;
-      im.data[p] = kis(r, 0, 255);
-      im.data[p + 1] = kis(y, 0, 255);
-      im.data[p + 2] = kis(m, 0, 255);
-      im.data[p + 3] = 255;
     }
     g.putImageData(im, 0, 0);
-    return { kanvas: c, leke, tane, cakil, en };
+    return { kanvas: c, kesek, toz, en };
   }
 
-  /** Aynı gürültüden kabartma (bump) haritası: ışık gelince yüzey pürüzlü
-   *  görünüyor. Normal haritası yerine bump — tek kanal, yarı yarıya
-   *  bellek ve Pi'de gözle görülür fark yok. */
+  /** Kabartma (bump) haritası KESEK DAĞILIMINDAN. Eskiden lekeyle aynı
+   *  gürültüden türüyordu; leke renk için var, kabartmanın onu izlemesi
+   *  için bir sebep yok ve sonuçta yüzey "renkli ama düz" kalıyordu.
+   *  Şimdi kabarık olan yerler gerçekten keseklerin durduğu yerler. */
   function toprakKabartma(veri) {
     const en = veri.en;
     const c = kanvas(en), g = c.getContext("2d");
     const im = g.createImageData(en, en);
     for (let i = 0; i < en * en; i++) {
-      let h = veri.leke[i] * 0.55 + veri.tane[i] * 0.45;
-      if (veri.cakil[i] > 0.86) h += (veri.cakil[i] - 0.86) * 2.2;   // çakıl kabarık
+      const h = veri.kesek[i] * 0.86 + veri.toz[i] * 0.14;
       const v = kis(h * 255, 0, 255);
       const p = i * 4;
       im.data[p] = im.data[p + 1] = im.data[p + 2] = v;
@@ -166,50 +261,133 @@
 
   /* ================================================================ çim
    *
-   * Makinenin durduğu zemin. Uzaktan bakılan bir yüzey olduğu için tek tek
-   * çim yaprağı değil, ton farkı ve seyrek açık/koyu tutamlar yetiyor.
+   * Önceki sürüm gürültüden boyanmış bir yeşil halıydı: doğru renkte ama
+   * yönsüz. Gerçek çimin okunmasını sağlayan şey BIÇAK İZLERİ — kısa,
+   * yönlü çizgiler. Hepsi aynı yöne olursa tarak izi gibi duruyor, hiç
+   * yön olmazsa yosun; bu yüzden baskın bir yön var ve üstüne hem yavaş
+   * değişen bir sapma alanı hem de bıçak başına küçük bir sapma biniyor.
+   *
+   * Her bıçak iki çizgi: tam boy koyu (dip) ve üst yarıda açık (uç).
+   * Tek renkli bıçak, çim yüzeyinin en belirgin özelliğini — dibin
+   * gölgede, ucun güneşte olmasını — kaybettiriyor.
+   *
+   * Sarmalama: doku kenarına yakın bıçaklar karşı kenara da çiziliyor,
+   * yoksa zeminde her tekrar sınırında kesik bir çizgi ızgarası çıkıyor.
    */
   function cimDoku(THREE, en) {
-    en = en || 256;
-    // Oktav sayısı yüksek: az oktavda gürültünün en büyük dalgası doku
-    // boyunca birkaç kez geçiyor ve zeminde metrelerce süren açık-koyu
-    // yamalar oluşuyordu — çim değil, boyanmış bir bez gibi.
-    const buyuk = alan(en, 4, tohumla("cim-buyuk"), 2);
-    const tutam = alan(en, 4, tohumla("cim-tutam"), 3);
+    en = en || 512;
+    const rast = uretec(tohumla("cim-bicak"));
+    // Alanların hepsi YÜKSEK frekanstan başlıyor (bkz. alan/bas): büyük
+    // dalga bırakırsak doku 150 kez tekrarlandığında zeminde damalı bir
+    // ızgara olarak okunuyor.
+    const ciplak = alan(en, 3, tohumla("cim-ciplak"), 3);
+    const kuru = alan(en, 3, tohumla("cim-kuru"), 3);
+    const yon = alan(en, 2, tohumla("cim-yon"), 1);
+    const ton = alan(en, 3, tohumla("cim-ton"), 2);
+
     const c = kanvas(en), g = c.getContext("2d");
     const im = g.createImageData(en, en);
     for (let i = 0; i < en * en; i++) {
-      // Aralık bilerek dar (0,25-0,75): geniş tutunca dokunun en büyük
-      // dalgası açık-koyu bir yama oluyor ve doku 260 kez tekrarlandığı
-      // için zeminde damalı bir ızgara olarak okunuyordu. Dar aralıkta
-      // tekrar görünmüyor, ton farkını ince tutamlar veriyor.
-      const t = kis(0.25 + buyuk[i] * 0.5, 0, 1);
-      // Yeşilin iki ucu: #24361d (gölgeli çim) → #46632f (güneşli çim)
-      let r = 0x24 + t * (0x46 - 0x24);
-      let y = 0x36 + t * (0x63 - 0x36);
-      let m = 0x1d + t * (0x2f - 0x1d);
-      const tn = (tutam[i] - 0.5) * 0.55;
-      r *= 1 + tn * 0.6; y *= 1 + tn; m *= 1 + tn * 0.5;
+      // Zemin: dipteki gölgeli yeşil. Çıplak toprak lekelerinde kahve.
+      let r = 0x1b, ye = 0x28, m = 0x14;
+      const cp = kis((ciplak[i] - 0.60) * 4.0, 0, 1);
+      r += (0x4a - r) * cp; ye += (0x38 - ye) * cp; m += (0x25 - m) * cp;
+      const tn = (ton[i] - 0.5) * 0.30;
       const p = i * 4;
-      im.data[p] = kis(r, 0, 255);
-      im.data[p + 1] = kis(y, 0, 255);
-      im.data[p + 2] = kis(m, 0, 255);
+      im.data[p] = kis(r * (1 + tn), 0, 255);
+      im.data[p + 1] = kis(ye * (1 + tn), 0, 255);
+      im.data[p + 2] = kis(m * (1 + tn), 0, 255);
       im.data[p + 3] = 255;
     }
     g.putImageData(im, 0, 0);
-    // Kabartma: aynı tutam gürültüsü. Çim düz bir yeşil düzlem olarak
-    // kaldığında zemin "boyanmış zemin" gibi duruyor; kabartma ışığı
-    // kırınca yüzeyin bir dokusu olduğu okunuyor.
-    const kc = kanvas(en), kg = kc.getContext("2d");
-    const kim = kg.createImageData(en, en);
-    for (let i = 0; i < en * en; i++) {
-      const v = kis((tutam[i] * 0.75 + buyuk[i] * 0.25) * 255, 0, 255);
-      const p = i * 4;
-      kim.data[p] = kim.data[p + 1] = kim.data[p + 2] = v;
-      kim.data[p + 3] = 255;
+
+    g.lineCap = "round";
+    const ornek = (a, x, y) => a[(((y | 0) % en) + en) % en * en + ((((x | 0) % en) + en) % en)];
+    /** Kenara yakın bıçağı karşı kenara da çiziyor (sarmalama). */
+    const cizgi = (x0, y0, x1, y1, renk, kalin) => {
+      g.strokeStyle = renk; g.lineWidth = kalin;
+      const kay = [[0, 0]];
+      const pay = 16;
+      if (x0 < pay || x1 < pay) kay.push([en, 0]);
+      if (x0 > en - pay || x1 > en - pay) kay.push([-en, 0]);
+      if (y0 < pay || y1 < pay) kay.push([0, en]);
+      if (y0 > en - pay || y1 > en - pay) kay.push([0, -en]);
+      for (const [dx, dy] of kay) {
+        g.beginPath();
+        g.moveTo(x0 + dx, y0 + dy);
+        g.lineTo(x1 + dx, y1 + dy);
+        g.stroke();
+      }
+    };
+
+    const BASKIN = -1.05;                 // baskın yön (radyan)
+    const adet = Math.round((en * en) / 42);
+    for (let i = 0; i < adet; i++) {
+      const x = rast() * en, y = rast() * en;
+      // Çıplak lekede bıçak seyrek
+      if (ornek(ciplak, x, y) > 0.62 && rast() < 0.85) continue;
+      const aci = BASKIN
+        + (ornek(yon, x, y) - 0.5) * 1.30      // yavaş değişen sapma
+        + (rast() - 0.5) * 0.80;               // bıçağa özel sapma
+      const boy = 6 + rast() * 9;
+      const bx = Math.cos(aci) * boy, by = Math.sin(aci) * boy;
+      const kuruMu = ornek(kuru, x, y) > 0.63 && rast() < 0.75;
+      const s = rast();
+      let dip, uc;
+      if (kuruMu) {
+        // Kuru tutam: sarıya çalan, ucu daha da açık
+        dip = `rgb(${(94 + s * 22) | 0},${(80 + s * 20) | 0},${(38 + s * 14) | 0})`;
+        uc = `rgb(${(150 + s * 34) | 0},${(134 + s * 30) | 0},${(70 + s * 20) | 0})`;
+      } else {
+        dip = `rgb(${(30 + s * 14) | 0},${(52 + s * 18) | 0},${(24 + s * 10) | 0})`;
+        uc = `rgb(${(84 + s * 40) | 0},${(122 + s * 44) | 0},${(56 + s * 26) | 0})`;
+      }
+      cizgi(x, y, x + bx, y + by, dip, 1.6);
+      cizgi(x + bx * 0.42, y + by * 0.42, x + bx, y + by, uc, 1.1);
     }
-    kg.putImageData(kim, 0, 0);
-    return { kanvas: c, kabartma: kc };
+    return { kanvas: c };
+  }
+
+  /* ============================================================ çiçek
+   *
+   * Tek bir çiçek başı: beş taç yaprak + göbek. Doku GRİ TONLU; rengi
+   * her çiçek kendi köşe renginden alıyor, böylece beyazdan mora bütün
+   * çeşit tek dokuyu ve tek malzemeyi paylaşıyor.
+   *
+   * Kenar yumuşak ama alfa eşiği kullanıldığı için saydamlık sıralaması
+   * gerekmiyor — sıralama, ekranda yüzlerce küçük dörtgen varken en
+   * pahalı iş olurdu.
+   */
+  function cicekDoku(en) {
+    en = en || 64;
+    const c = kanvas(en), g = c.getContext("2d");
+    const o = en / 2, R = en * 0.44;
+    g.clearRect(0, 0, en, en);
+    for (let i = 0; i < 5; i++) {
+      const a = (i / 5) * Math.PI * 2 - Math.PI / 2;
+      const px = o + Math.cos(a) * R * 0.52, py = o + Math.sin(a) * R * 0.52;
+      const gr = g.createRadialGradient(px, py, 0, px, py, R * 0.52);
+      gr.addColorStop(0.00, "rgba(255,255,255,1)");
+      gr.addColorStop(0.82, "rgba(246,246,246,1)");
+      gr.addColorStop(1.00, "rgba(232,232,232,0)");
+      g.fillStyle = gr;
+      g.save();
+      g.translate(px, py);
+      g.rotate(a);
+      g.scale(1, 0.62);
+      g.beginPath();
+      g.arc(0, 0, R * 0.52, 0, Math.PI * 2);
+      g.fill();
+      g.restore();
+    }
+    const gb = g.createRadialGradient(o, o, 0, o, o, R * 0.30);
+    gb.addColorStop(0.0, "rgba(150,140,90,1)");
+    gb.addColorStop(1.0, "rgba(214,206,170,1)");
+    g.fillStyle = gb;
+    g.beginPath();
+    g.arc(o, o, R * 0.30, 0, Math.PI * 2);
+    g.fill();
+    return c;
   }
 
   /* ============================================================ gökyüzü
@@ -249,13 +427,21 @@
       return { harita, kabartma };
     },
 
-    /** Çim zemin dokusu: {harita, kabartma}. */
+    /** Çim zemin dokusu: {harita}. 512 — bıçak izleri 256'da tanınmıyor,
+     *  tek tek pikselden ibaret kalıyorlar. */
     cim(THREE, tekrar) {
-      if (!kutu.cim) kutu.cim = cimDoku(THREE, 256);
-      return {
-        harita: dokuYap(THREE, kutu.cim.kanvas, [tekrar, tekrar]),
-        kabartma: dokuYap(THREE, kutu.cim.kabartma, [tekrar, tekrar]),
-      };
+      if (!kutu.cim) kutu.cim = cimDoku(THREE, 512);
+      return { harita: dokuYap(THREE, kutu.cim.kanvas, [tekrar, tekrar]) };
+    },
+
+    /** Çiçek başı dokusu — gri tonlu, rengi köşe renginden geliyor. */
+    cicek(THREE) {
+      if (!kutu.cicekDoku) {
+        const d = new THREE.CanvasTexture(cicekDoku(64));
+        d.anisotropy = 4;
+        kutu.cicekDoku = d;
+      }
+      return kutu.cicekDoku;
     },
 
     /** Gökyüzü gradyanı — kubbe için. */

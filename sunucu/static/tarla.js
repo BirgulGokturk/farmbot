@@ -463,8 +463,9 @@
      * hiç görünmüyor, puslu bir UFUK ÇİZGİSİNE dönüşüyor. 16 m'de kenar
      * görünür bir kesikti ve sahne yine bir levhanın üstünde duruyordu.
      *
-     * Doku tekrarı 260: bir tutam çim ~0,23 m. Az tekrarda
-     * gürültü öyle büyüyor ki çim değil bulanık bir yeşil leke oluyor. */
+     * Doku tekrarı 150: bir karo ≈ 0,40 m, yani 512 pikselde ~10 pikselik
+     * bir çim bıçağı ≈ 8 mm. Az tekrarda bıçaklar kürek gibi büyüyor,
+     * çok tekrarda uzaktan gri bir bulamaca dönüşüyor. */
     const doku = window.FarmbotDoku;
     if (doku) {
       /* Zemin malzemesi BİLEREK sade: Lambert, kabartma YOK.
@@ -474,7 +475,7 @@
        * yalnız zemin için %20. Uzaktan bakılan bir çim yüzeyinde
        * kabartmanın gözle görülür karşılığı yok; toprakta VAR, orada
        * duruyor. */
-      const cim = doku.cim(THREE, 260);
+      const cim = doku.cim(THREE, 150);
       const zemin = new THREE.Mesh(
         new THREE.PlaneGeometry(60, 60),
         new THREE.MeshLambertMaterial({ map: cim.harita }));
@@ -484,6 +485,7 @@
       // ayakları 50 mm kesiyor ve makine çime gömülmüş görünüyor.
       zemin.position.y = (BAGLAM.makine.tabla - BAGLAM.makine.ayak) * MM - 0.002;
       zemin.receiveShadow = true;
+      zemin.name = "cim-zemin";
       sahne.add(zemin);
 
       const gokDoku = doku.gokyuzu(THREE);
