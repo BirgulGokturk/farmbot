@@ -380,7 +380,7 @@
               <button class="dugme jog" data-eksen="y" data-yon="1" title="Y+">▲</button>
               <div></div>
               <button class="dugme jog" data-eksen="x" data-yon="-1" title="X−">◀</button>
-              <button class="dugme" id="d-home" title="Referans arama (Z→Y→X)">⌂</button>
+              <button class="dugme" id="d-home" title="Referans arama — sırayla Z, X, Y">⌂</button>
               <button class="dugme jog" data-eksen="x" data-yon="1" title="X+">▶</button>
               <div></div>
               <button class="dugme jog" data-eksen="y" data-yon="-1" title="Y−">▼</button>
@@ -392,6 +392,18 @@
               <button class="dugme jog" data-eksen="z" data-yon="-1" title="Z− (aşağı)">Z▼</button>
             </div>
           </div>
+
+          <div class="satir-8">
+            <span class="alt-not">Referans arama</span>
+            <button class="dugme" data-home="x" title="Yalnız X">⌂ X</button>
+            <button class="dugme" data-home="y" title="Yalnız Y">⌂ Y</button>
+            <button class="dugme" data-home="z" title="Yalnız Z">⌂ Z</button>
+          </div>
+          <p class="alt-not">
+            Ortadaki <b>⌂</b> üç ekseni sırayla arar (Z, X, Y) — Z önce
+            kalktığı için güvenlidir. Tek eksen ararken Z güvenli yükseklikte
+            değilse X ve Y reddedilir.
+          </p>
 
           <div class="satir-8">
             <button class="dugme" id="d-enable">Sürücüleri aç</button>

@@ -1646,7 +1646,7 @@ function durumGuncelle(d) {
   // Ajan yokken hareket düğmelerini kapatıyoruz: basılıp hiçbir şey olmaması,
   // "gönderdim sandım" hatasının en sık kaynağı.
   const kilit = !d.bagli || acilAcik;
-  $$("#d-git, #d-home, #d-dur, #d-servo-uygula, .role").forEach((b) => { b.disabled = kilit; });
+  $$("#d-git, #d-home, [data-home], #d-dur, #d-servo-uygula, .role").forEach((b) => { b.disabled = kilit; });
   $$(".nokta-git").forEach((b) => {
     // Sınır dışı olduğu için kapatılmış düğmeyi geri açmıyoruz.
     if (!b.dataset.sinirDisi) b.disabled = kilit;
@@ -1896,6 +1896,11 @@ function olaylariBagla() {
   window.addEventListener("pagehide", jogDurdur);
 
   $("#d-home").onclick = () => komutGonder("home");
+  // Eksen bazli referans: ajan zaten {"eksen":"x"} kabul ediyordu,
+  // eksik olan yalnizca dugmelerdi. Z korumasi ajanda.
+  $$("[data-home]").forEach((b) => {
+    b.onclick = () => komutGonder("home", { eksen: b.dataset.home });
+  });
   $("#d-dur").onclick = () => { jogDurdur(); komutGonder("dur"); };
   $("#d-enable").onclick = () => komutGonder("enable", { deger: !S.enable });
   $("#d-acil-temizle").onclick = () => komutGonder("acil_temizle");

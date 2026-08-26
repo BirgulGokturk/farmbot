@@ -967,6 +967,17 @@ class Gantry:
         self._onceki_isi_kes("referans arama")
 
         sira = [EKSEN_INDEKS[eksen]] if eksen else [2, 0, 1]   # Z, X, Y
+
+        # Tek eksen istendiginde Z korumasi elle konmali. "Hepsi" sirasi
+        # (Z, X, Y) Z'yi once referansladigi icin guvenli; ama panelden
+        # yalniz X ya da Y istenirse o koruma devreye girmiyordu ve uc
+        # asagidayken yatay hareket olusuyordu — Z kilidinin tam olarak
+        # onlemeye calistigi sey.
+        if eksen and EKSEN_INDEKS[eksen] in (0, 1) and not self.z_guvenli_mi():
+            raise PLCHatasi(
+                f"Z güvenli yükseklikte değil "
+                f"(≥ {self.guvenli_z:.0f} mm gerekiyor). Önce Z'yi kaldırın "
+                f"ya da 'Tümü' ile referans arayın.")
         self._iptal.clear()
         self._islem_ad = "referans arama"
         self._hareket_ip = threading.Thread(target=self._home_isci, args=(sira,), daemon=True)
