@@ -3,11 +3,48 @@
  * Bitki, `tur` alanı taşıyan bir NOKTA. Ayrı bir depo yok; bu katman da
  * `veri.noktalar`ı okuyor, 2B harita da. Sürükleyerek taşımak ve silmek
  * burada: taşınan şey bitkinin kendisi, halkası değil.
+ *
+ * BİÇİM. Eski sürümde her bitki bir küre tacın etrafına dizilmiş 3-7 küre
+ * yapraktı: marulla domates ayırt edilmiyordu ve yapraklar birbirinin
+ * kopyası olduğu için kalabalık bir yatak plastik görünüyordu. Şimdi altı
+ * arketip var (rozet, tüp, dik, çalı, sap, sarılan) ve 37 türün her biri
+ * elle bir arketipe bağlı. `spread_mm`e bakıp tahmin etme denemesi
+ * lahanayı çalı, dereotunu ağaç yapıyordu — tablo elle yazıldı.
+ *
+ * RASTGELELİK bitkinin ADINDAN türüyor (FarmbotDoku.tohumla). Böylece
+ * "b12" her açılışta aynı duruşta; Math.random olsaydı her tazelemede
+ * bütün yatak yeniden diziliyor, "az önce böyle değildi" hissi veriyordu.
+ *
+ * ÇİZİM ÇAĞRISI. Bütün bitkiler TEK ağda birleştiriliyor: renk köşe
+ * niteliğinde taşındığı için hepsi tek malzemeyi paylaşabiliyor. 40
+ * bitki = 1 çizim çağrısı. Bitkiler ışın testine girmiyor (tıklama
+ * `vur()` ile mm üstünden çözülüyor), o yüzden ayrı nesne olmaları
+ * gerekmiyordu.
  */
 Tarla.katman({
   kimlik: "bitkiler",
   ad: "Bitkiler",
   varsayilan: true,
+
+  /** Tür → biçim arketipi. Katalogda boy alanı yok; siluet buradan. */
+  ARKETIP: {
+    marul: "rozet", ispanak: "rozet", lahana: "rozet", pazi: "rozet",
+    roka: "rozet", semizotu: "rozet", karnabahar: "rozet", brokoli: "rozet",
+    kereviz: "rozet",
+    havuc: "tup", sogan: "tup", sarimsak: "tup", pirasa: "tup",
+    maydanoz: "tup", dereotu: "tup", turp: "tup",
+    domates: "dik", biber: "dik", patlican: "dik", bamya: "dik",
+    fasulye: "dik", bezelye: "dik", nohut: "dik", patates: "dik",
+    "tatli-patates": "dik",
+    biberiye: "cali", "fesleğen": "cali", nane: "cali", kekik: "cali",
+    aycicegi: "sap", misir: "sap",
+    kabak: "sarilan", karpuz: "sarilan", kavun: "sarilan",
+    salatalik: "sarilan", cilek: "sarilan", uzum: "sarilan",
+  },
+
+  /** Bitkinin en yükseğe çıkabileceği nokta (m). Ayçiçeği gerçekte
+   *  kirişten uzun; panelde makineyi gizlememesi için tavan var. */
+  TAVAN: 0.42,
 
   bitkiler(o) {
     return o.veri.noktalar.filter((n) => n && n.tur).map((n) => ({
@@ -27,67 +64,300 @@ Tarla.katman({
     return Math.max(0.06, Math.min(1, (Date.now() / 1000 - Number(b.nokta.ekim)) / 86400 / gun));
   },
 
-  simge(metin) {
-    const c = document.createElement("canvas");
-    c.width = c.height = 64;
-    const g = c.getContext("2d");
-    g.font = "48px system-ui, 'Segoe UI Emoji', 'Noto Color Emoji', sans-serif";
-    g.textAlign = "center"; g.textBaseline = "middle";
-    g.fillText(metin || "🌱", 32, 36);
-    return new THREE.CanvasTexture(c);
+  /** Simge dokusu — EMOJİYE GÖRE önbellekte.
+   *
+   * Eskiden her yeniden çizimde yeni CanvasTexture üretiliyordu: 40
+   * bitkiyle sahnede 1700'den fazla doku birikiyordu (sürüklerken her
+   * kare bir tur). Aynı emoji aynı dokuyu kullanıyor artık; malzeme de
+   * paylaşılıyor, böylece simgeler tek bir GPU dokusuna bakıyor.
+   */
+  simgeMal(THREE, metin) {
+    if (!this._simgeler) this._simgeler = {};
+    const anahtar = metin || "🌱";
+    if (!this._simgeler[anahtar]) {
+      const c = document.createElement("canvas");
+      c.width = c.height = 64;
+      const g = c.getContext("2d");
+      g.font = "48px system-ui, 'Segoe UI Emoji', 'Noto Color Emoji', sans-serif";
+      g.textAlign = "center"; g.textBaseline = "middle";
+      g.fillText(anahtar, 32, 36);
+      this._simgeler[anahtar] = new THREE.SpriteMaterial({
+        map: new THREE.CanvasTexture(c), transparent: true, depthTest: false });
+    }
+    return this._simgeler[anahtar];
   },
 
-  gorsel(o, b, ol) {
-    const grup = new o.THREE.Group();
-    const rM = Math.max(0.02, (b.d("spread_mm").deger / 2) * o.MM);
-    const tacR = rM * (0.10 + 0.85 * ol);
-    const boy = Math.max(0.015, rM * (0.12 + 0.70 * ol));
-    const renk = new o.THREE.Color(b.tur.color || "#5f9e46");
+  /* ==================================================== yaprak geometrisi
+   *
+   * Yaprak ayası: orta damar boyunca iki sıra köşe. Genişlik profili
+   * sin(πt)^sivri — `sivri` büyüdükçe yaprak incelip mızrağa dönüyor.
+   * `kivrim` ucu aşağı sarkıtıyor: düz duran yaprak kâğıt gibi görünüyor,
+   * sarkma yapraklara ağırlık veriyor. `lob` kenarı dalgalandırıyor
+   * (kabak, domates).
+   *
+   * 7 bölüm = 24 köşe, 28 üçgen. Şablon BİR KEZ üretilip önbellekte
+   * tutuluyor; her yaprak aynı şablonun başka bir matrisle basılmışı.
+   */
+  yaprakSablon(THREE, sivri, lob) {
+    if (!this._sablon) this._sablon = {};
+    const anahtar = `${sivri}|${lob}`;
+    if (this._sablon[anahtar]) return this._sablon[anahtar];
+    const bolum = 7;
+    const poz = [];
+    for (let i = 0; i <= bolum; i++) {
+      const t = i / bolum;
+      const g = Math.pow(Math.sin(Math.PI * (0.08 + 0.92 * t)), sivri)
+              * (1 + lob * Math.sin(t * Math.PI * 5));
+      const y = -0.42 * t * t;            // sarkma
+      // KAYIKLIK. Kenarlar orta damardan biraz yukarıda: yaprak düz bir
+      // şerit olmaktan çıkıp oluk gibi kıvrılıyor. Düz şeritte bütün
+      // yüzeyin normali aynı olduğu için yaprak mukavva gibi tek renk
+      // çıkıyordu; kıvrılınca ışık yaprağın üstünde geziniyor.
+      // Kat payı KÜÇÜK olmak zorunda: 0,55 denendi, yaprak katlanmış
+      // kâğıt uçak gibi keskin bir V oluyordu.
+      const kayik = y + g * g * 0.11;
+      poz.push(-g, kayik, t, 0, y, t, g, kayik, t);
+    }
+    const indis = [];
+    for (let i = 0; i < bolum; i++) {
+      const a = i * 3;
+      indis.push(a, a + 1, a + 3, a + 1, a + 4, a + 3,      // sol yarım
+                 a + 1, a + 2, a + 4, a + 2, a + 5, a + 4); // sağ yarım
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute("position", new THREE.Float32BufferAttribute(poz, 3));
+    g.setIndex(indis);
+    g.computeVertexNormals();
+    this._sablon[anahtar] = g;
+    return g;
+  },
 
-    const govde = new o.THREE.Mesh(
-      new o.THREE.CylinderGeometry(0.005 * (0.6 + ol), 0.008 * (0.6 + ol), boy, 8),
-      o.malzeme(o.makine.renk.govde, { roughness: 0.95 }));
-    govde.position.y = boy / 2;
-    grup.add(govde);
+  /** Meyve / çiçek tablası — düşük bölüntülü küre, 8×6 = 96 üçgen. */
+  kureSablon(THREE) {
+    if (!this._kure) this._kure = new THREE.SphereGeometry(1, 8, 6);
+    return this._kure;
+  },
+
+  /** Gövde — altı kenarlı silindir, birim boy (matris uzatıyor). */
+  sapSablon(THREE) {
+    if (!this._sap) {
+      this._sap = new THREE.CylinderGeometry(0.6, 1, 1, 6, 1, true);
+      this._sap.translate(0, 0.5, 0);         // taban y=0
+    }
+    return this._sap;
+  },
+
+  /* ======================================================== arketipler
+   *
+   * Hepsi aynı sözleşme: parça listesi döndürüyor. Parça =
+   * {geo, m4, renk}. Ölçü/döndürme matriste; geometri şablonu ortak.
+   */
+  parcalar(o, b, ol, rast) {
+    const THREE = o.THREE;
+    const rM = Math.max(0.02, (b.d("spread_mm").deger / 2) * o.MM);
+    const tur = new THREE.Color(b.tur.color || "#5f9e46");
+    const biçim = this.ARKETIP[b.nokta.tur] || "dik";
 
     // Yaprak tonu yeşilden başlıyor, türün tonundan yalnızca biraz
     // etkileniyor: kırmızıyı yeşile karıştırmak kahverengi veriyordu.
     const hsl = { h: 0.25, s: 0.4, l: 0.35 };
-    renk.getHSL(hsl);
-    const yaprakRenk = new o.THREE.Color().setHSL(
-      0.25 + (hsl.h - 0.25) * 0.15,
-      o.kis(0.30 + hsl.s * 0.20, 0.22, 0.60),
-      o.kis(0.26 + hsl.l * 0.16, 0.20, 0.46));
-    const yaprakMal = o.malzeme(yaprakRenk, { roughness: 0.8, transparent: true, opacity: 0.88 });
-    const tacMal = o.malzeme(renk, { roughness: 0.6, transparent: true, opacity: 0.95 });
+    tur.getHSL(hsl);
+    const yaprakTon = 0.25 + (hsl.h - 0.25) * 0.15;
+    const yaprakDoy = o.kis(0.42 + hsl.s * 0.20, 0.30, 0.66);
+    const yaprakIsik = o.kis(0.21 + hsl.l * 0.10, 0.15, 0.30);
+    // Her yaprak biraz başka: aynı tonun tek düzeliği bitkiyi plastik
+    // gösteriyor. Sapma tohumlu, yani hep aynı yaprak hep aynı ton.
+    const yaprakRenk = () => new THREE.Color().setHSL(
+      yaprakTon + (rast() - 0.5) * 0.02,
+      o.kis(yaprakDoy + (rast() - 0.5) * 0.10, 0.18, 0.70),
+      o.kis(yaprakIsik * (0.72 + rast() * 0.42), 0.11, 0.36));
+    const sapRenk = new THREE.Color(o.makine.renk.govde).multiplyScalar(0.85);
 
-    const tac = new o.THREE.Mesh(new o.THREE.SphereGeometry(tacR * 0.38, 14, 10), tacMal);
-    tac.position.y = boy; tac.scale.y = 0.6;
-    grup.add(tac);
+    const p = [];
+    const M4 = () => new THREE.Matrix4();
+    /** Yaprak yerleştir: yön (yatayda açı), eğim (yataydan yukarı), boy, en. */
+    const yaprak = (aci, egim, boy, en, taban, sivri, lob, renk) => {
+      const m = M4().makeTranslation(0, taban, 0);
+      m.multiply(M4().makeRotationY(aci));
+      m.multiply(M4().makeRotationX(-egim));
+      m.multiply(M4().makeScale(en * boy, boy, boy));
+      p.push({ geo: this.yaprakSablon(THREE, sivri, lob), m4: m,
+               renk: renk || yaprakRenk() });
+    };
+    const sap = (boy, kalinlik, renk) => {
+      p.push({ geo: this.sapSablon(THREE),
+               m4: M4().makeScale(kalinlik, boy, kalinlik), renk: renk || sapRenk });
+    };
+    const kure = (x, y, z, r, renk) => {
+      const m = M4().makeTranslation(x, y, z);
+      m.multiply(M4().makeScale(r, r * 0.92, r));
+      p.push({ geo: this.kureSablon(THREE), m4: m, renk: renk });
+    };
+    const ALTIN = 2.399963;   // altın açı: yapraklar üst üste binmiyor
 
-    const adet = ol < 0.25 ? 3 : ol < 0.6 ? 5 : 7;
-    for (let i = 0; i < adet; i++) {
-      const aci = (i / adet) * Math.PI * 2 + i * 0.35;
-      const yaprak = new o.THREE.Mesh(new o.THREE.SphereGeometry(tacR * 0.34, 10, 8), yaprakMal);
-      yaprak.scale.set(1.3, 0.22, 0.9);
-      const uzak = tacR * 0.62;
-      yaprak.position.set(Math.cos(aci) * uzak, boy * (0.75 + 0.25 * (i % 2)), Math.sin(aci) * uzak);
-      yaprak.rotation.y = -aci;
-      yaprak.rotation.z = -0.18 - 0.12 * (i % 2);
-      grup.add(yaprak);
+    if (biçim === "rozet") {
+      // Dışta yatık, içte dik yapraklar — marul/lahana silueti.
+      const n = 5 + Math.floor(ol * 7);
+      for (let i = 0; i < n; i++) {
+        const f = i / Math.max(1, n - 1);
+        const boy = rM * (0.42 + 0.34 * ol) * (0.72 + 0.56 * rast());
+        yaprak(i * ALTIN + rast() * 0.3,
+               0.26 + f * 0.85 + (rast() - 0.5) * 0.18,
+               boy, 0.46, 0.006 + f * rM * 0.10, 0.95, 0.10);
+      }
+    } else if (biçim === "tup") {
+      // İnce dik yapraklar, kökten çıkıyor — havuç/soğan.
+      const n = 5 + Math.floor(ol * 9);
+      const boy0 = Math.min(this.TAVAN, rM * (0.8 + 1.3 * ol));
+      for (let i = 0; i < n; i++) {
+        yaprak(i * ALTIN + rast() * 0.5,
+               1.15 + (rast() - 0.5) * 0.55,
+               boy0 * (0.65 + 0.60 * rast()), 0.13, 0.004, 1.7, 0);
+      }
+    } else if (biçim === "dik") {
+      // Gövde + gövde boyunca yapraklar, olgunlaşınca meyve.
+      const h = Math.min(this.TAVAN, rM * (0.55 + 1.25 * ol));
+      sap(h, rM * (0.030 + 0.030 * ol));
+      const n = 4 + Math.floor(ol * 6);
+      for (let i = 0; i < n; i++) {
+        const f = 0.22 + 0.75 * (i / Math.max(1, n - 1));
+        yaprak(i * ALTIN + rast() * 0.4,
+               0.28 + (rast() - 0.5) * 0.5,
+               rM * (0.33 + 0.22 * ol) * (0.75 + 0.5 * rast()),
+               0.44, h * f, 1.0, 0.22);
+      }
+      if (ol > 0.55) {
+        const adet = 1 + Math.floor(rast() * 3);
+        for (let i = 0; i < adet; i++) {
+          const a = rast() * Math.PI * 2, u = rM * (0.10 + 0.12 * rast());
+          kure(Math.cos(a) * u, h * (0.45 + 0.35 * rast()), Math.sin(a) * u,
+               rM * (0.10 + 0.07 * ol), tur);
+        }
+      }
+    } else if (biçim === "cali") {
+      // Kısa odunsu gövde, çok sayıda küçük yaprak — fesleğen/kekik.
+      const h = rM * (0.35 + 0.55 * ol);
+      sap(h, rM * 0.035, new THREE.Color("#6b5a3c"));
+      const n = 10 + Math.floor(ol * 10);
+      for (let i = 0; i < n; i++) {
+        const f = 0.15 + 0.85 * rast();
+        yaprak(i * ALTIN + rast() * 0.4,
+               0.15 + rast() * 0.8,
+               rM * 0.34 * (0.6 + 0.7 * rast()), 0.62, h * f, 0.75, 0);
+      }
+    } else if (biçim === "sap") {
+      // Tek uzun sap + tepede tabla — ayçiçeği/mısır.
+      const h = Math.min(this.TAVAN, rM * (1.1 + 1.9 * ol));
+      sap(h, rM * (0.035 + 0.030 * ol));
+      const n = 4 + Math.floor(ol * 4);
+      for (let i = 0; i < n; i++) {
+        yaprak(i * ALTIN + rast() * 0.4,
+               0.35 + (rast() - 0.5) * 0.4,
+               rM * (0.36 + 0.26 * ol) * (0.8 + 0.4 * rast()),
+               0.42, h * (0.25 + 0.62 * (i / Math.max(1, n - 1))), 1.0, 0.12);
+      }
+      if (ol > 0.55) {
+        const r = rM * (0.11 + 0.11 * ol);
+        kure(0, h, 0, r, tur);
+        // Taç yaprakları: tablanın çevresine yatık ince yapraklar
+        const y = 10 + Math.floor(rast() * 4);
+        for (let i = 0; i < y; i++) {
+          yaprak((i / y) * Math.PI * 2 + rast() * 0.1,
+                 -0.15 + (rast() - 0.5) * 0.3,
+                 r * (1.5 + 0.5 * rast()), 0.34, h, 1.1, 0, tur);
+        }
+      }
+    } else {                                   // sarılan
+      // Yerde yayılan iri loblu yapraklar — kabak/karpuz/çilek.
+      const n = 4 + Math.floor(ol * 5);
+      for (let i = 0; i < n; i++) {
+        const a = i * ALTIN + rast() * 0.4;
+        const u = rM * (0.25 + 0.60 * rast()) * (0.4 + 0.6 * ol);
+        const m = new THREE.Matrix4().makeTranslation(
+          Math.cos(a) * u, 0.006 + rM * 0.05, Math.sin(a) * u);
+        m.multiply(new THREE.Matrix4().makeRotationY(a + (rast() - 0.5) * 1.2));
+        m.multiply(new THREE.Matrix4().makeRotationX(-(0.12 + rast() * 0.35)));
+        const boy = rM * (0.40 + 0.25 * ol) * (0.8 + 0.5 * rast());
+        m.multiply(new THREE.Matrix4().makeScale(boy * 0.85, boy, boy));
+        p.push({ geo: this.yaprakSablon(THREE, 0.55, 0.30), m4: m, renk: yaprakRenk() });
+      }
+      if (ol > 0.65) {
+        const a = rast() * Math.PI * 2, u = rM * 0.35;
+        const r = rM * (0.16 + 0.12 * ol);
+        kure(Math.cos(a) * u, r * 0.8, Math.sin(a) * u, r, tur);
+      }
     }
+    return p;
+  },
 
-    // Simge anahtarı artık ikonlu bir düğme (aria-checked); eski onay
-    // kutusu biçimi de destekleniyor.
-    const simgeAc = document.querySelector("#tarla-simge");
-    if (simgeAc && (simgeAc.checked || simgeAc.getAttribute("aria-checked") === "true")) {
-      const s = new o.THREE.Sprite(new o.THREE.SpriteMaterial({
-        map: this.simge(b.tur.icon), transparent: true, depthTest: false }));
-      s.scale.setScalar(o.kis(rM * 0.45, 0.03, 0.075));
-      s.position.y = boy + tacR * 0.45 + 0.025;
-      grup.add(s);
+  /* ==================================================== birleştirme
+   *
+   * three.js'in UMD paketinde BufferGeometryUtils YOK (modül sürümünde
+   * var). Birleştirme elde: köşeler matrisle dönüştürülüp tek dizide
+   * toplanıyor, renk köşe niteliğine yazılıyor. Böylece bütün parçalar
+   * TEK malzemeyi paylaşıyor.
+   */
+  pisir(THREE, parcalar) {
+    let kv = 0, ki = 0;
+    parcalar.forEach((p) => {
+      kv += p.geo.attributes.position.count;
+      ki += p.geo.index ? p.geo.index.count : p.geo.attributes.position.count;
+    });
+    const poz = new Float32Array(kv * 3), nor = new Float32Array(kv * 3);
+    const ren = new Float32Array(kv * 3), ind = new Uint32Array(ki);
+    const v = new THREE.Vector3(), n3 = new THREE.Matrix3();
+    let vo = 0, io = 0, tepe = 0;
+    parcalar.forEach((p) => {
+      const P = p.geo.attributes.position, N = p.geo.attributes.normal;
+      n3.getNormalMatrix(p.m4);
+      for (let i = 0; i < P.count; i++) {
+        v.fromBufferAttribute(P, i).applyMatrix4(p.m4);
+        const k = (vo + i) * 3;
+        poz[k] = v.x; poz[k + 1] = v.y; poz[k + 2] = v.z;
+        if (v.y > tepe) tepe = v.y;
+        if (N) {
+          v.fromBufferAttribute(N, i).applyMatrix3(n3).normalize();
+          nor[k] = v.x; nor[k + 1] = v.y; nor[k + 2] = v.z;
+        }
+        ren[k] = p.renk.r; ren[k + 1] = p.renk.g; ren[k + 2] = p.renk.b;
+      }
+      const I = p.geo.index;
+      const say = I ? I.count : P.count;
+      for (let i = 0; i < say; i++) ind[io + i] = vo + (I ? I.getX(i) : i);
+      io += say; vo += P.count;
+    });
+    return { poz, nor, ren, ind, tepe };
+  },
+
+  /** Bir bitkinin pişmiş geometrisi — bitki adına göre önbellekte.
+   *  Sürüklerken her karede yeniden kurmamak için: olgunluk 24 kademeye
+   *  yuvarlanıyor, yani gün içinde bir kez değişiyor. */
+  bitkiVeri(o, b, ol) {
+    if (!this._kutu) this._kutu = new Map();
+    const rM = Math.max(0.02, (b.d("spread_mm").deger / 2) * o.MM);
+    const anahtar = `${b.nokta.ad}|${b.nokta.tur}|${Math.round(rM * 1000)}`
+                  + `|${Math.round(ol * 24)}|${b.tur.color}`;
+    let v = this._kutu.get(anahtar);
+    if (!v) {
+      const D = window.FarmbotDoku;
+      const rast = D ? D.uretec(D.tohumla(b.nokta.ad + "|" + b.nokta.tur)) : Math.random;
+      v = this.pisir(o.THREE, this.parcalar(o, b, ol, rast));
+      // Önbellek sınırlı: silinen bitkiler sonsuza kadar durmasın.
+      if (this._kutu.size > 240) this._kutu.delete(this._kutu.keys().next().value);
+      this._kutu.set(anahtar, v);
     }
-    return grup;
+    return v;
+  },
+
+  /** Bütün bitkileri tek ağda toplayan malzeme. Yaprak tek yüzlü bir
+   *  şerit olduğu için iki yüz de çiziliyor. */
+  bitkiMal(THREE) {
+    if (!this._mal) {
+      this._mal = new THREE.MeshStandardMaterial({
+        vertexColors: true, roughness: 0.78, metalness: 0,
+        side: THREE.DoubleSide });
+    }
+    return this._mal;
   },
 
   /** Çoklu seçimdeki bitkinin altına vurgu halkası. */
@@ -104,10 +374,60 @@ Tarla.katman({
 
   guncelle(o) {
     o.bosalt(o.grup);
-    this.bitkiler(o).forEach((b) => {
-      const g = this.gorsel(o, b, this.olgunluk(b));
-      g.position.set(o.sx(b.nokta.x), 0, o.sz(b.nokta.y));
-      o.grup.add(g);
+    const THREE = o.THREE;
+    const liste = this.bitkiler(o);
+
+    /* Tek ağ: her bitkinin pişmiş dizileri konumuna kaydırılarak
+     * kopyalanıyor. 40 bitki için ~40 bin köşe kopyası — sürüklerken bile
+     * kare başına bir milisaniyenin altında, buna karşılık 40 yerine 1
+     * çizim çağrısı. */
+    let kv = 0, ki = 0;
+    const veri = liste.map((b) => {
+      const v = this.bitkiVeri(o, b, this.olgunluk(b));
+      kv += v.poz.length / 3; ki += v.ind.length;
+      return { v, x: o.sx(b.nokta.x), z: o.sz(b.nokta.y), b };
+    });
+    if (kv) {
+      const poz = new Float32Array(kv * 3), nor = new Float32Array(kv * 3);
+      const ren = new Float32Array(kv * 3), ind = new Uint32Array(ki);
+      let vo = 0, io = 0;
+      veri.forEach((k) => {
+        const v = k.v, n = v.poz.length / 3;
+        for (let i = 0; i < n; i++) {
+          const a = (vo + i) * 3, c = i * 3;
+          poz[a] = v.poz[c] + k.x; poz[a + 1] = v.poz[c + 1]; poz[a + 2] = v.poz[c + 2] + k.z;
+          nor[a] = v.nor[c]; nor[a + 1] = v.nor[c + 1]; nor[a + 2] = v.nor[c + 2];
+          ren[a] = v.ren[c]; ren[a + 1] = v.ren[c + 1]; ren[a + 2] = v.ren[c + 2];
+        }
+        for (let i = 0; i < v.ind.length; i++) ind[io + i] = vo + v.ind[i];
+        io += v.ind.length; vo += n;
+      });
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute("position", new THREE.BufferAttribute(poz, 3));
+      geo.setAttribute("normal", new THREE.BufferAttribute(nor, 3));
+      geo.setAttribute("color", new THREE.BufferAttribute(ren, 3));
+      geo.setIndex(new THREE.BufferAttribute(ind, 1));
+      const ag = new THREE.Mesh(geo, this.bitkiMal(THREE));
+      ag.castShadow = true;
+      ag.raycast = () => {};        // tıklama vur() ile mm üstünden çözülüyor
+      o.grup.add(ag);
+    }
+
+    // Simgeler ayrı: sprite birleştirilemiyor. Malzeme emojiye göre
+    // paylaşıldığı için doku sayısı bitki sayısıyla artmıyor.
+    const simgeAc = document.querySelector("#tarla-simge");
+    if (simgeAc && (simgeAc.checked || simgeAc.getAttribute("aria-checked") === "true")) {
+      veri.forEach((k) => {
+        const rM = Math.max(0.02, (k.b.d("spread_mm").deger / 2) * o.MM);
+        const s = new THREE.Sprite(this.simgeMal(THREE, k.b.tur.icon));
+        s.scale.setScalar(o.kis(rM * 0.45, 0.03, 0.075));
+        s.position.set(k.x, k.v.tepe + 0.028, k.z);
+        s.raycast = () => {};
+        o.grup.add(s);
+      });
+    }
+
+    liste.forEach((b) => {
       if (o.secim.has(b.nokta.ad)) o.grup.add(this.secimHalkasi(o, b.nokta));
     });
     // Seçili bitkinin altına beyaz halka
@@ -122,14 +442,14 @@ Tarla.katman({
       halka.raycast = () => {};
       o.grup.add(halka);
     }
-    const b = this.bitkiler(o);
-    const su = b.reduce((t, x) => t + (x.d("water_ml_per_day").deger || 0), 0);
+    const su = liste.reduce((t, x) => t + (x.d("water_ml_per_day").deger || 0), 0);
     document.querySelector("#tarla-sayi").textContent =
-      b.length ? `${b.length} bitki · günlük ${o.say(su / 1000, 1)} L su` : "Henüz bitki yok";
+      liste.length ? `${liste.length} bitki · günlük ${o.say(su / 1000, 1)} L su`
+                   : "Henüz bitki yok";
     // Panel bölümünün başlığındaki özet: bölüm katlıyken de kaç bitki
     // olduğu görünsün.
     const ozet = document.querySelector("#bitki-ozet");
-    if (ozet) ozet.textContent = b.length ? `${b.length} bitki` : "";
+    if (ozet) ozet.textContent = liste.length ? `${liste.length} bitki` : "";
   },
 
   ciz2b(o, c) {

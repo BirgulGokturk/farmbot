@@ -19,17 +19,32 @@ Tarla.katman({
     const imza = `${w}|${d}|${rayY}`;
     // Katman kapatılınca çekirdek grubu boşaltıp geometriyi atıyor; grup
     // boşsa imza aynı olsa da yeniden kurmak gerekiyor.
-    if (imza === this._imza && o.grup.children.length) return;
-    this._imza = imza;
+    if (imza !== this._imza || !o.grup.children.length) {
+      this._imza = imza;
+      this._nemImza = null;             // yeni geometri, nem yeniden boyanacak
+      o.bosalt(o.grup);
+      const makine = window.FarmbotMakine.kur(o.THREE, {
+        w: w, d: d, rayY: rayY, parca: "sabit",
+      });
+      // Tezgâh ışın testine girmesin: yatağa tıklamak bitki yerleştirmek
+      // demek, ayak profiline çarpan tıklama noktayı kaçırıyordu.
+      makine.sabit.traverse((n) => { n.raycast = () => {}; });
+      o.grup.add(makine.sabit);
+    }
 
-    o.bosalt(o.grup);
-    const makine = window.FarmbotMakine.kur(o.THREE, {
-      w: w, d: d, rayY: rayY, parca: "sabit",
-    });
-    // Tezgâh ışın testine girmesin: yatağa tıklamak bitki yerleştirmek
-    // demek, ayak profiline çarpan tıklama noktayı kaçırıyordu.
-    makine.sabit.traverse((n) => { n.raycast = () => {}; });
-    o.grup.add(makine.sabit);
+    /* Toprak nemi. Geometri yeniden kurulmuyor — yalnız köşe renkleri
+     * yazılıyor, o da okumalar GERÇEKTEN değiştiyse. Okumalar 20 sn'de
+     * bir tazeleniyor; her durum paketinde 3 bin köşe dolaşmak boşuna. */
+    const okumalar = o.veri.okumalar || [];
+    const nemImza = okumalar.length
+      ? okumalar.map((k) => `${k.x},${k.y},${k.toprak_nem}`).join(";")
+      : "";
+    if (nemImza !== this._nemImza) {
+      this._nemImza = nemImza;
+      window.FarmbotMakine.nemBoya(o.grup, {
+        okumalar: okumalar, sx: o.sx, sz: o.sz,
+      });
+    }
   },
 
   ciz2b(o, c) {

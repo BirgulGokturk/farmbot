@@ -396,6 +396,14 @@
 
     sahne = new THREE.Scene();
     sahne.background = new THREE.Color(BAGLAM.makine.renk.arka);
+    // Uzak nesneler pusa karışıyor: ufuk çizgisi keskin bir kesik yerine
+    // yumuşak bir geçiş oluyor ve zemin sonsuza kadar net gitmiyor.
+    // 9-26 m denendi: kameranın gördüğü en uzak zemin ~8 m, yani pus hiç
+    // devreye girmiyor ve çim karenin tepesine kadar net gidiyordu —
+    // "uzak" diye bir yer yok, sahne bir çim halının üstünde duruyor gibi.
+    // 2,5-10 m'de karenin üst bandı ufuk pusuna karışıyor; makine (kameraya
+    // ~1,5 m) hâlâ tamamen net.
+    sahne.fog = new THREE.Fog(0x6d7f80, 2.5, 10);
 
     kamera = new THREE.PerspectiveCamera(42, 1, 0.05, 100);
     // Üstten görünüm ortografik: perspektifte direkler yatağın üstüne
@@ -405,11 +413,94 @@
 
     ciz = new THREE.WebGLRenderer({ canvas: tuval, antialias: true });
     ciz.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    // TON EŞLEME. Tek yönlü ışığı gölge çıkacak kadar kuvvetli tutmak
+    // gerekiyor, ama doğrudan kırpınca çim de alüminyum da bembeyaz bir
+    // leke oluyordu. ACES yüksek değerleri sıkıştırıyor: parlak yerler
+    // beyaza yapışmıyor, gölgeler kapanmıyor. Maliyeti bir parça
+    // gölgelendirici matematiği, doku ya da çizim çağrısı değil.
+    ciz.toneMapping = THREE.ACESFilmicToneMapping;
+    ciz.toneMappingExposure = 0.95;
+    // GÖLGE — tek yönlü ışıktan yumuşak gölge.
+    // Harita 1024: Pi'nin GPU'sunda gölge haritası her karede yeniden
+    // çiziliyor, 2048 dört kat piksel demek. 1024 bu yatak ölçüsünde
+    // kirişin gölgesini keskin gösterecek kadar yeterli.
+    ciz.shadowMap.enabled = true;
+    ciz.shadowMap.type = THREE.PCFShadowMap;
+    // Sahne otomatik güncelleme KAPALI: kirli bayrağı yokken gölge haritası
+    // her karede yeniden çiziliyordu. Yalnız gerçekten çizdiğimiz karede
+    // güncelleniyor (bkz. dongu).
+    ciz.shadowMap.autoUpdate = false;
 
-    sahne.add(new THREE.HemisphereLight(0xdfe9e2, 0x2a2f28, 1.15));
-    const isik = new THREE.DirectionalLight(0xffffff, 1.5);
-    isik.position.set(2.4, 3.2, 1.8);
+    /* IŞIK — ortam ışığı kısık, tek yönlü ışık baskın.
+     * Eskiden yarımküre ışığı 1.15'ti: her yüzey her yönden aynı ışığı
+     * alıyor, hacim hissi kalmıyordu. Kısınca yüzeylerin kendi eğrisi
+     * görünüyor ve gölgeler bir yere oturuyor. */
+    // Yerden gelen renk 0x3a3a2c'ydi: neredeyse siyah, karık dibi gibi
+    // ışığı doğrudan görmeyen her yer kapkara çıkıyordu. Çimden
+    // sekmiş ışık gerçekte de bu kadar koyu değil.
+    sahne.add(new THREE.HemisphereLight(0xcfe0e8, 0x5c5a48, 0.55));
+    const isik = new THREE.DirectionalLight(0xfff3e0, 2.15);
+    isik.position.set(2.6, 3.4, 1.6);
+    isik.castShadow = true;
+    isik.shadow.mapSize.set(1024, 1024);
+    // Gölge kamerası yalnız MAKİNEYİ kapsıyor. Önce ±1.6 m'ydi: 3,2 m'lik
+    // alana yayılan 1024 piksel, yarım metrelik bir makinenin gölgesini
+    // bulanık bir leke yapıyordu. ±0.75 m'de bir piksel ≈ 1,5 mm, kirişin
+    // gölgesi kenarı belli çıkıyor. Çim gölge almıyor — zaten makinenin
+    // gölgesi toprağa ve tezgâha düşüyor.
+    const gk = isik.shadow.camera;
+    gk.left = -0.75; gk.right = 0.75; gk.top = 0.75; gk.bottom = -0.75;
+    gk.near = 0.5; gk.far = 9;
+    // Akne (yüzeyin kendi gölgesini benekli göstermesi) için pay.
+    isik.shadow.bias = -0.0012;
+    isik.shadow.normalBias = 0.012;
     sahne.add(isik);
+    sahne.add(isik.target);
+
+    /* ÇEVRE — makine boşlukta durmuyor.
+     *
+     * Zemin 60 m: pusun bittiği yerden (26 m) uzun, yani zeminin kenarı
+     * hiç görünmüyor, puslu bir UFUK ÇİZGİSİNE dönüşüyor. 16 m'de kenar
+     * görünür bir kesikti ve sahne yine bir levhanın üstünde duruyordu.
+     *
+     * Doku tekrarı 260: bir tutam çim ~0,23 m. Az tekrarda
+     * gürültü öyle büyüyor ki çim değil bulanık bir yeşil leke oluyor. */
+    const doku = window.FarmbotDoku;
+    if (doku) {
+      /* Zemin malzemesi BİLEREK sade: Lambert, kabartma YOK.
+       * Ölçüm: bu düzlem ekranın tamamını kaplıyor, yani sahnenin en
+       * pahalı yüzeyi o. Kabartma haritası açıkken (yazılım çizici,
+       * boş yatak, döndürürken) 1,95 kare/sn, kapalıyken 2,36 —
+       * yalnız zemin için %20. Uzaktan bakılan bir çim yüzeyinde
+       * kabartmanın gözle görülür karşılığı yok; toprakta VAR, orada
+       * duruyor. */
+      const cim = doku.cim(THREE, 260);
+      const zemin = new THREE.Mesh(
+        new THREE.PlaneGeometry(60, 60),
+        new THREE.MeshLambertMaterial({ map: cim.harita }));
+      zemin.rotation.x = -Math.PI / 2;
+      // Ayak pabuçlarının tam altı: tabla toprak yüzeyinin 50 mm altında,
+      // ayak ondan 160 mm daha aşağıda. Yalnız `ayak` kadar inersek zemin
+      // ayakları 50 mm kesiyor ve makine çime gömülmüş görünüyor.
+      zemin.position.y = (BAGLAM.makine.tabla - BAGLAM.makine.ayak) * MM - 0.002;
+      zemin.receiveShadow = true;
+      sahne.add(zemin);
+
+      const gokDoku = doku.gokyuzu(THREE);
+      // Kubbe zeminin köşesinden (≈42 m) uzak olmalı, yoksa zemin kubbeyi
+      // deliyor. 26 m'den ötesi zaten tamamen pus, ama delik görünmesin.
+      const kubbe = new THREE.Mesh(
+        new THREE.SphereGeometry(60, 24, 16),
+        new THREE.MeshBasicMaterial({ map: gokDoku, side: THREE.BackSide, fog: false }));
+      sahne.add(kubbe);
+      sahne.background = null;   // arka planı kubbe veriyor
+
+      // Metal parçalarda yansıma. Harita burada bir kez üretiliyor;
+      // sahne.environment olarak VERİLMİYOR — küresel verilince gökyüzünün
+      // alt yarısındaki yeşil toprağa ve bitkiye de biniyor, sahne
+      // soluyordu. Malzemeler tek tek alıyor (makine.js/mal).
+      doku.ortam(THREE, ciz);
+    }
 
     kokGrup = new THREE.Group();
     sahne.add(kokGrup);
@@ -590,6 +681,10 @@
     if (!T.kirli) return;                          // değişen bir şey yok
     T.kirli = false;
     T.cizilenKare++;
+    // Gölge haritası yalnız GERÇEKTEN çizdiğimiz karede yenileniyor.
+    // autoUpdate açık olsaydı boşta duran sahnede bile her karede yeniden
+    // çizilirdi — kirli bayrağının bütün kazancını yerdi.
+    ciz.shadowMap.needsUpdate = true;
 
     const k = etkinKamera();
     if (kam.ust) {
@@ -1269,10 +1364,11 @@
       try { VERI.kalibrasyon = (await P().apiIste("/api/kamera/kalibrasyon")).kalibrasyon; }
       catch (h) { VERI.kalibrasyon = null; }
     }
-    if (acikMi("okumalar")) {
-      try { VERI.okumalar = (await P().apiIste("/api/olcum/konumlu?dakika=1440")).okumalar || []; }
-      catch (h) { VERI.okumalar = []; }
-    }
+    // Okumalar katman kapalıyken de çekiliyor: toprak yüzeyinin koyuluğu
+    // artık nem okumasından geliyor (bkz. makine.js/nemBoya). Sensör
+    // katmanı kapalı olsa bile sulanan yerin koyu görünmesi gerekiyor.
+    try { VERI.okumalar = (await P().apiIste("/api/olcum/konumlu?dakika=1440")).okumalar || []; }
+    catch (h) { VERI.okumalar = []; }
     katmanlariGuncelle();
   }
 
@@ -1410,6 +1506,13 @@
                       dizi: !!(d.dizi && d.dizi.calisiyor),
                       uc: !!(d.uc && d.uc.calisiyor) },
                kaynak: { ...T.kirletKaynak },
+               // Pi'nin GPU'sunu tahmin eden asıl sayılar: üçgen ve çizim
+               // çağrısı. Buradaki yazılım çizicinin kare hızı Pi'yi temsil
+               // etmiyor, bu ikisi ediyor.
+               yuk: ciz ? { ucgen: ciz.info.render.triangles,
+                            cagri: ciz.info.render.calls,
+                            doku: ciz.info.memory.textures,
+                            geometri: ciz.info.memory.geometries } : null,
                imza: T.sonDurumImzasi.slice(0, 60) };
     },
 
