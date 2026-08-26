@@ -26,6 +26,13 @@ Tarla.katman({
   ad: "Bitkiler",
   varsayilan: true,
 
+  /** Simge tuvalinin yazi tipi. "BitkiEmoji" panelle birlikte gelen alt
+   *  kume font (bkz. stil.css); digerleri fontu kurulu sistemler icin
+   *  yedek. Raspberry Pi OS emoji fontuyla gelmedigi icin liste yalniz
+   *  Segoe ve Noto ile bitince Pi'de bos kutu ciziliyordu. */
+  SIMGE_FONT:
+    "48px 'BitkiEmoji', system-ui, 'Segoe UI Emoji', 'Noto Color Emoji', sans-serif",
+
   /** Tür → biçim arketipi. Katalogda boy alanı yok; siluet buradan. */
   ARKETIP: {
     marul: "rozet", ispanak: "rozet", lahana: "rozet", pazi: "rozet",
@@ -77,12 +84,33 @@ Tarla.katman({
     if (!this._simgeler[anahtar]) {
       const c = document.createElement("canvas");
       c.width = c.height = 64;
-      const g = c.getContext("2d");
-      g.font = "48px system-ui, 'Segoe UI Emoji', 'Noto Color Emoji', sans-serif";
-      g.textAlign = "center"; g.textBaseline = "middle";
-      g.fillText(anahtar, 32, 36);
+      const ciz = () => {
+        const g = c.getContext("2d");
+        g.clearRect(0, 0, 64, 64);
+        g.font = this.SIMGE_FONT;
+        g.textAlign = "center"; g.textBaseline = "middle";
+        g.fillText(anahtar, 32, 36);
+      };
+      ciz();
+      const doku = new THREE.CanvasTexture(c);
       this._simgeler[anahtar] = new THREE.SpriteMaterial({
-        map: new THREE.CanvasTexture(c), transparent: true, depthTest: false });
+        map: doku, transparent: true, depthTest: false });
+
+      // ZAMANLAMA. Webfont ilk cizim aninda hazir olmayabilir; dokular
+      // onbellege alindigi icin o anda cizilen bos kutu KALICI olur. Font
+      // gelince biriken butun simgeleri bir kez daha ciziyoruz. Sahneyi
+      // ayrica isaretlemeye gerek yok: durum akisi yarim saniyede bir
+      // yeniden cizdiriyor, needsUpdate o turda GPU'ya gidiyor.
+      (this._yeniden = this._yeniden || []).push(() => {
+        ciz(); doku.needsUpdate = true;
+      });
+      if (!this._fontBekleniyor && document.fonts && document.fonts.load) {
+        this._fontBekleniyor = true;
+        document.fonts.load(this.SIMGE_FONT, "🌱")
+          .then(() => document.fonts.ready)
+          .then(() => (this._yeniden || []).forEach((f) => f()))
+          .catch(() => {});
+      }
     }
     return this._simgeler[anahtar];
   },
