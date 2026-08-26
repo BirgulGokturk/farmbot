@@ -23,6 +23,8 @@ from typing import Any
 
 from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, Response
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.staticfiles import StaticFiles
 
 import depo
@@ -224,6 +226,28 @@ async def yasam(app: FastAPI):
 
 
 app = FastAPI(title="Farmbot", lifespan=yasam)
+
+# Sikistirma. Panel dosyalari bilerek onbellege alinmiyor (bkz.
+# TazeStatik), yani her acilista yeniden iniyorlar. Metin dosyalari
+# %70 civari sikisiyor: 1,15 MB toplam yuk ~320 KB'a duser. Seviye 6,
+# 9 ile neredeyse ayni orani cok daha az islemciyle veriyor — Pi'de
+# bu fark onemli.
+app.add_middleware(GZipMiddleware, minimum_size=1024, compresslevel=6)
+
+# Baska bir arayuzun (ornegin ayri bir gelistirme sunucusunda calisan
+# farmbot-web) tarayicidan bu API'yi cagirabilmesi icin kokeni tek tek
+# saymak gerekiyor. Bos birakilirsa CORS hic acilmaz: robotu hareket
+# ettiren bir API'de varsayilanin "herkese acik" olmasi dogru degil.
+# Ornek: IZINLI_KOKENLER="http://localhost:5173"
+IZINLI_KOKENLER = [k.strip() for k in os.environ.get("IZINLI_KOKENLER", "").split(",") if k.strip()]
+if IZINLI_KOKENLER:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=IZINLI_KOKENLER,
+        allow_methods=["GET", "POST", "DELETE"],
+        allow_headers=["*"],
+    )
+    logger.info("CORS acik: %s", ", ".join(IZINLI_KOKENLER))
 
 
 # --------------------------------------------------------------------------- #
