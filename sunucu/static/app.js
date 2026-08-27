@@ -1724,10 +1724,21 @@ function donanimGuncelle(o) {
   }
   if (o.role_var !== undefined) {
     const var_ = Number(o.role_var) === 1;
-    $$(".dugme.role").forEach((d) => { d.disabled = !var_; });
-    $("#role-not").innerHTML = var_ ? ""
-      : `<b>Röleler bağlı değil.</b> ${AC}<code>ROLELER_BAGLI 1</code>`;
-    $("#role-not").classList.toggle("gizli", var_);
+    // Su pompası röle kartında yer kaplasa da ucu ayrıca bağlanıyor; kartın
+    // bildirdiği `pompa_var` varsa ona uyuyoruz. Yoksa (eski firmware) eski
+    // davranış: kart takılıysa üçü de açık.
+    const pompaVar = o.pompa_var === undefined ? var_ : Number(o.pompa_var) === 1;
+    $$(".dugme.role").forEach((d) => {
+      const acik = d.dataset.role === "su_pompasi" ? pompaVar : var_;
+      d.disabled = !acik;
+      d.title = acik ? "" : "Bu çıkış bağlı değil";
+    });
+    $("#role-not").innerHTML = !var_
+      ? `<b>Röleler bağlı değil.</b> ${AC}<code>ROLELER_BAGLI 1</code>`
+      : !pompaVar
+        ? `Su pompası bağlı değil. ${AC}<code>SU_POMPASI_BAGLI 1</code>`
+        : "";
+    $("#role-not").classList.toggle("gizli", var_ && pompaVar);
   }
   // Otomatik sulama çıkış listesi: bağlı olmayanlar seçilemesin.
   const secim = $("#oto-cikis");
