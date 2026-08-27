@@ -37,10 +37,17 @@ Tarla.katman({
   IC: 0.55,
   DIS: 9.0,
   ADET: 5200,
-  /** Öbek sayısı ve yarıçapı (m); SERPME = hiçbir öbeğe girmeyen oran. */
-  OBEK: 46,
-  OBEK_R: 0.75,
-  SERPME: 0.15,
+  /* Öbek sayısı ve yarıçapı (m); SERPME = hiçbir öbeğe girmeyen oran.
+   *
+   * İlk denemede 46 öbek / 0,75 m yarıçap / %15 serpme vardı ve sonuç
+   * öncekinden KÖTÜ oldu: seyrek çimenlikte birbirinden kopuk konfeti
+   * yığınları. Öbeklenme fikri doğru ama ölçek yanlıştı — kır çiçeği
+   * avuç içi büyüklüğünde küçük topluluklar yapar, metrelik yığınlar
+   * değil. Çok sayıda küçük öbek + yüksek serpme oranı, gözün "kümelenme"
+   * diye okuduğu ama yığın görmediği dağılımı veriyor. */
+  OBEK: 260,
+  OBEK_R: 0.28,
+  SERPME: 0.45,
 
   guncelle(o) {
     const THREE = o.THREE;

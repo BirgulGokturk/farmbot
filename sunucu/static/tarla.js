@@ -403,7 +403,11 @@
     // "uzak" diye bir yer yok, sahne bir çim halının üstünde duruyor gibi.
     // 2,5-10 m'de karenin üst bandı ufuk pusuna karışıyor; makine (kameraya
     // ~1,5 m) hâlâ tamamen net.
-    sahne.fog = new THREE.Fog(0x6d7f80, 2.5, 10);
+    // Pus 2,5-10 m'ydi ve makinenin hemen arkası bile griye boğuluyordu:
+    // sahne bütünüyle soluk görünüyordu. 6-24 m'de yakın çevre net kalıyor,
+    // pus yalnızca ufka doğru devreye giriyor. Zemin 60 m olduğu için
+    // kenarı yine görünmüyor.
+    sahne.fog = new THREE.Fog(0x7d8f86, 6, 24);
 
     kamera = new THREE.PerspectiveCamera(42, 1, 0.05, 100);
     // Üstten görünüm ortografik: perspektifte direkler yatağın üstüne
@@ -1277,7 +1281,10 @@
       o.preventDefault();
       kam.elleZoom = true;
       if (kam.ust) { kam.yakinlik = kis(kam.yakinlik * (o.deltaY > 0 ? 0.9 : 1.1), 0.4, 6); boyutla(); }
-      else kam.r = kis(kam.r * (o.deltaY > 0 ? 1.1 : 0.9), 0.35, 12);
+      // Üst sınır 12 m'ydi: yatak 0,6 m olduğu için makine ekranda bir
+      // noktaya dönüyor ve sahne boş çimenlikten ibaret kalıyordu. 4,5 m'de
+      // makine hâlâ karenin belirgin bir kısmını kaplıyor.
+      else kam.r = kis(kam.r * (o.deltaY > 0 ? 1.1 : 0.9), 0.35, 4.5);
       kirlet("zoom");
     }, { passive: false });
 
