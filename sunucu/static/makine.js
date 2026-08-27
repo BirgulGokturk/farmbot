@@ -55,7 +55,27 @@
       cerceve: "#8d9490", ray: "#6e7873",
       uc: "#0f6e72", uc_koyu: "#3d4a46",
       govde: "#4a7c35",
-      aluminyum: "#c9ced6", metal_koyu: "#2a2f38",
+      /* METAL PALETİ — dört kademe, bilerek AYRIK.
+       *
+       * Önceki sürümde her metal parça aynı grinin tonuydu (#c9ced6 ile
+       * #2a2f38 arası) ve makine tek bir kütle gibi okunuyordu. Gözün
+       * parçaları ayırabilmesi için tonlar arasında görünür bir sıçrama
+       * gerekiyor:
+       *
+       *   aluminyum   taşıyıcı sigma profiller — AÇIK ve hafif SICAK.
+       *               Gerçek anodize alüminyum soğuk gri değil; bir
+       *               parça sarıya çalıyor ve fırçalanmış yüzeyi ışığı
+       *               yöne göre farklı yansıtıyor (bkz. dokular.js/fircali).
+       *   metal_koyu  hareketli araba, braket, taşıyıcı — belirgin KOYU.
+       *               Hareket eden parçanın sabit çerçeveden ayrılması
+       *               makinenin nasıl çalıştığını da anlatıyor.
+       *   motor       gövdeler — MAT SİYAH, neredeyse yansımasız.
+       *   celik       vidalı mil, teker mili — PARLAK çelik, en yüksek
+       *               yansıma. Sahnede iki üç yerde parlayan bir şey
+       *               olması gerekiyor, yoksa her yüzey aynı matlıkta.
+       */
+      aluminyum: "#b4b0a6", metal_koyu: "#33373c",
+      motor: "#17181b", celik: "#e2e6ea",
     },
   };
 
@@ -67,8 +87,13 @@
   /** Tezgâh ayak yüksekliği (m). */
   const AYAK = M(MAKINE.ayak);
 
-  const ALUMINYUM = { color: MAKINE.renk.aluminyum, metalness: 0.85, roughness: 0.32 };
-  const KOYU = { color: MAKINE.renk.metal_koyu, metalness: 0.5, roughness: 0.55 };
+  /* Malzeme tanımları. Pürüzlülük farkı renk farkı kadar önemli: aynı
+   * renkte ama farklı pürüzlülükteki iki yüzey bile ayrışıyor. */
+  const ALUMINYUM = { color: MAKINE.renk.aluminyum, metalness: 0.84, roughness: 0.34,
+                      fircali: true };
+  const KOYU = { color: MAKINE.renk.metal_koyu, metalness: 0.55, roughness: 0.62 };
+  const MOTOR = { color: MAKINE.renk.motor, metalness: 0.18, roughness: 0.92 };
+  const CELIK = { color: MAKINE.renk.celik, metalness: 0.95, roughness: 0.14 };
 
   /** Yansımanın metalde başladığı sınır. Altındakiler (toprak, gövde,
    *  bitki) ortam haritası ALMIYOR — bkz. dokular.js/ortam. */
@@ -77,7 +102,17 @@
   function mal(THREE, tanim) {
     const t = Object.assign({}, tanim);
     t.color = new THREE.Color(t.color);
+    // `fircali` bir malzeme özelliği değil, bizim bayrağımız: fırçalama
+    // izini PÜRÜZLÜLÜK haritası olarak veriyoruz. Renk haritası
+    // olsaydı profil çizgili boyanmış gibi görünürdü; pürüzlülük
+    // olunca çizgiler ancak ışık o yöne geldiğinde parlıyor — gerçek
+    // fırçalanmış metalin yaptığı da bu.
+    const fircali = t.fircali;
+    delete t.fircali;
     const m = new THREE.MeshStandardMaterial(t);
+    if (fircali && window.FarmbotDoku && window.FarmbotDoku.fircali) {
+      m.roughnessMap = window.FarmbotDoku.fircali(THREE);
+    }
     // "Metal parçalarda hafif yansıma": gökyüzü haritası yalnız buraya
     // giriyor. Şiddet 0.45 — 1.0'da profiller aynaya dönüp makinenin
     // kendi rengi kayboluyor.
@@ -105,7 +140,7 @@
       : enUzun === h ? [w * 1.01, h * 0.98, d * 0.22]
         : [w * 0.22, h * 1.01, d * 0.98];
     const serit = new THREE.Mesh(new THREE.BoxGeometry(kanal[0], kanal[1], kanal[2]),
-      mal(THREE, { color: "#8f959f", metalness: 0.7, roughness: 0.6 }));
+      mal(THREE, { color: "#8f8b80", metalness: 0.7, roughness: 0.66 }));
     // Profille çakışık duruyor: gölgesi profilinkinden ayırt edilemez,
     // ama gölge geçişinde bir çizim çağrısı daha demek.
     serit.userData.golgeAtma = true;
@@ -125,11 +160,10 @@
   /** Step motor gövdesi ve mili. */
   function motor(THREE, konum, donus) {
     const g = new THREE.Group();
-    g.add(kutu(THREE, [P * 2.1, P * 2.1, P * 2.4], null,
-      { color: "#1c2027", metalness: 0.45, roughness: 0.6 }));
+    g.add(kutu(THREE, [P * 2.1, P * 2.1, P * 2.4], null, MOTOR));
     const mil = new THREE.Mesh(
       new THREE.CylinderGeometry(P * 0.15, P * 0.15, P * 0.7, 12),
-      mal(THREE, { color: "#9aa1ab", metalness: 0.9, roughness: 0.25 }));
+      mal(THREE, CELIK));
     mil.rotation.x = Math.PI / 2;
     mil.position.z = P * 1.5;
     mil.userData.golgeAtma = true;
@@ -143,7 +177,7 @@
   function tekerlek(THREE, konum) {
     const m = new THREE.Mesh(
       new THREE.CylinderGeometry(P * 0.6, P * 0.6, P * 0.5, 16),
-      mal(THREE, { color: "#15181d", metalness: 0.3, roughness: 0.7 }));
+      mal(THREE, { color: "#0f1114", metalness: 0.15, roughness: 0.85 }));
     m.rotation.z = Math.PI / 2;
     m.position.set(konum[0], konum[1], konum[2]);
     return m;
@@ -242,6 +276,29 @@
       color: MAKINE.renk.toprak, roughness: 1, metalness: 0,
       vertexColors: true,      // nem koyulaştırması buradan geliyor
     });
+    /* ISLAK TOPRAK PARLAR. Kuru toprak tamamen mat; ıslanınca tanelerin
+     * arasını su dolduruyor, yüzey düzleşiyor ve gökyüzünü yansıtmaya
+     * başlıyor. Yalnız koyulaştırmak yetmiyor — koyu ama mat bir yüzey
+     * "gölgede kalmış kuru toprak" gibi okunuyor.
+     *
+     * Pürüzlülük malzemede TEK bir sayı, oysa nem noktasal: yatağın bir
+     * ucu sulanmış, öteki ucu kuru olabiliyor. Onun için köşe başına bir
+     * `islak` niteliği taşıyoruz ve gölgelendiriciye tek satır
+     * ekliyoruz. Alternatifi bütün malzemeyi elle yazmaktı; bu yama
+     * three.js'in kendi ışık hesabına dokunmuyor. */
+    yuzeyMal.onBeforeCompile = (gl) => {
+      gl.vertexShader = gl.vertexShader
+        .replace("#include <common>",
+                 "#include <common>\nattribute float islak;\nvarying float vIslak;")
+        .replace("#include <begin_vertex>",
+                 "#include <begin_vertex>\nvIslak = islak;");
+      gl.fragmentShader = gl.fragmentShader
+        .replace("#include <common>",
+                 "#include <common>\nvarying float vIslak;")
+        .replace("#include <roughnessmap_fragment>",
+                 "#include <roughnessmap_fragment>\n"
+                 + "roughnessFactor *= 1.0 - 0.62 * vIslak;");
+    };
     if (doku) {
       const { harita, kabartma } = doku.toprak(THREE, topEn * dokuOlcek, topBoy * dokuOlcek);
       yuzeyMal.map = harita;
@@ -290,6 +347,9 @@
     // Nem renkleri için köşe rengi alanı — başlangıçta hepsi beyaz (çarpan 1).
     const renkler = new Float32Array(konum.count * 3).fill(1);
     geo.setAttribute("color", new THREE.BufferAttribute(renkler, 3));
+    // Islaklık 0..1 — hem koyuluğu hem parlaklığı süren tek değer.
+    geo.setAttribute("islak",
+      new THREE.BufferAttribute(new Float32Array(konum.count), 1));
 
     const toprak = new THREE.Mesh(geo, yuzeyMal);
     toprak.receiveShadow = true;
@@ -313,7 +373,7 @@
      */
     const tepsi = new THREE.Group();
     tepsi.add(kutu(THREE, [0.11, 0.03, 0.16], [0, 0, 0],
-      { color: "#26292e", roughness: 0.85, metalness: 0.1 }));
+      { color: "#1e2124", roughness: 0.88, metalness: 0.1 }));
     const delikMal = mal(THREE, { color: "#15181b", roughness: 0.95 });
     for (let i = 0; i < 3; i++) {
       for (let j = 0; j < 4; j++) {
@@ -381,7 +441,7 @@
     sutun.add(profil(THREE, [P, 1, P], [P * 1.7, 0, 0]));
     const vida = new THREE.Mesh(
       new THREE.CylinderGeometry(P * 0.16, P * 0.16, 1, 10),
-      mal(THREE, { color: "#aab1ba", metalness: 0.9, roughness: 0.28 }));
+      mal(THREE, CELIK));
     vida.position.x = P * 0.5;
     sutun.add(vida);
     kizak.add(sutun);
@@ -391,7 +451,7 @@
     ucKafa.add(kutu(THREE, [P * 2.4, P * 2, P * 1.8], [P * 1.1, P * 1.4, 0]));
     const govde = new THREE.Mesh(
       new THREE.CylinderGeometry(P * 0.85, P * 0.85, P * 0.5, 16),
-      mal(THREE, { color: "#6b7280", metalness: 0.75, roughness: 0.3 }));
+      mal(THREE, { color: "#5b6169", metalness: 0.8, roughness: 0.26 }));
     govde.position.set(P * 1.1, 0, 0);
     ucKafa.add(govde);
     const uc = new THREE.Mesh(
@@ -429,6 +489,7 @@
     if (!toprak) return false;
     const renk = toprak.geometry.getAttribute("color");
     const konum = toprak.geometry.getAttribute("position");
+    const islakNit = toprak.geometry.getAttribute("islak");
     if (!renk) return false;
 
     const okumalar = (secenek.okumalar || []).map((k) => ({
@@ -459,8 +520,11 @@
       // fazlası toprağı siyah bir lekeye çeviriyor.
       const f = 1 - 0.42 * islak - 0.07 * cukur;
       renk.setXYZ(i, f, f * 0.99, f * 1.03);   // ıslak toprak biraz soğuk
+      // Karık dibi de biraz nemli sayılıyor: su orada duruyor.
+      if (islakNit) islakNit.setX(i, Math.min(1, islak + cukur * 0.25));
     }
     renk.needsUpdate = true;
+    if (islakNit) islakNit.needsUpdate = true;
     return true;
   }
 

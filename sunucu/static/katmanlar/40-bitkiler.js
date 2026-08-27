@@ -82,19 +82,41 @@ Tarla.katman({
     if (!this._simgeler) this._simgeler = {};
     const anahtar = metin || "🌱";
     if (!this._simgeler[anahtar]) {
+      /* Tuval 128: 64'te emoji ekranda büyütülünce bulanıyordu. Simge
+       * artık ekran üstünde SABİT boyutta durduğu için yakın plana
+       * gelmesi de mümkün, dolayısıyla çözünürlük gerekiyor. */
       const c = document.createElement("canvas");
-      c.width = c.height = 64;
+      c.width = c.height = 128;
       const ciz = () => {
         const g = c.getContext("2d");
-        g.clearRect(0, 0, 64, 64);
-        g.font = this.SIMGE_FONT;
+        g.clearRect(0, 0, 128, 128);
+        /* ARKA DAİRE. Emoji açık zeminde (çim, kuru toprak) kayboluyordu:
+         * ikonların çoğu açık renkli ve ince konturlu. Arkasına yumuşak
+         * kenarlı koyu bir daire koyunca hem açık hem koyu zeminde
+         * okunuyor. Daire dokuya çiziliyor — ayrı bir nesne olsaydı
+         * bitki başına bir çizim çağrısı daha demekti. */
+        const gr = g.createRadialGradient(64, 62, 10, 64, 62, 60);
+        gr.addColorStop(0.00, "rgba(12,14,12,0.82)");
+        gr.addColorStop(0.62, "rgba(12,14,12,0.72)");
+        gr.addColorStop(0.86, "rgba(12,14,12,0.30)");
+        gr.addColorStop(1.00, "rgba(12,14,12,0)");
+        g.fillStyle = gr;
+        g.beginPath(); g.arc(64, 62, 60, 0, Math.PI * 2); g.fill();
+        g.font = this.SIMGE_FONT.replace("48px", "72px");
         g.textAlign = "center"; g.textBaseline = "middle";
-        g.fillText(anahtar, 32, 36);
+        g.fillText(anahtar, 64, 68);
       };
       ciz();
       const doku = new THREE.CanvasTexture(c);
+      doku.anisotropy = 4;
       this._simgeler[anahtar] = new THREE.SpriteMaterial({
-        map: doku, transparent: true, depthTest: false });
+        map: doku, transparent: true, depthTest: false,
+        /* EKRAN ÜSTÜNDE SABİT BOYUT. sizeAttenuation kapalıyken three.js
+         * ölçeği kameraya olan uzaklıkla çarpıyor, yani perspektifin
+         * küçültmesini geri alıyor. Uzaktaki bitkinin simgesi de
+         * yakındaki kadar okunaklı kalıyor — simge bir NESNE değil bir
+         * ETİKET; haritadaki yer imi gibi davranması doğru. */
+        sizeAttenuation: false });
 
       // ZAMANLAMA. Webfont ilk cizim aninda hazir olmayabilir; dokular
       // onbellege alindigi icin o anda cizilen bos kutu KALICI olur. Font
@@ -186,20 +208,60 @@ Tarla.katman({
     const tur = new THREE.Color(b.tur.color || "#5f9e46");
     const biçim = this.ARKETIP[b.nokta.tur] || "dik";
 
-    // Yaprak tonu yeşilden başlıyor, türün tonundan yalnızca biraz
-    // etkileniyor: kırmızıyı yeşile karıştırmak kahverengi veriyordu.
+    /* YAPRAK RENGİ — arketip + türün kendi rengi.
+     *
+     * Önceki sürümde tek bir yeşil vardı ve türün rengi %15 karışıyordu:
+     * marulla domates neredeyse aynı yeşildi. Şimdi renk ÖNCE arketipten
+     * geliyor — bir marul (rozet) açık sarımsı yeşil, bir domates (dik)
+     * koyu mavimsi yeşil, bir havuç (tüp) grimsi yeşil olur — sonra
+     * türün katalog rengi üstüne %35 biniyor.
+     *
+     * Kırmızıyı yeşile karıştırmak hâlâ kahverengi veriyor, o yüzden
+     * karışan şey RGB değil TON: domatesin kırmızısı yeşili sıcak
+     * tarafa çekiyor, marulun açık yeşili aydınlatıyor. */
+    const BICIM_RENK = {
+      // [ton, doygunluk, açıklık] — ton 0,25 saf yeşil, altı sarıya,
+      // üstü maviye kaçıyor.
+      rozet:   [0.230, 0.58, 0.21],   // marul: açık, sarımsı
+      tup:     [0.270, 0.40, 0.15],   // havuç sapı: grimsi, soğuk
+      dik:     [0.295, 0.56, 0.13],   // domates: koyu, maviye çalan
+      cali:    [0.258, 0.44, 0.16],   // fesleğen: mat, tozlu
+      sap:     [0.243, 0.60, 0.18],   // ayçiçeği: canlı orta yeşil
+      sarilan: [0.252, 0.52, 0.17],   // kabak: orta
+    };
     const hsl = { h: 0.25, s: 0.4, l: 0.35 };
     tur.getHSL(hsl);
-    const yaprakTon = 0.25 + (hsl.h - 0.25) * 0.15;
-    const yaprakDoy = o.kis(0.42 + hsl.s * 0.20, 0.30, 0.66);
-    const yaprakIsik = o.kis(0.21 + hsl.l * 0.10, 0.15, 0.30);
+    const taban = BICIM_RENK[biçim] || BICIM_RENK.dik;
+    /* Türün tonu ÇEMBERSEL karıştırılıyor. Doğrudan `(hsl.h - 0.25)`
+     * demek bir hataydı: ton bir çember, kırmızı hem 0 hem 1'de duruyor.
+     * Domatesin kırmızısı h≈0,97 olduğu için yaprak tonu 0,55'e —
+     * camgöbeğine — fırlıyordu; biberin turuncusu h≈0,07 olduğu için
+     * 0,23'e, hardal sarısına düşüyordu. Ölçüldü: yaprak pikseli
+     * (102, 106, 33), yani kırmızı ile yeşil eşit.
+     *
+     * Doğrusu türün rengini SICAK/SOĞUK ekseninde okumak: kosinüs
+     * çemberde sürekli, kırmızı +1 sıcak, camgöbeği -1 soğuk. Kayma da
+     * küçük (±0,022) — tür rengi yaprağı yeşil bandın dışına çıkarmamalı,
+     * yalnız içinde biraz itmeli. */
+    const sicaklik = Math.cos(hsl.h * Math.PI * 2);
+    const yaprakTon = taban[0] - sicaklik * 0.022;
+    const yaprakDoy = o.kis(taban[1] + (hsl.s - 0.5) * 0.22, 0.26, 0.72);
+    /* Açıklık DÜŞÜK tutuluyor. Güneş 2,15 şiddetinde ve yapraklar geniş
+     * düz yüzeyler, yani ışığı neredeyse dik alıyorlar; albedo 0,30'un
+     * üstünde olunca hepsi aynı soluk sarı-yeşile doyuyor ve tür farkı
+     * kayboluyor. Koyu albedo + güçlü ışık = doygun yeşil. */
+    const yaprakIsik = o.kis(taban[2] + (hsl.l - 0.45) * 0.12, 0.09, 0.26);
     // Her yaprak biraz başka: aynı tonun tek düzeliği bitkiyi plastik
     // gösteriyor. Sapma tohumlu, yani hep aynı yaprak hep aynı ton.
     const yaprakRenk = () => new THREE.Color().setHSL(
       yaprakTon + (rast() - 0.5) * 0.02,
       o.kis(yaprakDoy + (rast() - 0.5) * 0.10, 0.18, 0.70),
-      o.kis(yaprakIsik * (0.72 + rast() * 0.42), 0.11, 0.36));
-    const sapRenk = new THREE.Color(o.makine.renk.govde).multiplyScalar(0.85);
+      o.kis(yaprakIsik * (0.76 + rast() * 0.34), 0.07, 0.30));
+    /* Gövde yaprakla aynı yeşil olmamalı: gerçek sapta klorofil daha az,
+     * odunlaştıkça kahveye kaçıyor. Aynı renk olunca bitki tek parça bir
+     * yeşil kütle gibi okunuyordu. */
+    const sapRenk = new THREE.Color().setHSL(
+      0.19, 0.42, biçim === "cali" ? 0.16 : 0.13);
 
     const p = [];
     const M4 = () => new THREE.Matrix4();
@@ -225,13 +287,15 @@ Tarla.katman({
 
     if (biçim === "rozet") {
       // Dışta yatık, içte dik yapraklar — marul/lahana silueti.
-      const n = 5 + Math.floor(ol * 7);
+      // Rozet KALABALIK ve YATIK: marulun silueti dıştan içe sıkışan
+      // bir yaprak yığını. Az yaprakla yıldız gibi duruyordu.
+      const n = 11 + Math.floor(ol * 13);
       for (let i = 0; i < n; i++) {
         const f = i / Math.max(1, n - 1);
-        const boy = rM * (0.42 + 0.34 * ol) * (0.72 + 0.56 * rast());
+        const boy = rM * (0.30 + 0.24 * ol) * (0.72 + 0.56 * rast());
         yaprak(i * ALTIN + rast() * 0.3,
                0.26 + f * 0.85 + (rast() - 0.5) * 0.18,
-               boy, 0.46, 0.006 + f * rM * 0.10, 0.95, 0.10);
+               boy, 0.66, 0.006 + f * rM * 0.10, 0.80, 0.10);
       }
     } else if (biçim === "tup") {
       // İnce dik yapraklar, kökten çıkıyor — havuç/soğan.
@@ -246,7 +310,9 @@ Tarla.katman({
       // Gövde + gövde boyunca yapraklar, olgunlaşınca meyve.
       const h = Math.min(this.TAVAN, rM * (0.55 + 1.25 * ol));
       sap(h, rM * (0.030 + 0.030 * ol));
-      const n = 4 + Math.floor(ol * 6);
+      // Dik SEYREK ve YUKARI: domatesin silueti gövdeden ayrılan
+      // birkaç dal. Kalabalık olursa çalıya dönüyor.
+      const n = 4 + Math.floor(ol * 4);
       for (let i = 0; i < n; i++) {
         const f = 0.22 + 0.75 * (i / Math.max(1, n - 1));
         yaprak(i * ALTIN + rast() * 0.4,
@@ -381,9 +447,15 @@ Tarla.katman({
    *  şerit olduğu için iki yüz de çiziliyor. */
   bitkiMal(THREE) {
     if (!this._mal) {
-      this._mal = new THREE.MeshStandardMaterial({
-        vertexColors: true, roughness: 0.78, metalness: 0,
-        side: THREE.DoubleSide });
+      /* LAMBERT, Standard değil. Ölçtük: Standard malzemenin dielektrik
+       * parlaması (F0 = 0,04) pürüzlülük 0,78'de bile güçlü güneşin
+       * altında yaprağa BEYAZ ekliyordu — yaprak pikselinde mavi kanal
+       * 51 yerine 76 çıkıyor, yani renk soluyor. Yaprak zaten mat bir
+       * yüzey; o beyaz parlamanın karşılığı yok, tek yaptığı yeşili
+       * öldürmek. Lambert'te parlama hiç yok, üstelik piksel başına
+       * belirgin şekilde ucuz. */
+      this._mal = new THREE.MeshLambertMaterial({
+        vertexColors: true, side: THREE.DoubleSide });
     }
     return this._mal;
   },
@@ -445,11 +517,16 @@ Tarla.katman({
     // paylaşıldığı için doku sayısı bitki sayısıyla artmıyor.
     const simgeAc = document.querySelector("#tarla-simge");
     if (simgeAc && (simgeAc.checked || simgeAc.getAttribute("aria-checked") === "true")) {
+      /* Ölçek artık dünya birimi değil: sizeAttenuation kapalı olduğu
+       * için sayı doğrudan ekran payı gibi davranıyor. 0,062 ≈ 950 px'lik
+       * bir pencerede ~55 px: emoji rahat seçiliyor ama makineyi
+       * örtmüyor. Bitkinin çapıyla DEĞİŞMİYOR — küçük bir fide de aynı
+       * okunaklılıkta etiketlenmeli. */
+      const SIMGE_OLCEK = 0.062;
       veri.forEach((k) => {
-        const rM = Math.max(0.02, (k.b.d("spread_mm").deger / 2) * o.MM);
         const s = new THREE.Sprite(this.simgeMal(THREE, k.b.tur.icon));
-        s.scale.setScalar(o.kis(rM * 0.45, 0.03, 0.075));
-        s.position.set(k.x, k.v.tepe + 0.028, k.z);
+        s.scale.setScalar(SIMGE_OLCEK);
+        s.position.set(k.x, k.v.tepe + 0.035, k.z);
         s.raycast = () => {};
         o.grup.add(s);
       });

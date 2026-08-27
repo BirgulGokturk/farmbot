@@ -413,11 +413,22 @@
 
     ciz = new THREE.WebGLRenderer({ canvas: tuval, antialias: true });
     ciz.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-    // TON EŞLEME. Tek yönlü ışığı gölge çıkacak kadar kuvvetli tutmak
-    // gerekiyor, ama doğrudan kırpınca çim de alüminyum da bembeyaz bir
-    // leke oluyordu. ACES yüksek değerleri sıkıştırıyor: parlak yerler
-    // beyaza yapışmıyor, gölgeler kapanmıyor. Maliyeti bir parça
-    // gölgelendirici matematiği, doku ya da çizim çağrısı değil.
+    /* TON EŞLEME. Tek yönlü ışığı gölge çıkacak kadar kuvvetli tutmak
+     * gerekiyor, ama doğrudan kırpınca çim de alüminyum da bembeyaz bir
+     * leke oluyor.
+     *
+     * Dördü de denendi ve YAPRAK PİKSELLERİ ölçüldü (5 bitkilik sahne,
+     * en yeşil 3000 pikselin ortalaması):
+     *
+     *   ton eşleme yok   88, 124, 58   G/R 1,42   G/B 2,14
+     *   ACES             80, 127, 48   G/R 1,60   G/B 2,67
+     *   Reinhard         89, 124, 61   G/R 1,40   G/B 2,02
+     *   AgX              92, 122, 73   G/R 1,34   G/B 1,68
+     *
+     * ACES en doygun yeşili veriyor — sezgiye aykırı, çünkü ACES doygun
+     * ilkel renkleri soldurmasıyla bilinir; burada kazanmasının sebebi
+     * gölgeleri açıp yaprağı orta tonlara taşıması. AgX en solgunu.
+     * Ölçmeden karar verilseydi tersi seçilirdi. */
     ciz.toneMapping = THREE.ACESFilmicToneMapping;
     ciz.toneMappingExposure = 0.95;
     // GÖLGE — tek yönlü ışıktan yumuşak gölge.
@@ -476,9 +487,45 @@
        * kabartmanın gözle görülür karşılığı yok; toprakta VAR, orada
        * duruyor. */
       const cim = doku.cim(THREE, 150);
+      /* BÜYÜK ÖLÇEKLİ RENK DAĞILIMI — dokuda DEĞİL, köşe renginde.
+       *
+       * Gerçek çimde metrelerce süren açık-koyu, sarımsı-mavimsi bölgeler
+       * var; onlarsız zemin tek tonlu bir halı gibi duruyor. Ama bunu
+       * dokuya koymak imkânsız: doku 150 kez tekrarlanıyor, yani metre
+       * ölçeğindeki her leke bir IZGARA olarak geri geliyor.
+       *
+       * Çözüm: düzlemi 32×32 böl ve köşe rengine tohumlu bir gürültü
+       * yaz. Tekrarlamayan bir alan üstünde metre ölçeğinde renk
+       * değişimi — 1089 köşe, çizim maliyeti sıfıra yakın. */
+      const zeminGeo = new THREE.PlaneGeometry(60, 60, 32, 32);
+      (() => {
+        const kon = zeminGeo.attributes.position;
+        const ren = new Float32Array(kon.count * 3);
+        const rast = doku.uretec(doku.tohumla("cim-bolge"));
+        // İki bağımsız alan: biri açık-koyu, öteki sıcak-soğuk. Tek alan
+        // kullanılsa açık yerler HEP sarı, koyu yerler HEP mavi olurdu.
+        const N = 24;
+        const parlak = doku.alan(N, 3, doku.tohumla("cim-parlak"));
+        const sicak = doku.alan(N, 3, doku.tohumla("cim-sicak"));
+        void rast;
+        for (let i = 0; i < kon.count; i++) {
+          // Düzlem henüz yatık değil: yerel x/y, dünya x/z olacak.
+          const u = (kon.getX(i) / 60 + 0.5) * (N - 1);
+          const v = (kon.getY(i) / 60 + 0.5) * (N - 1);
+          const j = Math.round(v) * N + Math.round(u);
+          const p = kis(parlak[j], 0, 1), sc = kis(sicak[j], 0, 1);
+          // Çarpan 0,80-1,18: dar tutuluyor, geniş aralık zemini
+          // "yamalı boyanmış" gösteriyor.
+          const g = 0.80 + p * 0.38;
+          ren[i * 3] = g * (0.94 + sc * 0.16);          // sıcakta kırmızı artıyor
+          ren[i * 3 + 1] = g * (0.99 + sc * 0.04);
+          ren[i * 3 + 2] = g * (1.12 - sc * 0.26);      // soğukta mavi artıyor
+        }
+        zeminGeo.setAttribute("color", new THREE.BufferAttribute(ren, 3));
+      })();
       const zemin = new THREE.Mesh(
-        new THREE.PlaneGeometry(60, 60),
-        new THREE.MeshLambertMaterial({ map: cim.harita }));
+        zeminGeo,
+        new THREE.MeshLambertMaterial({ map: cim.harita, vertexColors: true }));
       zemin.rotation.x = -Math.PI / 2;
       // Ayak pabuçlarının tam altı: tabla toprak yüzeyinin 50 mm altında,
       // ayak ondan 160 mm daha aşağıda. Yalnız `ayak` kadar inersek zemin

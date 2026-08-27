@@ -139,10 +139,15 @@
     const h = new Float32Array(en * en);
     const rast = uretec(tohum);
     // [adet payı, en küçük yarıçap, en büyük yarıçap, genlik]
+    /* Üç ölçek arasında BELİRGİN boşluk var: 4,5-8,5 % / 1,6-3,4 % /
+     * 0,5-1,2 %. Aralar dolu olsaydı dağılım sürekli olur ve gözle
+     * "iri kesek, orta tane, ince toz" diye ayrılmazdı — yalnız
+     * pürüzlü bir yüzey görünürdü. Genlikler de ayrık: iri kesek
+     * yüzeyin iskeletini kuruyor, ince toz sadece dokunuyor. */
     const kat = [
-      [2600, 0.045, 0.085, 1.00],   // iri kesek: birkaç tane, yüzeyin iskeleti
-      [300, 0.016, 0.034, 0.55],   // orta tane
-      [40, 0.005, 0.012, 0.28],   // ince toz
+      [2200, 0.045, 0.085, 1.00],   // iri kesek: yüzeyin iskeleti
+      [320, 0.016, 0.034, 0.48],   // orta tane
+      [34, 0.005, 0.012, 0.22],   // ince toz
     ];
     for (const [pay, r0, r1, g] of kat) {
       const adet = Math.max(1, Math.round((en * en) / pay));
@@ -288,11 +293,15 @@
     const c = kanvas(en), g = c.getContext("2d");
     const im = g.createImageData(en, en);
     for (let i = 0; i < en * en; i++) {
-      // Zemin: dipteki gölgeli yeşil. Çıplak toprak lekelerinde kahve.
-      let r = 0x1b, ye = 0x28, m = 0x14;
+      /* Zemin: bıçakların ARASINDAN görünen dip. Gölgeli ve MAVİYE çalan
+       * bir yeşil — gerçek çimde dip, gökyüzünün mavi ışığını alıp
+       * güneşi alamadığı için soğuk kalıyor. Önceki sürümde dip de
+       * bıçaklar da aynı sıcaklıktaydı, o yüzden yüzey tek katman bir
+       * yeşil halı gibi duruyordu. */
+      let r = 0x16, ye = 0x27, m = 0x1d;
       const cp = kis((ciplak[i] - 0.60) * 4.0, 0, 1);
-      r += (0x4a - r) * cp; ye += (0x38 - ye) * cp; m += (0x25 - m) * cp;
-      const tn = (ton[i] - 0.5) * 0.30;
+      r += (0x4c - r) * cp; ye += (0x39 - ye) * cp; m += (0x24 - m) * cp;
+      const tn = (ton[i] - 0.5) * 0.34;
       const p = i * 4;
       im.data[p] = kis(r * (1 + tn), 0, 255);
       im.data[p + 1] = kis(ye * (1 + tn), 0, 255);
@@ -331,21 +340,85 @@
         + (rast() - 0.5) * 0.80;               // bıçağa özel sapma
       const boy = 6 + rast() * 9;
       const bx = Math.cos(aci) * boy, by = Math.sin(aci) * boy;
-      const kuruMu = ornek(kuru, x, y) > 0.63 && rast() < 0.75;
+      const kuruMu = ornek(kuru, x, y) > 0.60 && rast() < 0.80;
       const s = rast();
+      /* GÜNEŞ PAYI. Aynı çimde bir bıçak güneşe bakıyor, komşusu gölgede
+       * kalıyor. Güneştekinin ucu SARIYA, gölgedekinin dibi MAVİYE
+       * kaçıyor; renk tek bir yeşilin açığı-koyusu değil, iki ayrı yeşil
+       * arasında geziniyor. "Ölü renk" hissini bitiren şey bu — doygunluk
+       * artışı tek başına yapay çim veriyor. */
+      const gunes = rast();
       let dip, uc;
       if (kuruMu) {
         // Kuru tutam: sarıya çalan, ucu daha da açık
-        dip = `rgb(${(94 + s * 22) | 0},${(80 + s * 20) | 0},${(38 + s * 14) | 0})`;
-        uc = `rgb(${(150 + s * 34) | 0},${(134 + s * 30) | 0},${(70 + s * 20) | 0})`;
+        dip = `rgb(${(104 + s * 26) | 0},${(88 + s * 22) | 0},${(40 + s * 16) | 0})`;
+        uc = `rgb(${(168 + s * 40) | 0},${(148 + s * 34) | 0},${(74 + s * 22) | 0})`;
       } else {
-        dip = `rgb(${(30 + s * 14) | 0},${(52 + s * 18) | 0},${(24 + s * 10) | 0})`;
-        uc = `rgb(${(84 + s * 40) | 0},${(122 + s * 44) | 0},${(56 + s * 26) | 0})`;
+        // Gölgeli dip: soğuk, maviye çalan koyu yeşil
+        const dr = 24 + s * 12 - gunes * 6;
+        const dg = 50 + s * 16 + gunes * 10;
+        const db = 32 + s * 10 - gunes * 16;
+        // Güneşli uç: sıcak, sarımsı açık yeşil
+        const ur = 86 + s * 30 + gunes * 62;
+        const ug = 128 + s * 34 + gunes * 54;
+        const ub = 48 + s * 20 - gunes * 14;
+        dip = `rgb(${dr | 0},${dg | 0},${db | 0})`;
+        uc = `rgb(${ur | 0},${ug | 0},${ub | 0})`;
       }
       cizgi(x, y, x + bx, y + by, dip, 1.6);
       cizgi(x + bx * 0.42, y + by * 0.42, x + bx, y + by, uc, 1.1);
     }
     return { kanvas: c };
+  }
+
+  /* ====================================================== fırçalı metal
+   *
+   * Anodize sigma profil ayna değil: yüzeyi tek yönde fırçalanmış, yani
+   * ışığı fırça yönüne göre farklı yansıtıyor. Aynı gri renkte iki
+   * parçayı bile ayıran şey çoğu zaman bu.
+   *
+   * Bu doku RENK haritası değil PÜRÜZLÜLÜK haritası: kanallar sadece
+   * "burası ne kadar mat" diyor. Renk haritası olsaydı profiller
+   * çizgili boyanmış gibi görünürdü; pürüzlülük olarak verilince
+   * çizgiler ancak ışık o yöne düştüğünde beliriyor.
+   *
+   * Çizgiler U ekseni boyunca. Kutu geometrisinde her yüzün UV'si başka
+   * yöne baktığı için fırça izi de yüze göre yön değiştiriyor — gerçek
+   * bir profilde de her yüzey ayrı fırçalanmış olur.
+   */
+  function fircaliDoku(en) {
+    en = en || 256;
+    const rast = uretec(tohumla("firca"));
+    const c = kanvas(en), g = c.getContext("2d");
+    const im = g.createImageData(en, en);
+    // Her SATIR kendi parlaklığında: çizgi boyunca sabit, satırdan
+    // satıra rastgele. Fırça izinin tanımı bu.
+    const satir = new Float32Array(en);
+    for (let y = 0; y < en; y++) satir[y] = rast();
+    // Komşu satırları biraz karıştır: tek piksellik keskin çizgiler
+    // uzaktan titriyor (aliasing), hafif yumuşatınca duruyor.
+    const yumusakSatir = new Float32Array(en);
+    for (let y = 0; y < en; y++) {
+      yumusakSatir[y] = (satir[(y - 1 + en) % en] * 0.25 + satir[y] * 0.5
+                         + satir[(y + 1) % en] * 0.25);
+    }
+    // Çizgi boyunca da çok hafif bir değişim: kusursuz düz çizgi
+    // bilgisayar işi gibi duruyor.
+    const boyunca = alan(en, 2, tohumla("firca-boy"), 2);
+    for (let y = 0; y < en; y++) {
+      for (let x = 0; x < en; x++) {
+        const i = y * en + x;
+        // Pürüzlülük 0.55..1.0 aralığında: 0'a inen bir değer o satırı
+        // aynaya çevirip parlama lekesi yapıyor.
+        const v = kis((0.62 + yumusakSatir[y] * 0.34
+                       + (boyunca[i] - 0.5) * 0.10) * 255, 0, 255);
+        const p = i * 4;
+        im.data[p] = im.data[p + 1] = im.data[p + 2] = v;
+        im.data[p + 3] = 255;
+      }
+    }
+    g.putImageData(im, 0, 0);
+    return c;
   }
 
   /* ============================================================ çiçek
@@ -432,6 +505,15 @@
     cim(THREE, tekrar) {
       if (!kutu.cim) kutu.cim = cimDoku(THREE, 512);
       return { harita: dokuYap(THREE, kutu.cim.kanvas, [tekrar, tekrar]) };
+    },
+
+    /** Fırçalanmış metal pürüzlülük haritası. Bütün profiller aynı
+     *  dokuyu paylaşıyor — tek doku, tek yükleme. */
+    fircali(THREE) {
+      if (!kutu.firca) {
+        kutu.firca = dokuYap(THREE, fircaliDoku(256), [3, 3]);
+      }
+      return kutu.firca;
     },
 
     /** Çiçek başı dokusu — gri tonlu, rengi köşe renginden geliyor. */
