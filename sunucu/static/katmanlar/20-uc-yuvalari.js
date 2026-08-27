@@ -71,10 +71,19 @@ Tarla.katman({
     const mx = uzunY ? (px1 + px2) / 2 : (px1 + px2) / 2;
     const my = uzunY ? (py1 + py2) / 2 : (py1 + py2) / 2;
 
-    /* Profilin ÜST yüzeyi: en yüksek yuvanın tabanı. En yükseği (max)
-     * alıyoruz ki hiçbir yuva havada asılı kalmasın; birkaç milimetre
-     * alçak duran yuva profilin içine gömülüyor, o görünmüyor. */
-    const ustZ = Math.max(...dayanaklar.map((d) => (Number(d.z) || 0) - YUVA_YUK * 1000));
+    /* Profilin ÜST yüzeyi TOPRAK HİZASINDA.
+     *
+     * Önce uçların `z` değerinden türetiliyordu (`z - yuva boyu`) ve raf
+     * toprağın epey üstünde kalıyordu: sahnede biri toprak biri raf olmak
+     * üzere iki katlı bir yapı görünüyordu. Gerçek makinede uç profili
+     * yatağın yanında, toprakla AYNI hizada duruyor.
+     *
+     * `z` değeri artık yalnız robotun gittiği yer için kullanılıyor
+     * (uc değiştirme dizisi onu okuyor); çizimdeki yükseklik topraktan
+     * geliyor. İkisi ayrı sorulara cevap veriyor: biri "uç nerede
+     * kavranıyor", diğeri "raf hangi yükseklikte duruyor".
+     */
+    const ustZ = Number(o.veri.durum.toprak_z) || 0;
     const ustY = o.sy(ustZ);
     // Profil kalınlığı sigma profil kenarından — makine.js'teki tek kaynak.
     const kalinlik = o.makine.profil * o.MM;
@@ -151,10 +160,11 @@ Tarla.katman({
       bant.position.y = 0.05;
       g.add(bant);
 
-      /* Y ARTIK SIFIR DEĞİL. Her yuva kendi `z`sinden geliyor: uçlar aynı
-       * profilde de olsa gerçekte birkaç milimetre ayrışıyorlar ve o fark
-       * uç değiştirmeyi ayıklarken önemli. */
-      g.position.set(o.sx(t.x), o.sy((Number(t.z) || 0) - YUVA_YUK * 1000), o.sz(t.y));
+      /* Yuvalar RAFIN ÜSTÜNE oturuyor, kendi `z` değerlerine değil.
+       * Uçların z'si birkaç milimetre ayrışıyor; onu çizime yansıtmak
+       * yuvaları rafın içine gömüyor ya da havada bırakıyordu. Gerçekte
+       * hepsi aynı profilin üstünde duruyor. */
+      g.position.set(o.sx(t.x), o.sy(ustZ), o.sz(t.y));
       g.traverse((n) => { n.userData.yuva = t; });
       o.grup.add(g);
     });
