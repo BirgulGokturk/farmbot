@@ -86,16 +86,27 @@ Tarla.katman({
     gövde.raycast = () => {};
     o.grup.add(gövde);
 
-    /* Profili taşıyan iki bacak: profil havada asılı durmasın. Zemine
-     * kadar iniyorlar — tezgâhın ayak yüksekliği makine.js'te. */
-    const zeminY = (o.makine.tabla - o.makine.ayak) * o.MM;
-    const bacakBoy = Math.max(0.01, ustY - kalinlik - zeminY);
+    /* Profili taşıyan iki dikme.
+     *
+     * İki şey düzeltildi:
+     *
+     * 1. Malzeme. Koyu bloktu; makinede taşıyıcı olan HER ŞEY sigma
+     *    profil, ayrı bir parça yok. Alüminyum ve fırçalı yüzey, geri
+     *    kalan çerçeveyle aynı.
+     *
+     * 2. Boy. Zemine kadar iniyorlardı ve makinenin altında kendine ait
+     *    bir ayak takımı varmış gibi duruyordu — öyle bir şey yok. Uç
+     *    profili tezgâhın üst çerçevesine bağlı; dikme yalnız o çerçeve
+     *    ile profil arasını kapatıyor.
+     */
+    const tablaY = o.makine.tabla * o.MM;
+    const dikmeBoy = Math.max(0.01, ustY - kalinlik - tablaY);
     [-0.34, 0.34].forEach((k) => {
       const b = new o.THREE.Mesh(
-        new o.THREE.BoxGeometry(kalinlik, bacakBoy, kalinlik),
-        o.malzeme(R.metal_koyu, { metalness: 0.55, roughness: 0.62 }));
+        new o.THREE.BoxGeometry(kalinlik, dikmeBoy, kalinlik),
+        o.malzeme(R.aluminyum, { metalness: 0.84, roughness: 0.34 }));
       b.position.set(
-        o.sx(mx + (uzunY ? 0 : enX * k)), zeminY + bacakBoy / 2,
+        o.sx(mx + (uzunY ? 0 : enX * k)), tablaY + dikmeBoy / 2,
         o.sz(my + (uzunY ? enY * k : 0)));
       b.raycast = () => {};
       o.grup.add(b);
