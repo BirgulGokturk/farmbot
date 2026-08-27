@@ -27,19 +27,46 @@ Tarla.katman({
       o.grup.add(zemin);
     }
 
+    // Yuva DÖRT parçadan kuruluyor. Tek bir turkuaz koni olarak çizildiğinde
+    // sahnede plastik bardak gibi duruyordu: gerçek yuva koyu metal bir
+    // tabana oturan bilezik, ucun kendisi de koyu gövdeli. Turkuaz artık
+    // gövdenin tamamı değil, yalnızca üstteki tanıtıcı bant — böylece hem
+    // metal gibi okunuyor hem uçlar birbirinden ayırt edilebiliyor.
+    const R = o.makine.renk;
     (uc.tools_konum || []).forEach((t) => {
       const g = new o.THREE.Group();
+
+      // toprağa oturan taban plakası
+      const taban = new o.THREE.Mesh(
+        new o.THREE.CylinderGeometry(0.034, 0.038, 0.006, 20),
+        o.malzeme(R.metal_koyu || "#33373c", { metalness: 0.6, roughness: 0.55 }));
+      taban.position.y = 0.003;
+      g.add(taban);
+
+      // ucun içine oturduğu bilezik — torus, çünkü açık silindirde
+      // arka yüz sorunu çıkıyor ve kenar burada yuvarlak zaten
+      const bilezik = new o.THREE.Mesh(
+        new o.THREE.TorusGeometry(0.028, 0.005, 8, 22),
+        o.malzeme(R.metal_koyu || "#33373c", { metalness: 0.8, roughness: 0.3 }));
+      bilezik.rotation.x = -Math.PI / 2;
+      bilezik.position.y = 0.012;
+      g.add(bilezik);
+
+      // ucun gövdesi — mat koyu, metal değil (plastik/eloksal gövde)
       const govde = new o.THREE.Mesh(
-        new o.THREE.CylinderGeometry(0.022, 0.026, 0.05, 14),
-        o.malzeme(o.makine.renk.uc, { metalness: 0.3, roughness: 0.5 }));
-      govde.position.y = 0.025;
+        new o.THREE.CylinderGeometry(0.021, 0.0235, 0.044, 18),
+        o.malzeme(R.motor || "#17181b", { metalness: 0.2, roughness: 0.85 }));
+      govde.position.y = 0.034;
       g.add(govde);
-      const halka = new o.THREE.Mesh(
-        new o.THREE.RingGeometry(0.03, 0.036, 24),
-        new o.THREE.MeshBasicMaterial({ color: o.makine.renk.uc, side: o.THREE.DoubleSide }));
-      halka.rotation.x = -Math.PI / 2;
-      halka.position.y = 0.002;
-      g.add(halka);
+
+      // tanıtıcı bant — hangi uç olduğunu buradan okuyoruz
+      const bant = new o.THREE.Mesh(
+        new o.THREE.TorusGeometry(0.0215, 0.0035, 8, 20),
+        o.malzeme(R.uc, { metalness: 0.35, roughness: 0.4 }));
+      bant.rotation.x = -Math.PI / 2;
+      bant.position.y = 0.05;
+      g.add(bant);
+
       g.position.set(o.sx(t.x), 0, o.sz(t.y));
       g.traverse((n) => { n.userData.yuva = t; });
       o.grup.add(g);

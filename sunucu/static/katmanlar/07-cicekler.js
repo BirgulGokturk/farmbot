@@ -25,14 +25,22 @@ Tarla.katman({
   /** Palet. Beyaz-sarı-pembe-mor: bir çayırda gerçekten görülen dört
    *  renk. Kırmızı bilerek yok — sahnede kırmızı DURUM rengi (acil
    *  durdurma, hata) ve süs olarak kullanılırsa anlamı sulanıyor. */
-  RENKLER: ["#eceae2", "#f0f2ea", "#e8c73f", "#f2d968",
-            "#e08cb0", "#d9a7c6", "#9d74c8", "#8f8ad6"],
+  /* Palette İKİ beyaz vardı ve uzaktan bakınca çiçekten çok kâğıt parçası
+   * gibi okunuyorlardı. Beyaz tek tona indi, yerine doygun bir sıcak ton
+   * geldi; pembe ve mor da bir kademe koyulaştı. Çiçeğin dokusu zaten
+   * beyaz, renk buradan geliyor — soluk seçersek doku onu iyice yıkıyor. */
+  RENKLER: ["#f0eee6", "#e8c73f", "#f2d968", "#e2734f",
+            "#dd7aa6", "#c9639a", "#8c5cc4", "#6f86d6"],
 
   /** Çiçek alanı: yatağın kenarından bu kadar uzağa kadar. Pus 10 m'de
    *  bittiği için ötesini çizmek boşuna. */
   IC: 0.55,
   DIS: 9.0,
   ADET: 5200,
+  /** Öbek sayısı ve yarıçapı (m); SERPME = hiçbir öbeğe girmeyen oran. */
+  OBEK: 46,
+  OBEK_R: 0.75,
+  SERPME: 0.15,
 
   guncelle(o) {
     const THREE = o.THREE;
@@ -55,21 +63,49 @@ Tarla.katman({
      * "yatağın hemen dibinde seyrek, uzaklaştıkça sık". Yatağın dik
      * dörtgeni ayrıca tamamen dışarıda: makinenin altından çiçek
      * çıkması saçma olurdu. */
-    const yer = [];
-    let deneme = 0;
-    while (yer.length < this.ADET && deneme < this.ADET * 60) {
-      deneme++;
+    // Tek geçerli nokta üretir; kurallara uymazsa null döner.
+    const nokta = () => {
       const a = rast() * Math.PI * 2;
       // sqrt: disk üzerinde eşit alan yoğunluğu
       const r = this.IC + (this.DIS - this.IC) * Math.sqrt(rast());
       const x = Math.cos(a) * r, z = Math.sin(a) * r;
-      if (Math.abs(x) < yariEn + 0.12 && Math.abs(z) < yariBoy + 0.12) continue;
+      if (Math.abs(x) < yariEn + 0.12 && Math.abs(z) < yariBoy + 0.12) return null;
       // Yoğunluk payı: yatağın dibinde ~%45, 4 m'den sonra tam.
       // Kare değil doğrusal olsaydı geçiş fark edilmez, kübik olsaydı
       // yatağın çevresinde çiçeksiz bir halka görünürdü.
       const pay = o.kis((r - this.IC) / 3.2, 0, 1);
-      if (rast() > 0.45 + 0.55 * pay * pay) continue;
-      yer.push([x, z]);
+      if (rast() > 0.45 + 0.55 * pay * pay) return null;
+      return [x, z];
+    };
+
+    /* ÖBEKLENME. Çiçekler eşit serpilince sahneye konfeti gibi düşüyordu;
+     * kır çiçeği öbek öbek büyür. Önce öbek merkezleri seçiliyor, çiçeklerin
+     * çoğu bir merkezin çevresine düşüyor, azı serpme kalıyor. Sayı aynı —
+     * değişen tek şey dağılım, ama görüntüyü belirleyen de o. */
+    const obek = [];
+    for (let i = 0; i < this.OBEK * 4 && obek.length < this.OBEK; i++) {
+      const p = nokta();
+      if (p) obek.push(p);
+    }
+
+    const yer = [];
+    let deneme = 0;
+    while (yer.length < this.ADET && deneme < this.ADET * 60) {
+      deneme++;
+      let p;
+      if (!obek.length || rast() < this.SERPME) {
+        p = nokta();
+      } else {
+        const merkez = obek[(rast() * obek.length) | 0];
+        // İki rastgelenin ÇARPIMI: öbek merkezine doğru toplanıyor.
+        // Düz rastgele olsaydı öbek de kendi içinde eşit dağılır,
+        // yalnızca daha küçük bir konfeti olurdu.
+        const a = rast() * Math.PI * 2;
+        const r = this.OBEK_R * rast() * rast();
+        p = [merkez[0] + Math.cos(a) * r, merkez[1] + Math.sin(a) * r];
+        if (Math.abs(p[0]) < yariEn + 0.12 && Math.abs(p[1]) < yariBoy + 0.12) p = null;
+      }
+      if (p) yer.push(p);
     }
 
     if (!yer.length) return;
