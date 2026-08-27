@@ -120,12 +120,12 @@ Tarla.katman({
     yuvalar.forEach((t) => {
       const g = new o.THREE.Group();
 
-      // profile oturan taban plakası
-      const taban = new o.THREE.Mesh(
-        new o.THREE.CylinderGeometry(0.034, 0.038, 0.006, 20),
-        o.malzeme(R.metal_koyu || "#33373c", { metalness: 0.6, roughness: 0.55 }));
-      taban.position.y = 0.003;
-      g.add(taban);
+      /* TABAN PLAKASI YOK. Önce her yuvanın altına koyu bir plaka
+       * konuyordu ve yuvalar sahnede kendi ayağı olan ayrı parçalar gibi
+       * duruyordu; gerçekte uçlar doğrudan sigma profilin üstünde oturuyor,
+       * altlarında hiçbir şey yok. Profil zaten taşıyıcı, ikinci bir
+       * taşıyıcı çizmek makineyi olduğundan karmaşık gösteriyordu.
+       */
 
       // ucun içine oturduğu bilezik — torus, çünkü açık silindirde
       // arka yüz sorunu çıkıyor ve kenar burada yuvarlak zaten
@@ -161,7 +161,9 @@ Tarla.katman({
 
     /* --- tohumluk: profilin ucundaki delikli blok ----------------------- */
     if (tohumluk) {
-      const TB_EN = 0.075, TB_BOY = 0.13, TB_YUK = 0.035;
+      // Sütun sayısı 3'ten 2'ye indiği için genişlik de daraldı;
+      // yoksa delikler tepsinin ortasında seyrek kalıyordu.
+      const TB_EN = 0.055, TB_BOY = 0.13, TB_YUK = 0.035;
       const g = new o.THREE.Group();
       const blok = new o.THREE.Mesh(
         new o.THREE.BoxGeometry(TB_EN, TB_YUK, TB_BOY),
@@ -171,7 +173,8 @@ Tarla.katman({
       /* Delikler TEK bir örneklenmiş ağ: 12 delik = 12 çizim çağrısı
        * olurdu, InstancedMesh ile bir tane. Pi'de çizim çağrısı sayısı
        * üçgen sayısından daha çok yakıyor. */
-      const sutun = 3, satir = 4, adet = sutun * satir;
+      // Gerçek tepside 4 satır × 2 sütun delik var (fotoğraf).
+      const sutun = 2, satir = 4, adet = sutun * satir;
       const delik = new o.THREE.InstancedMesh(
         new o.THREE.CylinderGeometry(0.0092, 0.0092, 0.02, 12),
         o.malzeme("#0a0b0d", { metalness: 0.1, roughness: 1 }), adet);
