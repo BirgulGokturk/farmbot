@@ -76,6 +76,10 @@ class Duzeltici:
         "basinc": 0.1,
         "rakim": 1.0,
         "toprak_nem": 1.0,
+        # Uçtaki prob. Dijital kipte değer zaten 0/1; yumuşatma adımı 1
+        # olunca medyan filtresi onu bozmadan geçiriyor. Analog kipe
+        # geçilirse 0-1023 sayımı yine 1'lik adımla doğru kalıyor.
+        "uc_toprak": 1.0,
         "servo_aci": 1.0,
     }
     DHT22_ADIM = {"hava_sicaklik": 0.1, "hava_nem": 0.1}

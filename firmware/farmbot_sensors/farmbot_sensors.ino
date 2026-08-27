@@ -38,7 +38,21 @@
 
 // --- PİN TANIMLAMALARI ---
 #define DHTPIN        2      // DHT veri ucu
-#define YAGMUR_PIN    A0     // HW-103 analog çıkışı
+#define YAGMUR_PIN    A0     // HW-103 analog çıkışı (YATAKTA sabit duran)
+
+/* UÇTAKİ toprak nemi probu — iki uçlu, uca takılı, toprağa daldırılıyor.
+ * Yataktaki HW-103'ten AYRI bir sensör: o sabit bir noktayı ölçüyor, bu
+ * ise makinenin gittiği her yerde ölçüm alabiliyor. "Bitkiye git, nemini
+ * ölç, ona göre sula" mantığı buna dayanacak.
+ *
+ * DİKKAT — D13 sensörün DİJİTAL çıkışı: yalnızca "eşiğin üstünde mi
+ * altında mı" diyor ve eşiği modülün üstündeki potansiyometre belirliyor.
+ * Yani 0 ya da 1. Yüzde okumak istiyorsak probun ANALOG ucunu A1'e alıp
+ * aşağıdaki UC_TOPRAK_ANALOG'u 1 yapmak gerekiyor; nem miktarına göre
+ * karar veren bir sulama ancak o zaman anlamlı olur.
+ */
+#define UC_TOPRAK_PIN     13
+#define UC_TOPRAK_ANALOG  0    // 1: A1'den analog oku (0-1023) · 0: dijital (0/1)
 #define SERVO_PIN     9      // SG-5010
 
 // Röleler. Çoğu röle kartı "aktif düşük" çalışır (LOW = çeker).
@@ -209,6 +223,14 @@ void dhtSec() {
 void setup() {
   Serial.begin(9600);
   Serial.println("Sistem Baslatiliyor...");
+
+#if !UC_TOPRAK_ANALOG
+  /* UYARI: D13'te Uno'nun dahili LED'i ve seri direnci var. Pin GİRİŞ
+   * olarak kullanıldığında bu devre pini hafifçe aşağı çekiyor ve
+   * sensörün "kuru" sinyali bazen okunmuyor. Okuma kararsızsa probu
+   * başka bir dijital pine (örneğin D12) ya da analog uca alın. */
+  pinMode(UC_TOPRAK_PIN, INPUT);
+#endif
 
 #if SERVO_BAGLI
   tarimServo.attach(SERVO_PIN);
@@ -429,6 +451,17 @@ void loop() {
   jsonSayi("rakim",         rakim,       bmpVar,     1, false);
   Serial.print("\"toprak_nem\":");
   Serial.print(yagmurDegeri);
+  /* Uçtaki prob. Ham değeri olduğu gibi gönderiyoruz; ölçeklemek panelin
+   * işi. `uc_toprak_kip` de gidiyor ki panel 0/1 ile 0-1023'ü karıştırıp
+   * "nem %0" demesin. */
+  Serial.print(",\"uc_toprak\":");
+#if UC_TOPRAK_ANALOG
+  Serial.print(analogRead(UC_TOPRAK_PIN));
+  Serial.print(",\"uc_toprak_kip\":\"analog\"");
+#else
+  Serial.print(digitalRead(UC_TOPRAK_PIN) ? 1 : 0);
+  Serial.print(",\"uc_toprak_kip\":\"dijital\"");
+#endif
   Serial.print(",\"servo_aci\":");
   if (servoAci < 0) Serial.print("null"); else Serial.print(servoAci);
   Serial.print(",\"dht\":\"");
