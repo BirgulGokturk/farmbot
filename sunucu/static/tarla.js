@@ -453,9 +453,17 @@
     // Yerden gelen renk 0x3a3a2c'ydi: neredeyse siyah, karık dibi gibi
     // ışığı doğrudan görmeyen her yer kapkara çıkıyordu. Çimden
     // sekmiş ışık gerçekte de bu kadar koyu değil.
-    sahne.add(new THREE.HemisphereLight(0xcfe0e8, 0x5c5a48, 0.55));
-    const isik = new THREE.DirectionalLight(0xfff3e0, 2.15);
-    isik.position.set(2.6, 3.4, 1.6);
+    // Yerden sekme rengi grimsiydi (0x5c5a48). Çimenlikte yerden sekene
+    // YEŞİL ışık gelir; bahçe sahnelerinin canlı görünmesinin sebebi
+    // büyük ölçüde bu. Gökyüzü tarafı da biraz maviye çekildi: sıcak
+    // güneşle soğuk gölge arasındaki fark gün ışığı hissini veriyor.
+    sahne.add(new THREE.HemisphereLight(0xc2dcf2, 0x6d7c4e, 0.5));
+    // Güneş 3,4 m yükseklikteydi — neredeyse tepeden. Tepeden gelen ışık
+    // gölgeyi nesnenin altına sıkıştırıyor ve her yüzeyi eşit aydınlatıp
+    // hacmi siliyor. 2,3'e indirildi: gölgeler uzadı, profillerin yuvarlak
+    // yüzü belli oldu. Renk de bir tık daha altın sarısına çekildi.
+    const isik = new THREE.DirectionalLight(0xffe6bb, 2.4);
+    isik.position.set(3.0, 2.3, 1.5);
     isik.castShadow = true;
     isik.shadow.mapSize.set(1024, 1024);
     // Gölge kamerası yalnız MAKİNEYİ kapsıyor. Önce ±1.6 m'ydi: 3,2 m'lik
@@ -464,7 +472,10 @@
     // gölgesi kenarı belli çıkıyor. Çim gölge almıyor — zaten makinenin
     // gölgesi toprağa ve tezgâha düşüyor.
     const gk = isik.shadow.camera;
-    gk.left = -0.75; gk.right = 0.75; gk.top = 0.75; gk.bottom = -0.75;
+    // Güneş alçaldığı için gölge uzadı: ±0.75 m'de kiriş gölgesinin ucu
+    // kırpılıp havada kesiliyordu. ±1.1 m'de bir piksel ≈ 2,1 mm — hâlâ
+    // kenarı belli, ama gölgenin tamamı içeride.
+    gk.left = -1.1; gk.right = 1.1; gk.top = 1.1; gk.bottom = -1.1;
     gk.near = 0.5; gk.far = 9;
     // Akne (yüzeyin kendi gölgesini benekli göstermesi) için pay.
     isik.shadow.bias = -0.0012;
