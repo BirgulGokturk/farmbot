@@ -12,6 +12,14 @@ Tarla.katman({
   ad: "Yayılma çapı",
   varsayilan: true,
 
+  /** Alanın yüzeyi genel yüzeyden ne kadar yukarıda (sahne metresi).
+   *  Kaplar aynı hizada olmayabiliyor; işaretler toprağın altında
+   *  kalmasın diye her nokta kendi alanının yüzeyine oturuyor. */
+  yuzeyKay(o, mx, my) {
+    const a = o.dikimAlani(mx, my);
+    return (a && a.toprak_z != null) ? (Number(a.toprak_z) - o.toprakZ) * o.MM : 0;
+  },
+
   /** Bitki listesi + çakışma. Katman kapalıyken hiç hesaplanmıyor. */
   hesapla(o) {
     const bitkiler = o.veri.noktalar.filter((n) => n && n.tur).map((n) => {
@@ -64,7 +72,8 @@ Tarla.katman({
           opacity: b.cakisma.length || b.disi ? 0.18 : 0.10, side: o.THREE.DoubleSide,
           depthWrite: false }));
       disk.rotation.x = -Math.PI / 2;
-      disk.position.set(o.sx(b.nokta.x), 0.0015, o.sz(b.nokta.y));
+      const dy = this.yuzeyKay(o, b.nokta.x, b.nokta.y);
+      disk.position.set(o.sx(b.nokta.x), dy + 0.0015, o.sz(b.nokta.y));
       disk.raycast = () => {};
       o.grup.add(disk);
 
@@ -73,7 +82,7 @@ Tarla.katman({
         new o.THREE.MeshBasicMaterial({ color: renk, transparent: true, opacity: 0.9,
                                         side: o.THREE.DoubleSide }));
       halka.rotation.x = -Math.PI / 2;
-      halka.position.set(o.sx(b.nokta.x), 0.003, o.sz(b.nokta.y));
+      halka.position.set(o.sx(b.nokta.x), dy + 0.003, o.sz(b.nokta.y));
       halka.raycast = () => {};
       o.grup.add(halka);
     });

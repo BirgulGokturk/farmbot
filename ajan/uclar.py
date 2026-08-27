@@ -65,6 +65,12 @@ VARSAYILAN = {
     # şartı DEVRE DIŞI (uçları alçak Z'de takıp çıkarabilmek için), dışında
     # aynen geçerli. Kapalıyken hiçbir muafiyet yok.
     "tc_area": {"on": False, "pts": [[0, 0], [80, 0], [80, 300], [0, 300]]},
+    # TOHUMLUK — uç profilinin en ucundaki delikli blok. Konumu uçlarla aynı
+    # kaynakta duruyor çünkü aynı profilin üstünde: panel uç profilini bu
+    # noktaların kapsayan kutusundan türetiyor, hiçbir yerde elle yazılmış
+    # konum yok. `x` boş bırakılırsa tohumluk tanımsız sayılıyor ve
+    # çizilmiyor — varsayılan da bu, çünkü her kurulumda tohumluk yok.
+    "tohumluk": {"x": None, "y": None, "z": None},
     "current_tool": None,
     "tools": [
         {"name": "tool1", "x": 10.0, "y": 70.5, "z": 150.0},
@@ -113,6 +119,35 @@ def _nokta_alanda(x: float, y: float, kose: list) -> bool:
 
 class UcHatasi(Exception):
     """Dizi başlatılamadı ya da ortasında durdu."""
+
+
+def _tohumluk_dogrula(ham: Any) -> dict[str, Any]:
+    """Tohumluk koordinatını normalleştirir.
+
+    Panelden boş alan gelebiliyor ve boş metin sıfır DEĞİL: sıfır geçerli
+    bir makine koordinatı, boş ise "tohumluk tanımlı değil". İkisini
+    karıştırmak tohumluğu sahnenin köşesine, X0 Y0'a çizerdi.
+    """
+    if not isinstance(ham, dict):
+        return {"x": None, "y": None, "z": None}
+    cikti: dict[str, Any] = {}
+    for eksen in ("x", "y", "z"):
+        deger = ham.get(eksen)
+        if deger in (None, ""):
+            cikti[eksen] = None
+            continue
+        try:
+            cikti[eksen] = round(float(deger), 1)
+        except (TypeError, ValueError):
+            cikti[eksen] = None
+    # X yoksa tanım yok sayılıyor; tek eksenle bir konum kurulamaz.
+    if cikti["x"] is None:
+        return {"x": None, "y": None, "z": None}
+    if cikti["y"] is None:
+        cikti["y"] = 0.0
+    if cikti["z"] is None:
+        cikti["z"] = 0.0
+    return cikti
 
 
 def _atomik_yaz(yol: str, veri: Any) -> None:
@@ -166,10 +201,17 @@ class Uclar:
     def kaydet(self, yeni: dict[str, Any] | None = None) -> dict[str, Any]:
         with self._kilit:
             if yeni:
+                if "tohumluk" in yeni:
+                    yeni = {**yeni, "tohumluk": _tohumluk_dogrula(yeni["tohumluk"])}
                 self.ayar = {**self.ayar, **yeni}
             _atomik_yaz(self.yol, self.ayar)
             self.durum["uc"] = self.ayar.get("current_tool")
         return self.ayar
+
+    def tohumluk(self) -> dict[str, Any] | None:
+        """Tanımlıysa tohumluk konumu, değilse None."""
+        t = self.ayar.get("tohumluk") or {}
+        return t if t.get("x") is not None else None
 
     def uc_bul(self, ad: str) -> dict[str, Any] | None:
         return next((t for t in self.ayar.get("tools", []) if t.get("name") == ad), None)

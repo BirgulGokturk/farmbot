@@ -28,6 +28,7 @@ from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.staticfiles import StaticFiles
 
 import depo
+import dikim
 import egriler
 import geri_al
 import kalibrasyon
@@ -423,6 +424,14 @@ async def api_nokta_ekle(govde: dict[str, Any], jeton: str = Query(default="")):
         for eksen in ("x", "y", "z"):
             if govde.get(eksen) is None:
                 raise HTTPException(status_code=400, detail=f"{eksen} değeri eksik")
+        # DİKİM ALANI. Yalnız BİTKİ için: uç yuvası, kalibrasyon noktası,
+        # gezinti noktası toprağın dışında olabilir ve olmalı da. Alan
+        # tanımlı değilse hiçbir şey reddedilmiyor — eski davranış.
+        if str(govde.get("etiket", "")) == "bitki":
+            kabul, gerekce, _ = await asyncio.to_thread(
+                dikim.nokta_kabul, float(govde["x"]), float(govde["y"]))
+            if not kabul:
+                raise HTTPException(status_code=422, detail=gerekce)
         nokta = await asyncio.to_thread(
             noktalar.ekle, govde.get("ad", ""),
             float(govde["x"]), float(govde["y"]), float(govde["z"]),
@@ -569,6 +578,31 @@ async def api_toplu(govde: dict[str, Any], jeton: str = Query(default="")):
     # Sulama süresi: makul bir aralıkta tutuluyor, panelden gelen sayıya
     # körlemesine güvenilmiyor.
     saniye = max(1.0, min(60.0, float(govde.get("saniye", 3) or 3)))
+
+    # TOPLU SULAMA yalnız dikim alanlarının içinde. Su, toprağın olmadığı
+    # yere dökülürse tezgâhın ve elektroniğin üstüne gidiyor; bu yüzden
+    # eksik nokta gibi bu da diziyi HİÇ başlatmıyor, kısmen değil.
+    # `gez` dokunulmadan geçiyor: gezinti noktası toprağın dışında olabilir.
+    if islem == "sula":
+        alanlar = await asyncio.to_thread(dikim.listele)
+        if alanlar:
+            kayitli = await asyncio.to_thread(noktalar.oku)
+            indeks = {n.get("ad"): n for n in kayitli["noktalar"]}
+            disarida = []
+            for ad in adlar:
+                nk = indeks.get(ad)
+                if nk is None:
+                    continue          # eksik nokta hatasını `programlar.coz` veriyor
+                kabul, _, _ = dikim.nokta_kabul(
+                    float(nk.get("x", 0)), float(nk.get("y", 0)), alanlar)
+                if not kabul:
+                    disarida.append(f"{ad} (X{nk.get('x')} Y{nk.get('y')})")
+            if disarida:
+                raise HTTPException(
+                    status_code=422,
+                    detail="Şu noktalar dikim alanı dışında, sulama başlatılmadı: "
+                           + ", ".join(sorted(disarida)))
+
     adimlar: list[dict[str, Any]] = []
     for ad in adlar:
         adimlar.append({"tip": "nokta", "ad": ad})
@@ -641,9 +675,17 @@ async def api_izgara_onizle(govde: dict[str, Any], jeton: str = Query(default=""
     mevcut = {n["ad"] for n in await asyncio.to_thread(noktalar.hepsi)}
 
     sinir_disi = [{"ad": n["ad"], "eksenler": d} for n in uretilen if (d := _sinir_disi_mi(n))]
+    # Dikim alanı bilgisi ÖNİZLEMEDE danışma niteliğinde: ızgara noktaları
+    # "ızgara" etiketli, yani ille de bitki değil (kalibrasyon ızgarası da
+    # buradan üretiliyor). Reddetmek yerine kaçının toprağın dışına
+    # düştüğünü gösteriyoruz; karar kullanıcıda.
+    alanlar = await asyncio.to_thread(dikim.listele)
+    alan_disi = sorted(n["ad"] for n in uretilen
+                       if alanlar and not dikim.nokta_kabul(n["x"], n["y"], alanlar)[0])
     return {
         "toplam": len(uretilen),
         "sinir_disi": sinir_disi,
+        "alan_disi": alan_disi,
         "ustune_yazilacak": sorted(n["ad"] for n in uretilen if n["ad"] in mevcut),
         "sinir_bilinmiyor": not (merkez.son_durum.get("sinirlar")),
         "noktalar": uretilen,
@@ -659,6 +701,39 @@ async def api_izgara_uygula(govde: dict[str, Any], jeton: str = Query(default=""
     except noktalar.NoktaHatasi as hata:
         raise HTTPException(status_code=400, detail=str(hata))
     return {"ok": True, **sonuc, "toplam": len(uretilen)}
+
+
+# --------------------------------------------------------------------------- #
+# Dikim alanları
+#
+# Yatakta toprağın GERÇEKTEN bulunduğu dikdörtgenler. Neden ajanda değil de
+# burada durduğu `dikim.py`nin başında yazıyor: bu bir güvenlik kararı değil,
+# veri geçerliliği kararı ve ajan kopukken de işlemesi gerekiyor.
+# --------------------------------------------------------------------------- #
+
+
+@app.get("/api/dikim")
+async def api_dikim_listele():
+    alanlar = await asyncio.to_thread(dikim.listele)
+    return {"alanlar": alanlar,
+            "azami": dikim.AZAMI_ALAN,
+            "en_kucuk_kenar": dikim.EN_KUCUK_KENAR,
+            # Genel toprak yüzeyi ajanın `plc.toprak_z` ayarından geliyor;
+            # alanın kendi değeri yoksa bu geçerli. Panel ikisini bir arada
+            # gösterebilsin diye burada da veriyoruz.
+            "toprak_z": merkez.son_durum.get("toprak_z")}
+
+
+@app.put("/api/dikim")
+async def api_dikim_kaydet(govde: dict[str, Any], jeton: str = Query(default="")):
+    _parola_dogrula(jeton)
+    try:
+        alanlar = await asyncio.to_thread(dikim.kaydet, govde.get("alanlar") or [])
+    except dikim.DikimHatasi as hata:
+        raise HTTPException(status_code=400, detail=str(hata))
+    # Kaydedilmiş hâli geri veriyoruz: köşeler sıralanmış, adlar kırpılmış
+    # olabiliyor ve panel kendi yazdığına değil, DEPODAKİNE bakmalı.
+    return {"ok": True, "alanlar": alanlar}
 
 
 # --------------------------------------------------------------------------- #

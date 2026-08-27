@@ -818,6 +818,39 @@
         </div>
       </section>
 
+      <section class="bolum kapali" id="bolum-dikim">
+        <div class="bolum-ust">
+          <button class="bolum-bas" aria-expanded="false">
+            <svg class="ikon ok"><use href="#i-ok"/></svg>
+            <span class="bolum-ad">Dikim alanları</span>
+            <span class="bolum-ozet" id="dikim-ozet"></span>
+          </button>
+          <button class="yardim" type="button" aria-expanded="false"
+                  aria-controls="yardim-dikim" aria-label="Açıklama">?</button>
+        </div>
+        <div class="bolum-govde">
+          <p class="yardim-metin gizli" id="yardim-dikim">
+            Yatakta toprağın gerçekten bulunduğu dikdörtgenler — makinede iki
+            ayrı kap varsa ikisini ayrı ayrı tanımlayın. 3B ve 2B haritada
+            toprak yalnız bu dikdörtgenlerde çizilir, aralarındaki boşluk
+            toprak görünmez.<br><br>
+            Bitki ekimi ve toplu sulama yalnız tanımlı alanların içinde kabul
+            edilir; dışına düşen nokta reddedilir ve nedeni yazılır.
+            <b>Hiç alan tanımlı değilse yatağın tamamı geçerlidir</b> — eski
+            davranış, mevcut kurulumlar bozulmaz.<br><br>
+            Toprak Z boş bırakılırsa ajanın genel <code>plc.toprak_z</code>
+            değeri geçerli olur; kaplar aynı hizada değilse alana kendi
+            yüksekliğini girin. Ekim derinliği bu yüzeyden hesaplanır.
+          </p>
+          <div id="dikim-liste"></div>
+          <div class="satir-8">
+            <button class="dugme" id="d-dikim-ekle">Alan ekle</button>
+            <button class="dugme birincil" id="d-dikim-kaydet">Kaydet</button>
+            <span class="alt-not" id="dikim-yuzey"></span>
+          </div>
+        </div>
+      </section>
+
       <section class="bolum kapali" id="bolum-uc">
         <div class="bolum-ust">
           <button class="bolum-bas" aria-expanded="false">
@@ -883,6 +916,16 @@
               <div class="alan" title="0 = donanım bağlı değil"><label for="ua-presence_reg">presence_reg</label><input type="number" id="ua-presence_reg" step="1"></div>
               <div class="alan" title="PLC'deki Z-güvenli biti. 0 ise karar milimetre hesabına kalır">
                 <label for="ua-z_safe_reg">z_safe_reg</label><input type="number" id="ua-z_safe_reg" step="1"></div>
+            </div>
+
+            <p class="alt-not">Tohumluk — uç profilinin ucundaki delikli blok.
+              3B sahnedeki uç profili uçların ve tohumluğun konumundan
+              türetiliyor, elle girilen bir profil ölçüsü yok. X boş
+              bırakılırsa tohumluk tanımsız sayılır ve çizilmez.</p>
+            <div class="alan-izgara">
+              <div class="alan"><label for="ua-th-x">tohumluk X</label><input type="number" id="ua-th-x" step="0.1" placeholder="tanımsız"></div>
+              <div class="alan"><label for="ua-th-y">tohumluk Y</label><input type="number" id="ua-th-y" step="0.1"></div>
+              <div class="alan"><label for="ua-th-z">tohumluk Z</label><input type="number" id="ua-th-z" step="0.1"></div>
             </div>
 
             <label class="onay"><input type="checkbox" id="ua-alan-acik"> Uç değiştirme alanını aç</label>

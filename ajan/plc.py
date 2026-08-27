@@ -450,7 +450,11 @@ class Gantry:
             # "timed out" yerine bunu gösteriyor.
             t = getattr(hata, "tani", None) or tani.plc_hatasindan(
                 self.mb.ip, self.mb.port, hata)
+            # `toprak_z` kopukken de gönderiliyor: yüzey yüksekliği ayardan
+            # geliyor, PLC'den değil. Yollamazsak panel bağlantı her
+            # koptuğunda 3B sahneyi sıfır yüzeyle yeniden kurardı.
             return {"plc": "kopuk", "konum": {"x": None, "y": None, "z": None},
+                    "toprak_z": self.toprak_z,
                     "acil": dict(self.acil_mandal), "hata": str(hata), "tani": t}
 
     # --- düşük seviye hareket -------------------------------------------

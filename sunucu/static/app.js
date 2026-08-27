@@ -19,6 +19,7 @@ const S = {
   roleDurum: { su_pompasi: false, hava_pompasi: false, su_vanasi: false },
   noktalar: [],
   bolgeler: [],
+  dikim: [],        // sunucudaki dikim alanları (sunucu/dikim.py)
   ucListesi: [],
   sonTakiliUc: undefined,
   ucAyarDuzenleniyor: false,
@@ -384,6 +385,99 @@ async function bolgeleriKaydet() {
   }
 }
 
+/* ----------------------------------------------------------- dikim alanları
+ *
+ * Yatakta toprağın gerçekten bulunduğu dikdörtgenler. Yasak bölgelerden iki
+ * yerde ayrılıyor:
+ *
+ *   - Ajanda değil SUNUCUDA duruyorlar (bkz. sunucu/dikim.py): güvenlik
+ *     kararı değil, veri geçerliliği kararı ve ajan kopukken de işlemeli.
+ *     Bu yüzden `komutGonder` değil `apiIste` ile kaydediliyorlar.
+ *   - Boş liste "kısıtlama yok" demek: alan tanımsızsa yatağın tamamı
+ *     ekilebilir sayılıyor.
+ */
+function dikimCiz(alanlar) {
+  const kutu = $("#dikim-liste");
+  const ozet = $("#dikim-ozet");
+  if (ozet) ozet.textContent = alanlar.length ? `${alanlar.length} alan` : "tanımsız";
+  if (!alanlar.length) {
+    kutu.innerHTML = '<p class="alt-not">Tanımlı dikim alanı yok — yatağın '
+      + 'tamamı toprak sayılıyor ve her nokta kabul ediliyor.</p>';
+    return;
+  }
+  kutu.innerHTML = alanlar.map((a, i) => `
+    <div class="bolge" data-i="${i}">
+      <div class="ust">
+        <input class="da-ad" value="${kacisli(a.ad || "")}" placeholder="Alan adı" maxlength="40">
+        <button class="dugme da-sil" title="Alanı sil">✕</button>
+      </div>
+      <div class="alan-izgara">
+        <div class="alan"><label>X1</label><input type="number" class="da-x1" step="1" value="${a.x1}"></div>
+        <div class="alan"><label>Y1</label><input type="number" class="da-y1" step="1" value="${a.y1}"></div>
+        <div class="alan"><label>X2</label><input type="number" class="da-x2" step="1" value="${a.x2}"></div>
+        <div class="alan"><label>Y2</label><input type="number" class="da-y2" step="1" value="${a.y2}"></div>
+        <div class="alan" title="Boş bırakılırsa ajanın genel toprak_z değeri geçerli">
+          <label>Toprak Z</label>
+          <input type="number" class="da-z" step="0.1" placeholder="genel"
+                 value="${a.toprak_z != null ? a.toprak_z : ""}"></div>
+      </div>
+      <div class="alt-not">${Math.abs(a.x2 - a.x1).toFixed(0)} × ${Math.abs(a.y2 - a.y1).toFixed(0)} mm</div>
+    </div>`).join("");
+
+  $$(".da-sil").forEach((d) => {
+    d.onclick = () => {
+      const liste = dikimTopla();
+      liste.splice(Number(d.closest(".bolge").dataset.i), 1);
+      dikimCiz(liste);
+    };
+  });
+}
+
+function dikimTopla() {
+  return $$("#dikim-liste .bolge").map((el) => {
+    const z = el.querySelector(".da-z").value;
+    const a = {
+      ad: el.querySelector(".da-ad").value,
+      x1: Number(el.querySelector(".da-x1").value),
+      y1: Number(el.querySelector(".da-y1").value),
+      x2: Number(el.querySelector(".da-x2").value),
+      y2: Number(el.querySelector(".da-y2").value),
+    };
+    // Boş metin sıfır DEĞİL: sıfır geçerli bir Z, boş "genel değeri kullan".
+    if (z !== "") a.toprak_z = Number(z);
+    return a;
+  });
+}
+
+async function dikimYukle() {
+  try {
+    const y = await apiIste("/api/dikim");
+    S.dikim = y.alanlar || [];
+    dikimCiz(S.dikim);
+    const yz = $("#dikim-yuzey");
+    if (yz) {
+      yz.textContent = y.toprak_z != null
+        ? `Genel toprak yüzeyi: Z${Number(y.toprak_z).toFixed(0)} mm (ajanın plc.toprak_z ayarı)`
+        : "Genel toprak yüzeyi ajandan gelmedi — Z0 varsayılıyor";
+    }
+  } catch (h) { gunluk(`✕ Dikim alanları okunamadı: ${h.message}`, "hata"); }
+}
+
+async function dikimKaydet() {
+  try {
+    const y = await apiIste("/api/dikim", {
+      method: "PUT", body: JSON.stringify({ alanlar: dikimTopla() }) });
+    // Sunucu doğrulanmış hâli geri veriyor: köşeler sıralanmış, adlar
+    // kırpılmış. Kullanıcının gördüğü kaydedilenle birebir aynı olsun.
+    S.dikim = y.alanlar || [];
+    dikimCiz(S.dikim);
+    gunluk(S.dikim.length
+      ? `✓ ${S.dikim.length} dikim alanı kaydedildi`
+      : "✓ Dikim alanı kalmadı — yatağın tamamı geçerli", "ok");
+    if (window.Tarla && Tarla.dikimDegisti) await Tarla.dikimDegisti();
+  } catch (h) { gunluk(`✕ Dikim alanı kaydedilemedi: ${h.message}`, "hata"); }
+}
+
 /* ------------------------------------------------------------ uç değiştirme */
 function ucGuncelle(u) {
   if (!u) return;
@@ -414,6 +508,15 @@ function ucGuncelle(u) {
       const ex = $(`#ua-k${i}x`), ey = $(`#ua-k${i}y`);
       if (ex && document.activeElement !== ex) ex.value = p[0];
       if (ey && document.activeElement !== ey) ey.value = p[1];
+    });
+    // Tohumluk: tanımsızsa alanlar BOŞ kalıyor, sıfır yazılmıyor —
+    // sıfır geçerli bir koordinat ve ikisi karışmamalı.
+    const th = u.tohumluk || {};
+    ["x", "y", "z"].forEach((eksen) => {
+      const el = $("#ua-th-" + eksen);
+      if (el && document.activeElement !== el) {
+        el.value = th[eksen] == null ? "" : th[eksen];
+      }
     });
   }
 
@@ -2131,6 +2234,11 @@ function olaylariBagla() {
         on: $("#ua-alan-acik").checked,
         pts: [0, 1, 2, 3].map((i) => [Number($(`#ua-k${i}x`).value), Number($(`#ua-k${i}y`).value)]),
       },
+      // Boş X = tohumluk tanımsız. Sayıya çevirmiyoruz: "" -> 0 olur ve
+      // tohumluk sahnenin X0 köşesine çizilirdi.
+      tohumluk: { x: $("#ua-th-x").value === "" ? null : Number($("#ua-th-x").value),
+                  y: $("#ua-th-y").value === "" ? null : Number($("#ua-th-y").value),
+                  z: $("#ua-th-z").value === "" ? null : Number($("#ua-th-z").value) },
     };
     const sonuc = await komutGonder("uc_kaydet", { ayar });
     if (sonuc && sonuc.ok) {
@@ -2154,6 +2262,23 @@ function olaylariBagla() {
     S.bolgeDuzenleniyor = false;
   };
   $("#bolge-liste").addEventListener("input", () => { S.bolgeDuzenleniyor = true; });
+
+  $("#d-dikim-ekle").onclick = () => {
+    const liste = dikimTopla();
+    /* Varsayılan: yatağın orta yarısı. Sıfırdan başlayan bir dikdörtgen
+     * çoğu kurulumda kabın dışına düşüyor ve kullanıcı dört sayıyı birden
+     * değiştirmek zorunda kalıyordu. */
+    const sx = (S.sinirlar && S.sinirlar.x) || { min: 0, max: 425 };
+    const sy = (S.sinirlar && S.sinirlar.y) || { min: 0, max: 550 };
+    const enX = sx.max - sx.min, enY = sy.max - sy.min;
+    liste.push({
+      ad: `alan ${liste.length + 1}`,
+      x1: Math.round(sx.min + enX * 0.15), y1: Math.round(sy.min + enY * 0.15),
+      x2: Math.round(sx.max - enX * 0.15), y2: Math.round(sy.min + enY * 0.45),
+    });
+    dikimCiz(liste);
+  };
+  $("#d-dikim-kaydet").onclick = dikimKaydet;
 
   $("#d-izgara-onizle").onclick = izgaraOnizle;
   $("#d-izgara-uygula").onclick = izgaraUygula;
@@ -2305,6 +2430,7 @@ async function basla() {
   await egrileriYukle();
   await noktalariYukle();
   await programlariYukle();
+  await dikimYukle();
   // Sayfa açılırken zaten bir kare varsa hemen göster.
   try {
     const k = await apiIste("/api/kare/liste");

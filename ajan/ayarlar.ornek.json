@@ -27,7 +27,7 @@
     "uc_dosyasi": "uclar.json",
     "_dosyalar": "Yasak bölgeler ve uç ayarları ajanda duruyor — panel çökse de koruma çalışsın diye. Panelden düzenlenir, buraya yazılır.",
     "toprak_z": 0.0,
-    "_toprak_z": "Toprak yuzeyinin makine Z'sindeki yeri (mm). Toprak kabin icinde oldugu icin yuzey sifirda degil. Olcmek icin: ucu toprak yuzeyine hafifce degdirin ve panelde yazan Z degerini buraya yazin. Ekim derinligi ve 3B sahnedeki toprak duzlemi buna gore yerlesiyor."
+    "_toprak_z": "Toprak yuzeyinin makine Z'sindeki yeri (mm). Toprak kabin icinde oldugu icin yuzey sifirda degil. Olcmek icin: ucu toprak yuzeyine hafifce degdirin ve panelde yazan Z degerini buraya yazin. Ekim derinligi ve 3B sahnedeki toprak duzlemi buna gore yerlesiyor. Kaplar ayni hizada degilse her dikim alanina kendi toprak_z'si girilebilir (panel > Ayarlar > Dikim alanlari); girilmemisse buradaki deger gecerlidir."
   },
   "kamera": {
     "_not": "picamera2 -> rpicam-still -> libcamera-still -> fswebcam sirasiyla denenir. aktif=false ise ajan acilirken kamera baslamaz; panelden acilabilir ama bu gecicidir, kalici olmasi icin burayi true yapin.",

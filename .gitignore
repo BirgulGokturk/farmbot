@@ -7,6 +7,7 @@ sunucu/noktalar.json
 sunucu/egriler.json
 sunucu/programlar.json
 sunucu/tur_ezme.json
+sunucu/dikim_alanlari.json
 sunucu/kareler/
 
 # Aktarım sırasında kalan geçici arşivler

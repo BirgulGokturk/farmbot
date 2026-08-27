@@ -40,7 +40,11 @@ Tarla.katman({
         new o.THREE.CylinderGeometry(0.0015, 0.0015, 0.05, 6), mal);
       cubuk.position.y = 0.025;
       g.add(cubuk);
-      g.position.set(o.sx(n.x), 0, o.sz(n.y));
+      // Nokta kendi dikim alanının yüzeyine oturuyor: kaplar aynı hizada
+      // olmayabiliyor ve yüksek kaptaki işaret toprağın altında kalırdı.
+      const al = o.dikimAlani(n.x, n.y);
+      const dy = (al && al.toprak_z != null) ? (Number(al.toprak_z) - o.toprakZ) * o.MM : 0;
+      g.position.set(o.sx(n.x), dy, o.sz(n.y));
       o.grup.add(g);
     });
   },

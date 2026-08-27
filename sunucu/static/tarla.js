@@ -106,12 +106,22 @@
     okumalar: [],     // [{ts,x,y,toprak_nem}]
     kalibrasyon: null, // kamera kalibrasyonu — {mm_px, donme, ofset_x, ofset_y, …}
     egriler: [],      // [{ad,tip,birim,noktalar}] — yaşa göre değer
+    /* DİKİM ALANLARI — toprağın gerçekten bulunduğu dikdörtgenler.
+     * Boş liste "alan tanımlanmamış" demek ve yatağın tamamı geçerli
+     * sayılıyor; "hiçbir yere ekilemez" DEĞİL. Sunucudaki `dikim.py`
+     * ile aynı kural — iki yerde de aynı kaçış olmazsa panel reddedilen
+     * bir noktayı kabul edilmiş gösterirdi. */
+    dikim: [],
   };
 
   const P = () => window.Panel || {};
   const gunluk = (m, s) => (P().gunluk ? P().gunluk(m, s) : console.log(m));
   const $ = (s) => document.querySelector(s);
   const kis = (d, a, b) => Math.max(a, Math.min(b, d));
+  /* Makine Z'si -> sahne y'si. Sahnede y = 0 TOPRAK YÜZEYİ, makinede ise
+   * yüzey sıfırda değil (ölçülen kurulumda 110 mm). İkisini birbirine
+   * çeviren tek yer burası; katmanlar `o.sy(z)` çağırıyor. */
+  const sy = (mz) => ((Number(mz) || 0) - T.toprakZ) * MM;
   const say = (d, b = 0) => (d == null || Number.isNaN(d) ? "—" : Number(d).toFixed(b));
   const kacisli = (m) => String(m).replace(/[&<>"']/g, (k) =>
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[k]));
@@ -225,7 +235,17 @@
      *  Salt okunur kullanılıyor; değiştirmek çekirdeğin işi. */
     get secim() { return T.secim; },
     get kip() { return T.kip; },
-    sx, sz, mmx, mmy, malzeme, kis, say, kacisli, gunluk,
+    sx, sz, sy, mmx, mmy, malzeme, kis, say, kacisli, gunluk,
+    /** Toprak yüzeyinin makine Z'si (ajanın `plc.toprak_z` ayarı). */
+    get toprakZ() { return T.toprakZ; },
+    /** Dikim alanları — makine mm cinsinden, sunucudan geldiği gibi. */
+    get dikim() { return VERI.dikim; },
+    /** Alanlar SAHNE metresi cinsinden; makine.js sınırları bilmediği
+     *  için dönüşümü burada yapıyoruz. */
+    get dikimSahne() { return dikimSahne(); },
+    /** Nokta hangi alanın içinde — hiçbirinde değilse null. Alan
+     *  tanımsızsa da null döner; "kabul edilir mi" ayrı soru. */
+    dikimAlani(mx, my) { return dikimAlani(mx, my); },
     /** Bir eğrinin `gun` yaşındaki değeri — `egriler.py`deki `deger()` ile
      *  aynı kural: aradaki günler doğrusal, uçlarda düz devam. Sunucuya
      *  gitmeden çizebilmek için burada da var; tek gerçek kaynak sunucu. */
@@ -647,6 +667,50 @@
     boyutla();
     kamerayiSigdir();
     dongu();
+  }
+
+  /* ======================================================= dikim alanları */
+  /** Noktanın düştüğü alan; hiçbirine düşmüyorsa null. */
+  function dikimAlani(mx, my) {
+    return VERI.dikim.find((a) => mx >= a.x1 && mx <= a.x2 && my >= a.y1 && my <= a.y2) || null;
+  }
+
+  /** Bu noktadaki toprak yüzeyinin MAKİNE Z'si.
+   *  Alanın kendi `toprak_z` değeri varsa o, yoksa genel `toprak_z`.
+   *  Sunucudaki `dikim.toprak_yuzeyi` ile aynı kural. */
+  function toprakYuzeyi(mx, my) {
+    const a = dikimAlani(mx, my);
+    return (a && a.toprak_z != null) ? Number(a.toprak_z) : T.toprakZ;
+  }
+
+  /** Alanlar sahne metresine çevrilmiş hâlde — `makine.kur` bunu istiyor.
+   *  Alan tanımlı değilse BOŞ dizi: makine.js o zaman yatağın tamamını
+   *  tek kap olarak kuruyor, yani eski davranış. */
+  function dikimSahne() {
+    return VERI.dikim.map((a) => ({
+      ad: a.ad,
+      mx: (sx(a.x1) + sx(a.x2)) / 2,
+      mz: (sz(a.y1) + sz(a.y2)) / 2,
+      en: Math.abs(a.x2 - a.x1) * MM,
+      boy: Math.abs(a.y2 - a.y1) * MM,
+      // Kabın yüzeyi genel yüzeyden ne kadar yukarıda/aşağıda
+      yuzeyY: a.toprak_z != null ? (Number(a.toprak_z) - T.toprakZ) * MM : 0,
+    }));
+  }
+
+  async function dikimYukle() {
+    try {
+      const y = await P().apiIste("/api/dikim");
+      VERI.dikim = y.alanlar || [];
+    } catch (h) {
+      // Alan listesi okunamadı: BOŞ bırakıyoruz, yani yatağın tamamı.
+      // Yanlış tarafa düşmek "sahnede toprak yok" demek olurdu.
+      VERI.dikim = [];
+      gunluk(`✕ Dikim alanları okunamadı: ${h.message}`, "hata");
+    }
+    olcuGuncelle();
+    katmanlariGuncelle();
+    kirlet("dikim");
   }
 
   function olcuGuncelle() {
@@ -1416,13 +1480,32 @@
     const slug = $("#tur-secim").value;
     const tur = VERI.turler[slug];
     if (!tur) { gunluk("✕ Önce bir tür seçin", "hata"); return; }
+    const x = Math.round(mm.x * 10) / 10, y = Math.round(mm.y * 10) / 10;
+    /* Alan denetimi ÖNCE burada: sunucu da aynısını yapıyor ve asıl karar
+     * orada, ama tıklamanın hemen ardından sebebi görmek — istek gidip
+     * gelene kadar beklemeden — hata ayıklarken çok fark ediyor. */
+    if (VERI.dikim.length && !dikimAlani(x, y)) {
+      gunluk(`✕ X${say(x, 1)} Y${say(y, 1)} dikim alanı dışında — `
+             + `tanımlı alanlar: ${VERI.dikim.map((a) => a.ad).join(", ")}`, "hata");
+      return;
+    }
+    /* Z ARTIK GÜVENLİ Z DEĞİL: tohum toprak yüzeyinin altına bırakılıyor.
+     * Yüzey makine sıfırında değil (ölçülen kurulumda 110 mm) ve kaplar
+     * aynı hizada olmayabiliyor, o yüzden yüzey noktadan noktaya
+     * soruluyor. Eksen sınırlarına kısıyoruz: derin ekilen bir tür
+     * yüzeyi sığ bir kapta eksiye taşımasın. */
+    const derinlik = Number(turAlani({ tur: slug }, "sow_depth_mm").deger) || 0;
+    const zMin = (T.sinir.z && T.sinir.z.min != null) ? T.sinir.z.min : 0;
+    const zMax = (T.sinir.z && T.sinir.z.max != null) ? T.sinir.z.max : 550;
     const govde = {
-      ad: bosAd(slug), x: Math.round(mm.x * 10) / 10, y: Math.round(mm.y * 10) / 10,
-      z: T.guvenliZ, etiket: "bitki", tur: slug, ekim: Math.floor(Date.now() / 1000),
+      ad: bosAd(slug), x, y,
+      z: Math.round(kis(toprakYuzeyi(x, y) - derinlik, zMin, zMax) * 10) / 10,
+      etiket: "bitki", tur: slug, ekim: Math.floor(Date.now() / 1000),
     };
     try {
       await P().apiIste("/api/noktalar", { method: "POST", body: JSON.stringify(govde) });
-      gunluk(`✓ ${tur.name_tr} eklendi (${govde.ad}) X${say(govde.x, 1)} Y${say(govde.y, 1)}`, "ok");
+      gunluk(`✓ ${tur.name_tr} eklendi (${govde.ad}) X${say(govde.x, 1)} Y${say(govde.y, 1)} `
+             + `Z${say(govde.z, 1)} (yüzey ${say(toprakYuzeyi(x, y), 0)} − ${say(derinlik, 0)} mm derin)`, "ok");
       await P().noktalariYukle();
     } catch (h) { gunluk(`✕ Bitki eklenemedi: ${h.message}`, "hata"); }
   }
@@ -1546,12 +1629,19 @@
       // window.FarmbotMakine.kur() ile kuruyor, çekirdek hiçbir şey çizmiyor.
       BAGLAM.makine = window.MAKINE;
       await turleriYukle();
+      await dikimYukle();
       await katmanDosyalariniYukle();
       T.hazir = true;
       sahneyiKur();
       araclariBagla();
       Tarla.noktalarDegisti();
       yanVeriTazele();
+    },
+
+    /** Ayarlar sekmesi dikim alanlarını kaydedince çağırıyor. */
+    async dikimDegisti() {
+      if (!T.hazir) return;
+      await dikimYukle();
     },
 
     noktalarDegisti(zorla) {
@@ -1663,6 +1753,37 @@
                             doku: ciz.info.memory.textures,
                             geometri: ciz.info.memory.geometries } : null,
                imza: T.sonDurumImzasi.slice(0, 60) };
+    },
+
+    /** Deneme yardımcısı — dikim alanları ve toprak yüzeyi.
+     *
+     * "Sahnede gördüğüm yer makinenin gittiği yer mi" sorusunu sayıyla
+     * yanıtlıyor: alanların mm ve sahne metresi karşılıkları, her alanın
+     * yüzey Z'si, uç profilinin türetilmiş konumu. Ekran görüntüsüne
+     * bakarak karar vermek yerine ölçülebilsin diye var. */
+    dikimDurumu() {
+      const uc = (VERI.durum && VERI.durum.uc) || {};
+      const yuvalar = uc.tools_konum || [];
+      const th = (uc.tohumluk && uc.tohumluk.x != null) ? uc.tohumluk : null;
+      const dayanak = yuvalar.map((t) => ({ x: t.x, y: t.y, z: t.z }));
+      if (th) dayanak.push({ x: th.x, y: th.y, z: th.z });
+      const profil = dayanak.length ? {
+        x: [Math.min(...dayanak.map((d) => d.x)), Math.max(...dayanak.map((d) => d.x))],
+        y: [Math.min(...dayanak.map((d) => d.y)), Math.max(...dayanak.map((d) => d.y))],
+        // Yuva modelinin yüksekliği 56 mm — 20-uc-yuvalari.js ile aynı sayı.
+        ustZ: Math.max(...dayanak.map((d) => (Number(d.z) || 0) - 56)),
+      } : null;
+      if (profil) profil.ustY = sy(profil.ustZ);
+      return {
+        toprakZ: T.toprakZ,
+        alanlar: VERI.dikim.map((a) => ({
+          ...a, yuzeyZ: (a.toprak_z != null ? Number(a.toprak_z) : T.toprakZ),
+          yuzeyY: sy(a.toprak_z != null ? Number(a.toprak_z) : T.toprakZ),
+        })),
+        sahne: dikimSahne(),
+        tohumluk: th,
+        profil,
+      };
     },
 
     /** Deneme yardımcısı — çoklu seçimdeki nokta adları. */

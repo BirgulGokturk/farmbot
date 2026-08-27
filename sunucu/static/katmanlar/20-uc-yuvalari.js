@@ -1,8 +1,20 @@
-/* Uç yuvaları — uçların yatak üzerindeki yerleri ve uç değiştirme alanı.
+/* Uç yuvaları, uç profili ve tohumluk.
  *
- * `durum.uc.tools` ve `durum.uc.alan`dan besleniyor. Alan AÇIKKEN içeride Z
- * güvenlik kilidi devre dışı; bu yüzden alan açıkken haritada da belirgin
- * çiziliyor — kilit kapalıyken bunu bilmemek tehlikeli.
+ * `durum.uc.tools_konum`, `durum.uc.tohumluk` ve `durum.uc.alan`dan
+ * besleniyor. Alan AÇIKKEN içeride Z güvenlik kilidi devre dışı; bu yüzden
+ * alan açıkken haritada da belirgin çiziliyor — kilit kapalıyken bunu
+ * bilmemek tehlikeli.
+ *
+ * UÇLAR TOPRAĞIN ÜSTÜNDE DURMUYOR. Gerçek makinede yatağın yanında, ayrı
+ * bir sigma profil var; uçlar onun üzerinde dizili ve tohumluk profilin en
+ * ucunda. Eskiden yuvalar sahnede y = 0'a, yani toprak yüzeyine
+ * oturuyordu: sahneye bakıp "uç şuraya gider" dediğimiz yer makinenin
+ * gittiği yer değildi ve hata ayıklarken en çok yanıltan şey buydu.
+ *
+ * PROFİLİN KONUMU ELLE YAZILMIYOR. Uç koordinatları zaten `uclar.json`da,
+ * tohumluk da ayarda; profil bu noktaların KAPSAYAN KUTUSUNDAN türüyor.
+ * Böylece kullanıcı uçların yerini değiştirdiğinde profil kendiliğinden
+ * onunla geliyor, ikinci bir yerde ölçü güncellemek gerekmiyor.
  */
 Tarla.katman({
   kimlik: "uclar",
@@ -13,6 +25,7 @@ Tarla.katman({
     o.bosalt(o.grup);
     const uc = o.veri.durum.uc || {};
     const alan = uc.alan || {};
+    const R = o.makine.renk;
 
     if (alan.on && (alan.pts || []).length >= 3) {
       const nokta = alan.pts.map(([x, y]) => new o.THREE.Vector2(o.sx(x), o.sz(y)));
@@ -27,16 +40,76 @@ Tarla.katman({
       o.grup.add(zemin);
     }
 
+    const yuvalar = uc.tools_konum || [];
+    const tohumluk = (uc.tohumluk && uc.tohumluk.x != null) ? uc.tohumluk : null;
+    if (!yuvalar.length && !tohumluk) return;
+
+    /* Yuva modelinin yüksekliği: taban plakasının altından tanıtıcı
+     * bandın üstüne. Profilin üstü buradan çıkıyor — `uclar.json`daki
+     * `z` ucun KAVRAMA yüksekliği, yani modelin tepesine denk geliyor. */
+    const YUVA_YUK = 0.056;
+    const dayanaklar = yuvalar.map((t) => ({ x: t.x, y: t.y, z: t.z, yuva: t }));
+    if (tohumluk) dayanaklar.push({ x: tohumluk.x, y: tohumluk.y, z: tohumluk.z, yuva: null });
+
+    /* --- profil: dayanak noktalarının kapsayan kutusu ------------------- */
+    const xs = dayanaklar.map((d) => d.x), ys = dayanaklar.map((d) => d.y);
+    const xEn = Math.max(...xs) - Math.min(...xs);
+    const yEn = Math.max(...ys) - Math.min(...ys);
+    // Uçlar hangi eksen boyunca dizilmişse profil o eksende uzuyor.
+    const uzunY = yEn >= xEn;
+    // Uçların ucundan taşan pay: profil son yuvada bıçak gibi bitmiyor.
+    const PAY = 40;
+    const px1 = uzunY ? Math.min(...xs) : Math.min(...xs) - PAY;
+    const px2 = uzunY ? Math.max(...xs) : Math.max(...xs) + PAY;
+    const py1 = uzunY ? Math.min(...ys) - PAY : Math.min(...ys);
+    const py2 = uzunY ? Math.max(...ys) + PAY : Math.max(...ys);
+    // Genişliği tek bir yuvanın çapından: profil yuvayı taşıyacak kadar
+    // geniş, ama yatağa taşacak kadar değil.
+    const GENIS = 45;
+    const enX = uzunY ? GENIS : (px2 - px1);
+    const enY = uzunY ? (py2 - py1) : GENIS;
+    const mx = uzunY ? (px1 + px2) / 2 : (px1 + px2) / 2;
+    const my = uzunY ? (py1 + py2) / 2 : (py1 + py2) / 2;
+
+    /* Profilin ÜST yüzeyi: en yüksek yuvanın tabanı. En yükseği (max)
+     * alıyoruz ki hiçbir yuva havada asılı kalmasın; birkaç milimetre
+     * alçak duran yuva profilin içine gömülüyor, o görünmüyor. */
+    const ustZ = Math.max(...dayanaklar.map((d) => (Number(d.z) || 0) - YUVA_YUK * 1000));
+    const ustY = o.sy(ustZ);
+    // Profil kalınlığı sigma profil kenarından — makine.js'teki tek kaynak.
+    const kalinlik = o.makine.profil * o.MM;
+
+    const gövde = new o.THREE.Mesh(
+      new o.THREE.BoxGeometry(enX * o.MM, kalinlik, enY * o.MM),
+      o.malzeme(R.aluminyum, { metalness: 0.84, roughness: 0.34 }));
+    gövde.position.set(o.sx(mx), ustY - kalinlik / 2, o.sz(my));
+    gövde.raycast = () => {};
+    o.grup.add(gövde);
+
+    /* Profili taşıyan iki bacak: profil havada asılı durmasın. Zemine
+     * kadar iniyorlar — tezgâhın ayak yüksekliği makine.js'te. */
+    const zeminY = (o.makine.tabla - o.makine.ayak) * o.MM;
+    const bacakBoy = Math.max(0.01, ustY - kalinlik - zeminY);
+    [-0.34, 0.34].forEach((k) => {
+      const b = new o.THREE.Mesh(
+        new o.THREE.BoxGeometry(kalinlik, bacakBoy, kalinlik),
+        o.malzeme(R.metal_koyu, { metalness: 0.55, roughness: 0.62 }));
+      b.position.set(
+        o.sx(mx + (uzunY ? 0 : enX * k)), zeminY + bacakBoy / 2,
+        o.sz(my + (uzunY ? enY * k : 0)));
+      b.raycast = () => {};
+      o.grup.add(b);
+    });
+
     // Yuva DÖRT parçadan kuruluyor. Tek bir turkuaz koni olarak çizildiğinde
     // sahnede plastik bardak gibi duruyordu: gerçek yuva koyu metal bir
     // tabana oturan bilezik, ucun kendisi de koyu gövdeli. Turkuaz artık
     // gövdenin tamamı değil, yalnızca üstteki tanıtıcı bant — böylece hem
     // metal gibi okunuyor hem uçlar birbirinden ayırt edilebiliyor.
-    const R = o.makine.renk;
-    (uc.tools_konum || []).forEach((t) => {
+    yuvalar.forEach((t) => {
       const g = new o.THREE.Group();
 
-      // toprağa oturan taban plakası
+      // profile oturan taban plakası
       const taban = new o.THREE.Mesh(
         new o.THREE.CylinderGeometry(0.034, 0.038, 0.006, 20),
         o.malzeme(R.metal_koyu || "#33373c", { metalness: 0.6, roughness: 0.55 }));
@@ -67,10 +140,48 @@ Tarla.katman({
       bant.position.y = 0.05;
       g.add(bant);
 
-      g.position.set(o.sx(t.x), 0, o.sz(t.y));
+      /* Y ARTIK SIFIR DEĞİL. Her yuva kendi `z`sinden geliyor: uçlar aynı
+       * profilde de olsa gerçekte birkaç milimetre ayrışıyorlar ve o fark
+       * uç değiştirmeyi ayıklarken önemli. */
+      g.position.set(o.sx(t.x), o.sy((Number(t.z) || 0) - YUVA_YUK * 1000), o.sz(t.y));
       g.traverse((n) => { n.userData.yuva = t; });
       o.grup.add(g);
     });
+
+    /* --- tohumluk: profilin ucundaki delikli blok ----------------------- */
+    if (tohumluk) {
+      const TB_EN = 0.075, TB_BOY = 0.13, TB_YUK = 0.035;
+      const g = new o.THREE.Group();
+      const blok = new o.THREE.Mesh(
+        new o.THREE.BoxGeometry(TB_EN, TB_YUK, TB_BOY),
+        o.malzeme("#1b1d21", { metalness: 0.15, roughness: 0.9 }));
+      blok.position.y = TB_YUK / 2;
+      g.add(blok);
+      /* Delikler TEK bir örneklenmiş ağ: 12 delik = 12 çizim çağrısı
+       * olurdu, InstancedMesh ile bir tane. Pi'de çizim çağrısı sayısı
+       * üçgen sayısından daha çok yakıyor. */
+      const sutun = 3, satir = 4, adet = sutun * satir;
+      const delik = new o.THREE.InstancedMesh(
+        new o.THREE.CylinderGeometry(0.0092, 0.0092, 0.02, 12),
+        o.malzeme("#0a0b0d", { metalness: 0.1, roughness: 1 }), adet);
+      const gecici = new o.THREE.Object3D();
+      let i = 0;
+      for (let r = 0; r < satir; r++) {
+        for (let c = 0; c < sutun; c++) {
+          gecici.position.set(
+            (c - (sutun - 1) / 2) * (TB_EN / sutun),
+            TB_YUK - 0.009,
+            (r - (satir - 1) / 2) * (TB_BOY / satir));
+          gecici.updateMatrix();
+          delik.setMatrixAt(i++, gecici.matrix);
+        }
+      }
+      delik.instanceMatrix.needsUpdate = true;
+      g.add(delik);
+      g.position.set(o.sx(tohumluk.x), o.sy(Number(tohumluk.z) || 0), o.sz(tohumluk.y));
+      g.traverse((n) => { n.userData.tohumluk = tohumluk; });
+      o.grup.add(g);
+    }
   },
 
   ciz2b(o, c) {
@@ -99,18 +210,41 @@ Tarla.katman({
       c.font = "10px ui-sans-serif, system-ui";
       c.fillText(t.name || "", p.x + 10, p.y + 3);
     });
+    const th = uc.tohumluk;
+    if (th && th.x != null) {
+      const p = o.mm2b(th.x, th.y);
+      c.fillStyle = "#1b1d21";
+      c.strokeStyle = "#c3c2b7";
+      c.lineWidth = 1.5;
+      c.beginPath(); c.rect(p.x - 9, p.y - 13, 18, 26); c.fill(); c.stroke();
+      c.fillStyle = "#c3c2b7";
+      c.font = "10px ui-sans-serif, system-ui";
+      c.fillText("tohumluk", p.x + 13, p.y + 3);
+    }
   },
 
   vur(o, mm) {
     const uc = o.veri.durum.uc || {};
+    const th = uc.tohumluk;
+    if (th && th.x != null && Math.hypot(th.x - mm.x, th.y - mm.y) < 35) {
+      return { tohumluk: true, name: "Tohumluk", x: th.x, y: th.y, z: th.z };
+    }
     return (uc.tools_konum || []).find((t) =>
       Math.hypot(t.x - mm.x, t.y - mm.y) < 25) || null;
   },
 
   kart(o, t) {
+    const yuzey = o.toprakZ;
+    const aciklik = (Number(t.z) || 0) - yuzey;
+    const not = `${t.tohumluk ? "tohumluk" : "uç yuvası"} · `
+      + `X${o.say(t.x, 1)} Y${o.say(t.y, 1)} Z${o.say(t.z, 1)}`;
     return `<div class="tarla-kart-bas"><div><b>${o.kacisli(t.name)}</b>
-      <div class="alt-not">uç yuvası · X${o.say(t.x, 1)} Y${o.say(t.y, 1)} Z${o.say(t.z, 1)}</div></div></div>
-      <p class="alt-not">Takmak ve bırakmak Ayarlar sekmesindeki uç değiştirme
-      bölümünden yapılır — dizi güvenlik denetimleriyle birlikte orada.</p>`;
+      <div class="alt-not">${not}</div></div></div>
+      <p class="alt-not">Toprak yüzeyinden açıklık <b>${o.say(aciklik, 0)} mm</b>
+      (yüzey Z${o.say(yuzey, 0)}).</p>
+      ${t.tohumluk ? `<p class="alt-not">Tohumluk konumu Ayarlar sekmesindeki uç
+      değiştirme bölümünden girilir.</p>`
+      : `<p class="alt-not">Takmak ve bırakmak Ayarlar sekmesindeki uç değiştirme
+      bölümünden yapılır — dizi güvenlik denetimleriyle birlikte orada.</p>`}`;
   },
 });

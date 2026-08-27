@@ -238,15 +238,23 @@
       transparent: true, opacity: 0.45,
     });
     const kapYuk = M(MAKINE.kap.yukseklik), cidar = M(MAKINE.kap.cidar);
-    const kapDuvar = (gx, gz, x, z) => {
-      const m = new THREE.Mesh(new THREE.BoxGeometry(gx, kapYuk, gz), kapMal);
-      m.position.set(x, tabla + kapYuk / 2, z);
-      sabit.add(m);
-    };
-    kapDuvar(w, cidar, 0, -d / 2 + cidar / 2);
-    kapDuvar(w, cidar, 0, d / 2 - cidar / 2);
-    kapDuvar(cidar, d, -w / 2 + cidar / 2, 0);
-    kapDuvar(cidar, d, w / 2 - cidar / 2, 0);
+
+    /* --- DİKİM ALANLARI ---------------------------------------------------
+     * Yatak baştan sona tek bir toprak alanı DEĞİL: gerçek makinede iki
+     * ayrı kap var ve aralarında boşluk bulunuyor. Her alan kendi kabını,
+     * kendi toprağını ve kendi yüzey yüksekliğini taşıyor.
+     *
+     * `opt.alanlar` verilmemişse eski davranış aynen sürüyor: yatağın
+     * tamamı tek bir alan. Mevcut kurulumlar bozulmasın diye bu kaçış
+     * bilerek duruyor — alan tanımlamamış bir kullanıcı güncelleme
+     * sonrasında sahnesini boş bulmuyor.
+     *
+     * Ölçüler burada METRE ve sahne merkezine göre; makine milimetresinden
+     * çeviriyi çağıran yapıyor (tarla.js'in sx/sz'si), çünkü dönüşüm yatak
+     * sınırlarına bağlı ve makine.js sınırları bilmiyor. */
+    const alanlar = (opt.alanlar && opt.alanlar.length) ? opt.alanlar : [
+      { ad: "", mx: 0, mz: 0, en: w, boy: d, yuzeyY: 0 },
+    ];
 
     /* --- toprak ------------------------------------------------------------
      * İki parça: yandan görünen gövde (kutu) ve ÜST YÜZEY (kabartmalı ağ).
@@ -259,18 +267,15 @@
      * Yüzey y = 0: bitkiler, noktalar ve okumalar hep bu düzleme oturuyor.
      * Oyuklar AŞAĞI iniyor, hiçbir tepe 0'ın üstüne çıkmıyor — yoksa
      * bitkiler toprağın içine gömülmüş görünürdü.
+     *
+     * ALANIN kendi `yuzeyY` değeri varsa yüzey oradan başlıyor: kaplar
+     * aynı hizada olmayabiliyor. Değer sahne metresi cinsinden ve genel
+     * toprak yüzeyine GÖRE (0 = genel yüzey).
      */
-    const topEn = w - cidar * 2, topBoy = d - cidar * 2;
-    const gövde = new THREE.Mesh(
-      new THREE.BoxGeometry(topEn, -tabla, topBoy),
-      mal(THREE, { color: MAKINE.renk.toprak_koyu, roughness: 1, metalness: 0 }));
-    gövde.position.y = tabla / 2 - 0.004;   // üst yüzey ağı onun üstüne oturuyor
-    gövde.userData.golgeAtma = true;
-    sabit.add(gövde);
-
     const doku = window.FarmbotDoku;
-    // Tekrar sayısı yatağın METRE ölçüsünden: 425 mm'lik yatakta doku bir
-    // buçuk kez tekrarlıyor, 3 m'lik yatakta on kez. Ölçek her yatakta aynı.
+    /* Doku ve malzeme BİR KEZ üretiliyor, bütün alanlar paylaşıyor. Alan
+     * başına ayrı doku üretmek iki kaba çıkarken 13 dokuyu 15'e, dört kaba
+     * çıkarken 19'a taşırdı; oysa toprak her kapta aynı toprak. */
     const dokuOlcek = 6.0;
     const yuzeyMal = mal(THREE, {
       color: MAKINE.renk.toprak, roughness: 1, metalness: 0,
@@ -300,64 +305,110 @@
                  + "roughnessFactor *= 1.0 - 0.62 * vIslak;");
     };
     if (doku) {
-      const { harita, kabartma } = doku.toprak(THREE, topEn * dokuOlcek, topBoy * dokuOlcek);
+      // Tekrar sayısı yatağın METRE ölçüsünden: ölçek her kapta aynı, yani
+      // küçük kapta doku küçülmüyor — iki kap yan yana dururken tane boyu
+      // farkı hemen göze çarpardı.
+      const { harita, kabartma } = doku.toprak(THREE, w * dokuOlcek, d * dokuOlcek);
       yuzeyMal.map = harita;
       yuzeyMal.bumpMap = kabartma;
       yuzeyMal.bumpScale = 0.22;
       yuzeyMal.color.set("#ffffff");   // ton dokudan geliyor
     }
+    const govdeMal = mal(THREE, {
+      color: MAKINE.renk.toprak_koyu, roughness: 1, metalness: 0 });
 
-    // Bölüntü sayısı Pi düşünülerek seçildi: 48×64 ≈ 6 bin üçgen. Daha azı
-    // karığın kenarını köşeli gösteriyor, daha çoğu göze bir şey katmıyor.
-    const geo = new THREE.PlaneGeometry(topEn, topBoy, 48, 64);
-    geo.rotateX(-Math.PI / 2);
-    const konum = geo.attributes.position;
-    const karikSayi = MAKINE.yatak.karik_sayisi;
-    // 9 mm derin + 26 mm yarı genişlikte oyuk denendi: duvarı o kadar
-    // dik oluyor ki ışığı hiç almıyor ve karık, toprakta açılmış
-    // simsiyah bir yarık gibi duruyordu. 5/34 gerçek bir karığın
-    // eğimi — dibi gölgede ama okunuyor.
-    const karikDerin = M(5);
-    const karikGenis = M(34);             // oyuğun yarı genişliği
-    const rast = doku ? doku.uretec(doku.tohumla("toprak-yuzey")) : Math.random;
-    // Yüzey pürüzü için küçük bir gürültü alanı — kabartma haritası ışığı
-    // kırıyor, bu da siluetin düz bir masa gibi durmasını engelliyor.
-    const N = 24;
-    const puruz = doku ? doku.alan(N, 3, doku.tohumla("toprak-puruz"))
-                       : new Float32Array(N * N).fill(0.5);
-    for (let i = 0; i < konum.count; i++) {
-      const x = konum.getX(i), z = konum.getZ(i);
-      // Karık: yatağın uzun kenarı boyunca sıralar
-      let y = 0;
-      for (let k = 1; k <= karikSayi; k++) {
-        const merkez = -topBoy / 2 + (topBoy * k) / (karikSayi + 1);
-        const u = Math.abs(z - merkez) / karikGenis;
-        if (u < 1) y -= karikDerin * (0.5 + 0.5 * Math.cos(u * Math.PI));
+    alanlar.forEach((alan, sira) => {
+      const kapEn = alan.en, kapBoy = alan.boy;
+      const yY = alan.yuzeyY || 0;      // bu kabın yüzeyi genel yüzeye göre
+
+      /* Kap duvarları: alanın kendi çevresinde. Duvar DIŞARI taşıyor —
+       * `en/boy` ekilebilir iç ölçü, çünkü kullanıcı ayarlara toprağın
+       * bulunduğu aralığı giriyor, plastiğin dış ölçüsünü değil. */
+      const kapDuvar = (gx, gz, x, z) => {
+        const m = new THREE.Mesh(new THREE.BoxGeometry(gx, kapYuk, gz), kapMal);
+        m.position.set(alan.mx + x, tabla + yY + kapYuk / 2, alan.mz + z);
+        sabit.add(m);
+      };
+      const dEn = kapEn + cidar * 2, dBoy = kapBoy + cidar * 2;
+      kapDuvar(dEn, cidar, 0, -dBoy / 2 + cidar / 2);
+      kapDuvar(dEn, cidar, 0, dBoy / 2 - cidar / 2);
+      kapDuvar(cidar, dBoy, -dEn / 2 + cidar / 2, 0);
+      kapDuvar(cidar, dBoy, dEn / 2 - cidar / 2, 0);
+
+      /* Yandan görünen toprak gövdesi: ALTI tezgâh tablasında, ÜSTÜ bu
+       * kabın kendi yüzeyinin 4 mm altında (yüzey ağı onun üstüne
+       * oturuyor). Yüksekliği ikisinin farkı.
+       *
+       * Önce yüksekliği `-tabla + yY`, merkezi de `yY/2` kaydırılarak
+       * hesaplanıyordu; iki kaydırma üst üste binince yükseltilmiş kabın
+       * KOYU gövdesi kendi toprak yüzeyinin 2 mm ÜSTÜNE çıkıyor ve
+       * yüzeyi tamamen örtüyordu. Üstten bakınca o kap simsiyah
+       * görünüyordu — toprak orada değil sanılıyordu. */
+      const govdeUst = yY - 0.004;
+      const govde = new THREE.Mesh(
+        new THREE.BoxGeometry(kapEn, govdeUst - tabla, kapBoy), govdeMal);
+      govde.position.set(alan.mx, (tabla + govdeUst) / 2, alan.mz);
+      govde.userData.golgeAtma = true;
+      sabit.add(govde);
+
+      /* Bölüntü sayısı Pi düşünülerek seçildi: 425×550 mm'lik tek kapta
+       * 48×64 ≈ 6 bin üçgen. Alan küçüldükçe bölüntü de küçülüyor, yoksa
+       * iki kap dört kap olunca üçgen sayısı ikiye katlanırdı. Alt sınır
+       * 8: daha azı karığı köşeli gösteriyor. */
+      const bolX = Math.max(8, Math.round(48 * (kapEn / 0.425)));
+      const bolZ = Math.max(8, Math.round(64 * (kapBoy / 0.55)));
+      const geo = new THREE.PlaneGeometry(kapEn, kapBoy, bolX, bolZ);
+      geo.rotateX(-Math.PI / 2);
+      const konum = geo.attributes.position;
+      const karikSayi = MAKINE.yatak.karik_sayisi;
+      // 9 mm derin + 26 mm yarı genişlikte oyuk denendi: duvarı o kadar
+      // dik oluyor ki ışığı hiç almıyor ve karık, toprakta açılmış
+      // simsiyah bir yarık gibi duruyordu. 5/34 gerçek bir karığın
+      // eğimi — dibi gölgede ama okunuyor.
+      const karikDerin = M(5);
+      const karikGenis = M(34);             // oyuğun yarı genişliği
+      // Tohum alan adından: iki kap aynı gürültüyü taşımasın, kopyalanmış
+      // gibi durmasınlar.
+      const N = 24;
+      const puruz = doku ? doku.alan(N, 3, doku.tohumla("toprak-puruz-" + (alan.ad || sira)))
+                         : new Float32Array(N * N).fill(0.5);
+      for (let i = 0; i < konum.count; i++) {
+        const x = konum.getX(i), z = konum.getZ(i);
+        // Karık: kabın uzun kenarı boyunca sıralar
+        let y = 0;
+        for (let k = 1; k <= karikSayi; k++) {
+          const merkez = -kapBoy / 2 + (kapBoy * k) / (karikSayi + 1);
+          const u = Math.abs(z - merkez) / karikGenis;
+          if (u < 1) y -= karikDerin * (0.5 + 0.5 * Math.cos(u * Math.PI));
+        }
+        // Kenarda toprak biraz yükselir (kabın duvarına yaslanmış toprak)
+        const kx = Math.abs(x) / (kapEn / 2), kz = Math.abs(z) / (kapBoy / 2);
+        y -= M(2.5) * (1 - Math.max(kx, kz));
+        // Pürüz
+        const ix = Math.min(N - 1, Math.max(0, Math.floor((x / kapEn + 0.5) * N)));
+        const iz = Math.min(N - 1, Math.max(0, Math.floor((z / kapBoy + 0.5) * N)));
+        y += (puruz[iz * N + ix] - 0.5) * M(3.5);
+        konum.setY(i, Math.min(0, y));
       }
-      // Kenarda toprak biraz yükselir (kabın duvarına yaslanmış toprak)
-      const kx = Math.abs(x) / (topEn / 2), kz = Math.abs(z) / (topBoy / 2);
-      y -= M(2.5) * (1 - Math.max(kx, kz));
-      // Pürüz
-      const ix = Math.min(N - 1, Math.max(0, Math.floor((x / topEn + 0.5) * N)));
-      const iz = Math.min(N - 1, Math.max(0, Math.floor((z / topBoy + 0.5) * N)));
-      y += (puruz[iz * N + ix] - 0.5) * M(3.5);
-      konum.setY(i, Math.min(0, y));
-    }
-    geo.computeVertexNormals();
-    // Nem renkleri için köşe rengi alanı — başlangıçta hepsi beyaz (çarpan 1).
-    const renkler = new Float32Array(konum.count * 3).fill(1);
-    geo.setAttribute("color", new THREE.BufferAttribute(renkler, 3));
-    // Islaklık 0..1 — hem koyuluğu hem parlaklığı süren tek değer.
-    geo.setAttribute("islak",
-      new THREE.BufferAttribute(new Float32Array(konum.count), 1));
+      geo.computeVertexNormals();
+      // Nem renkleri için köşe rengi alanı — başlangıçta hepsi beyaz (çarpan 1).
+      geo.setAttribute("color",
+        new THREE.BufferAttribute(new Float32Array(konum.count * 3).fill(1), 3));
+      // Islaklık 0..1 — hem koyuluğu hem parlaklığı süren tek değer.
+      geo.setAttribute("islak",
+        new THREE.BufferAttribute(new Float32Array(konum.count), 1));
 
-    const toprak = new THREE.Mesh(geo, yuzeyMal);
-    toprak.receiveShadow = true;
-    // Gölge ALIYOR ama ATMIYOR: 6 bin üçgenlik yüzeyi gölge geçişinde bir
-    // daha çizmenin gözle görülür karşılığı yok.
-    toprak.userData.golgeAtma = true;
-    toprak.name = "toprak-yuzey";
-    sabit.add(toprak);
+      const toprak = new THREE.Mesh(geo, yuzeyMal);
+      toprak.position.set(alan.mx, yY, alan.mz);
+      toprak.receiveShadow = true;
+      // Gölge ALIYOR ama ATMIYOR: 6 bin üçgenlik yüzeyi gölge geçişinde bir
+      // daha çizmenin gözle görülür karşılığı yok.
+      toprak.userData.golgeAtma = true;
+      // İsim aynı kalıyor: `nemBoya` bütün yüzeyleri bu adla topluyor.
+      toprak.name = "toprak-yuzey";
+      toprak.userData.alanAdi = alan.ad || "";
+      sabit.add(toprak);
+    });
 
     /* --- yan raylar: uzun kenar boyunca -----------------------------------
      * Gercek makinede raylar yatagin UZUN kenarinda; kopru kisa kenari
@@ -484,13 +535,12 @@
    * değil geometriden geliyor, hep var.
    */
   function nemBoya(kok, secenek) {
-    let toprak = null;
-    kok.traverse((n) => { if (n.name === "toprak-yuzey") toprak = n; });
-    if (!toprak) return false;
-    const renk = toprak.geometry.getAttribute("color");
-    const konum = toprak.geometry.getAttribute("position");
-    const islakNit = toprak.geometry.getAttribute("islak");
-    if (!renk) return false;
+    // Dikim alanı başına bir yüzey var; hepsi aynı adı taşıyor. Eskiden
+    // traverse son bulduğunu tutuyordu — iki kapta yalnız ikincisi
+    // boyanırdı, birincisi hep kuru görünürdü.
+    const yuzeyler = [];
+    kok.traverse((n) => { if (n.name === "toprak-yuzey") yuzeyler.push(n); });
+    if (!yuzeyler.length) return false;
 
     const okumalar = (secenek.okumalar || []).map((k) => ({
       x: secenek.sx(k.x), z: secenek.sz(k.y),
@@ -503,29 +553,40 @@
     const R = 0.06, R2 = R * R;
     // En derin karık ~9 mm; en koyu dip için ölçek.
     const DERIN = 0.012;
-    for (let i = 0; i < renk.count; i++) {
-      const x = konum.getX(i), y = konum.getY(i), z = konum.getZ(i);
-      let islak = 0;
-      for (let k = 0; k < okumalar.length; k++) {
-        const o = okumalar[k];
-        const d2 = (x - o.x) * (x - o.x) + (z - o.z) * (z - o.z);
-        if (d2 >= R2) continue;
-        const w = 1 - d2 / R2;                 // yumuşak düşüş
-        const v = o.islak * w * w;
-        if (v > islak) islak = v;              // en ıslak okuma kazanıyor
+    let boyandi = false;
+    yuzeyler.forEach((toprak) => {
+      const renk = toprak.geometry.getAttribute("color");
+      const konum = toprak.geometry.getAttribute("position");
+      const islakNit = toprak.geometry.getAttribute("islak");
+      if (!renk) return;
+      boyandi = true;
+      // Köşe konumları AĞIN KENDİ uzayında; okumalar sahne uzayında.
+      // Alanın kendi kaydırması olduğu için ikisi artık aynı değil.
+      const ox = toprak.position.x, oz = toprak.position.z;
+      for (let i = 0; i < renk.count; i++) {
+        const x = konum.getX(i) + ox, y = konum.getY(i), z = konum.getZ(i) + oz;
+        let islak = 0;
+        for (let k = 0; k < okumalar.length; k++) {
+          const o = okumalar[k];
+          const d2 = (x - o.x) * (x - o.x) + (z - o.z) * (z - o.z);
+          if (d2 >= R2) continue;
+          const w = 1 - d2 / R2;                 // yumuşak düşüş
+          const v = o.islak * w * w;
+          if (v > islak) islak = v;              // en ıslak okuma kazanıyor
+        }
+        // Karık dibi payı
+        const cukur = Math.min(1, Math.max(0, -y / DERIN));
+        // 1.0 = dokunun kendi tonu. En ıslak yerde %42 koyulaşma; daha
+        // fazlası toprağı siyah bir lekeye çeviriyor.
+        const f = 1 - 0.42 * islak - 0.07 * cukur;
+        renk.setXYZ(i, f, f * 0.99, f * 1.03);   // ıslak toprak biraz soğuk
+        // Karık dibi de biraz nemli sayılıyor: su orada duruyor.
+        if (islakNit) islakNit.setX(i, Math.min(1, islak + cukur * 0.25));
       }
-      // Karık dibi payı
-      const cukur = Math.min(1, Math.max(0, -y / DERIN));
-      // 1.0 = dokunun kendi tonu. En ıslak yerde %42 koyulaşma; daha
-      // fazlası toprağı siyah bir lekeye çeviriyor.
-      const f = 1 - 0.42 * islak - 0.07 * cukur;
-      renk.setXYZ(i, f, f * 0.99, f * 1.03);   // ıslak toprak biraz soğuk
-      // Karık dibi de biraz nemli sayılıyor: su orada duruyor.
-      if (islakNit) islakNit.setX(i, Math.min(1, islak + cukur * 0.25));
-    }
-    renk.needsUpdate = true;
-    if (islakNit) islakNit.needsUpdate = true;
-    return true;
+      renk.needsUpdate = true;
+      if (islakNit) islakNit.needsUpdate = true;
+    });
+    return boyandi;
   }
 
   /* Geometri kurucu: makine.js dışındaki hiçbir dosya `new BoxGeometry` ile

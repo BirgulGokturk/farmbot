@@ -467,7 +467,9 @@ Tarla.katman({
       new o.THREE.MeshBasicMaterial({ color: "#3987e5", transparent: true, opacity: 0.9,
                                       side: o.THREE.DoubleSide }));
     halka.rotation.x = -Math.PI / 2;
-    halka.position.set(o.sx(n.x), 0.005, o.sz(n.y));
+    const al = o.dikimAlani(n.x, n.y);
+    const y = (al && al.toprak_z != null) ? (Number(al.toprak_z) - o.toprakZ) * o.MM : 0;
+    halka.position.set(o.sx(n.x), y + 0.005, o.sz(n.y));
     halka.raycast = () => {};
     return halka;
   },
@@ -485,7 +487,13 @@ Tarla.katman({
     const veri = liste.map((b) => {
       const v = this.bitkiVeri(o, b, this.olgunluk(b));
       kv += v.poz.length / 3; ki += v.ind.length;
-      return { v, x: o.sx(b.nokta.x), z: o.sz(b.nokta.y), b };
+      /* y: bitkinin oturduğu YÜZEY. Sıfır değil — kaplar aynı hizada
+       * olmayabiliyor ve alanın kendi toprak_z'si varsa bitki onun
+       * üstünde durmalı. Alan yoksa ya da kendi değeri yoksa sıfır,
+       * yani genel yüzey: eski davranış. */
+      const al = o.dikimAlani(b.nokta.x, b.nokta.y);
+      const y = (al && al.toprak_z != null) ? (Number(al.toprak_z) - o.toprakZ) * o.MM : 0;
+      return { v, x: o.sx(b.nokta.x), y, z: o.sz(b.nokta.y), b };
     });
     if (kv) {
       const poz = new Float32Array(kv * 3), nor = new Float32Array(kv * 3);
@@ -495,7 +503,8 @@ Tarla.katman({
         const v = k.v, n = v.poz.length / 3;
         for (let i = 0; i < n; i++) {
           const a = (vo + i) * 3, c = i * 3;
-          poz[a] = v.poz[c] + k.x; poz[a + 1] = v.poz[c + 1]; poz[a + 2] = v.poz[c + 2] + k.z;
+          poz[a] = v.poz[c] + k.x; poz[a + 1] = v.poz[c + 1] + k.y;
+          poz[a + 2] = v.poz[c + 2] + k.z;
           nor[a] = v.nor[c]; nor[a + 1] = v.nor[c + 1]; nor[a + 2] = v.nor[c + 2];
           ren[a] = v.ren[c]; ren[a + 1] = v.ren[c + 1]; ren[a + 2] = v.ren[c + 2];
         }
@@ -526,7 +535,7 @@ Tarla.katman({
       veri.forEach((k) => {
         const s = new THREE.Sprite(this.simgeMal(THREE, k.b.tur.icon));
         s.scale.setScalar(SIMGE_OLCEK);
-        s.position.set(k.x, k.v.tepe + 0.035, k.z);
+        s.position.set(k.x, k.y + k.v.tepe + 0.035, k.z);
         s.raycast = () => {};
         o.grup.add(s);
       });

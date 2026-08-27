@@ -431,6 +431,8 @@ class Ajan:
                 "sensor_var": int(self.uclar.ayar.get("presence_reg", 0) or 0) > 0,
                 "travel_z": self.uclar.ayar.get("travel_z"),
                 "slide_axis": self.uclar.ayar.get("slide_axis"),
+                # Tohumluk: harita profili bu noktadan türetiyor, adı yetmiyor.
+                "tohumluk": self.uclar.tohumluk() or {},
                 "alan": self.uclar.ayar.get("tc_area") or {},
                 "alanda": bool(self.uclar.tc_alani_icinde(
                     (durum.get("konum") or {}).get("x") or 0,

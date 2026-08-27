@@ -61,7 +61,7 @@ Anlık makine durumu ve son ölçüm.
     "bagli": true, "kip": "oto",
     "konum": {"x": 120.0, "y": 80.0, "z": 340.0},
     "plc": "bagli", "enable": true, "hareket": false, "jog": [],
-    "z_guvenli": true, "guvenli_z": 340.0,
+    "z_guvenli": true, "guvenli_z": 340.0, "toprak_z": 110.0,
     "acil": {"acik": false, "saat": "", "neden": ""},
     "sinirlar": {"x": {"min": 0, "max": 425},
                  "y": {"min": 0, "max": 600},
@@ -84,6 +84,16 @@ Anlık makine durumu ve son ölçüm.
 
 `ajan_bagli` / `durum.bagli` false ise `olcum` eski veri olabilir; `ts`
 alanına bakın.
+
+`toprak_z` toprak yüzeyinin **makine Z'si**. Yüzey sıfırda değil; ölçülen
+kurulumda 110 mm. Ayarda `plc.toprak_z` olarak duruyor, `toprak-olc.py` ucu
+yüzeye indirip yazıyor. Hareketi sınırlamıyor — panel sahneyi doğru
+yükseklikte kursun ve ekim derinliği yüzeyden hesaplansın diye yayınlanıyor.
+PLC koptuğunda da gönderiliyor, çünkü değer PLC'den değil ayardan geliyor.
+
+`durum.uc.tohumluk` = `{x, y, z}` ya da `{}`. Uç profilinin ucundaki delikli
+blok; `uclar.json` içinde uçlarla aynı yerde duruyor. `x` boşsa tohumluk
+tanımsız sayılır ve çizilmez.
 
 ### `GET /api/gecmis?dakika=N`
 Grafik için geçmiş. `dakika` 1 ile 10080 (7 gün) arası. Sunucu en fazla ~600
@@ -143,6 +153,40 @@ aşımı.
 | `GET /api/turler` | `{turler, alanlar}`. Türler = katalog (`docs/bitki_turleri.json`, 37 tür) + tür ezmeleri birleşmiş hâli; her tür `ezili: {alan: katalog_degeri}` taşır — boşsa katalogdan hiç sapılmamış demektir. `alanlar` = düzenlenebilir dört alanın başlık/birim/alt/üst tanımı. Katalog dosyası değişmedikçe önbellekten döner; `TUR_YOLU` ile başka bir dosya gösterilebilir |
 | `POST /api/turler` | `{slug, alanlar:{spread_mm?, sow_depth_mm?, days_to_harvest?, water_ml_per_day?}}` — **tür düzeyinde** ezme. Katalog dosyasına YAZILMAZ; ezmeler `tur_ezme.json` dosyasında (`TUR_EZME_YOLU`, yoksa `VERI_YOLU`nun klasörü) tutulur. Katalogdakiyle aynı değer ezme sayılmaz, kaydedilmez |
 | `DELETE /api/turler?slug=…&alan=…` | `alan` verilirse o alanı, verilmezse türün bütün ezmelerini katalog değerine döndürür |
+| `GET /api/dikim` | `{alanlar, azami, en_kucuk_kenar, toprak_z}` — dikim alanları ve ajandan gelen genel toprak yüzeyi |
+| `PUT /api/dikim` | `{alanlar:[{ad,x1,y1,x2,y2,toprak_z?}…]}` — doğrulanmış hâli geri döner |
+
+### Dikim alanları
+
+Yatakta toprağın **gerçekten** bulunduğu dikdörtgenler. Makinede iki ayrı kap
+var ve aralarında boşluk bulunuyor; panel şimdiye kadar yatağın tamamını
+toprak sayıyordu ve sahnede "buraya bir marul koyalım" dediğimiz nokta
+makinede havaya denk gelebiliyordu.
+
+- **Alan tanımlı değilse eski davranış sürüyor**: yatağın tamamı ekilebilir.
+  Boş liste hiçbir zaman "hiçbir yere ekilemez" anlamına gelmiyor, yoksa
+  güncelleme mevcut kurulumları bozardı.
+- `POST /api/noktalar` yalnız `etiket: "bitki"` olan noktayı denetliyor ve
+  alan dışına düşeni **422** ile reddediyor; gerekçe koordinatı ve tanımlı
+  alanları yazıyor. Uç yuvası, kalibrasyon ve gezinti noktaları toprağın
+  dışında olabilir, onlar denetlenmiyor.
+- `POST /api/toplu` `islem:"sula"` seçimde alan dışına düşen bir nokta varsa
+  **422** döner ve dizi hiç başlamaz — su, toprağın olmadığı yere
+  dökülmesin. `gez` denetlenmiyor.
+- Köşeler kaydederken sıralanıyor (`x1 < x2`): sağdan sola çizilen bir
+  dikdörtgen sessizce "her nokta dışarıda" derdi. Kenar en az 5 mm, en fazla
+  24 alan, aynı ad iki kez olamaz.
+- `toprak_z` alan başına **isteğe bağlı**: girilmemişse ajanın genel
+  `plc.toprak_z` değeri geçerli. Kaplar aynı hizada değilse burada ayrışıyor;
+  ekim derinliği ve uç açıklığı bu yüzeyden hesaplanıyor.
+- `POST /api/izgara/onizle` yanıtında `alan_disi` var ama **reddetmiyor**:
+  ızgara noktaları `ızgara` etiketli, ille de bitki değil.
+
+Alanlar **ajanda değil sunucuda** duruyor (`sunucu/dikim.py`). Yasak bölgeler
+güvenlik kararı olduğu için ajanda; dikim alanı veri geçerliliği kararı ve
+ajan kopukken de işlemesi gerekiyor — ekim planı çoğu zaman robot kapalıyken
+yapılıyor. Robotun hareketini hâlâ ajan sınırlıyor (yumuşak sınırlar + yasak
+bölgeler); bu dosya oraya karışmıyor.
 
 ### `POST /api/toplu?jeton=PAROLA`
 
