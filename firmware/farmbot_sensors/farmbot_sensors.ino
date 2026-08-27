@@ -34,7 +34,7 @@
 // Donanımı taktığınızda YALNIZCA aşağıdaki satırı 1 yapın, başka hiçbir yere
 // dokunmanız gerekmiyor.
 #define SERVO_BAGLI   0      // SG-5010 vana servosu (D9)
-#define ROLELER_BAGLI 0      // su pompası / hava pompası / su vanası röleleri
+#define ROLELER_BAGLI 1      // su pompası / hava pompası / su vanası röleleri
 
 // --- PİN TANIMLAMALARI ---
 #define DHTPIN        2      // DHT veri ucu
@@ -44,9 +44,12 @@
 // Röleler. Çoğu röle kartı "aktif düşük" çalışır (LOW = çeker).
 // Karta LOW verince çekmiyor, HIGH verince çekiyorsa aşağıyı 0 yap.
 #define ROLE_AKTIF_LOW 1
-#define SU_POMPASI_PIN   4
-#define HAVA_POMPASI_PIN 5
-#define SU_VANASI_PIN    6
+/* Pinler sahadaki kabloya göre. Değiştirirken kartın üstüne bakın:
+ * yanlış pin, komutun sessizce hiçbir şey yapmaması demek — röle tıklamaz
+ * ve hata da vermez. */
+#define SU_POMPASI_PIN   4     // henüz bağlanmadı
+#define HAVA_POMPASI_PIN 8
+#define SU_VANASI_PIN    7
 
 // --- ÖLÇÜM ARALIĞI ---
 // DHT11 saniyede bir güncellenir; 2000 ms hem sensöre hem de grafiğe uygun.
