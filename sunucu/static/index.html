@@ -316,8 +316,12 @@
             <table class="veri">
               <thead>
                 <tr>
-                  <th>Saat</th><th>Sıcaklık</th><th>Hava nemi</th>
-                  <th>Toprak</th><th>Basınç</th><th>Vana</th>
+                  <!-- SÜTUN SAYISI GÖVDEYLE BİREBİR TUTMALI. Burada bir
+                       başlık eksik kalırsa tablo sessizce kayıyor: değerler
+                       yanlış başlığın altına düşüyor ve kimse fark etmiyor.
+                       Sıra app.js -> tabloCiz() ile aynı. -->
+                  <th>Saat</th><th>Sıcaklık</th><th>BMP °C</th><th>Hava nemi</th>
+                  <th>Yatak nemi</th><th>Uç probu</th><th>Basınç</th><th>Vana</th>
                 </tr>
               </thead>
               <tbody id="tablo-govde"></tbody>

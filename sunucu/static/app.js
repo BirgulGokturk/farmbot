@@ -36,6 +36,7 @@ const S = {
   sonKonum: null,
   ajanBagli: false,
   satirlar: [],          // tablo görünümü için son ölçümler
+  ucProbKip: "analog", // uçtaki prob analog mu dijital mi (Arduino bildiriyor)
   sonZaman: 0,
 };
 
@@ -1598,6 +1599,7 @@ async function gecmisYukle() {
     ts,
     hava_sicaklik: v.hava_sicaklik[i], bmp_sicaklik: v.bmp_sicaklik[i],
     hava_nem: v.hava_nem[i], toprak_nem: v.toprak_nem[i],
+    uc_toprak: (v.uc_toprak || [])[i],
     basinc: v.basinc[i], servo_aci: v.servo_aci[i],
   })).slice(-300);
   tabloCiz();
@@ -1633,6 +1635,17 @@ function noktaEkle(olcum) {
   it(S.grafikler.servo, [olcum.servo_aci]);
 }
 
+/* Uçtaki prob iki kipte de gelebiliyor: analogda 0-1023 ham değer, dijitalde
+ * yalnız 0/1. İkisini aynı biçimde göstermek yanlış olur — dijitalde "%100"
+ * yazmak sensörün söylemediği bir şeyi söylemek olurdu. Kipi Arduino kendisi
+ * bildiriyor (`uc_toprak_kip`); duymadıysak firmware'in şu anki varsayılanı
+ * olan analog kabul ediyoruz. */
+function ucProbMetin(ham) {
+  if (ham === null || ham === undefined) return "—";
+  if (S.ucProbKip === "dijital") return ham >= 0.5 ? "kuru" : "ıslak";
+  return sayi(toprakYuzde(ham), 0);
+}
+
 function tabloCiz() {
   const govde = $("#tablo-govde");
   const parcalar = [];
@@ -1642,6 +1655,7 @@ function tabloCiz() {
       `<tr><td>${new Date(s.ts * 1000).toLocaleString("tr-TR")}</td>` +
       `<td>${sayi(s.hava_sicaklik)}</td><td>${sayi(s.bmp_sicaklik)}</td>` +
       `<td>${sayi(s.hava_nem)}</td><td>${sayi(toprakYuzde(s.toprak_nem), 0)}</td>` +
+      `<td>${ucProbMetin(s.uc_toprak)}</td>` +
       `<td>${sayi(s.basinc)}</td><td>${sayi(s.servo_aci, 0)}</td></tr>`
     );
   }
@@ -1651,6 +1665,7 @@ function tabloCiz() {
 /* ----------------------------------------------------------------- kartlar */
 function kartlariGuncelle(o) {
   if (!o) return;
+  if (o.uc_toprak_kip) S.ucProbKip = o.uc_toprak_kip;
   if (kanallariTara(o)) gorunurlukGuncelle();
   $("#d-sicaklik").innerHTML = `${sayiCoz(o.hava_sicaklik)}<span class="birim">°C</span>`;
   $("#d-nem").innerHTML = `${sayiCoz(o.hava_nem)}<span class="birim">%</span>`;
