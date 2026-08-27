@@ -391,6 +391,56 @@
     s.textContent = `${acik}/${T.katmanlar.length}`;
   }
 
+  /* ==================================================== çizim kalitesi
+   *
+   * Süperörnekleme: tuvali ekrandan büyük çizip küçültmek, kenar
+   * merdivenlerini ve doku titremesini MSAA'nın tek başına alamadığı
+   * kadar alıyor. carpan 1,5 = 2,25 kat piksel.
+   *
+   * Bedeli ölçüldü (yazılım çizici, 40 bitki, 1600x950):
+   *   carpan 1,0 -> 1,5 kare/sn   carpan 1,5 -> 0,9 kare/sn
+   * Pi'de GPU var, ama yine de kendini geri çekme koyduk: yirmi dört
+   * çizilmiş karenin ORTANCASI 45 ms'yi geçerse çarpan 1'e, gölge
+   * haritası 1024'e iner. Özellik kaldırılmıyor, ölçüye göre kısılıyor.
+   * Ortanca seçildi çünkü tek bir takılma (katman açma, doku üretme)
+   * ortalamayı kaldırıp sahneyi boş yere düşürüyordu. */
+  const kalite = {
+    carpan: 1.5, golge: 2048, anizotropi: 8, geriCekildi: false, kare: [],
+  };
+  let isikRef = null;
+  let sonCizimZamani = 0, oncekiCizdi = false;
+
+  function pikselOraniUygula() {
+    // 2,5 tavan: ekranın kendi oranı 2 ise 1,5 çarpanla 3 olurdu, o da
+    // dört kat piksel demek — kazancı gözle görünmüyor, bedeli görünüyor.
+    const oran = Math.min((window.devicePixelRatio || 1) * kalite.carpan, 2.5);
+    ciz.setPixelRatio(oran);
+    return oran;
+  }
+
+  function cozunurlukGozet(sure) {
+    if (kalite.geriCekildi || kalite.carpan <= 1) return;
+    const k = kalite.kare;
+    k.push(sure);
+    if (k.length < 24) return;
+    if (k.length > 24) k.shift();
+    const sirali = k.slice().sort((a, b) => a - b);
+    const ortanca = sirali[sirali.length >> 1];
+    if (ortanca <= 45) return;
+    kalite.geriCekildi = true;
+    kalite.carpan = 1;
+    kalite.golge = 1024;
+    pikselOraniUygula();
+    if (isikRef) {
+      isikRef.shadow.mapSize.set(kalite.golge, kalite.golge);
+      if (isikRef.shadow.map) { isikRef.shadow.map.dispose(); isikRef.shadow.map = null; }
+    }
+    boyutla();
+    kirlet("kalite");
+    gunluk(`3B sahne yavaş çiziliyor (kare ${ortanca.toFixed(0)} ms) — `
+           + "çözünürlük düşürüldü", "uyari");
+  }
+
   /* ======================================================== sahne kurma */
   function sahneyiKur() {
     tuval = $("#tarla-tuval");
@@ -419,7 +469,16 @@
     kam.hedef = new THREE.Vector3(0, 0.15, 0);
 
     ciz = new THREE.WebGLRenderer({ canvas: tuval, antialias: true });
-    ciz.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    // Çarpan localStorage'dan okunuyor: ölçüm betikleri sabit bir
+    // değerle koşabilsin, kullanıcı da düşük makinede 1'e çekebilsin.
+    kalite.carpan = Number(localStorage.getItem("farmbot_cozunurluk")) || 1.5;
+    pikselOraniUygula();
+    // Anizotropik süzme: toprağa ve çime SIYRIK açıdan bakınca uzak
+    // pikseller bulanıklaşıyordu. Kartın verdiği azamiyi 16'da
+    // sınırlıyoruz (dokular.js), üstü ölçülebilir fark vermiyor.
+    if (window.FarmbotDoku && window.FarmbotDoku.anizotropi) {
+      kalite.anizotropi = window.FarmbotDoku.anizotropi(ciz.capabilities.getMaxAnisotropy());
+    }
     /* TON EŞLEME. Tek yönlü ışığı gölge çıkacak kadar kuvvetli tutmak
      * gerekiyor, ama doğrudan kırpınca çim de alüminyum da bembeyaz bir
      * leke oluyor.
@@ -468,7 +527,10 @@
     const isik = new THREE.DirectionalLight(0xffe6bb, 2.4);
     isik.position.set(3.0, 2.3, 1.5);
     isik.castShadow = true;
-    isik.shadow.mapSize.set(1024, 1024);
+    // 1024 -> 2048: gölge kenarındaki basamaklar makine profillerinde
+    // gözle görülüyordu. Yavaşlarsa cozunurlukGozet 1024'e geri indiriyor.
+    isik.shadow.mapSize.set(kalite.golge, kalite.golge);
+    isikRef = isik;
     // Gölge kamerası yalnız MAKİNEYİ kapsıyor. Önce ±1.6 m'ydi: 3,2 m'lik
     // alana yayılan 1024 piksel, yarım metrelik bir makinenin gölgesini
     // bulanık bir leke yapıyordu. ±0.75 m'de bir piksel ≈ 1,5 mm, kirişin
@@ -741,13 +803,22 @@
 
   function dongu() {
     requestAnimationFrame(dongu);
-    if (!T.gorunur || T.gorunum !== "3b") return;   // gizliyken GPU yakma
+    if (!T.gorunur || T.gorunum !== "3b") { oncekiCizdi = false; return; }
 
     // Hareket sürerken her kare çiziliyor; durunca ilk temiz karede bırakıyoruz.
     if (hareketVar()) T.kirli = true;
-    if (!T.kirli) return;                          // değişen bir şey yok
+    if (!T.kirli) { oncekiCizdi = false; return; }  // değişen bir şey yok
     T.kirli = false;
     T.cizilenKare++;
+    /* Kare süresi ARDIŞIK İKİ ÇİZİLMİŞ KARE arasından ölçülüyor.
+     * ciz.render() çevresinde ölçmek yanlış: WebGL çağrıları asenkron,
+     * o ölçüm yalnız CPU'nun komut yığma süresini veriyordu (2 ms gibi
+     * gerçek dışı sayılar). Boşta geçen karelerin arası sayılmasın diye
+     * oncekiCizdi bekçisi var. */
+    const simdi = performance.now();
+    if (oncekiCizdi) cozunurlukGozet(simdi - sonCizimZamani);
+    sonCizimZamani = simdi;
+    oncekiCizdi = true;
     // Gölge haritası yalnız GERÇEKTEN çizdiğimiz karede yenileniyor.
     // autoUpdate açık olsaydı boşta duran sahnede bile her karede yeniden
     // çizilirdi — kirli bayrağının bütün kazancını yerdi.
@@ -1580,6 +1651,13 @@
                // Pi'nin GPU'sunu tahmin eden asıl sayılar: üçgen ve çizim
                // çağrısı. Buradaki yazılım çizicinin kare hızı Pi'yi temsil
                // etmiyor, bu ikisi ediyor.
+               kalite: { carpan: kalite.carpan, golge: kalite.golge,
+                         anizotropi: kalite.anizotropi,
+                         geriCekildi: kalite.geriCekildi,
+                         ornek: kalite.kare.length,
+                         sonKare: kalite.kare.length
+                           ? Math.round(kalite.kare[kalite.kare.length - 1]) : null,
+                         pikselOrani: ciz ? ciz.getPixelRatio() : null },
                yuk: ciz ? { ucgen: ciz.info.render.triangles,
                             cagri: ciz.info.render.calls,
                             doku: ciz.info.memory.textures,

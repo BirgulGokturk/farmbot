@@ -94,11 +94,42 @@
     return c;
   }
 
+  /* ================================================= çözünürlük tablosu
+   *
+   * Tek yerden. Bir dokuyu büyütmek iki şey demek: ürettiği desen daha
+   * ince olabiliyor (gerçekçilik) VE aynı desen ekranda daha az
+   * büyütülüyor (keskinlik). İkincisi bu sahnede daha önemli — zemin
+   * dokusu 150 kez tekrarlanıyor ve yakın plana geldiğinde her tekrar
+   * ekranda yüzlerce piksele yayılıyordu.
+   *
+   * Üretim maliyeti dört katına çıkıyor ama BİR KEZ, açılışta ödeniyor.
+   * Ölçüldü (bkz. commit notu): toplam üretim 0,25 sn -> 0,72 sn.
+   * GPU tarafında maliyet doku belleği: 1024² RGBA + mipmap ≈ 5,5 MB,
+   * ikisi 11 MB. Pi'nin paylaşımlı belleğinde sorun değil.
+   */
+  const BOY = {
+    toprak: 1024,     // yatağın üstü: kameranın en çok yaklaştığı yüzey
+    cim: 1024,        // ekranı kaplıyor, en çok tekrarlanan doku
+    gok: 512,         // dikey gradyan, ince desen yok — 512 fazlasıyla yeter
+    firca: 512,       // fırça izi ince çizgi, çözünürlükten en çok o kazanıyor
+    cicek: 128,       // ekranda ~10 px, ama alfa eşiğinde kenar temizliği önemli
+  };
+
+  /* Anizotropik süzme. Zemin düzlemi kameraya göre çok yatık duruyor;
+   * o açıda normal mipmap doğru olan mip seviyesini SEÇEMİYOR ve uzak
+   * çim ya bulanık ya titrek çıkıyor. Anizotropi tam da bunu düzeltiyor
+   * ve bu sahnede çözünürlük artışından daha çok fark ediyor.
+   *
+   * Değeri çizici veriyor (tarla.js kurarken yazıyor): sabit bir sayı
+   * yazmak, desteklemeyen bir GPU'da sessizce kırpılmak ya da
+   * destekleyende boşuna düşük kalmak demek. */
+  let azamiAnizotropi = 8;
+
   function dokuYap(THREE, c, tekrar) {
     const d = new THREE.CanvasTexture(c);
     d.wrapS = d.wrapT = THREE.RepeatWrapping;
     if (tekrar) d.repeat.set(tekrar[0], tekrar[1]);
-    d.anisotropy = 8;
+    d.anisotropy = azamiAnizotropi;
     return d;
   }
 
@@ -180,7 +211,7 @@
    * yüzey doğru renkte ama yassı görünüyor.
    */
   function toprakDoku(THREE, en) {
-    en = en || 512;
+    en = en || BOY.toprak;
     const kesek = kesekAlani(en, tohumla("toprak-kesek"));
     const toz = alan(en, 3, tohumla("toprak-toz"), 3);     // ince tanecik
     const kizil = alan(en, 3, tohumla("toprak-kizil"));      // kızılımsı lekeler
@@ -280,7 +311,7 @@
    * yoksa zeminde her tekrar sınırında kesik bir çizgi ızgarası çıkıyor.
    */
   function cimDoku(THREE, en) {
-    en = en || 512;
+    en = en || BOY.cim;
     const rast = uretec(tohumla("cim-bicak"));
     // Alanların hepsi YÜKSEK frekanstan başlıyor (bkz. alan/bas): büyük
     // dalga bırakırsak doku 150 kez tekrarlandığında zeminde damalı bir
@@ -316,7 +347,7 @@
     const cizgi = (x0, y0, x1, y1, renk, kalin) => {
       g.strokeStyle = renk; g.lineWidth = kalin;
       const kay = [[0, 0]];
-      const pay = 16;
+      const pay = 16 * ol;
       if (x0 < pay || x1 < pay) kay.push([en, 0]);
       if (x0 > en - pay || x1 > en - pay) kay.push([-en, 0]);
       if (y0 < pay || y1 < pay) kay.push([0, en]);
@@ -330,7 +361,12 @@
     };
 
     const BASKIN = -1.05;                 // baskın yön (radyan)
-    const adet = Math.round((en * en) / 42);
+    /* Bıçak sayısı ve kalınlığı doku boyuna ORANTILI. Sabit piksel
+     * ölçüsü bırakılsaydı 1024'te bıçaklar yarı yarıya incelir, doku
+     * daha keskin değil daha TİTREK olurdu: mipmap 1 pikselden ince
+     * çizgiyi düzgün ortalayamıyor ve uzakta parazit gibi kaynıyor. */
+    const ol = en / 512;
+    const adet = Math.round((en * en) / (42 * ol * ol));
     for (let i = 0; i < adet; i++) {
       const x = rast() * en, y = rast() * en;
       // Çıplak lekede bıçak seyrek
@@ -338,7 +374,7 @@
       const aci = BASKIN
         + (ornek(yon, x, y) - 0.5) * 1.30      // yavaş değişen sapma
         + (rast() - 0.5) * 0.80;               // bıçağa özel sapma
-      const boy = 6 + rast() * 9;
+      const boy = (6 + rast() * 9) * ol;
       const bx = Math.cos(aci) * boy, by = Math.sin(aci) * boy;
       const kuruMu = ornek(kuru, x, y) > 0.60 && rast() < 0.80;
       const s = rast();
@@ -365,8 +401,8 @@
         dip = `rgb(${dr | 0},${dg | 0},${db | 0})`;
         uc = `rgb(${ur | 0},${ug | 0},${ub | 0})`;
       }
-      cizgi(x, y, x + bx, y + by, dip, 1.6);
-      cizgi(x + bx * 0.42, y + by * 0.42, x + bx, y + by, uc, 1.1);
+      cizgi(x, y, x + bx, y + by, dip, 1.6 * ol);
+      cizgi(x + bx * 0.42, y + by * 0.42, x + bx, y + by, uc, 1.1 * ol);
     }
     return { kanvas: c };
   }
@@ -387,7 +423,7 @@
    * bir profilde de her yüzey ayrı fırçalanmış olur.
    */
   function fircaliDoku(en) {
-    en = en || 256;
+    en = en || BOY.firca;
     const rast = uretec(tohumla("firca"));
     const c = kanvas(en), g = c.getContext("2d");
     const im = g.createImageData(en, en);
@@ -404,7 +440,7 @@
     }
     // Çizgi boyunca da çok hafif bir değişim: kusursuz düz çizgi
     // bilgisayar işi gibi duruyor.
-    const boyunca = alan(en, 2, tohumla("firca-boy"), 2);
+    const boyunca = alan(en, 2, tohumla("firca-boy"), 2 + Math.round(Math.log2(en / 256)));
     for (let y = 0; y < en; y++) {
       for (let x = 0; x < en; x++) {
         const i = y * en + x;
@@ -432,7 +468,7 @@
    * pahalı iş olurdu.
    */
   function cicekDoku(en) {
-    en = en || 64;
+    en = en || BOY.cicek;
     const c = kanvas(en), g = c.getContext("2d");
     const o = en / 2, R = en * 0.44;
     g.clearRect(0, 0, en, en);
@@ -470,7 +506,7 @@
    * makinenin bir yerde DURDUĞU hissini veren şey.
    */
   function gokyuzuDoku(en) {
-    en = en || 256;
+    en = en || BOY.gok;
     const c = kanvas(en), g = c.getContext("2d");
     const gr = g.createLinearGradient(0, 0, 0, en);
     gr.addColorStop(0.00, "#1d2b3a");   // zenit
@@ -489,10 +525,21 @@
   window.FarmbotDoku = {
     tohumla, uretec, alan,
 
+    /** Çizicinin desteklediği azami anizotropiyi bildirir. Dokular
+     *  üretilmeden ÖNCE çağrılmalı; sonra çağrılırsa üretilmiş dokular
+     *  eski değerde kalır. */
+    anizotropi(deger) {
+      azamiAnizotropi = Math.max(1, Math.min(16, Math.round(deger) || 1));
+      return azamiAnizotropi;
+    },
+
+    /** Doku çözünürlük tablosu — ölçüm ve tanı için okunabilir. */
+    boylar: BOY,
+
     /** Toprak: {harita, kabartma}. Yatak ölçüsüne göre tekrar sayısı. */
     toprak(THREE, tekrarX, tekrarY) {
       if (!kutu.toprak) {
-        const veri = toprakDoku(THREE, 512);
+        const veri = toprakDoku(THREE, BOY.toprak);
         kutu.toprak = { veri, kabartmaKanvas: toprakKabartma(veri) };
       }
       const harita = dokuYap(THREE, kutu.toprak.veri.kanvas, [tekrarX, tekrarY]);
@@ -503,7 +550,7 @@
     /** Çim zemin dokusu: {harita}. 512 — bıçak izleri 256'da tanınmıyor,
      *  tek tek pikselden ibaret kalıyorlar. */
     cim(THREE, tekrar) {
-      if (!kutu.cim) kutu.cim = cimDoku(THREE, 512);
+      if (!kutu.cim) kutu.cim = cimDoku(THREE, BOY.cim);
       return { harita: dokuYap(THREE, kutu.cim.kanvas, [tekrar, tekrar]) };
     },
 
@@ -511,7 +558,7 @@
      *  dokuyu paylaşıyor — tek doku, tek yükleme. */
     fircali(THREE) {
       if (!kutu.firca) {
-        kutu.firca = dokuYap(THREE, fircaliDoku(256), [3, 3]);
+        kutu.firca = dokuYap(THREE, fircaliDoku(BOY.firca), [3, 3]);
       }
       return kutu.firca;
     },
@@ -519,8 +566,8 @@
     /** Çiçek başı dokusu — gri tonlu, rengi köşe renginden geliyor. */
     cicek(THREE) {
       if (!kutu.cicekDoku) {
-        const d = new THREE.CanvasTexture(cicekDoku(64));
-        d.anisotropy = 4;
+        const d = new THREE.CanvasTexture(cicekDoku(BOY.cicek));
+        d.anisotropy = Math.min(4, azamiAnizotropi);
         kutu.cicekDoku = d;
       }
       return kutu.cicekDoku;
@@ -528,7 +575,7 @@
 
     /** Gökyüzü gradyanı — kubbe için. */
     gokyuzu(THREE) {
-      if (!kutu.gok) kutu.gok = gokyuzuDoku(256);
+      if (!kutu.gok) kutu.gok = gokyuzuDoku(BOY.gok);
       const d = new THREE.CanvasTexture(kutu.gok);
       d.mapping = THREE.EquirectangularReflectionMapping;
       return d;
