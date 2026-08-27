@@ -123,6 +123,22 @@ bool bmpVar = false;
 unsigned long sonOlcum = 0;
 String girisTamponu = "";
 
+/* Röleyi darbe atmadan çıkışa alır: önce kapalı seviyeyi yazıp sonra
+ * OUTPUT yapıyoruz. Ters sırada pin bir an LOW kalıyor ve aktif-LOW kartta
+ * röle çekiyor. */
+void roleKapaliDogsun(int pin) {
+#if ROLELER_BAGLI
+#if ROLE_AKTIF_LOW
+  digitalWrite(pin, HIGH);
+#else
+  digitalWrite(pin, LOW);
+#endif
+  pinMode(pin, OUTPUT);
+#else
+  (void)pin;
+#endif
+}
+
 /* Rölelerin GERÇEK durumu. Panel bunu kendi tarafında tahmin ediyordu ve
  * tahmin bir kez yanlışa düşünce düzelmiyordu: kart yeniden başladığında
  * setup bütün röleleri kapatıyor, panel hâlâ "açık" sanıyor, bir sonraki
@@ -259,9 +275,15 @@ void setup() {
 #endif
 
 #if ROLELER_BAGLI
-  pinMode(SU_POMPASI_PIN, OUTPUT);
-  pinMode(HAVA_POMPASI_PIN, OUTPUT);
-  pinMode(SU_VANASI_PIN, OUTPUT);
+  /* SIRA ÖNEMLİ: önce seviye, sonra OUTPUT. pinMode bir pini çıkışa
+   * alırken LOW'dan başlatıyor; röle kartı aktif-LOW olduğu için bu, her
+   * açılışta üç rölenin de bir an çekmesi demek. Kart bir sebeple sürekli
+   * yeniden başlıyorsa dışarıdan "röleler kendi kendine açılıp kapanıyor"
+   * gibi görünüyor — ve su vanası için bu, bir anlık gerçek su demek.
+   * digitalWrite'ı önce yazınca pin çıkışa HIGH (röle kapalı) doğuyor. */
+  roleKapaliDogsun(SU_POMPASI_PIN);
+  roleKapaliDogsun(HAVA_POMPASI_PIN);
+  roleKapaliDogsun(SU_VANASI_PIN);
   roleYaz(SU_POMPASI_PIN, false);
   roleYaz(HAVA_POMPASI_PIN, false);
   roleYaz(SU_VANASI_PIN, false);
@@ -373,6 +395,15 @@ void komutIsle(String komut) {
     }
     String ad = komut.substring(bosluk1 + 1, bosluk2);
     bool durum = komut.substring(bosluk2 + 1).toInt() != 0;
+    /* Elle verilen komut, otomatik kipin sürdüğü çıkışa geliyorsa kipi
+     * manuele düşürüyoruz — AC/KAPA'nın yaptığının aynısı. Yoksa bir
+     * sonraki ölçümde otomatik karar üstüne yazıyor ve düğme kendiliğinden
+     * geri dönüyor; dışarıdan "röle kafasına göre çalışıyor" görünüyor. */
+    if (otoKip && ad == cikisAdi(otoCikis)) {
+      otoKip = false;
+      otoAcik = false;
+      Serial.println("KOMUT: Elle mudahale -> MANUEL kipe gecildi");
+    }
     if (ad == "su_pompasi")        roleYaz(SU_POMPASI_PIN, durum);
     else if (ad == "hava_pompasi") roleYaz(HAVA_POMPASI_PIN, durum);
     else if (ad == "su_vanasi")    roleYaz(SU_VANASI_PIN, durum);
@@ -431,7 +462,12 @@ void loop() {
   // Hangi çıkışın sürüleceği `otoCikis` ile seçilir; "yok" seçilirse
   // otomatik kip hiçbir şeye dokunmaz (kararın tamamı panelde kalır).
   if (otoKip && otoCikis != CIKIS_YOK) {
-    bool gerek = (yagmurDegeri < suEsikDegeri);   // ham değer düştükçe toprak ıslak
+    /* YÖN ÖNEMLİ. Dirençli probda ham değer KURUDUKÇA YÜKSELİR; panel ise
+     * yüzde gösteriyor (%= (1023-ham)/1023) ve "bu nemin ALTINDA aç" diyor.
+     * Düşük nem = yüksek ham değer, yani eşiği AŞINCA sulamak gerekiyor.
+     * Burada karşılaştırma ters yazılmıştı: toprak ıslakken suluyor,
+     * kuruyunca kapatıyordu. */
+    bool gerek = (yagmurDegeri > suEsikDegeri);
     if (gerek != otoAcik) {
       otoCikisYaz(otoCikis, gerek);
       otoAcik = gerek;
