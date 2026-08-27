@@ -45,14 +45,17 @@
  * ise makinenin gittiği her yerde ölçüm alabiliyor. "Bitkiye git, nemini
  * ölç, ona göre sula" mantığı buna dayanacak.
  *
- * DİKKAT — D13 sensörün DİJİTAL çıkışı: yalnızca "eşiğin üstünde mi
- * altında mı" diyor ve eşiği modülün üstündeki potansiyometre belirliyor.
- * Yani 0 ya da 1. Yüzde okumak istiyorsak probun ANALOG ucunu A1'e alıp
- * aşağıdaki UC_TOPRAK_ANALOG'u 1 yapmak gerekiyor; nem miktarına göre
- * karar veren bir sulama ancak o zaman anlamlı olur.
+ * Prob A2'ye, yani ANALOG uca bağlı: 0-1023 arası gerçek bir değer
+ * okunuyor. Dijital çıkış (modüldeki DO ucu) yalnızca "eşiğin üstünde mi
+ * altında mı" der ve eşiği modülün potansiyometresi belirler; onunla
+ * "ne kadar kuru" bilinemediği için nem miktarına göre sulama yazılamaz.
+ * Analog uçta o sınır yok.
+ *
+ * Ölçek: kuru toprakta değer YÜKSEK, ıslakta düşük (dirençli prob).
+ * Yüzdeye çevirmek panelin işi, ham değer olduğu gibi gönderiliyor.
  */
-#define UC_TOPRAK_PIN     13
-#define UC_TOPRAK_ANALOG  0    // 1: A1'den analog oku (0-1023) · 0: dijital (0/1)
+#define UC_TOPRAK_PIN     A2
+#define UC_TOPRAK_ANALOG  1    // 1: analog oku (0-1023) · 0: dijital (0/1)
 #define SERVO_PIN     9      // SG-5010
 
 // Röleler. Çoğu röle kartı "aktif düşük" çalışır (LOW = çeker).
@@ -225,10 +228,8 @@ void setup() {
   Serial.println("Sistem Baslatiliyor...");
 
 #if !UC_TOPRAK_ANALOG
-  /* UYARI: D13'te Uno'nun dahili LED'i ve seri direnci var. Pin GİRİŞ
-   * olarak kullanıldığında bu devre pini hafifçe aşağı çekiyor ve
-   * sensörün "kuru" sinyali bazen okunmuyor. Okuma kararsızsa probu
-   * başka bir dijital pine (örneğin D12) ya da analog uca alın. */
+  /* Dijital kipte pin modu gerekiyor. Analog uçta gerekmiyor: analogRead
+   * pini kendi ayarlıyor ve pinMode çağırmak okumayı bozabiliyor. */
   pinMode(UC_TOPRAK_PIN, INPUT);
 #endif
 
