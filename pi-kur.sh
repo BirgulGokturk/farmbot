@@ -197,8 +197,11 @@ BIRIM
 
 # Betik servisleri yeniden baslatiyor; parolasiz sudo yalnizca bu iki komut
 # icin veriliyor, genel sudo yetkisi acilmiyor.
+# stop/start yalnız farmbot-ajan için: arduino-yukle.sh yükleme süresince
+# seri portu serbest bırakmak zorunda. Kural yine tek tek komutlara
+# bağlı — genel bir systemctl yetkisi verilmiyor.
 sudo tee /etc/sudoers.d/farmbot-guncelle >/dev/null <<KURAL
-$KULLANICI ALL=(root) NOPASSWD: /usr/bin/systemctl restart farmbot-sunucu, /usr/bin/systemctl restart farmbot-ajan, /usr/bin/systemctl restart farmbot-sunucu farmbot-ajan
+$KULLANICI ALL=(root) NOPASSWD: /usr/bin/systemctl restart farmbot-sunucu, /usr/bin/systemctl restart farmbot-ajan, /usr/bin/systemctl restart farmbot-sunucu farmbot-ajan, /usr/bin/systemctl stop farmbot-ajan, /usr/bin/systemctl start farmbot-ajan
 KURAL
 sudo chmod 440 /etc/sudoers.d/farmbot-guncelle
 
