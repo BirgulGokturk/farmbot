@@ -1732,8 +1732,13 @@ function donanimGuncelle(o) {
   // Otomatik sulama çıkış listesi: bağlı olmayanlar seçilemesin.
   const secim = $("#oto-cikis");
   if (!secim || o.servo_var === undefined) return;
-  const bagli = { servo: Number(o.servo_var) === 1, su_vanasi: Number(o.role_var) === 1,
-                  su_pompasi: Number(o.role_var) === 1, yok: true };
+  // Su pompası ayrı: röle kartı takılıyken bile pompanın ucu bağlanmamış
+  // olabiliyor. `pompa_var` gelmiyorsa (eski firmware) eski davranışı
+  // koruyoruz — yoksa çalışan bir kurulumda çıkış birden kaybolurdu.
+  const roleVar = Number(o.role_var) === 1;
+  const pompaVar = o.pompa_var === undefined ? roleVar : Number(o.pompa_var) === 1;
+  const bagli = { servo: Number(o.servo_var) === 1, su_vanasi: roleVar,
+                  su_pompasi: pompaVar, yok: true };
   Array.from(secim.options).forEach((s) => {
     const acik = bagli[s.value];
     s.disabled = !acik;

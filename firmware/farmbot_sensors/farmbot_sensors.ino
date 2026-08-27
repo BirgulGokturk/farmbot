@@ -34,7 +34,11 @@
 // Donanımı taktığınızda YALNIZCA aşağıdaki satırı 1 yapın, başka hiçbir yere
 // dokunmanız gerekmiyor.
 #define SERVO_BAGLI   0      // SG-5010 vana servosu (D9)
-#define ROLELER_BAGLI 1      // su pompası / hava pompası / su vanası röleleri
+#define ROLELER_BAGLI 1      // röle kartı takılı mı (hava pompası D8, su vanası D7)
+// Su pompası röle kartında bir yer kaplıyor ama ucu henüz bağlanmadı. Röle
+// kartı takılı diye onu da "bağlı" saymak, panelde seçilebilen ama açıldığında
+// hiçbir şey yapmayan bir çıkış demek olurdu; kartı taktığınızda 1 yapın.
+#define SU_POMPASI_BAGLI 0
 
 // --- PİN TANIMLAMALARI ---
 #define DHTPIN        2      // DHT veri ucu
@@ -45,7 +49,7 @@
  * ise makinenin gittiği her yerde ölçüm alabiliyor. "Bitkiye git, nemini
  * ölç, ona göre sula" mantığı buna dayanacak.
  *
- * Prob A2'ye, yani ANALOG uca bağlı: 0-1023 arası gerçek bir değer
+ * Prob A1'e, yani ANALOG uca bağlı: 0-1023 arası gerçek bir değer
  * okunuyor. Dijital çıkış (modüldeki DO ucu) yalnızca "eşiğin üstünde mi
  * altında mı" der ve eşiği modülün potansiyometresi belirler; onunla
  * "ne kadar kuru" bilinemediği için nem miktarına göre sulama yazılamaz.
@@ -54,7 +58,7 @@
  * Ölçek: kuru toprakta değer YÜKSEK, ıslakta düşük (dirençli prob).
  * Yüzdeye çevirmek panelin işi, ham değer olduğu gibi gönderiliyor.
  */
-#define UC_TOPRAK_PIN     A2
+#define UC_TOPRAK_PIN     A1   // A0 yağmur sensörünün, A4/A5 I2C'nin
 #define UC_TOPRAK_ANALOG  1    // 1: analog oku (0-1023) · 0: dijital (0/1)
 #define SERVO_PIN     9      // SG-5010
 
@@ -164,6 +168,7 @@ void otoCikisYaz(byte cikis, bool ac) {
 bool cikisBagli(byte c) {
   if (c == CIKIS_YOK) return true;
   if (c == CIKIS_SERVO) return SERVO_BAGLI;
+  if (c == CIKIS_SU_POMPASI) return ROLELER_BAGLI && SU_POMPASI_BAGLI;
   return ROLELER_BAGLI;
 }
 
@@ -471,6 +476,10 @@ void loop() {
   Serial.print(SERVO_BAGLI);
   Serial.print(",\"role_var\":");
   Serial.print(ROLELER_BAGLI);
+  /* Röle kartı takılı olsa da su pompasının ucu ayrıca bağlanıyor; panel
+   * ikisini karıştırmasın diye ayrı bildiriliyor. */
+  Serial.print(",\"pompa_var\":");
+  Serial.print(ROLELER_BAGLI && SU_POMPASI_BAGLI);
   Serial.print(",\"esik\":");
   Serial.print(suEsikDegeri);
   Serial.print(",\"oto_acik\":");
