@@ -103,6 +103,7 @@ bool otoAcik  = false;        // otomatik kip şu an çıkışı açtı mı
 #define EE_IMZA        0x7B
 #define EE_ESIK_ADRES  1
 #define EE_CIKIS_ADRES 3
+#define EE_KUTUP_ADRES 4
 
 Adafruit_BMP085 bmp;
 
@@ -123,16 +124,14 @@ bool bmpVar = false;
 unsigned long sonOlcum = 0;
 String girisTamponu = "";
 
+extern bool roleAktifLow;   // aşağıda tanımlı; roleKapaliDogsun ondan önce geliyor
+
 /* Röleyi darbe atmadan çıkışa alır: önce kapalı seviyeyi yazıp sonra
  * OUTPUT yapıyoruz. Ters sırada pin bir an LOW kalıyor ve aktif-LOW kartta
  * röle çekiyor. */
 void roleKapaliDogsun(int pin) {
 #if ROLELER_BAGLI
-#if ROLE_AKTIF_LOW
-  digitalWrite(pin, HIGH);
-#else
-  digitalWrite(pin, LOW);
-#endif
+  digitalWrite(pin, roleAktifLow ? HIGH : LOW);
   pinMode(pin, OUTPUT);
 #else
   (void)pin;
@@ -145,6 +144,13 @@ void roleKapaliDogsun(int pin) {
  * tıklama "kapat" gönderiyor ve hiçbir şey olmuyor. Doğruyu bilen taraf
  * kart; artık her ölçüm satırında kendisi söylüyor. */
 bool roleAcik[3] = { false, false, false };
+/* Röle kartının kutuplaması karttan karta değişiyor: çoğu aktif-LOW ama
+ * optokuplörsüz/MOSFET'li kartlar aktif-HIGH. Yanlış seçim sessiz bir hata
+ * değil, TERS bir sistem: panel "kapalı" derken röle çekili kalıyor, "aç"
+ * deyince kapanıyor. Bunu sabit yazmak her deneme için yeniden yükleme
+ * demekti; artık EEPROM'da ve panelden değiştirilebiliyor.
+ * ROLE_AKTIF_LOW yalnızca ilk açılıştaki varsayılan. */
+bool roleAktifLow = ROLE_AKTIF_LOW;
 #define ROLE_SU_POMPASI   0
 #define ROLE_HAVA_POMPASI 1
 #define ROLE_SU_VANASI    2
@@ -158,11 +164,8 @@ void roleYaz(int pin, bool acik) {
   if (pin == SU_POMPASI_PIN)        roleAcik[ROLE_SU_POMPASI]   = acik;
   else if (pin == HAVA_POMPASI_PIN) roleAcik[ROLE_HAVA_POMPASI] = acik;
   else if (pin == SU_VANASI_PIN)    roleAcik[ROLE_SU_VANASI]    = acik;
-#if ROLE_AKTIF_LOW
-  digitalWrite(pin, acik ? LOW : HIGH);
-#else
-  digitalWrite(pin, acik ? HIGH : LOW);
-#endif
+  digitalWrite(pin, acik ? (roleAktifLow ? LOW : HIGH)
+                        : (roleAktifLow ? HIGH : LOW));
 #endif
 }
 
@@ -209,6 +212,21 @@ void otoCikisSec(byte yeni) {
   EEPROM.update(EE_CIKIS_ADRES, otoCikis);
 }
 
+void kutupYaz(bool aktifLow) {
+  if (aktifLow == roleAktifLow) return;
+  /* Kutuplama değişince pinlerdeki seviye AYNI kalırsa röleler ters döner.
+   * Önce hepsini kapatıyoruz, sonra yeni kutuplamayla tekrar kapalı
+   * yazıyoruz — geçiş anında hiçbir şey açılmasın. */
+  roleYaz(SU_POMPASI_PIN, false);
+  roleYaz(HAVA_POMPASI_PIN, false);
+  roleYaz(SU_VANASI_PIN, false);
+  roleAktifLow = aktifLow;
+  roleYaz(SU_POMPASI_PIN, false);
+  roleYaz(HAVA_POMPASI_PIN, false);
+  roleYaz(SU_VANASI_PIN, false);
+  EEPROM.update(EE_KUTUP_ADRES, roleAktifLow ? 1 : 0);
+}
+
 void esikYaz(int yeni) {
   suEsikDegeri = constrain(yeni, 0, 1023);
   EEPROM.update(EE_ESIK_ADRES, suEsikDegeri & 0xFF);
@@ -221,8 +239,10 @@ void ayarlariOku() {
     EEPROM.update(EE_IMZA_ADRES, EE_IMZA);
     esikYaz(suEsikDegeri);
     EEPROM.update(EE_CIKIS_ADRES, otoCikis);
+    EEPROM.update(EE_KUTUP_ADRES, roleAktifLow ? 1 : 0);
     return;
   }
+  roleAktifLow = EEPROM.read(EE_KUTUP_ADRES) != 0;
   suEsikDegeri = EEPROM.read(EE_ESIK_ADRES) | (EEPROM.read(EE_ESIK_ADRES + 1) << 8);
   suEsikDegeri = constrain(suEsikDegeri, 0, 1023);
   byte c = EEPROM.read(EE_CIKIS_ADRES);
@@ -274,6 +294,12 @@ void setup() {
   Serial.println("BILGI: Vana servosu bagli degil (SERVO_BAGLI 0)");
 #endif
 
+/* Rölelere dokunmadan ÖNCE okunuyor: kutuplama EEPROM'dan geliyor ve
+ * pinler ona göre kapalı doğmalı. Sonra okursak pinler bir an yanlış
+ * kutupla, yani çekili durur. Koşulun dışında, çünkü eşik ve otomatik
+ * çıkış ayarı röleler bağlı olmasa da okunmalı. */
+  ayarlariOku();
+
 #if ROLELER_BAGLI
   /* SIRA ÖNEMLİ: önce seviye, sonra OUTPUT. pinMode bir pini çıkışa
    * alırken LOW'dan başlatıyor; röle kartı aktif-LOW olduğu için bu, her
@@ -291,11 +317,12 @@ void setup() {
   Serial.println("BILGI: Roleler bagli degil (ROLELER_BAGLI 0)");
 #endif
 
-  ayarlariOku();
   Serial.print("Ayarlar: esik=");
   Serial.print(suEsikDegeri);
   Serial.print(" otocikis=");
-  Serial.println(cikisAdi(otoCikis));
+  Serial.print(cikisAdi(otoCikis));
+  Serial.print(" role_kutup=");
+  Serial.println(roleAktifLow ? "aktif-LOW" : "aktif-HIGH");
 
   dhtSec();
   Serial.print("DHT tipi: ");
@@ -385,6 +412,14 @@ void komutIsle(String komut) {
     Serial.println(cikisAdi(otoCikis));
   } else if (buyuk == "OKU") {
     sonOlcum = 0;               // bir sonraki loop'ta hemen ölçsün
+  } else if (buyuk.startsWith("ROLEKUTUP")) {
+    // "ROLEKUTUP 1" -> aktif-LOW, "ROLEKUTUP 0" -> aktif-HIGH.
+    // startsWith("ROLE") bunu da yakalayacağı için ondan ÖNCE bakılıyor.
+    int bosluk = komut.indexOf(' ');
+    if (bosluk < 0) { Serial.println("HATA: ROLEKUTUP <0|1>"); return; }
+    kutupYaz(komut.substring(bosluk + 1).toInt() != 0);
+    Serial.print("KOMUT: Role kutuplamasi -> ");
+    Serial.println(roleAktifLow ? "aktif-LOW" : "aktif-HIGH");
   } else if (buyuk.startsWith("ROLE")) {
     // "ROLE su_pompasi 1"  (ad küçük harf gelir, buyuk kopyası büyük)
     int bosluk1 = komut.indexOf(' ');
@@ -538,6 +573,8 @@ void loop() {
   /* Kartın açık kaldığı süre. Geriye giderse kart yeniden başlamıştır —
    * pompa çekişinde besleme çökerse tam bunu görüyoruz ve panel sebebi
    * "bilinmiyor" demek yerine adıyla söyleyebiliyor. */
+  Serial.print(",\"role_aktif_low\":");
+  Serial.print(roleAktifLow);
   Serial.print(",\"calisma_sn\":");
   Serial.print(millis() / 1000UL);
   Serial.print(",\"esik\":");

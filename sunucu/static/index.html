@@ -477,6 +477,18 @@
             <button class="dugme role" data-role="su_vanasi">Su vanası</button>
           </div>
           <p class="ikincil gizli" id="role-not"></p>
+
+          <!-- Kutuplama. Röle kartları hem aktif-LOW hem aktif-HIGH
+               olabiliyor ve yanlış seçim sessiz bir hata değil: sistem
+               tamamen ters çalışıyor. Sketch'i değiştirip yeniden
+               yüklemek yerine buradan denenebiliyor; ayar kartın
+               EEPROM'unda kalıyor. -->
+          <label class="onay"><input type="checkbox" id="role-kutup" checked>
+            Röle kartı aktif-LOW</label>
+          <p class="ikincil">
+            Düğmeler ters çalışıyorsa — "kapalı"da röle çekili kalıyor,
+            "aç"ta kapanıyorsa — bu kutuyu değiştirin.
+          </p>
         </div>
       </section>
     </section>

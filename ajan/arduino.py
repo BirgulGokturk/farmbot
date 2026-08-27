@@ -516,7 +516,10 @@ class SahteArduino(Arduino):
                         "role_var": self.role_var,
                         "esik": self.esik,
                         "oto_cikis": self.oto_cikis,
-                        "oto_acik": 1 if (self.oto_cikis != "yok" and toprak < self.esik) else 0,
+                        # Ham deger kurudukca YUKSELIYOR: esigi asinca sulanir.
+                        # Firmware ile ayni yonde olmali, yoksa sahte kipte
+                        # panel dogru gorunup gercekte ters calisir.
+                        "oto_acik": 1 if (self.oto_cikis != "yok" and toprak > self.esik) else 0,
                         "kip": self.kip,
                     }
                 )

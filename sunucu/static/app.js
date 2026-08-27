@@ -1725,6 +1725,12 @@ function roleDurumSenkron(o) {
     }
     S.arduinoCalisma = sn;
   }
+  // Kutuplama kutusu da kartın söylediğini gösteriyor; kullanıcı o an
+  // kutuyu değiştiriyorsa altından çekmiyoruz.
+  const kutu = $("#role-kutup");
+  if (kutu && o.role_aktif_low !== undefined && document.activeElement !== kutu) {
+    kutu.checked = Number(o.role_aktif_low) === 1;
+  }
   const alanlar = { su_pompasi: "r_su_pompasi", hava_pompasi: "r_hava_pompasi",
                     su_vanasi: "r_su_vanasi" };
   for (const [ad, alan] of Object.entries(alanlar)) {
@@ -2392,6 +2398,16 @@ function olaylariBagla() {
     await komutGonder("oto_esik", { ham });
     S.otoDuzenleniyor = false;
   };
+
+  const kutupKutu = $("#role-kutup");
+  if (kutupKutu) {
+    kutupKutu.onchange = async () => {
+      const sonuc = await komutGonder("role_kutup", { aktif_low: kutupKutu.checked });
+      // Kart kabul etmediyse kutuyu geri al: ekranda kartta olmayan bir
+      // ayarın işaretli durması, sonraki her denemeyi yanlış yorumlatır.
+      if (!sonuc || !sonuc.ok) kutupKutu.checked = !kutupKutu.checked;
+    };
+  }
 
   $$(".role").forEach((dugme) => {
     dugme.onclick = async () => {

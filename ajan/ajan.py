@@ -361,6 +361,15 @@ class Ajan:
                 await asyncio.to_thread(self.arduino.komut, f"OTOCIKIS {cikis}")
                 return {"ok": True, "mesaj": f"Otomatik sulama çıkışı: {cikis}"}
 
+            if ad == "role_kutup":
+                # Röle kartının kutuplaması. Yanlışsa sistem TERS çalışıyor:
+                # panel "kapalı" derken röle çekili kalıyor. Sabit yazmak her
+                # deneme için yeniden yükleme demekti; kart EEPROM'da tutuyor.
+                aktif_low = 1 if arg.get("aktif_low", True) else 0
+                await asyncio.to_thread(self.arduino.komut, f"ROLEKUTUP {aktif_low}")
+                return {"ok": True, "mesaj": "Röle kutuplaması: "
+                        + ("aktif-LOW" if aktif_low else "aktif-HIGH")}
+
             if ad == "role":
                 role_adi = str(arg.get("ad", ""))
                 if role_adi not in ("su_pompasi", "hava_pompasi", "su_vanasi"):

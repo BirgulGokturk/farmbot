@@ -83,6 +83,7 @@ IZINLI_KOMUTLAR = {
     "oto_esik",      # {"ham": 600}                  — otomatik sulama eşiği (ADC)
     "oto_cikis",     # {"ad": "yok"|"servo"|"su_vanasi"|"su_pompasi"}
     "role",          # {"ad": "su_pompasi"|"hava_pompasi"|"su_vanasi", "durum": true}
+    "role_kutup",    # {"aktif_low": true|false}     — röle kartı kutuplaması
 }
 
 # Basılı tut jog'unda yanıt beklemiyoruz: panel saniyede 3-4 yenileme
