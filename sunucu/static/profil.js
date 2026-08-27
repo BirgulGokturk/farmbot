@@ -108,15 +108,20 @@
       c.fillText(String(b.ad || "bölge"), px(a) + 4, KENAR.ust + 11);
     });
 
-    /* --- toprak yüzeyi (z = 0) ------------------------------------------ */
+    /* --- toprak yüzeyi --------------------------------------------------
+     * Sıfır DEĞİL: toprak kabın içinde, yüzey makine Z'sinde yukarıda bir
+     * yerde. Sıfıra çizerken kesit "uç toprağın metrelerce üstünde" gibi
+     * okunuyordu — oysa asıl merak edilen ucun yüzeye ne kadar yaklaştığı.
+     */
+    const toprakZ = Number(v.toprakZ) || 0;
     c.strokeStyle = "#7a5f38";
     c.lineWidth = 2;
-    c.beginPath(); c.moveTo(KENAR.sol, pz(0)); c.lineTo(g - KENAR.sag, pz(0)); c.stroke();
+    c.beginPath(); c.moveTo(KENAR.sol, pz(toprakZ)); c.lineTo(g - KENAR.sag, pz(toprakZ)); c.stroke();
     c.fillStyle = "rgba(122,95,56,.18)";
-    c.fillRect(KENAR.sol, pz(0), genis, y - KENAR.alt - pz(0));
+    c.fillRect(KENAR.sol, pz(toprakZ), genis, y - KENAR.alt - pz(toprakZ));
     c.fillStyle = "#7a5f38";
     c.textAlign = "right";
-    c.fillText("toprak", g - KENAR.sag - 4, pz(0) - 5);
+    c.fillText(`toprak ${Math.round(toprakZ)}`, g - KENAR.sag - 4, pz(toprakZ) - 5);
 
     /* --- güvenli yükseklik ---------------------------------------------- */
     if (v.guvenliZ != null) {

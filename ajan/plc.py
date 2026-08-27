@@ -312,6 +312,11 @@ class Gantry:
         self.tc_alani: Callable[[float, float], bool] | None = None
         self.kalib = ayar.get("kalibrasyon") or VARSAYILAN_KALIB
         self.guvenli_z = float(ayar.get("guvenli_z", 340.0))
+        # Toprak YÜZEYİNİN makine Z'sindeki yeri. Şimdiye kadar her yer
+        # yüzeyi 0 kabul ediyordu; gerçek makinede toprak kabın içinde
+        # ve yüzey sıfırdan epey yukarıda. Ekim derinliği, uç açıklığı
+        # ve 3B sahnedeki toprak düzlemi bu değere göre yerleşiyor.
+        self.toprak_z = float(ayar.get("toprak_z", 0.0))
         # PLC'de "referans tamam" biti yok; her eksene bu kadar süre tanınıyor.
         self.home_bekleme = float(ayar.get("home_bekleme_sn", 8.0))
         self.hiz = float(ayar.get("hiz", 20.0))
@@ -416,6 +421,7 @@ class Gantry:
                 "jog": jog_acik,
                 "z_guvenli": konum[2] >= self.guvenli_z - 1.0,
                 "guvenli_z": self.guvenli_z,
+                "toprak_z": self.toprak_z,
                 "acil": dict(self.acil_mandal),
                 "sinirlar": {
                     e: {"min": self.kalib[i].get("min"), "max": self.kalib[i].get("max")}

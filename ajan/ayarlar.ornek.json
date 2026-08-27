@@ -25,7 +25,9 @@
     "_home_bekleme_sn": "PLC'de 'referans tamam' biti eşlenmediği için her eksene bu kadar süre tanınıyor. En yavaş ekseninizin referans süresinden uzun tutun.",
     "bolge_dosyasi": "bolgeler.json",
     "uc_dosyasi": "uclar.json",
-    "_dosyalar": "Yasak bölgeler ve uç ayarları ajanda duruyor — panel çökse de koruma çalışsın diye. Panelden düzenlenir, buraya yazılır."
+    "_dosyalar": "Yasak bölgeler ve uç ayarları ajanda duruyor — panel çökse de koruma çalışsın diye. Panelden düzenlenir, buraya yazılır.",
+    "toprak_z": 0.0,
+    "_toprak_z": "Toprak yuzeyinin makine Z'sindeki yeri (mm). Toprak kabin icinde oldugu icin yuzey sifirda degil. Olcmek icin: ucu toprak yuzeyine hafifce degdirin ve panelde yazan Z degerini buraya yazin. Ekim derinligi ve 3B sahnedeki toprak duzlemi buna gore yerlesiyor."
   },
   "kamera": {
     "_not": "picamera2 -> rpicam-still -> libcamera-still -> fswebcam sirasiyla denenir. aktif=false ise ajan acilirken kamera baslamaz; panelden acilabilir ama bu gecicidir, kalici olmasi icin burayi true yapin.",

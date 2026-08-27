@@ -45,7 +45,13 @@ Tarla.katman({
     p.kizak.position.x = o.sx(x);
     // Makine Z'si büyüdükçe uç YUKARI çıkıyor (kalibrasyonda dir = -1,
     // home = 438). Uç ucunu doğrudan o yüksekliğe koyuyoruz.
-    const ucY = o.kis(z, 0, o.sinir.z.max || 550) * MM;
+    //
+    // Toprak yüzeyi makine Z'sinde SIFIR DEĞİL: toprak kabın içinde ve
+    // yüzey sıfırdan yukarıda. `toprak_z` çıkarılmazsa uç, sahnede toprağın
+    // metrelerce altına iniyormuş gibi görünüyordu. Artık makine Z'si
+    // toprak_z'ye eşitken uç tam yüzeye değiyor.
+    const toprakZ = Number(o.veri.durum.toprak_z) || 0;
+    const ucY = o.kis(z - toprakZ, 0, (o.sinir.z.max || 550) - toprakZ) * MM;
     p.ucKafa.position.set(0, ucY + 0.04, 0);
     // Z kılavuzu birim yükseklikte kuruluyor, stroka göre uzatılıyor.
     const boy = Math.max(0.05, rayY - 0.045 - (ucY + 0.08));

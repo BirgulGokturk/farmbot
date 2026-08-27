@@ -69,6 +69,9 @@
     secili: null,                // {katman, kayit}
     sinir: VARSAYILAN_SINIR,
     guvenliZ: 280,
+    // Toprak yüzeyinin makine Z'sindeki yeri. Sıfır DEĞİL: toprak
+    // kabın içinde ve yüzey sıfırdan yukarıda (ajandan geliyor).
+    toprakZ: 0,
     sonNoktaImzasi: "",
     sonDurumImzasi: "",
     ekleme: false,
@@ -1498,6 +1501,7 @@
       if (!T.hazir || !d) return;
       VERI.durum = d;
       if (d.guvenli_z != null) T.guvenliZ = Number(d.guvenli_z);
+      if (d.toprak_z != null) T.toprakZ = Number(d.toprak_z);
 
       const s = d.sinirlar;
       if (s && s.x && s.y && s.x.max != null && JSON.stringify(s) !== JSON.stringify(T.sinir)) {
@@ -1595,6 +1599,7 @@
       return {
         sinir: T.sinir,
         guvenliZ: T.guvenliZ,
+        toprakZ: T.toprakZ,
         noktalar: VERI.noktalar,
         turler: VERI.turler,
         konum: VERI.konum,
