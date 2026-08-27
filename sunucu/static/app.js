@@ -37,6 +37,7 @@ const S = {
   ajanBagli: false,
   satirlar: [],          // tablo görünümü için son ölçümler
   ucProbKip: "analog", // uçtaki prob analog mu dijital mi (Arduino bildiriyor)
+  arduinoCalisma: null, // kartın çalışma süresi (sn); geriye giderse kart yeniden başlamış
   sonZaman: 0,
 };
 
@@ -1666,6 +1667,7 @@ function tabloCiz() {
 function kartlariGuncelle(o) {
   if (!o) return;
   if (o.uc_toprak_kip) S.ucProbKip = o.uc_toprak_kip;
+  roleDurumSenkron(o);
   if (kanallariTara(o)) gorunurlukGuncelle();
   $("#d-sicaklik").innerHTML = `${sayiCoz(o.hava_sicaklik)}<span class="birim">°C</span>`;
   $("#d-nem").innerHTML = `${sayiCoz(o.hava_nem)}<span class="birim">%</span>`;
@@ -1702,6 +1704,36 @@ function kartlariGuncelle(o) {
   donanimGuncelle(o);
   otoAyarGuncelle(o);
   if (o.kip) kipGuncelle(o.kip);
+}
+
+/* ------------------------------------------------- rölelerin gerçek durumu
+ * Düğmeler eskiden panelin kendi tahminini gösteriyordu. Tahmin bir kez
+ * yanlışa düşünce düzelmiyordu: kart yeniden başlayınca bütün röleler
+ * kapanıyor, panel hâlâ "açık" sanıyor, sonraki tıklama "kapat" gönderiyor
+ * ve hiçbir şey olmuyor — düğme bozuk sanılıyordu. Artık doğruyu kart
+ * söylüyor, panel yalnızca ona uyuyor.
+ */
+function roleDurumSenkron(o) {
+  // Kart yeniden başladıysa çalışma süresi geriye gider. Sessizce
+  // düzeltmek yetmez: röleler kendiliğinden kapandı, sebebini söylemek
+  // gerekiyor — pompa çekişinde besleme çökerse tam bu görülüyor.
+  if (o.calisma_sn !== undefined) {
+    const sn = Number(o.calisma_sn);
+    if (S.arduinoCalisma !== null && sn < S.arduinoCalisma) {
+      gunluk("<b>Arduino yeniden başladı</b> — bütün röleler kapandı. "
+             + "Pompa çekerken besleme çöküyor olabilir.", "uyari");
+    }
+    S.arduinoCalisma = sn;
+  }
+  const alanlar = { su_pompasi: "r_su_pompasi", hava_pompasi: "r_hava_pompasi",
+                    su_vanasi: "r_su_vanasi" };
+  for (const [ad, alan] of Object.entries(alanlar)) {
+    if (o[alan] === undefined) continue;      // eski firmware — dokunma
+    const acik = Number(o[alan]) === 1;
+    S.roleDurum[ad] = acik;
+    const dugme = $(`.dugme.role[data-role="${ad}"]`);
+    if (dugme) dugme.classList.toggle("secili", acik);
+  }
 }
 
 /* ---------------------------------------------------- bağlı olmayan donanım

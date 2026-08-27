@@ -1016,6 +1016,9 @@ table.veri td { color: var(--metin-2); }
 #gunluk .saat { color: var(--metin-3); margin-right: var(--b2); }
 #gunluk .ok-satir { color: #b7e8b7; }
 #gunluk .hata { color: #ffb4b4; }
+/* Hata değil ama fark edilmesi gereken: kartın kendi kendine yeniden
+   başlaması gibi. Kırmızı kadar bağırmıyor, gri kadar da kaybolmuyor. */
+#gunluk .uyari { color: #ffd9a0; }
 
 /* ------------------------------------------------------------------ giriş */
 #giris { display: none; place-items: center; min-height: 100vh; padding: var(--b3); }

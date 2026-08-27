@@ -123,12 +123,25 @@ bool bmpVar = false;
 unsigned long sonOlcum = 0;
 String girisTamponu = "";
 
+/* Rölelerin GERÇEK durumu. Panel bunu kendi tarafında tahmin ediyordu ve
+ * tahmin bir kez yanlışa düşünce düzelmiyordu: kart yeniden başladığında
+ * setup bütün röleleri kapatıyor, panel hâlâ "açık" sanıyor, bir sonraki
+ * tıklama "kapat" gönderiyor ve hiçbir şey olmuyor. Doğruyu bilen taraf
+ * kart; artık her ölçüm satırında kendisi söylüyor. */
+bool roleAcik[3] = { false, false, false };
+#define ROLE_SU_POMPASI   0
+#define ROLE_HAVA_POMPASI 1
+#define ROLE_SU_VANASI    2
+
 // --------------------------------------------------------------------------
 void roleYaz(int pin, bool acik) {
 #if !ROLELER_BAGLI
   (void)pin; (void)acik;          // röle kartı takılı değil
   return;
 #else
+  if (pin == SU_POMPASI_PIN)        roleAcik[ROLE_SU_POMPASI]   = acik;
+  else if (pin == HAVA_POMPASI_PIN) roleAcik[ROLE_HAVA_POMPASI] = acik;
+  else if (pin == SU_VANASI_PIN)    roleAcik[ROLE_SU_VANASI]    = acik;
 #if ROLE_AKTIF_LOW
   digitalWrite(pin, acik ? LOW : HIGH);
 #else
@@ -480,6 +493,17 @@ void loop() {
    * ikisini karıştırmasın diye ayrı bildiriliyor. */
   Serial.print(",\"pompa_var\":");
   Serial.print(ROLELER_BAGLI && SU_POMPASI_BAGLI);
+  Serial.print(",\"r_su_pompasi\":");
+  Serial.print(roleAcik[ROLE_SU_POMPASI]);
+  Serial.print(",\"r_hava_pompasi\":");
+  Serial.print(roleAcik[ROLE_HAVA_POMPASI]);
+  Serial.print(",\"r_su_vanasi\":");
+  Serial.print(roleAcik[ROLE_SU_VANASI]);
+  /* Kartın açık kaldığı süre. Geriye giderse kart yeniden başlamıştır —
+   * pompa çekişinde besleme çökerse tam bunu görüyoruz ve panel sebebi
+   * "bilinmiyor" demek yerine adıyla söyleyebiliyor. */
+  Serial.print(",\"calisma_sn\":");
+  Serial.print(millis() / 1000UL);
   Serial.print(",\"esik\":");
   Serial.print(suEsikDegeri);
   Serial.print(",\"oto_acik\":");
