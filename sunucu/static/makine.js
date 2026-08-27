@@ -46,7 +46,12 @@
     /** Tezgâh tablası toprak yüzeyinin bu kadar altında (negatif). */
     tabla: -50,
     /** Toprak kabı. */
-    kap: { yukseklik: 90, cidar: 6 },
+    /* Kap yüksekliği 90 mm'ydi ve tabla −50'de olduğu için kabın ağzı
+     * toprak yüzeyinin 40 mm ÜSTÜNE çıkıyordu: sahnede kap komple yukarıda
+     * duran bir kutu gibi görünüyordu. Gerçekte kap aşağıda ve ağzı sigmayı
+     * çok az geçiyor. 62 mm'de ağız yüzeyin 12 mm üstünde kalıyor — kenar
+     * hâlâ görünüyor ama kutu öne çıkmıyor. */
+    kap: { yukseklik: 62, cidar: 6 },
     /** 2B haritada çizilen karık sayısı. */
     yatak: { karik_sayisi: 4 },
     renk: {
