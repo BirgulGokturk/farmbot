@@ -55,6 +55,22 @@ const RENK = {
 const sayi = (deger, basamak = 1) =>
   deger === null || deger === undefined || Number.isNaN(deger) ? "—" : Number(deger).toFixed(basamak);
 
+/** Değeri OLDUĞU çözünürlükte yazar: 26 -> "26", 26,3 -> "26,3".
+ *
+ * Neden sabit basamak değil: DHT11 tam sayı üretiyor. `toFixed(1)` ile
+ * yazınca kartta "26,0" görünüyor ve bu, sensörün ondalık ölçtüğü
+ * izlenimini veriyor — ölçmüyor. Değer ajanda zaten sensörün
+ * çözünürlüğüne yuvarlandığı için (bkz. ajan/arduino.py, Duzeltici)
+ * burada yapılacak doğru şey, o çözünürlüğü olduğu gibi göstermek. */
+const sayiCoz = (deger, azami = 2) => {
+  if (deger === null || deger === undefined || Number.isNaN(deger)) return "—";
+  const n = Number(deger);
+  for (let b = 0; b < azami; b++) {
+    if (Math.abs(n - Number(n.toFixed(b))) < 1e-9) return n.toFixed(b);
+  }
+  return n.toFixed(azami);
+};
+
 /** HW-103 ham ADC değerini yüzdeye çevirir.
  *  Sensör kuruyken ~1023, suyun içinde ~0 okuyor; yani ham değer arttıkça
  *  nem AZALIYOR. Ham sayıyı panelde göstermek yanıltıcı olurdu. */
@@ -1275,9 +1291,75 @@ function jogDurdur() {
   setTimeout(() => jogYolla(eksen, yon, false), 60);
 }
 
+/* -------------------------------------------------------------- eksen penceresi
+ *
+ * SORUN: Chart.js y eksenini varsayılan olarak VERİYE göre sıkıştırıyor.
+ * Ortam sabitken basınç 906,5 ile 907,1 arasında geziniyor; eksen o 0,6
+ * hPa'ya yakınlaşınca sensör gürültüsü ekranı baştan başa kaplayan bir dağ
+ * silsilesi gibi görünüyor. Grafik teknik olarak doğru, söylediği şey
+ * yanlış: "basınç çok oynuyor" diyor, oysa basınç neredeyse sabit.
+ *
+ * ÇÖZÜM: her kanalın ANLAMLI bir en küçük penceresi var. Veri o pencerenin
+ * içinde kalıyorsa eksen küçülmüyor; dışına çıkarsa pencere büyüyor ama
+ * asla en küçüğün altına inmiyor. Yani grafiğin dikey ölçeği "bu kanalda
+ * kaç birimlik değişim önemlidir" sorusunun cevabı oluyor.
+ */
+
+/** 1-2-5 merdiveninden yuvarlak adım. 0,37 -> 0,5; 23 -> 20; 1400 -> 1000. */
+function guzelAdim(kaba) {
+  if (!(kaba > 0)) return 1;
+  const us = Math.pow(10, Math.floor(Math.log10(kaba)));
+  const n = kaba / us;
+  return (n <= 1 ? 1 : n <= 2 ? 2 : n <= 5 ? 5 : 10) * us;
+}
+
+/** Adıma göre kaç ondalık gösterilsin. 5 -> 0, 0,5 -> 1, 0,05 -> 2. */
+const adimBasamak = (adim) => (adim >= 1 ? 0 : adim >= 0.1 ? 1 : 2);
+
+/**
+ * @param veriAlt/veriUst  verinin gerçek en küçük/en büyük değeri
+ * @param enAz             bu kanalın göreceği EN KÜÇÜK pencere
+ * @param sinir            [alt, üst] fiziksel sınır ya da null
+ *                         (nem %0-100'ün, açı 0-180'in dışına çıkamaz)
+ * @returns {alt, ust, adim} — hepsi `adim`ın tam katı
+ */
+function eksenPenceresi(veriAlt, veriUst, enAz, sinir) {
+  if (!isFinite(veriAlt) || !isFinite(veriUst)) return null;
+  // Veri kenara yapışmasın diye %20 pay; ama en küçük pencere yine kural.
+  const aralik = Math.max((veriUst - veriAlt) * 1.2, enAz);
+  const orta = (veriAlt + veriUst) / 2;
+  // Hedef 4-6 aralık: daha azında eksen okunmuyor, daha çoğunda etiketler
+  // birbirine giriyor.
+  const adim = guzelAdim(aralik / 5);
+  let alt = Math.floor((orta - aralik / 2) / adim) * adim;
+  let ust = Math.ceil((orta + aralik / 2) / adim) * adim;
+  if (sinir) {
+    const [sAlt, sUst] = sinir;
+    // Sınırın dışına taşan payı öbür tarafa aktarıyoruz: pencere daralmıyor,
+    // yalnız kayıyor. Daraltsaydık "en az şu kadar görünsün" kuralı bozulurdu.
+    if (sAlt != null && alt < sAlt) { ust += sAlt - alt; alt = sAlt; }
+    if (sUst != null && ust > sUst) {
+      const kayma = ust - sUst;
+      ust = sUst;
+      alt = sAlt == null ? alt - kayma : Math.max(sAlt, alt - kayma);
+    }
+    alt = Math.floor(alt / adim) * adim;
+    ust = Math.ceil(ust / adim) * adim;
+    if (sAlt != null) alt = Math.max(alt, sAlt);
+    if (sUst != null) ust = Math.min(ust, sUst);
+  }
+  // Yuvarlama her ikisini de aynı değere getirdiyse (tek noktalı veri)
+  // en az bir adım aç.
+  if (ust <= alt) ust = alt + adim;
+  return { alt, ust, adim };
+}
+
 /* ------------------------------------------------------------------ grafikler */
-function grafikYap(kimlik, seriler, birim, basamak = 1) {
+function grafikYap(kimlik, seriler, birim, basamak = 1, eksen = {}) {
   const ctx = document.getElementById(kimlik);
+  // Bu kanalın en küçük penceresi ve varsa fiziksel sınırları.
+  const enAz = eksen.enAz || 1;
+  const sinir = eksen.sinir || null;
   return new Chart(ctx, {
     type: "line",
     data: {
@@ -1328,7 +1410,27 @@ function grafikYap(kimlik, seriler, birim, basamak = 1) {
         y: {
           grid: { color: RENK.cizgi },
           border: { display: false },
-          ticks: { color: RENK.metin3, font: { size: 11 }, callback: (v) => sayi(v, basamak) },
+          /* Eksen sınırını Chart.js'in veriye göre hesapladığı değerden
+           * DEVRALIYORUZ. `min`/`max` seçenek olarak sabitlenseydi eksen
+           * hiç büyümezdi; burada büyüyebiliyor ama en küçüğün altına
+           * inemiyor. */
+          afterDataLimits(olcek) {
+            const p = eksenPenceresi(olcek.min, olcek.max, enAz, sinir);
+            if (!p) return;
+            olcek.min = p.alt;
+            olcek.max = p.ust;
+            // Etiketler adımın tam katlarında: 25, 30, 35 — 26,37 değil.
+            olcek.options.ticks.stepSize = p.adim;
+            olcek._basamak = adimBasamak(p.adim);
+          },
+          ticks: {
+            color: RENK.metin3,
+            font: { size: 11 },
+            // Birim BURADA YAZMIYOR: başlıkta bir kez yazıyor (bkz.
+            // index.html "Sıcaklık °C"). Her etikete iliştirmek ekseni
+            // gereksiz yere kalabalıklaştırıyor.
+            callback(v) { return sayi(v, this._basamak != null ? this._basamak : basamak); },
+          },
         },
       },
     },
@@ -1336,10 +1438,27 @@ function grafikYap(kimlik, seriler, birim, basamak = 1) {
 }
 
 function grafikleriKur() {
-  S.grafikler.sicaklik = grafikYap("g-sicaklik", [{ ad: "DHT11" }, { ad: "BMP180" }], "°C", 1);
-  S.grafikler.nem = grafikYap("g-nem", [{ ad: "Hava nemi" }, { ad: "Toprak nemi" }], "%", 0);
-  S.grafikler.basinc = grafikYap("g-basinc", [{ ad: "Basınç" }], "hPa", 1);
-  S.grafikler.servo = grafikYap("g-servo", [{ ad: "Vana açısı" }], "°", 0);
+  /* EN KÜÇÜK PENCERE — her kanal için "kaç birimlik değişim önemlidir".
+   *
+   *   sıcaklık  10 °C : seranın gün içinde gerçekten gezindiği aralık.
+   *                     ±2 °C'lik DHT11 gürültüsü bunun içinde düz kalıyor.
+   *   nem       %20   : DHT11'in doğruluğu zaten ±%5; %20'nin altındaki bir
+   *                     pencere sensörün ayırt edemediği farkı büyütür.
+   *   basınç    10 hPa: hava olaylarının ölçeği. Sabit ortamda gördüğümüz
+   *                     0,5 hPa'lık gezinme bu pencerede düz bir çizgi.
+   *   vana      90°   : kapalı ile açık arası. Tek bir konumda takılı kalsa
+   *                     bile eksen "0 ile 90 arası bir şey" diyor.
+   *
+   * SINIR: nem yüzde, açı derece — fiziksel olarak dışına çıkamayacakları
+   * bir aralık var; pencere büyürken oraya taşmasın. */
+  S.grafikler.sicaklik = grafikYap("g-sicaklik", [{ ad: "DHT11" }, { ad: "BMP180" }], "°C", 1,
+                                   { enAz: 10 });
+  S.grafikler.nem = grafikYap("g-nem", [{ ad: "Hava nemi" }, { ad: "Toprak nemi" }], "%", 0,
+                              { enAz: 20, sinir: [0, 100] });
+  S.grafikler.basinc = grafikYap("g-basinc", [{ ad: "Basınç" }], "hPa", 1,
+                                 { enAz: 10 });
+  S.grafikler.servo = grafikYap("g-servo", [{ ad: "Vana açısı" }], "°", 0,
+                                { enAz: 90, sinir: [0, 180] });
   // Vana açısı 0/90 arasında zıplayan bir kontrol sinyali; yumuşatma yanlış
   // olur, adım basamağı gerçeğe daha yakın.
   S.grafikler.servo.data.datasets[0].stepped = true;
@@ -1430,8 +1549,8 @@ function tabloCiz() {
 function kartlariGuncelle(o) {
   if (!o) return;
   if (kanallariTara(o)) gorunurlukGuncelle();
-  $("#d-sicaklik").innerHTML = `${sayi(o.hava_sicaklik)}<span class="birim">°C</span>`;
-  $("#d-nem").innerHTML = `${sayi(o.hava_nem)}<span class="birim">%</span>`;
+  $("#d-sicaklik").innerHTML = `${sayiCoz(o.hava_sicaklik)}<span class="birim">°C</span>`;
+  $("#d-nem").innerHTML = `${sayiCoz(o.hava_nem)}<span class="birim">%</span>`;
   $("#d-toprak").innerHTML = `${sayi(toprakYuzde(o.toprak_nem), 0)}<span class="birim">%</span>`;
   $("#d-basinc").innerHTML = `${sayi(o.basinc)}<span class="birim">hPa</span>`;
   $("#d-servo").innerHTML = `${sayi(o.servo_aci, 0)}<span class="birim">°</span>`;
@@ -1440,10 +1559,26 @@ function kartlariGuncelle(o) {
   // "DHT11" yazan bir kartın altında DHT22 durması, ölçüm tutmadığında yanlış
   // yerde hata aramaya yol açıyordu.
   const dhtAd = o.dht && o.dht !== "yok" ? o.dht : "DHT";
-  $("#a-nem").textContent = dhtAd;
-  $("#a-toprak").textContent = o.toprak_nem == null ? "HW-103" : `HW-103 · ham ${Math.round(o.toprak_nem)}`;
-  $("#a-rakim").textContent = o.rakim == null ? "BMP180" : `BMP180 · rakım ${sayi(o.rakim, 0)} m`;
-  $("#a-sicaklik").textContent = o.bmp_sicaklik == null ? dhtAd : `${dhtAd} · BMP ${sayi(o.bmp_sicaklik)} °C`;
+  /* HAM DEĞER. Kartta gösterilen sayı düzeltilmiş: sensörün çözünürlüğüne
+   * yuvarlanmış ve son birkaç örneğin medyanı alınmış (ajan/arduino.py,
+   * Duzeltici). Sensörün o an ne dediği kaybolmasın diye ham okuma alttaki
+   * küçük yazıda duruyor — düzeltilmiş değerle ham arasında sürekli fark
+   * varsa sensörde bir sorun var demektir, bunu görebilmek gerekiyor. */
+  const ham = o.ham || {};
+  // Birim tekrar edilmiyor: kartın büyük sayısında zaten yazıyor. Küçük
+  // yazı tek satıra sığmalı — iki satıra taşan bir kart, ızgaradaki bütün
+  // satırı uzatıp kartları eşitsiz gösteriyor.
+  const hamEk = (ad, basamak = 0) =>
+    ham[ad] == null ? "" : ` ham ${sayi(ham[ad], basamak)}`;
+  $("#a-nem").textContent = dhtAd + hamEk("hava_nem");
+  $("#a-toprak").textContent = o.toprak_nem == null ? "HW-103"
+    : `HW-103${hamEk("toprak_nem")}`;
+  // "BMP180" yerine "BMP": sıcaklık kartında da öyle kısaltılıyor ve
+  // satır tek satırda kalıyor.
+  $("#a-rakim").textContent = o.rakim == null ? "BMP180"
+    : `BMP${hamEk("basinc", 2)} · ${sayi(o.rakim, 0)} m`;
+  $("#a-sicaklik").textContent = o.bmp_sicaklik == null ? dhtAd + hamEk("hava_sicaklik")
+    : `${dhtAd}${hamEk("hava_sicaklik")} · BMP ${sayi(o.bmp_sicaklik)}`;
   $("#a-servo").textContent = Number(o.servo_aci) > 5 ? "SG-5010 · AÇIK" : "SG-5010 · kapalı";
   if (o.ts) $("#a-servo").title = new Date(o.ts * 1000).toLocaleString("tr-TR");
   donanimGuncelle(o);

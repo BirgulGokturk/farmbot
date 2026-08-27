@@ -121,13 +121,21 @@ class Ajan:
         self.plc.z_guvenli_kaynagi = self.uclar.z_guvenli_reg_oku
         self.plc.tc_alani = self.uclar.tc_alani_icinde
         ard = ayar["arduino"]
+        # Medyan penceresi: kaç örneğin ortancası gösterilsin. 5 örnek,
+        # 2 sn'lik okuma aralığında 10 saniyelik bir pencere demek — tek
+        # tük sıçramayı eler, gerçek bir değişimi geciktirmez. Ayarda
+        # `medyan_pencere` ile değiştirilebiliyor; 1 = yumuşatma kapalı
+        # (yalnız yuvarlama ve saçma okuma ayıklama kalır).
+        pencere = int(ard.get("medyan_pencere", 5))
         if ard.get("sahte"):
-            self.arduino = arduino_modulu.SahteArduino(geri_cagir=self._olcum_geldi)
+            self.arduino = arduino_modulu.SahteArduino(
+                geri_cagir=self._olcum_geldi, medyan_pencere=pencere)
         else:
             self.arduino = arduino_modulu.Arduino(
                 port=ard.get("port", "/dev/ttyUSB0"),
                 baud=int(ard.get("baud", 9600)),
                 geri_cagir=self._olcum_geldi,
+                medyan_pencere=pencere,
             )
         # Program dizisi ajanda yürüyor: panel kapansa da acil durdurma
         # diziyi kesebilsin diye.

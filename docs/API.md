@@ -70,9 +70,12 @@ Anlık makine durumu ve son ölçüm.
     "sunucu_saati": 1787496298.5
   },
   "olcum": {
-    "hava_nem": 45.3, "hava_sicaklik": 26.3,
-    "bmp_sicaklik": 27.1, "basinc": 1009.24, "rakim": 119.9,
+    "hava_nem": 45, "hava_sicaklik": 26,
+    "bmp_sicaklik": 27.1, "basinc": 1009.2, "rakim": 120,
     "toprak_nem": 350, "servo_aci": 0.0,
+    "ham": {"hava_nem": 47, "hava_sicaklik": 27,
+            "bmp_sicaklik": 27.14, "basinc": 1009.24,
+            "rakim": 119.9, "toprak_nem": 356},
     "kip": "oto", "ts": 1787496298.07
   },
   "panel_kilitli": true
@@ -203,6 +206,32 @@ Bırakınca `{"tip": "jog", "hepsi_dur": true}`.
 `toprak_nem` ham geliyor. Yüzdeye çevirmek arayüzün işi:
 `yuzde = (1023 - ham) / 1023 * 100`. Ham değeri de gösterin, ters okuma
 karışıklık yaratıyor.
+
+### Değerler ajanda düzeltiliyor
+
+Yukarıdaki kanallar **ham okuma değil**. Ajan (`ajan/arduino.py`,
+`Duzeltici`) veriyi sunucuya göndermeden önce üç iş yapıyor:
+
+1. **Saçma okumayı atıyor.** DHT11 okuyamadığında 0/0 ya da 255 basıyor;
+   bu değerler ölçüm değil arıza deseni ve hiç kaydedilmiyor (kanal
+   `null` gider, satırın geri kalanı kaydedilir; hiçbir kanal kalmazsa
+   satır hiç üretilmez).
+2. **Çözünürlüğe yuvarlıyor.** DHT11 tam sayı üretir — 26,3 °C yazmak
+   sensörün yapmadığı bir hassasiyeti uydurmaktır. Adımlar: DHT11 1 °C /
+   %1 (DHT22 takılıysa 0,1), BMP180 0,1 °C ve 0,1 hPa, rakım 1 m, HW-103
+   1 sayım.
+3. **Medyan alıyor.** Son N örneğin ortancası (varsayılan N=5, ayarda
+   `arduino.medyan_pencere`). Ortalama değil: tek tük sıçrama ortalamayı
+   çeker, medyan görmez. `servo_aci` HARİÇ — o bir ölçüm değil, kontrol
+   sinyali.
+
+Düzeltme **ajanda**, çünkü veritabanına baştan temiz veri girsin ve
+geçmiş de doğru olsun. Sunucuda yapılsaydı kayıt kirli kalır, panelde
+yapılsaydı her istemci başka sayı gösterebilirdi.
+
+Ham okuma atılmıyor: canlı paketlerde `olcum.ham` alanında geliyor ve
+panel kartların altındaki küçük yazıda gösteriyor. `ham` **kaydedilmiyor**
+— veritabanındaki değer düzeltilmiş olan.
 
 Veri 7 gün saklanıp budanıyor.
 
