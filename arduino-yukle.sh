@@ -54,10 +54,9 @@ echo "== çekirdek ve kütüphaneler"
 arduino-cli core update-index
 arduino-cli core install arduino:avr
 # Sketch'in kullandıkları. Zaten kuruluysa arduino-cli atlıyor.
-# Servo da listede: Arduino IDE'de hazır geldiği için akla gelmiyor ama
-# arduino-cli onu çekirdeğin parçası saymıyor, ayrıca kurulması gerekiyor.
-# Wire ve EEPROM çekirdekten geliyor, onlar listede değil.
-arduino-cli lib install "DHT sensor library" "Adafruit Unified Sensor"                        "Adafruit BMP085 Library" "Servo"
+# Wire çekirdekten geliyor, o listede değil. Servo da yok: sketch'te artık
+# servo kullanılmıyor, kartta öyle bir donanım da yok.
+arduino-cli lib install "DHT sensor library" "Adafruit Unified Sensor"                        "Adafruit BMP085 Library"
 
 echo "== derleniyor ($FQBN)"
 arduino-cli compile --fqbn "$FQBN" "$ESKIZ"

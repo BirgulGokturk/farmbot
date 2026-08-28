@@ -393,7 +393,7 @@ class Arduino:
                 logger.exception("Ölçüm geri çağrısı hata verdi")
 
     def komut(self, metin: str) -> None:
-        """Arduino'ya bir satır komut gönderir (AC, KAPA, SERVO 45, AUTO, OKU...)."""
+        """Arduino'ya bir satır komut gönderir: ROLE <ad> <0|1> · KAPAT · OKU."""
         if not self.bagli:
             raise RuntimeError("Arduino bağlı değil")
         with self._yazma_kilidi:

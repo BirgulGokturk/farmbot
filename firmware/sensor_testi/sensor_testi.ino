@@ -17,7 +17,7 @@
  *      çekilidir (HIGH). Sürekli LOW ise sensör beslenmiyor, DATA yanlış
  *      pinde ya da pull-up direnci yok demektir. NaN'ın en sık sebebi bu.
  *
- * Hiçbir çıkış sürülmüyor: servo, röle, EEPROM, seri komut yok.
+ * Hiçbir çıkış sürülmüyor: röle, EEPROM, seri komut yok.
  * Kütüphaneler: Adafruit BMP085 Library, DHT sensor library, Adafruit Unified Sensor
  * Seri hız: 9600
  */

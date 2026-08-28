@@ -6,7 +6,7 @@ Bu ilk sürüm bilerek küçük tutuldu: **hareket ettirme** ve **sensör grafik
 ```
 Arduino ──USB seri──> Raspberry Pi ──ev ağı──> tarayıcı
    sensörler            ajan + sunucu
-   servo, röleler       (FastAPI + SQLite)
+   iki röle             (FastAPI + SQLite)
                              │
                              └── Modbus TCP ──> PLC (X / Y / Z hareketi)
 ```
@@ -82,10 +82,13 @@ Eklenenler:
 
 * `VERI:{...}` satırı — ajan yalnızca bunu okur, Türkçe satırlar durduğu için
   Seri Monitör'den izlemeye devam edebilirsin.
-* Seri komutlar: `AC`, `KAPA`, `SERVO 45`, `AUTO`, `MANUEL`, `OKU`,
-  `ROLE su_pompasi 1`, `ESIK 600`, `OTOCIKIS servo`.
-* Röle pinleri: D4 su pompası, D5 hava pompası, D6 su vanası. Röle kartın
-  "aktif yüksek" ise `#define ROLE_AKTIF_LOW 0` yap.
+* Seri komutlar: `ROLE su_pompasi 1`, `ROLE hava_pompasi 0`, `KAPAT`, `OKU`.
+  Hepsi bu — kart karar vermiyor, eşik tutmuyor, hiçbir şeyi hatırlamıyor.
+* Röle pinleri: D7 su pompası, D8 hava pompası. Röle kartın "aktif yüksek"
+  ise `#define ROLE_AKTIF_LOW 0` yap.
+* Kart rölelerin GERÇEK durumunu (`r_su_pompasi`, `r_hava_pompasi`) ve kendi
+  çalışma süresini bildiriyor; panel tahmin etmiyor. Süre geriye giderse kart
+  yeniden başlamış, yani röleler kapanmış demektir.
 * Barometre bulunamazsa sistem artık durmuyor; o kanal `null` gidiyor,
   diğer sensörler çalışmaya devam ediyor.
 
@@ -95,26 +98,27 @@ Eklenenler:
 |---|---|---|---|
 | GY-68 (BMP180) | VCC · GND · SDA · SCL | **3.3V** · GND · A4 · A5 | 5V **bağlamayın** |
 | DHT11 / DHT22 | VCC · GND · DATA | 5V · GND · D2 | Kart üstünde direnç yoksa VCC–DATA arası 10K |
-| HW-103 | VCC · GND · A0 | 5V · GND · A0 | D0 boşta kalır |
-| SG-5010 servo | — | D9 | *şu an bağlı değil* |
-| Röleler | — | D4 · D5 · D6 | *şu an bağlı değil* |
+| HW-103 | VCC · GND · A0 | 5V · GND · A0 | yatakta sabit; D0 boşta kalır |
+| Uç probu | VCC · GND · A0 | 5V · GND · **A1** | uca takılı, toprağa daldırılır |
+| Su pompası rölesi | IN | D7 | |
+| Hava pompası rölesi | IN | D8 | |
 
-### Bağlı donanım anahtarı
+### Röle kutuplaması
 
-Sketch'in başında iki satır var:
+Sketch'in başında tek satır var:
 
 ```c
-#define SERVO_BAGLI   0      // SG-5010 vana servosu (D9)
-#define ROLELER_BAGLI 0      // su pompası / hava pompası / su vanası röleleri
+#define ROLE_AKTIF_LOW 1     // kartların çoğu böyle: LOW = röle çeker
 ```
 
-Bağlı olmayan bir çıkışı sürmek zararsız *görünür* ama panelde yalan söyler:
-ortada vana yokken "vana açık" yazan bir kart, en kötü türden bilgidir. Bu
-yüzden 0 iken o pinlere hiç dokunulmuyor, ilgili komutlar `HATA: ... bagli
-degil` diye reddediliyor, otomatik sulama çıkışı "yok"a düşüyor ve panel o
-kartları kendiliğinden gizleyip düğmeleri sebebiyle birlikte kapatıyor.
-Donanımı taktığınızda **yalnızca** bu satırı 1 yapıp sketch'i yeniden
-yükleyin.
+Yanlış seçim sessiz bir hata değil, **ters** bir sistem: panel "kapalı"
+derken röle çekili kalır, "aç" deyince kapanır. Kartın çekince yanan
+LED'ine bakarak anlarsınız. Ters çalışıyorsa bu satırı `0` yapıp sketch'i
+yeniden yükleyin.
+
+Pinler çıkışa alınırken önce kapalı seviye yazılıyor, sonra `pinMode`
+çağrılıyor. Ters sırada pin bir an LOW kalıyor ve aktif-LOW kartta röle
+çekiyor — yani her açılışta pompaya kısa bir darbe.
 
 ### DHT11 mi DHT22 mi
 
@@ -216,8 +220,8 @@ ediyordu.)
   Kartlar ve grafikler yalnızca **gerçekten veri gelen** kanallar için
   görünür: bağlı olmayan bir sensör için boş eksen çizilmez. İşaret yapışkan,
   yani DHT'nin ara sıra atladığı bir okuma kartı gözden kaybettirmez.
-* **Kontrol** — jog paneli, konuma git, hız, sürücü aç/kapa, servo, kip,
-  röleler, kayıtlı noktalar, tohum ızgarası, yasak bölgeler, uç değiştirme,
+* **Kontrol** — jog paneli, konuma git, hız, sürücü aç/kapa, röleler
+  (düğme kartın bildirdiği gerçek durumu gösterir), kayıtlı noktalar, tohum ızgarası, yasak bölgeler, uç değiştirme,
   programlar ve kamera önizlemesi.
 * **Tarla** — yatağın 3B görünümü: bitki ekleme, sürükleyerek taşıma,
   yayılım daireleri ve çakışma uyarıları (aşağıda).
@@ -246,33 +250,16 @@ tekrar 1 yazmak hiçbir şey değiştirmiyor: bir arıza sonrası düşmüş sü
 öylece kapalı kalıyor ve komutlar sessizce yutuluyor. Sahada tam olarak bu
 yaşandı — hareket alınamamasının sebebi buydu.
 
-### Otomatik sulama (kip)
-Panelin **Otomatik / Manuel** düğmeleri Arduino'nun kendi sulama kararını açıp
-kapatıyor. Karar bilerek Arduino'da: Pi kapansa, panel kapansa, ağ gitse bile
-bitkinin sulanması gerekiyor.
+### Sulama kararı
 
-* **Otomatik** — toprak nemi eşiğin altına düşünce Arduino seçili çıkışı
-  kendi açar, nem yeterliyse kapatır. Pi kapalıyken de çalışır.
-* **Manuel** — Arduino hiçbir şeye kendiliğinden dokunmaz; kararı panel ya da
-  ajandaki program verir. Panelden servo/vana komutu göndermek kipi
-  kendiliğinden manuele düşürür.
+Karar **kartta değil**. Önceki sürümde Arduino kendi eşiğini EEPROM'da tutup
+kendi açıp kapatıyordu; o mantık tersti (toprak ıslakken suluyordu) ve elle
+verilen komutu bir sonraki ölçümde eziyordu. Sadeleştirirken tamamen
+kaldırıldı: kart artık yalnızca ölçüyor ve dediğini yapıyor.
 
-İki ayar panelden değiştirilebiliyor ve **Arduino'nun EEPROM'unda** duruyor —
-kartın fişi çekilse bile korunur, çünkü kararı veren de o:
-
-| Ayar | Ne işe yarar |
-|---|---|
-| **Otomatikte çalışacak çıkış** | Vana servosu · Su vanası rölesi · Su pompası rölesi · **Yok**. "Yok" seçmek otomatik sulamayı tamamen kaldırır. |
-| **Eşik** | Toprak nemi bu yüzdenin altına düşünce açılır. Panel yüzde gösterir, Arduino ham ADC ile karşılaştırır; çeviri tek yerde. |
-
-Üç yerde çıkış kapatılıyor, açık unutulmasın diye: çıkış değiştirilirken
-eskisi, manuele geçilirken otomatiğin açtığı çıkış, otomatiğe geçilirken elle
-yarı açık bırakılmış çıkış. Sonuncusu olmasa "elle 45°'de bırakılmış vana,
-sulama gerekmiyor kararıyla öylece açık kalır" durumu doğuyordu.
-
-Bu ayarlar kartın yazılımına eklendi: **sketch'i yeniden yüklemeden**
-görünmezler, panel de o durumda "karttaki yazılım eski" uyarısı verip alanları
-kilitler.
+Sulama şu an panelden ya da ajandaki programdan sürülüyor — "noktaya git,
+su pompasını aç, N saniye bekle, kapat". Otomatik karar geri gelecekse
+Pi'de olacak: eşik ve geçmiş orada zaten var, kartta yoktu.
 
 Toprak nemi panelde **yüzde** gösteriliyor. HW-103 kuruyken ~1023, ıslakken ~0
 okuyor; ham sayıyı göstermek "nem arttıkça değer düşüyor" gibi tersine bir
@@ -285,7 +272,7 @@ Sunucu → ajan (WebSocket): `{"tip":"komut","id":"...","ad":"...","arg":{...}}`
 Ajan → sunucu: `{"tip":"sonuc","id":"...","ok":true,"mesaj":"..."}`
 
 Tanımlı komutlar: `jog`, `jog_dur`, `git`, `home`, `dur`, `acil`,
-`acil_temizle`, `enable`, `hiz`, `servo`, `kip`, `role`, `bolge_listele`,
+`acil_temizle`, `enable`, `hiz`, `role`, `bolge_listele`,
 `bolge_kaydet`, `uc_listele`, `uc_kaydet`, `uc_al`, `uc_birak`, `uc_degistir`,
 `dizi_baslat`, `dizi_durdur`.
 
@@ -404,7 +391,7 @@ saniye kabul edilir (referans program 1.5 kullanıyordu; 1500'ü saniye sanmak
 servo komutundan sonra 25 dakika donmak demekti).
 
 ### Programlar
-Adım tipleri: noktaya git · bekle · röle aç/kapa · servo · uç değiştir.
+Adım tipleri: noktaya git · bekle · röle aç/kapa · uç değiştir.
 Hepsi mevcut komutları çağırır. Dizi **ajanda** yürür (panel kapansa da acil
 durdurma keser). Nokta adları sunucuda koordinata çevrilip ajana öyle gider;
 çözülemeyen bir nokta varsa dizi **hiç başlamaz**. Bir adım hata verirse dizi
