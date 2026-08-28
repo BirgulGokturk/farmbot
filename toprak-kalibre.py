@@ -102,11 +102,12 @@ def main() -> int:
 
     kuru = ard.get("toprak_kuru", 1023)
     islak = ard.get("toprak_islak", 0)
-    # Kuru okuma ıslaktan BÜYÜK olmalı: ham değer kurudukça yükseliyor.
-    # Ters girilirse yüzde ters döner ve kimse fark etmez.
-    if kuru <= islak:
-        print(f"HATA: kuru ({kuru}) ıslaktan ({islak}) büyük olmalı — "
-              "ham değer kurudukça yükseliyor. İkisini de doğru sırayla ölçün.")
+    # Hangi ucun büyük olduğu MODÜLE göre değişiyor: bazı problar kurudukça
+    # yükseliyor, bazıları ıslandıkça. Çevrim iki noktalı doğrusal olduğu için
+    # ikisi de çalışıyor; şart olan tek şey ikisinin FARKLI olması.
+    if kuru == islak:
+        print(f"HATA: kuru ve ıslak aynı değer ({kuru}). Ölçek kurulamaz — "
+              "prob gerçekten havada/suda mıydı?")
         return 1
 
     with open(AYAR, "w", encoding="utf-8") as f:
@@ -114,7 +115,8 @@ def main() -> int:
         f.write("\n")
 
     print(f"{anahtar}: {eski} -> {round(deger)}  ({AYAR})")
-    print(f"Şu anki ölçek: kuru {kuru} · ıslak {islak}")
+    yon = "kurudukça yükseliyor" if kuru > islak else "ıslandıkça yükseliyor"
+    print(f"Şu anki ölçek: kuru {kuru} · ıslak {islak}  ({yon})")
     print("Geçerli olması için:  sudo systemctl restart farmbot-ajan")
     return 0
 

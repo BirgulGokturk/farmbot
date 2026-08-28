@@ -1756,8 +1756,10 @@ function kartlariGuncelle(o) {
   const hamEk = (ad, basamak = 0) =>
     ham[ad] == null ? "" : ` ham ${sayi(ham[ad], basamak)}`;
   $("#a-nem").textContent = dhtAd + hamEk("hava_nem");
-  $("#a-toprak").textContent = o.toprak_nem == null ? "HW-103"
-    : `HW-103${hamEk("toprak_nem")}`;
+  // Ham değer BURADA görünmeli: kalibrasyon ham ölçekte tanımlı ve
+  // "yüzde saçma" derken bakılacak ilk sayı bu.
+  $("#a-toprak").textContent = o.toprak_nem == null ? "Uca takılı prob"
+    : `Prob${hamEk("toprak_nem")}`;
   // "BMP180" yerine "BMP": sıcaklık kartında da öyle kısaltılıyor ve
   // satır tek satırda kalıyor.
   $("#a-rakim").textContent = o.rakim == null ? "BMP180"
