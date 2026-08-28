@@ -1471,6 +1471,80 @@ function eksenPenceresi(veriAlt, veriUst, enAz, sinir) {
   return { alt, ust, adim };
 }
 
+/* --------------------------------------------------- grafik düzleştirmesi
+ * Grafikler ham seriyi değil, düzleştirilmiş seriyi çiziyor: önce aykırı
+ * değerler ayıklanıyor, sonra 10'luk hareketli ortalama alınıyor. Sensör
+ * gürültüsü grafikte gerçek bir olay gibi görünüyordu.
+ *
+ * YALNIZ GRAFİKTE. Kartlardaki anlık değer ve tablo ham kalıyor, veritabanına
+ * da ham giriyor. Düzleştirme bir görüntüleme kararı; veriyi değiştirirse
+ * "sensör ne dedi" sorusunun cevabı kaybolur.
+ *
+ * Aykırı ölçütü: noktanın KENDİSİ HARİÇ önceki pencerenin ortalamasından
+ * 2 standart sapmadan fazla sapması. Normal dağılımda ±2σ ≈ %95,4 — sizin
+ * dediğiniz %96'nın karşılığı bu. (±3σ %99,7'dir; "altı sigma" adı ±6σ'dan
+ * gelir ve pratikte hiçbir şeyi elemez.) Kendisini hesaba katmamak önemli:
+ * aykırı değer kendi eşiğini şişirirdi.
+ */
+const DUZ_PENCERE = 10;      // kaç ölçümün ortalaması
+const DUZ_SIGMA   = 2;       // ±2σ ≈ %95,4
+const DUZ_ARDISIK = 3;       // bu kadar üst üste elenen nokta artık gürültü değil
+
+function duzlestir(dizi, taban) {
+  const gecerli = (x) => x !== null && x !== undefined && !Number.isNaN(x);
+  const temiz = [];
+  let ardisikElenen = 0;
+
+  for (let i = 0; i < dizi.length; i++) {
+    const x = Number(dizi[i]);
+    if (!gecerli(dizi[i])) { temiz.push(null); continue; }
+
+    // Kendisi hariç, en yakın geçerli DUZ_PENCERE değer.
+    const onceki = [];
+    for (let j = i - 1; j >= 0 && onceki.length < DUZ_PENCERE; j--) {
+      if (temiz[j] !== null) onceki.push(temiz[j]);
+    }
+
+    // Dört noktanın altında standart sapma anlamlı değil; eleme yapmıyoruz.
+    if (onceki.length >= 4) {
+      const ort = onceki.reduce((a, b) => a + b, 0) / onceki.length;
+      const sapma = Math.sqrt(
+        onceki.reduce((a, b) => a + (b - ort) * (b - ort), 0) / onceki.length);
+      /* TABAN ŞART. DHT11 tam sayı basıyor; sensör bir süre aynı değeri
+       * verirse sapma tam olarak 0 oluyor ve o andan sonra HER nokta
+       * "aykırı" sayılıp grafik donuyordu. Taban, kanalın çözünürlüğü
+       * kadar bir sapmayı her zaman normal kabul ediyor. */
+      const esik = Math.max(DUZ_SIGMA * sapma, taban);
+
+      /* Ve kademe değişimi elenmemeli. Sulama sonrası nem gerçekten
+       * sıçrıyor; bunu aykırı sayıp atarsak pencere eski değerlerde
+       * takılı kalıyor ve serinin GERİ KALANI tamamen eleniyor —
+       * grafik o noktadan sonra ölüyor. Üst üste birkaç nokta aynı
+       * yöne kaçtıysa bu gürültü değil, yeni gerçek. */
+      if (Math.abs(x - ort) > esik && ardisikElenen < DUZ_ARDISIK) {
+        ardisikElenen++;
+        temiz.push(null);
+        continue;
+      }
+    }
+    ardisikElenen = 0;
+    temiz.push(x);
+  }
+
+  // 10'luk hareketli ortalama — nokta kendisi dahil, geriye doğru.
+  return temiz.map((_, i) => {
+    const p = [];
+    for (let j = i; j >= 0 && p.length < DUZ_PENCERE; j--) {
+      if (temiz[j] !== null) p.push(temiz[j]);
+    }
+    return p.length ? p.reduce((a, b) => a + b, 0) / p.length : null;
+  });
+}
+
+/* Kanalın çözünürlüğü — düzleştirmenin eleme tabanı. Bu kadarlık bir
+ * sapma sensörün kendi adım büyüklüğü, gürültü değil. */
+const DUZ_TABAN = { sicaklik: 1.0, nem: 1.0, basinc: 0.3 };
+
 /* ------------------------------------------------------------------ grafikler */
 function grafikYap(kimlik, seriler, birim, basamak = 1, eksen = {}) {
   const ctx = document.getElementById(kimlik);
@@ -1580,15 +1654,6 @@ async function gecmisYukle() {
   const yanit = await fetch(`/api/gecmis?dakika=${S.dakika}&jeton=${encodeURIComponent(S.jeton)}`);
   if (!yanit.ok) { gunluk("✕ Geçmiş verisi alınamadı", "hata"); return; }
   const v = await yanit.json();
-  const uzun = S.dakika > 720;
-  const etiketler = v.ts.map((ts) => saatEtiketi(ts, uzun));
-
-  const ata = (grafik, diziler) => {
-    grafik.data.labels = etiketler;
-    diziler.forEach((dizi, sira) => { grafik.data.datasets[sira].data = dizi; });
-    grafik.update("none");
-  };
-
   // Geçmişte bir kez bile değer görülen kanal "var" sayılıyor.
   for (const [ad, dizi] of Object.entries(v)) {
     if (ad !== "ts" && Array.isArray(dizi) && dizi.some((x) => x !== null && x !== undefined)) {
@@ -1596,47 +1661,58 @@ async function gecmisYukle() {
     }
   }
 
-  ata(S.grafikler.sicaklik, [v.hava_sicaklik, v.bmp_sicaklik]);
-  ata(S.grafikler.nem, [v.hava_nem, v.toprak_nem.map(toprakYuzde)]);
-  ata(S.grafikler.basinc, [v.basinc]);
-
-  // Tablo görünümü aynı veriden besleniyor (en yeni üstte).
+  // Grafik ve tablo TEK kaynaktan besleniyor. Ayrı beslendiklerinde ikisi
+  // farklı uzunlukta pencere tutuyordu ve düzleştirme yalnız birine
+  // uygulanabiliyordu.
   S.satirlar = v.ts.map((ts, i) => ({
     ts,
     hava_sicaklik: v.hava_sicaklik[i], bmp_sicaklik: v.bmp_sicaklik[i],
     hava_nem: v.hava_nem[i], toprak_nem: v.toprak_nem[i],
     basinc: v.basinc[i],
-  })).slice(-300);
+  })).slice(-SATIR_SINIRI);
   tabloCiz();
+  grafikleriYaz();
   S.sonZaman = v.ts.length ? v.ts[v.ts.length - 1] : 0;
   gorunurlukGuncelle();
 }
 
+/* Ekrandaki nokta sayısı: sekme saatlerce açık kalırsa dizi büyümeye devam
+ * eder ve hem grafik hem düzleştirme yavaşlar. Tablo zaten son 100'ü
+ * gösteriyor, grafik bu pencerenin tamamını. */
+const SATIR_SINIRI = 900;
+
 function noktaEkle(olcum) {
   S.satirlar.push(olcum);
-  if (S.satirlar.length > 300) S.satirlar.shift();
+  if (S.satirlar.length > SATIR_SINIRI) S.satirlar.shift();
   tabloCiz();
+  grafikleriYaz();
+}
+
+/* Grafikleri S.satirlar'dan baştan yazıyor.
+ *
+ * Her yeni noktada seriyi baştan hesaplamak israf gibi duruyor ama değil:
+ * hareketli ortalama ve aykırı elemesi son noktayı ÖNCEKİLERE bakarak
+ * belirliyor, yani sona tek değer eklemek yetmiyor — eleme kararı sonraki
+ * noktalarla değişebiliyor. 900 nokta × 5 seri iki saniyede bir, tarayıcı
+ * için önemsiz bir iş. */
+function grafikleriYaz() {
   if (!S.grafikler.sicaklik) return;
-
   const uzun = S.dakika > 720;
-  const etiket = saatEtiketi(olcum.ts, uzun);
-  // Ekrandaki nokta sayısını sınırlıyoruz: sekme saatlerce açık kalırsa
-  // dizi büyümeye devam eder ve grafik yavaşlar.
-  const sinir = 900;
+  const etiketler = S.satirlar.map((s) => saatEtiketi(s.ts, uzun));
+  const al = (ad) => S.satirlar.map((s) => (s[ad] === undefined ? null : s[ad]));
 
-  const it = (grafik, degerler) => {
-    grafik.data.labels.push(etiket);
-    degerler.forEach((deger, sira) => grafik.data.datasets[sira].data.push(deger ?? null));
-    if (grafik.data.labels.length > sinir) {
-      grafik.data.labels.shift();
-      grafik.data.datasets.forEach((ds) => ds.data.shift());
-    }
+  const yaz = (grafik, diziler, taban) => {
+    grafik.data.labels = etiketler;
+    diziler.forEach((dizi, sira) => {
+      grafik.data.datasets[sira].data = duzlestir(dizi, taban);
+    });
     grafik.update("none");
   };
 
-  it(S.grafikler.sicaklik, [olcum.hava_sicaklik, olcum.bmp_sicaklik]);
-  it(S.grafikler.nem, [olcum.hava_nem, toprakYuzde(olcum.toprak_nem)]);
-  it(S.grafikler.basinc, [olcum.basinc]);
+  yaz(S.grafikler.sicaklik, [al("hava_sicaklik"), al("bmp_sicaklik")], DUZ_TABAN.sicaklik);
+  yaz(S.grafikler.nem,
+      [al("hava_nem"), al("toprak_nem").map(toprakYuzde)], DUZ_TABAN.nem);
+  yaz(S.grafikler.basinc, [al("basinc")], DUZ_TABAN.basinc);
 }
 
 function tabloCiz() {

@@ -131,6 +131,33 @@ Pinler çıkışa alınırken önce kapalı seviye yazılıyor, sonra `pinMode`
 çağrılıyor. Ters sırada pin bir an LOW kalıyor ve aktif-LOW kartta röle
 çekiyor — yani her açılışta pompaya kısa bir darbe.
 
+### Grafik düzleştirmesi
+
+Grafikler ham seriyi değil düzleştirilmiş seriyi çiziyor: her nokta **son 10
+ölçümün ortalaması**. Öncesinde aykırı değerler eleniyor — bir nokta,
+**kendisi hariç** önceki 10 ölçümün ortalamasından **2 standart sapmadan**
+fazla saparsa atılıyor. Normal dağılımda ±2σ ≈ %95,4. (±3σ %99,7'dir; "altı
+sigma" adı ±6σ'dan gelir ve pratikte hiçbir şeyi elemez.)
+
+Noktanın kendisi eşiğe katılmıyor, yoksa aykırı değer kendi eşiğini şişirip
+kurtulurdu.
+
+İki tuzağı var, ikisi de kapatıldı:
+
+* **Sapma sıfır olabiliyor.** DHT11 tam sayı basıyor; sensör bir süre aynı
+  değeri verirse σ = 0 oluyor ve o andan sonra HER nokta aykırı sayılıp
+  grafik doniyordu. Kanalın çözünürlüğü kadar bir sapma her zaman normal
+  kabul ediliyor (`DUZ_TABAN`).
+* **Kademe değişimi aykırı değil.** Sulama sonrası nem gerçekten sıçrıyor.
+  Bunu atarsak pencere eski değerlerde takılı kalıyor ve serinin geri kalanı
+  tamamen eleniyor — grafik o noktadan sonra ölüyor. Üst üste 3 nokta aynı
+  şekilde saparsa gürültü değil yeni gerçek sayılıp kabul ediliyor.
+
+Düzleştirme **yalnızca grafikte**. Anlık değer kartları, tablo ve veritabanı
+ham kalıyor: "sensör gerçekte ne dedi" sorusunun cevabı kaybolmamalı. Grafik
+başlıklarında "10 ölçüm ort." yazıyor — etiketsiz düzleştirilmiş bir grafik
+okuyucuya yalan söyler.
+
 ### DHT11 mi DHT22 mi
 
 Artık elle seçmiyorsunuz: açılışta ikisi de deneniyor, hangisi okuma

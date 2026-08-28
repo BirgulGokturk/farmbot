@@ -216,8 +216,22 @@
             <span class="bolum-ad">Grafikler</span>
             <span class="bolum-not" id="grafik-ozet"></span>
           </button>
+          <button class="yardim" type="button" aria-expanded="false"
+                  aria-controls="yardim-grafik" aria-label="Açıklama">?</button>
         </div>
         <div class="bolum-govde">
+          <p class="yardim-metin gizli" id="yardim-grafik">
+            Grafikler <b>düzleştirilmiş</b> seriyi çiziyor: her nokta son 10
+            ölçümün ortalaması. Önce aykırı değerler eleniyor — bir nokta,
+            kendisi hariç önceki 10 ölçümün ortalamasından <b>2 standart
+            sapmadan</b> fazla saparsa atılıyor (normal dağılımda ±2σ ≈ %95,4).
+            Üst üste 3 nokta aynı şekilde saparsa bu gürültü değil gerçek bir
+            değişim sayılıp kabul ediliyor; yoksa sulama sonrası sıçrama
+            kalıcı olarak elenirdi.<br><br>
+            Düzleştirme <b>yalnızca grafikte</b>. Yukarıdaki anlık değerler,
+            tablo ve veritabanı ham kalıyor — "sensör gerçekte ne dedi"
+            sorusunun cevabı kaybolmasın diye.
+          </p>
           <div class="araclar" role="group" aria-label="Zaman aralığı">
             <button class="ikon-dugme aralik" data-dakika="15">15 dk</button>
             <button class="ikon-dugme aralik secili" data-dakika="60">1 saat</button>
@@ -228,7 +242,7 @@
 
           <div class="grafik-izgara">
             <div class="grafik" data-kanallar="hava_sicaklik,bmp_sicaklik">
-              <div class="grafik-bas">Sıcaklık <span class="ikincil">°C</span></div>
+              <div class="grafik-bas">Sıcaklık <span class="ikincil">°C · 10 ölçüm ort.</span></div>
               <div class="aciklama">
                 <span data-kanal="hava_sicaklik"><i style="background:var(--seri-1)"></i>DHT11</span>
                 <span data-kanal="bmp_sicaklik"><i style="background:var(--seri-2)"></i>BMP180</span>
@@ -237,7 +251,7 @@
             </div>
 
             <div class="grafik" data-kanallar="hava_nem,toprak_nem">
-              <div class="grafik-bas">Nem <span class="ikincil">%</span></div>
+              <div class="grafik-bas">Nem <span class="ikincil">% · 10 ölçüm ort.</span></div>
               <div class="aciklama">
                 <span data-kanal="hava_nem"><i style="background:var(--seri-1)"></i>Hava nemi</span>
                 <span data-kanal="toprak_nem"><i style="background:var(--seri-2)"></i>Toprak nemi</span>
@@ -246,7 +260,7 @@
             </div>
 
             <div class="grafik" data-kanallar="basinc">
-              <div class="grafik-bas">Basınç <span class="ikincil">hPa</span></div>
+              <div class="grafik-bas">Basınç <span class="ikincil">hPa · 10 ölçüm ort.</span></div>
               <div class="grafik-kutu"><canvas id="g-basinc"></canvas></div>
             </div>
 
