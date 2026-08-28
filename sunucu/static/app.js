@@ -35,7 +35,6 @@ const S = {
   sonKonum: null,
   ajanBagli: false,
   satirlar: [],          // tablo görünümü için son ölçümler
-  ucProbKip: "analog", // uçtaki prob analog mu dijital mi (Arduino bildiriyor)
   arduinoCalisma: null, // kartın çalışma süresi (sn); geriye giderse kart yeniden başlamış
   sonZaman: 0,
 };
@@ -1555,9 +1554,8 @@ function grafikleriKur() {
    * bir aralık var; pencere büyürken oraya taşmasın. */
   S.grafikler.sicaklik = grafikYap("g-sicaklik", [{ ad: "DHT11" }, { ad: "BMP180" }], "°C", 1,
                                    { enAz: 10 });
-  S.grafikler.nem = grafikYap("g-nem",
-                              [{ ad: "Hava nemi" }, { ad: "Yatak nemi" }, { ad: "Uç probu" }],
-                              "%", 0, { enAz: 20, sinir: [0, 100] });
+  S.grafikler.nem = grafikYap("g-nem", [{ ad: "Hava nemi" }, { ad: "Toprak nemi" }], "%", 0,
+                              { enAz: 20, sinir: [0, 100] });
   S.grafikler.basinc = grafikYap("g-basinc", [{ ad: "Basınç" }], "hPa", 1,
                                  { enAz: 10 });
 }
@@ -1583,8 +1581,7 @@ async function gecmisYukle() {
   }
 
   ata(S.grafikler.sicaklik, [v.hava_sicaklik, v.bmp_sicaklik]);
-  ata(S.grafikler.nem, [v.hava_nem, v.toprak_nem.map(toprakYuzde),
-                        (v.uc_toprak || []).map(toprakYuzde)]);
+  ata(S.grafikler.nem, [v.hava_nem, v.toprak_nem.map(toprakYuzde)]);
   ata(S.grafikler.basinc, [v.basinc]);
 
   // Tablo görünümü aynı veriden besleniyor (en yeni üstte).
@@ -1592,7 +1589,6 @@ async function gecmisYukle() {
     ts,
     hava_sicaklik: v.hava_sicaklik[i], bmp_sicaklik: v.bmp_sicaklik[i],
     hava_nem: v.hava_nem[i], toprak_nem: v.toprak_nem[i],
-    uc_toprak: (v.uc_toprak || [])[i],
     basinc: v.basinc[i],
   })).slice(-300);
   tabloCiz();
@@ -1623,20 +1619,8 @@ function noktaEkle(olcum) {
   };
 
   it(S.grafikler.sicaklik, [olcum.hava_sicaklik, olcum.bmp_sicaklik]);
-  it(S.grafikler.nem, [olcum.hava_nem, toprakYuzde(olcum.toprak_nem),
-                       toprakYuzde(olcum.uc_toprak)]);
+  it(S.grafikler.nem, [olcum.hava_nem, toprakYuzde(olcum.toprak_nem)]);
   it(S.grafikler.basinc, [olcum.basinc]);
-}
-
-/* Uçtaki prob iki kipte de gelebiliyor: analogda 0-1023 ham değer, dijitalde
- * yalnız 0/1. İkisini aynı biçimde göstermek yanlış olur — dijitalde "%100"
- * yazmak sensörün söylemediği bir şeyi söylemek olurdu. Kipi Arduino kendisi
- * bildiriyor (`uc_toprak_kip`); duymadıysak firmware'in şu anki varsayılanı
- * olan analog kabul ediyoruz. */
-function ucProbMetin(ham) {
-  if (ham === null || ham === undefined) return "—";
-  if (S.ucProbKip === "dijital") return ham >= 0.5 ? "kuru" : "ıslak";
-  return sayi(toprakYuzde(ham), 0);
 }
 
 function tabloCiz() {
@@ -1648,7 +1632,6 @@ function tabloCiz() {
       `<tr><td>${new Date(s.ts * 1000).toLocaleString("tr-TR")}</td>` +
       `<td>${sayi(s.hava_sicaklik)}</td><td>${sayi(s.bmp_sicaklik)}</td>` +
       `<td>${sayi(s.hava_nem)}</td><td>${sayi(toprakYuzde(s.toprak_nem), 0)}</td>` +
-      `<td>${ucProbMetin(s.uc_toprak)}</td>` +
       `<td>${sayi(s.basinc)}</td></tr>`
     );
   }
@@ -1658,14 +1641,12 @@ function tabloCiz() {
 /* ----------------------------------------------------------------- kartlar */
 function kartlariGuncelle(o) {
   if (!o) return;
-  if (o.uc_toprak_kip) S.ucProbKip = o.uc_toprak_kip;
   roleDurumSenkron(o);
   if (kanallariTara(o)) gorunurlukGuncelle();
   $("#d-sicaklik").innerHTML = `${sayiCoz(o.hava_sicaklik)}<span class="birim">°C</span>`;
   $("#d-nem").innerHTML = `${sayiCoz(o.hava_nem)}<span class="birim">%</span>`;
   $("#d-toprak").innerHTML = `${sayi(toprakYuzde(o.toprak_nem), 0)}<span class="birim">%</span>`;
   $("#d-basinc").innerHTML = `${sayi(o.basinc)}<span class="birim">hPa</span>`;
-  $("#d-uc-toprak").innerHTML = `${sayi(toprakYuzde(o.uc_toprak), 0)}<span class="birim">%</span>`;
 
   // Sensör adı sabit yazılmıyor: Arduino hangi DHT'yi bulduysa onu bildiriyor.
   // "DHT11" yazan bir kartın altında DHT22 durması, ölçüm tutmadığında yanlış
@@ -1691,8 +1672,6 @@ function kartlariGuncelle(o) {
     : `BMP${hamEk("basinc", 2)} · ${sayi(o.rakim, 0)} m`;
   $("#a-sicaklik").textContent = o.bmp_sicaklik == null ? dhtAd + hamEk("hava_sicaklik")
     : `${dhtAd}${hamEk("hava_sicaklik")} · BMP ${sayi(o.bmp_sicaklik)}`;
-  $("#a-uc-toprak").textContent = o.uc_toprak == null ? "Uca takılı prob"
-    : `Uca takılı prob · ham ${sayi(o.uc_toprak, 0)}`;
 }
 
 /* ------------------------------------------------- rölelerin gerçek durumu

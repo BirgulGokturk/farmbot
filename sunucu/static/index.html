@@ -190,17 +190,12 @@
             <div class="olcum" data-kanallar="toprak_nem">
               <span class="olcum-ad">Toprak nemi</span>
               <div class="deger" id="d-toprak">—<span class="birim">%</span></div>
-              <span class="ikincil" id="a-toprak">HW-103</span>
+              <span class="ikincil" id="a-toprak">Uca takılı prob</span>
             </div>
             <div class="olcum" data-kanallar="basinc">
               <span class="olcum-ad">Basınç</span>
               <div class="deger" id="d-basinc">—<span class="birim">hPa</span></div>
               <span class="ikincil" id="a-rakim">BMP180</span>
-            </div>
-            <div class="olcum" data-kanallar="uc_toprak">
-              <span class="olcum-ad">Uç probu</span>
-              <div class="deger" id="d-uc-toprak">—<span class="birim">%</span></div>
-              <span class="ikincil" id="a-uc-toprak">Uca takılı prob</span>
             </div>
           </div>
           <p class="bos-durum gizli" id="veri-yok">
@@ -245,8 +240,7 @@
               <div class="grafik-bas">Nem <span class="ikincil">%</span></div>
               <div class="aciklama">
                 <span data-kanal="hava_nem"><i style="background:var(--seri-1)"></i>Hava nemi</span>
-                <span data-kanal="toprak_nem"><i style="background:var(--seri-2)"></i>Yatak nemi</span>
-                <span data-kanal="uc_toprak"><i style="background:var(--seri-3)"></i>Uç probu</span>
+                <span data-kanal="toprak_nem"><i style="background:var(--seri-2)"></i>Toprak nemi</span>
               </div>
               <div class="grafik-kutu"><canvas id="g-nem"></canvas></div>
             </div>
@@ -317,7 +311,7 @@
                        yanlış başlığın altına düşüyor ve kimse fark etmiyor.
                        Sıra app.js -> tabloCiz() ile aynı. -->
                   <th>Saat</th><th>Sıcaklık</th><th>BMP °C</th><th>Hava nemi</th>
-                  <th>Yatak nemi</th><th>Uç probu</th><th>Basınç</th><th>Vana</th>
+                  <th>Toprak nemi</th><th>Basınç</th>
                 </tr>
               </thead>
               <tbody id="tablo-govde"></tbody>

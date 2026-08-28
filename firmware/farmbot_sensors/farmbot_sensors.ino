@@ -13,8 +13,7 @@
  *   D2   DHT11 veri
  *   D7   su pompası rölesi
  *   D8   hava pompası rölesi
- *   A0   HW-103 toprak nemi (yatakta sabit duran)
- *   A1   uçtaki iki uçlu toprak probu (analog)
+ *   A1   toprak nemi probu — iki uçlu, tool ucuna takılı, toprağa daldırılır
  *   A4/A5 GY-68 / BMP180 (I2C)
  *
  * Pi'ye giden satır:  VERI:{...}
@@ -31,8 +30,14 @@
 #define DHT_PIN        2
 #define SU_POMPASI_PIN 7
 #define HAVA_POMPASI_PIN 8
-#define YATAK_NEM_PIN  A0
-#define UC_PROB_PIN    A1
+/* Tek toprak sensörü var ve tool ucunda: makine nereye giderse ölçüm
+ * oradan geliyor. Eskiden yatağa sabit ikinci bir sensör varsayılıyordu
+ * (A0); yok. Boş bir pini okumak, panelde gerçek veri gibi görünen
+ * anlamsız sayı üretmek demekti.
+ *
+ * Ölçek: kuru toprakta değer YÜKSEK, ıslakta düşük. Yüzdeye çevirmek
+ * panelin işi, ham değer olduğu gibi gidiyor. */
+#define TOPRAK_PIN     A1
 
 /* Röle kartlarının çoğu AKTİF-LOW: pine LOW verince röle çeker. Kartınız
  * tersse (LOW'da sessiz, HIGH'da çekiyor) burayı 0 yapın. Yanlış seçim
@@ -167,8 +172,7 @@ void olcVeYaz() {
   Serial.print(",\"bmp_sicaklik\":");         sayiYaz(bmpSicaklik);
   Serial.print(",\"basinc\":");               sayiYaz(basinc);
   Serial.print(",\"rakim\":");                sayiYaz(rakim);
-  Serial.print(",\"toprak_nem\":");           Serial.print(analogRead(YATAK_NEM_PIN));
-  Serial.print(",\"uc_toprak\":");            Serial.print(analogRead(UC_PROB_PIN));
+  Serial.print(",\"toprak_nem\":");           Serial.print(analogRead(TOPRAK_PIN));
   Serial.print(",\"r_su_pompasi\":");         Serial.print(suPompasiAcik ? 1 : 0);
   Serial.print(",\"r_hava_pompasi\":");       Serial.print(havaPompasiAcik ? 1 : 0);
   /* Kartın açık kaldığı süre. Geriye giderse kart yeniden başlamıştır ve

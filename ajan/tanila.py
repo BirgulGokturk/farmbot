@@ -140,7 +140,7 @@ def arduino_dinle(port: str, baud: int, saniye: float = 12.0) -> dict | None:
 
     print(f"{TAMAM} VERI satırı okundu.")
     beklenen = ["hava_nem", "hava_sicaklik", "bmp_sicaklik", "basinc", "rakim",
-                "toprak_nem", "uc_toprak"]
+                "toprak_nem"]
     for ad in beklenen:
         deger = veri.get(ad)
         if deger is None:

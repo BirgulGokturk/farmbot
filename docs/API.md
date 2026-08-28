@@ -58,7 +58,7 @@ Anlık makine durumu ve son ölçüm.
 ```json
 {
   "durum": {
-    "bagli": true, "kip": "oto",
+    "bagli": true,
     "konum": {"x": 120.0, "y": 80.0, "z": 340.0},
     "plc": "bagli", "enable": true, "hareket": false, "jog": [],
     "z_guvenli": true, "guvenli_z": 340.0, "toprak_z": 110.0,
@@ -72,11 +72,12 @@ Anlık makine durumu ve son ölçüm.
   "olcum": {
     "hava_nem": 45, "hava_sicaklik": 26,
     "bmp_sicaklik": 27.1, "basinc": 1009.2, "rakim": 120,
-    "toprak_nem": 350, "servo_aci": 0.0,
+    "toprak_nem": 350,
+    "r_su_pompasi": 0, "r_hava_pompasi": 1, "calisma_sn": 7412,
     "ham": {"hava_nem": 47, "hava_sicaklik": 27,
             "bmp_sicaklik": 27.14, "basinc": 1009.24,
             "rakim": 119.9, "toprak_nem": 356},
-    "kip": "oto", "ts": 1787496298.07
+    "ts": 1787496298.07
   },
   "panel_kilitli": true
 }
@@ -118,9 +119,7 @@ aşımı.
 | `acil_temizle` | `{}` |
 | `enable` | `{"deger": true}` |
 | `hiz` | `{"mm_s": 20}` |
-| `servo` | `{"aci": 90}` |
-| `kip` | `{"deger": "oto"}` ya da `"manuel"` |
-| `role` | `{"ad": "su_pompasi", "durum": true}` — `hava_pompasi`, `su_vanasi` |
+| `role` | `{"ad": "su_pompasi", "durum": true}` — ya da `hava_pompasi` |
 | `jog` / `jog_dur` | REST yerine WebSocket'ten gönderin (aşağı bakın) |
 | `bolge_listele` | `{}` — ajandaki yasak bölgeler |
 | `bolge_kaydet` | `{"bolgeler":[{ad,x1,y1,x2,y2,izin_kosulu,yuva,aktif}]}` |
@@ -130,8 +129,6 @@ aşımı.
 | `uc_birak` | `{}` |
 | `dizi_baslat` | `{"ad":…,"adimlar":[…],"tekrar":1}` — adımlar ÇÖZÜLMÜŞ olmalı |
 | `dizi_durdur` | `{}` — sert duruş, hedefleri nötrler |
-| `oto_esik` | `{"ham":600}` — otomatik sulama eşiği (HW-103 ham ADC, 0–1023). Panel yüzdeyi hama çevirir |
-| `oto_cikis` | `{"ad":"yok"\|"servo"\|"su_vanasi"\|"su_pompasi"}` — otomatik kipte sürülecek çıkış |
 
 ### Nokta deposu, ızgara, programlar, kamera (ajana gitmeyen uçlar)
 
@@ -244,8 +241,11 @@ Bırakınca `{"tip": "jog", "hepsi_dur": true}`.
 | `bmp_sicaklik` | BMP180 | °C |
 | `basinc` | BMP180 | hPa |
 | `rakim` | BMP180 | m |
-| `toprak_nem` | HW-103 | **ham ADC 0–1023**, kuruyken ~1023 |
-| `servo_aci` | SG-5010 | derece |
+| `toprak_nem` | tool ucundaki prob (A1) | **ham ADC 0–1023**, kuruyken ~1023 |
+
+Ayrıca ölçüm satırında rölelerin gerçek durumu (`r_su_pompasi`,
+`r_hava_pompasi`; 0/1) ve kartın çalışma süresi (`calisma_sn`) geliyor.
+Süre geriye giderse kart yeniden başlamış, yani röleler kapanmıştır.
 
 `toprak_nem` ham geliyor. Yüzdeye çevirmek arayüzün işi:
 `yuzde = (1023 - ham) / 1023 * 100`. Ham değeri de gösterin, ters okuma
@@ -262,12 +262,12 @@ Yukarıdaki kanallar **ham okuma değil**. Ajan (`ajan/arduino.py`,
    satır hiç üretilmez).
 2. **Çözünürlüğe yuvarlıyor.** DHT11 tam sayı üretir — 26,3 °C yazmak
    sensörün yapmadığı bir hassasiyeti uydurmaktır. Adımlar: DHT11 1 °C /
-   %1 (DHT22 takılıysa 0,1), BMP180 0,1 °C ve 0,1 hPa, rakım 1 m, HW-103
-   1 sayım.
+   %1 (DHT22 takılıysa 0,1), BMP180 0,1 °C ve 0,1 hPa, rakım 1 m, toprak
+   probu 1 sayım.
 3. **Medyan alıyor.** Son N örneğin ortancası (varsayılan N=5, ayarda
    `arduino.medyan_pencere`). Ortalama değil: tek tük sıçrama ortalamayı
-   çeker, medyan görmez. `servo_aci` HARİÇ — o bir ölçüm değil, kontrol
-   sinyali.
+   çeker, medyan görmez. Rölelerin durumu bu yoldan HİÇ geçmiyor: o bir
+   ölçüm değil, kartın bildirdiği kesin durum.
 
 Düzeltme **ajanda**, çünkü veritabanına baştan temiz veri girsin ve
 geçmiş de doğru olsun. Sunucuda yapılsaydı kayıt kirli kalır, panelde

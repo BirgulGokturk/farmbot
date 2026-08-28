@@ -76,8 +76,6 @@ class Duzeltici:
         "basinc": 0.1,
         "rakim": 1.0,
         "toprak_nem": 1.0,
-        # Uçtaki prob: 10 bitlik ADC, birim = sayım.
-        "uc_toprak": 1.0,
     }
     DHT22_ADIM = {"hava_sicaklik": 0.1, "hava_nem": 0.1}
 
@@ -344,7 +342,6 @@ class Arduino:
             "basinc": (300.0, 1100.0, "hPa"),
             "rakim": (-500.0, 9000.0, "m"),
             "toprak_nem": (0.0, 1023.0, ""),
-            "uc_toprak": (0.0, 1023.0, ""),
         }
         for ad, (alt, ust, birim) in SINIR.items():
             deger = veri.get(ad)
@@ -487,9 +484,6 @@ class SahteArduino(Arduino):
             # HW-103: analog, kayan taban + belirgin gürültü.
             toprak = int(max(0, min(1023, toprak_gercek + rast.gauss(0, 13))))
 
-            # Uçtaki prob yataktakinden biraz ayrı okusun ki iki kanalın
-            # ayrı olduğu panelde görünsün.
-            uc = int(max(0, min(1023, toprak + rast.gauss(0, 25))))
             self._veri_isle(
                 json.dumps(
                     {
@@ -499,7 +493,6 @@ class SahteArduino(Arduino):
                         "basinc": bmp_p,
                         "rakim": rakim,
                         "toprak_nem": toprak,
-                        "uc_toprak": uc,
                         "dht": "DHT11",
                         "r_su_pompasi": 1 if self.roleler["su_pompasi"] else 0,
                         "r_hava_pompasi": 1 if self.roleler["hava_pompasi"] else 0,

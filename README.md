@@ -98,8 +98,7 @@ Eklenenler:
 |---|---|---|---|
 | GY-68 (BMP180) | VCC · GND · SDA · SCL | **3.3V** · GND · A4 · A5 | 5V **bağlamayın** |
 | DHT11 / DHT22 | VCC · GND · DATA | 5V · GND · D2 | Kart üstünde direnç yoksa VCC–DATA arası 10K |
-| HW-103 | VCC · GND · A0 | 5V · GND · A0 | yatakta sabit; D0 boşta kalır |
-| Uç probu | VCC · GND · A0 | 5V · GND · **A1** | uca takılı, toprağa daldırılır |
+| Toprak probu | VCC · GND · A0 | 5V · GND · **A1** | tool ucuna takılı, toprağa daldırılır |
 | Su pompası rölesi | IN | D7 | |
 | Hava pompası rölesi | IN | D8 | |
 
@@ -261,7 +260,12 @@ Sulama şu an panelden ya da ajandaki programdan sürülüyor — "noktaya git,
 su pompasını aç, N saniye bekle, kapat". Otomatik karar geri gelecekse
 Pi'de olacak: eşik ve geçmiş orada zaten var, kartta yoktu.
 
-Toprak nemi panelde **yüzde** gösteriliyor. HW-103 kuruyken ~1023, ıslakken ~0
+Toprak sensörü **tek** ve tool ucunda: makine nereye giderse ölçüm oradan
+geliyor — "bitkiye git, nemini ölç, ona göre sula" mantığı buna dayanıyor.
+Yatağa sabit ikinci bir sensör yok; kod bir dönem öyle varsayıyordu ve boş
+bir pini okuyordu.
+
+Toprak nemi panelde **yüzde** gösteriliyor. Prob kuruyken ~1023, ıslakken ~0
 okuyor; ham sayıyı göstermek "nem arttıkça değer düşüyor" gibi tersine bir
 okuma yaratıyordu. Ham değer kartın altında ayrıca yazıyor.
 
@@ -388,7 +392,8 @@ Sahadan gelen gerçek değerler `ajan/uclar.json` içinde: `safe_z` 280,
 `slide_axis` Y; uçlar tool1 (10, 70.5, 150), tool2 (5, 150, 200),
 tool3 (5, 250, 250). `lock_dwell` milisaniye — 50'nin altındaki değerler
 saniye kabul edilir (referans program 1.5 kullanıyordu; 1500'ü saniye sanmak
-servo komutundan sonra 25 dakika donmak demekti).
+kilit servosu komutundan sonra 25 dakika donmak demekti). Bu servo
+PLC register'ından sürülüyor, Arduino'yla ilgisi yok.
 
 ### Programlar
 Adım tipleri: noktaya git · bekle · röle aç/kapa · uç değiştir.

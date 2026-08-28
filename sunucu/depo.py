@@ -22,8 +22,7 @@ KANALLAR = [
     "bmp_sicaklik",      # BMP180 sıcaklık (°C)
     "basinc",            # BMP180 basınç (hPa)
     "rakim",             # BMP180 rakım (m)
-    "toprak_nem",        # HW-103 ham ADC değeri (0-1023) — YATAKTA sabit
-    "uc_toprak",         # uçtaki iki uçlu prob; dijitalse 0/1, analogsa 0-1023
+    "toprak_nem",        # ham ADC 0-1023; prob tool ucunda, makineyle gezer
     # Ölçümün ALINDIĞI KONUM. Tarla haritasındaki "sensör okumaları" katmanı
     # buna dayanıyor: toprak nemi bir sayı değil, bir YERDEKİ sayı. Ajan her
     # ölçüme o anki eksen konumunu ekliyor; PLC bağlı değilse boş geçiyor.

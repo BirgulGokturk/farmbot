@@ -62,8 +62,8 @@
   /* Grafik serileri — kategorik, durum değil */
   --seri-1:       #4a90e2;
   --seri-2:       #d95926;
-  /* Üçüncü seri: uçtaki prob. Yataktaki nemle aynı eksende duruyor,
-     bu yüzden ikisinin birbirinden ilk bakışta ayrılması gerekiyor. */
+  /* Üçüncü seri şu an kullanılmıyor ama grafikYap iki seriye göre
+     sabitlenmiş değil: bir grafiğe üçüncü kanal eklenirse rengi hazır. */
   --seri-3:       #46b98a;
 
   /* Durum renkleri. Yalnız durum. Her zaman simge ya da yazıyla birlikte. */
