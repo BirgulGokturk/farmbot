@@ -62,6 +62,9 @@
   /* Grafik serileri — kategorik, durum değil */
   --seri-1:       #4a90e2;
   --seri-2:       #d95926;
+  /* Üçüncü seri: uçtaki prob. Yataktaki nemle aynı eksende duruyor,
+     bu yüzden ikisinin birbirinden ilk bakışta ayrılması gerekiyor. */
+  --seri-3:       #46b98a;
 
   /* Durum renkleri. Yalnız durum. Her zaman simge ya da yazıyla birlikte. */
   --iyi:          #4caf50;
@@ -1675,3 +1678,55 @@ button.dugme.tehlike:disabled {
 .anahtar input:disabled + .yuva { opacity: .5; }
 .anahtar input:disabled ~ * { opacity: .5; }
 
+
+
+/* ------------------------------------------------------------------ röleler
+   Röle düğmesi bir eylem değil, bir ANAHTAR: bakınca "şu an açık mı" sorusu
+   yazıyı okumadan cevaplanmalı. Bu yüzden açık durum yalnız kelimeyle değil
+   dolu zemin, kenarlık ve yanan bir nokta ile gösteriliyor — pompa çalışırken
+   ekrana şöyle bir bakmak yetsin. Düğme yüksekliği de sabit: durum yazısı
+   "kapalı"dan "AÇIK"a dönerken satır zıplamasın. */
+.role-izgara {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: var(--b2);
+}
+button.dugme.role {
+  height: auto;
+  min-height: 64px;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 2px;
+  padding: var(--b2) var(--b3);
+  text-align: left;
+}
+.role .role-ad { font-weight: 600; }
+.role .role-durum {
+  font-size: var(--yazi-kucuk);
+  color: var(--metin-3);
+  letter-spacing: .04em;
+}
+/* Yanan nokta: renk körlüğünde de fark edilsin diye kelimeyle BİRLİKTE
+   duruyor, tek başına renge yaslanmıyor. */
+.role .role-durum::before {
+  content: "";
+  display: inline-block;
+  width: 7px; height: 7px;
+  margin-right: 6px;
+  border-radius: 50%;
+  background: var(--metin-3);
+  vertical-align: middle;
+}
+button.dugme.role.acik {
+  background: rgba(74, 168, 96, .16);
+  border-color: #4aa860;
+  color: #d6f0dc;
+}
+button.dugme.role.acik:hover:not(:disabled) { background: rgba(74, 168, 96, .24); }
+.role.acik .role-durum { color: #8fdca4; font-weight: 600; }
+.role.acik .role-durum::before {
+  background: #6ed08a;
+  box-shadow: 0 0 6px rgba(110, 208, 138, .9);
+}
+.role:disabled { opacity: .5; }

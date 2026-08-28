@@ -76,19 +76,15 @@ class Duzeltici:
         "basinc": 0.1,
         "rakim": 1.0,
         "toprak_nem": 1.0,
-        # Uçtaki prob. Dijital kipte değer zaten 0/1; yumuşatma adımı 1
-        # olunca medyan filtresi onu bozmadan geçiriyor. Analog kipe
-        # geçilirse 0-1023 sayımı yine 1'lik adımla doğru kalıyor.
+        # Uçtaki prob: 10 bitlik ADC, birim = sayım.
         "uc_toprak": 1.0,
-        "servo_aci": 1.0,
     }
     DHT22_ADIM = {"hava_sicaklik": 0.1, "hava_nem": 0.1}
 
-    #: Medyan UYGULANMAYAN kanallar. Servo açısı bir ölçüm değil, kontrol
-    #: sinyali: 0 ile 90 arasında bilerek zıplıyor. Medyan geçişi
-    #: geciktirir ve "vana tam olarak ne zaman açıldı" sorusunun cevabını
-    #: bozar.
-    MEDYANSIZ = {"servo_aci"}
+    #: Medyan UYGULANMAYAN kanallar. Şu an yok: kartın bildirdiği her
+    #: kanal gerçek bir ölçüm ve gürültü taşıyor. Rölelerin durumu bu
+    #: tablodan hiç geçmiyor — o ölçüm değil, kesin durum.
+    MEDYANSIZ: set[str] = set()
 
     #: DHT11 veri sayfası çalışma aralığı. Bunun dışı ölçüm değil arıza.
     DHT11_ARALIK = {"hava_sicaklik": (0.0, 50.0), "hava_nem": (20.0, 90.0)}
@@ -348,7 +344,7 @@ class Arduino:
             "basinc": (300.0, 1100.0, "hPa"),
             "rakim": (-500.0, 9000.0, "m"),
             "toprak_nem": (0.0, 1023.0, ""),
-            "servo_aci": (0.0, 180.0, "°"),
+            "uc_toprak": (0.0, 1023.0, ""),
         }
         for ad, (alt, ust, birim) in SINIR.items():
             deger = veri.get(ad)
@@ -438,18 +434,10 @@ class SahteArduino(Arduino):
         super().__init__(port="sahte", baud=0, geri_cagir=geri_cagir,
                          medyan_pencere=medyan_pencere)
         self.aralik = aralik
-        self.servo_aci = 0.0
-        # Gerçek kartta bunlar EEPROM'da; burada bellekte taklit ediliyor ki
-        # panelin otomatik sulama ekranı sahte kipte de denenebilsin.
-        self.esik = 600
-        # Sahadaki tesisat: şu an yalnızca üç sensör takılı, vana servosu ve
-        # röleler bağlı değil. Sahte kip bunu taklit ediyor ki panel gerçekte
-        # göreceğimiz hâliyle denenebilsin (firmware'deki SERVO_BAGLI /
-        # ROLELER_BAGLI ile aynı anlam).
-        self.servo_var = 0
-        self.role_var = 0
-        self.oto_cikis = "servo" if self.servo_var else "yok"
-        self.kip = "oto"
+        # Kart iki röle tutuyor; sahte kip de aynısını taklit ediyor ki
+        # panel gerçekte göreceğimiz hâliyle denenebilsin.
+        self.roleler = {"su_pompasi": False, "hava_pompasi": False}
+        self._baslangic = time.time()
 
     @property
     def bagli(self) -> bool:
@@ -499,8 +487,9 @@ class SahteArduino(Arduino):
             # HW-103: analog, kayan taban + belirgin gürültü.
             toprak = int(max(0, min(1023, toprak_gercek + rast.gauss(0, 13))))
 
-            if self.kip == "oto" and self.oto_cikis == "servo" and self.servo_var:
-                self.servo_aci = 90.0 if toprak < self.esik else 0.0
+            # Uçtaki prob yataktakinden biraz ayrı okusun ki iki kanalın
+            # ayrı olduğu panelde görünsün.
+            uc = int(max(0, min(1023, toprak + rast.gauss(0, 25))))
             self._veri_isle(
                 json.dumps(
                     {
@@ -510,55 +499,33 @@ class SahteArduino(Arduino):
                         "basinc": bmp_p,
                         "rakim": rakim,
                         "toprak_nem": toprak,
-                        "servo_aci": self.servo_aci if self.servo_var else None,
+                        "uc_toprak": uc,
                         "dht": "DHT11",
-                        "servo_var": self.servo_var,
-                        "role_var": self.role_var,
-                        "esik": self.esik,
-                        "oto_cikis": self.oto_cikis,
-                        # Ham deger kurudukca YUKSELIYOR: esigi asinca sulanir.
-                        # Firmware ile ayni yonde olmali, yoksa sahte kipte
-                        # panel dogru gorunup gercekte ters calisir.
-                        "oto_acik": 1 if (self.oto_cikis != "yok" and toprak > self.esik) else 0,
-                        "kip": self.kip,
+                        "r_su_pompasi": 1 if self.roleler["su_pompasi"] else 0,
+                        "r_hava_pompasi": 1 if self.roleler["hava_pompasi"] else 0,
+                        "calisma_sn": int(time.time() - self._baslangic),
                     }
                 )
             )
             time.sleep(self.aralik)
 
     def komut(self, metin: str) -> None:
-        metin = metin.strip().upper()
-        if metin == "AC":
-            self.servo_aci = 90.0
-            self.kip = "manuel"
-        elif metin == "KAPA":
-            self.servo_aci = 0.0
-            self.kip = "manuel"
-        elif metin.startswith("SERVO"):
-            try:
-                self.servo_aci = float(metin.split()[1])
-            except (IndexError, ValueError):
-                raise RuntimeError("SERVO komutu bir açı bekliyor")
-            self.kip = "manuel"
-        elif metin == "AUTO":
-            self.kip = "oto"
-        elif metin == "MANUEL":
-            self.kip = "manuel"
-        elif metin.startswith("ESIK"):
-            try:
-                self.esik = max(0, min(1023, int(metin.split()[1])))
-            except (IndexError, ValueError):
-                raise RuntimeError("ESIK komutu bir sayı bekliyor")
-        elif metin.startswith("OTOCIKIS"):
-            try:
-                ad = metin.split()[1].lower()
-            except IndexError:
-                raise RuntimeError("OTOCIKIS bir ad bekliyor")
-            if ad not in ("yok", "servo", "su_vanasi", "su_pompasi"):
-                raise RuntimeError(f"Bilinmeyen çıkış: {ad}")
-            bagli = {"yok": True, "servo": bool(self.servo_var),
-                     "su_vanasi": bool(self.role_var), "su_pompasi": bool(self.role_var)}
-            if not bagli[ad]:
-                raise RuntimeError(f"'{ad}' bağlı değil")
-            self.oto_cikis = ad
+        """Kartın anladığı komutlar: ROLE <ad> <0|1> · KAPAT · OKU."""
+        metin = metin.strip()
+        buyuk = metin.upper()
+        if buyuk == "KAPAT":
+            for ad in self.roleler:
+                self.roleler[ad] = False
+        elif buyuk == "OKU":
+            pass
+        elif buyuk.startswith("ROLE "):
+            parca = metin.split()
+            if len(parca) != 3:
+                raise RuntimeError("ROLE <ad> <0|1>")
+            ad = parca[1].lower()
+            if ad not in self.roleler:
+                raise RuntimeError(f"Bilinmeyen röle: {ad}")
+            self.roleler[ad] = parca[2] != "0"
+        else:
+            raise RuntimeError(f"Bilinmeyen komut: {metin}")
         logger.info("Sahte Arduino komutu: %s", metin)

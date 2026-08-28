@@ -13,7 +13,6 @@ Adım tipleri
     {"tip": "nokta",  "ad": "s1", "x":…, "y":…, "z":…}
     {"tip": "bekle",  "saniye": 5}
     {"tip": "role",   "ad": "su_pompasi", "durum": true}
-    {"tip": "servo",  "aci": 90}
     {"tip": "uc",     "ad": "tool1"}      # uç değiştir (birak için ad boş)
 
 Hepsi mevcut komutları çağırıyor; yeni bir hareket yolu yok.
@@ -66,18 +65,12 @@ class Dizi:
 
         if tip == "role":
             role = str(adim.get("ad", ""))
-            if role not in ("su_pompasi", "hava_pompasi", "su_vanasi"):
+            if role not in ("su_pompasi", "hava_pompasi"):
                 raise DiziHatasi(f"Bilinmeyen röle: '{role}'")
             durum = 1 if adim.get("durum") else 0
             self.arduino_komut(f"ROLE {role} {durum}")
             return f"{role} {'açıldı' if durum else 'kapandı'}"
 
-        if tip == "servo":
-            aci = int(adim.get("aci", 0))
-            if not 0 <= aci <= 180:
-                raise DiziHatasi("Servo açısı 0-180 arasında olmalı")
-            self.arduino_komut(f"SERVO {aci}")
-            return f"servo {aci}°"
 
         if tip == "uc":
             ad = str(adim.get("ad", "") or "")
@@ -130,8 +123,6 @@ class Dizi:
             return f"{adim.get('saniye', 0)} sn bekle"
         if tip == "role":
             return f"{adim.get('ad')} {'aç' if adim.get('durum') else 'kapat'}"
-        if tip == "servo":
-            return f"servo {adim.get('aci')}°"
         if tip == "uc":
             return f"uç: {adim.get('ad') or 'bırak'}"
         return str(tip)

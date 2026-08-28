@@ -24,7 +24,6 @@ KANALLAR = [
     "rakim",             # BMP180 rakım (m)
     "toprak_nem",        # HW-103 ham ADC değeri (0-1023) — YATAKTA sabit
     "uc_toprak",         # uçtaki iki uçlu prob; dijitalse 0/1, analogsa 0-1023
-    "servo_aci",         # SG-5010 açısı (derece)
     # Ölçümün ALINDIĞI KONUM. Tarla haritasındaki "sensör okumaları" katmanı
     # buna dayanıyor: toprak nemi bir sayı değil, bir YERDEKİ sayı. Ajan her
     # ölçüme o anki eksen konumunu ekliyor; PLC bağlı değilse boş geçiyor.

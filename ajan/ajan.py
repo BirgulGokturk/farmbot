@@ -38,6 +38,10 @@ import arduino as arduino_modulu
 import bolgeler as bolge_modulu
 import plc as plc_modulu
 import dizi as dizi_modulu
+
+#: Karttaki röleler. Tek yerde duruyor ki panel, ajan ve firmware üçü de
+#: aynı listeyi konuşsun; kart bunlardan başkasını tanımıyor.
+ROLELER = {"su_pompasi": "Su pompası", "hava_pompasi": "Hava pompası"}
 import kamera as kamera_modulu
 import uclar as uc_modulu
 
@@ -105,7 +109,6 @@ class Ajan:
         self.dongu: asyncio.AbstractEventLoop | None = None
         self.kuyruk: asyncio.Queue = asyncio.Queue(maxsize=200)
         self.ws = None
-        self.kip = "oto"
 
         # Yasak bölgeler ajanda: panel çökse, sunucu düşse, komut başka bir
         # arayüzden gelse de koruma çalışsın.
@@ -246,7 +249,7 @@ class Ajan:
             if ad == "acil":
                 mesaj_metni = await asyncio.to_thread(self.plc.acil, str(arg.get("neden", "panel")))
                 # Durdurulmuş makinede pompanın açık kalması taşma demek.
-                for role in ("su_pompasi", "hava_pompasi", "su_vanasi"):
+                for role in ("su_pompasi", "hava_pompasi"):
                     try:
                         await asyncio.to_thread(self.arduino.komut, f"ROLE {role} 0")
                     except Exception:
@@ -319,21 +322,6 @@ class Ajan:
                 return {"ok": True, "mesaj": await asyncio.to_thread(self.plc.hiz_ayarla, float(arg.get("mm_s", 20)))}
 
             # --- Arduino tarafı ---
-            if ad == "servo":
-                aci = int(arg.get("aci", 0))
-                if not 0 <= aci <= 180:
-                    return {"ok": False, "mesaj": "Servo açısı 0-180 arasında olmalı"}
-                await asyncio.to_thread(self.arduino.komut, f"SERVO {aci}")
-                return {"ok": True, "mesaj": f"Servo {aci}°"}
-
-            if ad == "kip":
-                deger = str(arg.get("deger", "oto")).lower()
-                if deger not in ("oto", "manuel"):
-                    return {"ok": False, "mesaj": "Kip 'oto' ya da 'manuel' olmalı"}
-                await asyncio.to_thread(self.arduino.komut, "AUTO" if deger == "oto" else "MANUEL")
-                self.kip = deger
-                return {"ok": True, "mesaj": f"Kip: {deger}"}
-
             if ad == "kamera":
                 # Calisma aninda ac/kapat. Ayar dosyasina yazmiyoruz: kalici
                 # olsun istenirse ayarlar.json'daki "aktif" elle degistirilir.
@@ -345,38 +333,13 @@ class Ajan:
                 ok, mesaj = self.kamera.ac() if acik else self.kamera.kapat()
                 return {"ok": ok, "mesaj": mesaj}
 
-            if ad == "oto_esik":
-                # Panel yüzde gösteriyor, Arduino ham ADC ile karşılaştırıyor;
-                # çeviri panelde yapılıyor, buraya ham değer geliyor.
-                ham = int(arg.get("ham", 600))
-                if not 0 <= ham <= 1023:
-                    return {"ok": False, "mesaj": "Eşik 0-1023 arasında olmalı"}
-                await asyncio.to_thread(self.arduino.komut, f"ESIK {ham}")
-                return {"ok": True, "mesaj": f"Otomatik sulama eşiği: {ham} (ham)"}
-
-            if ad == "oto_cikis":
-                cikis = str(arg.get("ad", "servo")).lower()
-                if cikis not in ("yok", "servo", "su_vanasi", "su_pompasi"):
-                    return {"ok": False, "mesaj": f"Bilinmeyen çıkış: {cikis}"}
-                await asyncio.to_thread(self.arduino.komut, f"OTOCIKIS {cikis}")
-                return {"ok": True, "mesaj": f"Otomatik sulama çıkışı: {cikis}"}
-
-            if ad == "role_kutup":
-                # Röle kartının kutuplaması. Yanlışsa sistem TERS çalışıyor:
-                # panel "kapalı" derken röle çekili kalıyor. Sabit yazmak her
-                # deneme için yeniden yükleme demekti; kart EEPROM'da tutuyor.
-                aktif_low = 1 if arg.get("aktif_low", True) else 0
-                await asyncio.to_thread(self.arduino.komut, f"ROLEKUTUP {aktif_low}")
-                return {"ok": True, "mesaj": "Röle kutuplaması: "
-                        + ("aktif-LOW" if aktif_low else "aktif-HIGH")}
-
             if ad == "role":
                 role_adi = str(arg.get("ad", ""))
-                if role_adi not in ("su_pompasi", "hava_pompasi", "su_vanasi"):
+                if role_adi not in ROLELER:
                     return {"ok": False, "mesaj": f"Bilinmeyen röle: {role_adi}"}
                 durum = 1 if arg.get("durum") else 0
                 await asyncio.to_thread(self.arduino.komut, f"ROLE {role_adi} {durum}")
-                return {"ok": True, "mesaj": f"{role_adi} {'açık' if durum else 'kapalı'}"}
+                return {"ok": True, "mesaj": f"{ROLELER[role_adi]} {'açık' if durum else 'kapalı'}"}
 
             return {"ok": False, "mesaj": f"Bilinmeyen komut: {ad}"}
 
@@ -410,7 +373,6 @@ class Ajan:
         aralik = float(self.ayar.get("durum_araligi_sn", 0.5))
         while True:
             durum = await asyncio.to_thread(self.plc.durum)
-            durum["kip"] = self.kip
             durum["arduino"] = self.arduino.bagli
 
             # ETKİN TANILAR — panel bunları "ne koptu / olası sebep / ne

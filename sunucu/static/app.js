@@ -16,7 +16,7 @@ const S = {
   jogSayac: null,        // yenileme zamanlayıcısı
   enable: false,
   grafikler: {},
-  roleDurum: { su_pompasi: false, hava_pompasi: false, su_vanasi: false },
+  roleDurum: { su_pompasi: false, hava_pompasi: false },
   noktalar: [],
   bolgeler: [],
   dikim: [],        // sunucudaki dikim alanları (sunucu/dikim.py)
@@ -32,7 +32,6 @@ const S = {
   guvenliZ: null,        // X/Y hareketi için gereken en düşük Z (ajandan)
   taniImzasi: "",        // etkin tanılar — aynıysa DOM'a dokunmuyoruz
   kip: null,             // Arduino'nun kipi: "oto" | "manuel"
-  otoDuzenleniyor: false,   // kullanıcı ayarla oynarken ölçüm üstüne yazmasın
   sonKonum: null,
   ajanBagli: false,
   satirlar: [],          // tablo görünümü için son ölçümler
@@ -49,6 +48,7 @@ const kok = getComputedStyle(document.documentElement);
 const RENK = {
   seri1: kok.getPropertyValue("--seri-1").trim(),
   seri2: kok.getPropertyValue("--seri-2").trim(),
+  seri3: kok.getPropertyValue("--seri-3").trim(),
   metin3: kok.getPropertyValue("--metin-3").trim(),
   yuzey: kok.getPropertyValue("--yuzey").trim(),
   cizgi: "rgba(255,255,255,.07)",
@@ -591,8 +591,8 @@ async function onizlemeTazele() {
 }
 
 /* -------------------------------------------------------------- programlar */
-const ADIM_TIPLERI = { nokta: "Noktaya git", bekle: "Bekle", role: "Röle", servo: "Servo", uc: "Uç değiştir" };
-const ROLELER = ["su_pompasi", "hava_pompasi", "su_vanasi"];
+const ADIM_TIPLERI = { nokta: "Noktaya git", bekle: "Bekle", role: "Röle", uc: "Uç değiştir" };
+const ROLELER = ["su_pompasi", "hava_pompasi"];
 
 function adimSatiri(adim, sira) {
   const secenek = (liste, secili) => liste
@@ -619,8 +619,6 @@ function adimSatiri(adim, sira) {
     param = `<select class="param p-ad">${secenek(ROLELER, adim.ad)}</select>
              <label style="font-size:12px;color:var(--metin-3)">
                <input type="checkbox" class="p-durum"${adim.durum ? " checked" : ""}> aç</label>`;
-  } else if (adim.tip === "servo") {
-    param = `<input type="number" class="param p-aci" min="0" max="180" value="${adim.aci ?? 90}">°`;
   } else if (adim.tip === "uc") {
     param = `<select class="param p-ad">${secenek(["", ...S.ucListesi], adim.ad || "")}</select>`;
   }
@@ -749,7 +747,6 @@ function adimlariTopla() {
       adim.ad = el.querySelector(".p-ad").value;
       adim.durum = el.querySelector(".p-durum").checked;
     }
-    if (tip === "servo") adim.aci = Number(el.querySelector(".p-aci").value);
     return adim;
   });
 }
@@ -1472,14 +1469,14 @@ function grafikYap(kimlik, seriler, birim, basamak = 1, eksen = {}) {
       datasets: seriler.map((seri, sira) => ({
         label: seri.ad,
         data: [],
-        borderColor: sira === 0 ? RENK.seri1 : RENK.seri2,
+        borderColor: [RENK.seri1, RENK.seri2, RENK.seri3][sira] || RENK.seri2,
         backgroundColor: "transparent",
         borderWidth: 2,
         pointRadius: 0,
         pointHoverRadius: 4,          // 8 px çap — dokunmatikte de tutulabilir
         pointHoverBorderWidth: 2,
         pointHoverBorderColor: RENK.yuzey,   // üst üste binen noktalar ayrışsın
-        pointHoverBackgroundColor: sira === 0 ? RENK.seri1 : RENK.seri2,
+        pointHoverBackgroundColor: [RENK.seri1, RENK.seri2, RENK.seri3][sira] || RENK.seri2,
         tension: 0.25,
         spanGaps: true,               // sensör bir tur okunamazsa çizgi kopmasın
       })),
@@ -1558,16 +1555,11 @@ function grafikleriKur() {
    * bir aralık var; pencere büyürken oraya taşmasın. */
   S.grafikler.sicaklik = grafikYap("g-sicaklik", [{ ad: "DHT11" }, { ad: "BMP180" }], "°C", 1,
                                    { enAz: 10 });
-  S.grafikler.nem = grafikYap("g-nem", [{ ad: "Hava nemi" }, { ad: "Toprak nemi" }], "%", 0,
-                              { enAz: 20, sinir: [0, 100] });
+  S.grafikler.nem = grafikYap("g-nem",
+                              [{ ad: "Hava nemi" }, { ad: "Yatak nemi" }, { ad: "Uç probu" }],
+                              "%", 0, { enAz: 20, sinir: [0, 100] });
   S.grafikler.basinc = grafikYap("g-basinc", [{ ad: "Basınç" }], "hPa", 1,
                                  { enAz: 10 });
-  S.grafikler.servo = grafikYap("g-servo", [{ ad: "Vana açısı" }], "°", 0,
-                                { enAz: 90, sinir: [0, 180] });
-  // Vana açısı 0/90 arasında zıplayan bir kontrol sinyali; yumuşatma yanlış
-  // olur, adım basamağı gerçeğe daha yakın.
-  S.grafikler.servo.data.datasets[0].stepped = true;
-  S.grafikler.servo.data.datasets[0].tension = 0;
 }
 
 async function gecmisYukle() {
@@ -1591,9 +1583,9 @@ async function gecmisYukle() {
   }
 
   ata(S.grafikler.sicaklik, [v.hava_sicaklik, v.bmp_sicaklik]);
-  ata(S.grafikler.nem, [v.hava_nem, v.toprak_nem.map(toprakYuzde)]);
+  ata(S.grafikler.nem, [v.hava_nem, v.toprak_nem.map(toprakYuzde),
+                        (v.uc_toprak || []).map(toprakYuzde)]);
   ata(S.grafikler.basinc, [v.basinc]);
-  ata(S.grafikler.servo, [v.servo_aci]);
 
   // Tablo görünümü aynı veriden besleniyor (en yeni üstte).
   S.satirlar = v.ts.map((ts, i) => ({
@@ -1601,7 +1593,7 @@ async function gecmisYukle() {
     hava_sicaklik: v.hava_sicaklik[i], bmp_sicaklik: v.bmp_sicaklik[i],
     hava_nem: v.hava_nem[i], toprak_nem: v.toprak_nem[i],
     uc_toprak: (v.uc_toprak || [])[i],
-    basinc: v.basinc[i], servo_aci: v.servo_aci[i],
+    basinc: v.basinc[i],
   })).slice(-300);
   tabloCiz();
   S.sonZaman = v.ts.length ? v.ts[v.ts.length - 1] : 0;
@@ -1631,9 +1623,9 @@ function noktaEkle(olcum) {
   };
 
   it(S.grafikler.sicaklik, [olcum.hava_sicaklik, olcum.bmp_sicaklik]);
-  it(S.grafikler.nem, [olcum.hava_nem, toprakYuzde(olcum.toprak_nem)]);
+  it(S.grafikler.nem, [olcum.hava_nem, toprakYuzde(olcum.toprak_nem),
+                       toprakYuzde(olcum.uc_toprak)]);
   it(S.grafikler.basinc, [olcum.basinc]);
-  it(S.grafikler.servo, [olcum.servo_aci]);
 }
 
 /* Uçtaki prob iki kipte de gelebiliyor: analogda 0-1023 ham değer, dijitalde
@@ -1657,7 +1649,7 @@ function tabloCiz() {
       `<td>${sayi(s.hava_sicaklik)}</td><td>${sayi(s.bmp_sicaklik)}</td>` +
       `<td>${sayi(s.hava_nem)}</td><td>${sayi(toprakYuzde(s.toprak_nem), 0)}</td>` +
       `<td>${ucProbMetin(s.uc_toprak)}</td>` +
-      `<td>${sayi(s.basinc)}</td><td>${sayi(s.servo_aci, 0)}</td></tr>`
+      `<td>${sayi(s.basinc)}</td></tr>`
     );
   }
   govde.innerHTML = parcalar.join("");
@@ -1673,7 +1665,7 @@ function kartlariGuncelle(o) {
   $("#d-nem").innerHTML = `${sayiCoz(o.hava_nem)}<span class="birim">%</span>`;
   $("#d-toprak").innerHTML = `${sayi(toprakYuzde(o.toprak_nem), 0)}<span class="birim">%</span>`;
   $("#d-basinc").innerHTML = `${sayi(o.basinc)}<span class="birim">hPa</span>`;
-  $("#d-servo").innerHTML = `${sayi(o.servo_aci, 0)}<span class="birim">°</span>`;
+  $("#d-uc-toprak").innerHTML = `${sayi(toprakYuzde(o.uc_toprak), 0)}<span class="birim">%</span>`;
 
   // Sensör adı sabit yazılmıyor: Arduino hangi DHT'yi bulduysa onu bildiriyor.
   // "DHT11" yazan bir kartın altında DHT22 durması, ölçüm tutmadığında yanlış
@@ -1699,11 +1691,8 @@ function kartlariGuncelle(o) {
     : `BMP${hamEk("basinc", 2)} · ${sayi(o.rakim, 0)} m`;
   $("#a-sicaklik").textContent = o.bmp_sicaklik == null ? dhtAd + hamEk("hava_sicaklik")
     : `${dhtAd}${hamEk("hava_sicaklik")} · BMP ${sayi(o.bmp_sicaklik)}`;
-  $("#a-servo").textContent = Number(o.servo_aci) > 5 ? "SG-5010 · AÇIK" : "SG-5010 · kapalı";
-  if (o.ts) $("#a-servo").title = new Date(o.ts * 1000).toLocaleString("tr-TR");
-  donanimGuncelle(o);
-  otoAyarGuncelle(o);
-  if (o.kip) kipGuncelle(o.kip);
+  $("#a-uc-toprak").textContent = o.uc_toprak == null ? "Uca takılı prob"
+    : `Uca takılı prob · ham ${sayi(o.uc_toprak, 0)}`;
 }
 
 /* ------------------------------------------------- rölelerin gerçek durumu
@@ -1720,137 +1709,26 @@ function roleDurumSenkron(o) {
   if (o.calisma_sn !== undefined) {
     const sn = Number(o.calisma_sn);
     if (S.arduinoCalisma !== null && sn < S.arduinoCalisma) {
-      gunluk("<b>Arduino yeniden başladı</b> — bütün röleler kapandı. "
+      gunluk("<b>Arduino yeniden başladı</b> — röleler kapandı. "
              + "Pompa çekerken besleme çöküyor olabilir.", "uyari");
     }
     S.arduinoCalisma = sn;
   }
-  // Kutuplama kutusu da kartın söylediğini gösteriyor; kullanıcı o an
-  // kutuyu değiştiriyorsa altından çekmiyoruz.
-  const kutu = $("#role-kutup");
-  if (kutu && o.role_aktif_low !== undefined && document.activeElement !== kutu) {
-    kutu.checked = Number(o.role_aktif_low) === 1;
-  }
-  const alanlar = { su_pompasi: "r_su_pompasi", hava_pompasi: "r_hava_pompasi",
-                    su_vanasi: "r_su_vanasi" };
-  for (const [ad, alan] of Object.entries(alanlar)) {
-    if (o[alan] === undefined) continue;      // eski firmware — dokunma
-    const acik = Number(o[alan]) === 1;
+
+  // Düğmenin gösterdiği şey kartın bildirdiği GERÇEK durum. Panel kendi
+  // tahminini tutmuyor: tahmin bir kez şaşınca düzelmiyordu.
+  for (const ad of ROLELER) {
+    const deger = o["r_" + ad];
+    if (deger === undefined) continue;
+    const acik = Number(deger) === 1;
     S.roleDurum[ad] = acik;
     const dugme = $(`.dugme.role[data-role="${ad}"]`);
-    if (dugme) dugme.classList.toggle("secili", acik);
+    if (!dugme) continue;
+    dugme.classList.toggle("acik", acik);
+    dugme.setAttribute("aria-pressed", acik ? "true" : "false");
+    const etiket = dugme.querySelector(".role-durum");
+    if (etiket) etiket.textContent = acik ? "AÇIK" : "kapalı";
   }
-}
-
-/* ---------------------------------------------------- bağlı olmayan donanım
- * Arduino hangi çıkışların fiilen takılı olduğunu bildiriyor (`servo_var`,
- * `role_var`). Takılı olmayan bir düğmeyi tıklanabilir bırakmak, komutu
- * gönderip hiçbir şey olmadığını görmek demek; sebebini söyleyip kapatmak
- * daha dürüst. Alan hiç gelmiyorsa (eski firmware) hiçbir şeye dokunmuyoruz.
- */
-function donanimGuncelle(o) {
-  const AC = "Donanım bağlanınca sketch'te ilgili satırı 1 yapın: ";
-  if (o.servo_var !== undefined) {
-    const var_ = Number(o.servo_var) === 1;
-    $("#servo-kaydirac").disabled = !var_;
-    $("#d-servo-uygula").disabled = !var_;
-    // Kritik uyarı ekranda kalır; "her şey normal" durumunda hiçbir şey
-    // yazmıyoruz — açıklama zaten başlığın yanındaki "?" içinde.
-    $("#servo-not").innerHTML = var_ ? ""
-      : `<b>Vana servosu bağlı değil.</b> ${AC}<code>SERVO_BAGLI 1</code>`;
-    $("#servo-not").classList.toggle("gizli", var_);
-  }
-  if (o.role_var !== undefined) {
-    const var_ = Number(o.role_var) === 1;
-    // Su pompası röle kartında yer kaplasa da ucu ayrıca bağlanıyor; kartın
-    // bildirdiği `pompa_var` varsa ona uyuyoruz. Yoksa (eski firmware) eski
-    // davranış: kart takılıysa üçü de açık.
-    const pompaVar = o.pompa_var === undefined ? var_ : Number(o.pompa_var) === 1;
-    $$(".dugme.role").forEach((d) => {
-      const acik = d.dataset.role === "su_pompasi" ? pompaVar : var_;
-      d.disabled = !acik;
-      d.title = acik ? "" : "Bu çıkış bağlı değil";
-    });
-    $("#role-not").innerHTML = !var_
-      ? `<b>Röleler bağlı değil.</b> ${AC}<code>ROLELER_BAGLI 1</code>`
-      : !pompaVar
-        ? `Su pompası bağlı değil. ${AC}<code>SU_POMPASI_BAGLI 1</code>`
-        : "";
-    $("#role-not").classList.toggle("gizli", var_ && pompaVar);
-  }
-  // Otomatik sulama çıkış listesi: bağlı olmayanlar seçilemesin.
-  const secim = $("#oto-cikis");
-  if (!secim || o.servo_var === undefined) return;
-  // Su pompası ayrı: röle kartı takılıyken bile pompanın ucu bağlanmamış
-  // olabiliyor. `pompa_var` gelmiyorsa (eski firmware) eski davranışı
-  // koruyoruz — yoksa çalışan bir kurulumda çıkış birden kaybolurdu.
-  const roleVar = Number(o.role_var) === 1;
-  const pompaVar = o.pompa_var === undefined ? roleVar : Number(o.pompa_var) === 1;
-  const bagli = { servo: Number(o.servo_var) === 1, su_vanasi: roleVar,
-                  su_pompasi: pompaVar, yok: true };
-  Array.from(secim.options).forEach((s) => {
-    const acik = bagli[s.value];
-    s.disabled = !acik;
-    const ek = " (bağlı değil)";
-    const temiz = s.textContent.replace(ek, "");
-    s.textContent = acik ? temiz : temiz + ek;
-  });
-}
-
-/* ------------------------------------------------- otomatik sulama (Arduino)
- * Ayarların kaynağı Arduino: eşik ve çıkış seçimi orada EEPROM'da duruyor ve
- * her ölçüm satırında geri geliyor. Panel bir kopya tutmuyor — tuttuğu anda
- * "panelde şu yazıyor ama kart başka şey yapıyor" durumu doğardı.
- */
-function kipGuncelle(kip) {
-  if (!kip) return;
-  S.kip = kip;
-  const oto = kip === "oto";
-  $("#d-kip-oto").classList.toggle("secili", oto);
-  $("#d-kip-manuel").classList.toggle("secili", !oto);
-  const rozet = $("#kip-rozet");
-  if (rozet) {
-    // Sürülecek çıkış yokken "AÇIK" demek yanıltıcı: kip açık olabilir ama
-    // ortada açılacak bir vana yok.
-    const cikisYok = $("#oto-cikis") && $("#oto-cikis").disabled;
-    rozet.textContent = cikisYok ? "çıkış yok"
-      : oto ? "AÇIK — kararı Arduino veriyor" : "KAPALI — kararı panel veriyor";
-    rozet.className = `rozet-kip ${cikisYok ? "kapali" : oto ? "acik" : "kapali"}`;
-  }
-}
-
-function otoAyarGuncelle(o) {
-  const cikis = $("#oto-cikis"), esik = $("#oto-esik");
-  if (!cikis || !esik) return;
-  // Alanlar hiç gelmiyorsa iki ayrı sebep olabilir ve ikisi farklı şey
-  // söylüyor: kartta sürülecek donanım yoksa bu normaldir, varsa yazılım
-  // eskidir. İkisini "yazılım eski" diye tek torbaya koymak, sensör-only
-  // kurulumda ortada hata yokken hata var gibi görünmesine yol açıyordu.
-  if (o.oto_cikis === undefined && o.esik === undefined) {
-    const donanimYok = Number(o.servo_var) === 0 && Number(o.role_var) === 0;
-    $("#oto-not").innerHTML = donanimYok
-      ? "<b>Sürülecek çıkış yok</b> — vana ve röleler bağlı değil."
-      : "<b>Karttaki yazılım eski</b> — <code>farmbot_sensors</code> sketch'ini yükleyin.";
-    cikis.disabled = esik.disabled = $("#d-oto-kaydet").disabled = true;
-    // Rozet metni "çıkış var mı"ya bağlı; kilit yeni konduğu için tazeliyoruz.
-    if (S.kip) kipGuncelle(S.kip);
-    return;
-  }
-  cikis.disabled = esik.disabled = $("#d-oto-kaydet").disabled = false;
-  if (S.otoDuzenleniyor) return;         // kullanıcı oynuyorsa üstüne yazma
-  if (o.oto_cikis) cikis.value = o.oto_cikis;
-  if (o.esik != null) {
-    const yuzde = Math.round(toprakYuzde(Number(o.esik)));
-    esik.value = yuzde;
-    $("#oto-esik-etiket").textContent = `%${yuzde}`;
-  }
-  const acik = Number(o.oto_acik) === 1;
-  $("#oto-not").innerHTML = S.kip === "oto"
-    ? (cikis.value === "yok"
-       ? "Otomatik kip açık ama çıkış <b>Yok</b> — hiçbir şey sürülmüyor."
-       : acik ? `Şu anda <b>sulama açık</b> (${cikis.options[cikis.selectedIndex].text}).`
-              : "Toprak yeterince nemli — sulama kapalı.")
-    : "Manuel kipte bu ayarlar beklemede.";
 }
 
 /** Bir durum ışığı — renk ve (üstüne gelince çıkan) ad.
@@ -1881,14 +1759,6 @@ function durumGuncelle(d) {
     : d.hareket ? "PLC: hareket ediyor"
     : d.enable ? "PLC: hazır" : "PLC: sürücüler kapalı";
   rozetYaz("#rozet-plc", plcSinif, plcMetin);
-  // Kip ışığı: oto = yeşil, manuel = sarı, BİLİNMİYOR = gri.
-  // Eskiden "manuel değilse yeşil" deniyordu; ajan çevrimdışıyken kip
-  // "bilinmiyor" oluyor ve ışık YEŞİL yanıyordu — makineyle hiç konuşulamazken
-  // "her şey yolunda" diyen bir ışık, yanlış bilginin en kötü türü.
-  const kipSinif = !d.bagli || !d.kip || d.kip === "bilinmiyor" ? ""
-                 : d.kip === "manuel" ? "uyari-rengi" : "canli";
-  rozetYaz("#rozet-kip", kipSinif, `Kip: ${d.kip || "—"}`);
-  kipGuncelle(d.kip);
 
   kameraDurumYaz(d.kamera);
 
@@ -1953,7 +1823,7 @@ function durumGuncelle(d) {
   // Ajan yokken hareket düğmelerini kapatıyoruz: basılıp hiçbir şey olmaması,
   // "gönderdim sandım" hatasının en sık kaynağı.
   const kilit = !d.bagli || acilAcik;
-  $$("#d-git, #d-home, [data-home], #d-dur, #d-servo-uygula, .role").forEach((b) => { b.disabled = kilit; });
+  $$("#d-git, #d-home, [data-home], #d-dur, .role").forEach((b) => { b.disabled = kilit; });
   $$(".nokta-git").forEach((b) => {
     // Sınır dışı olduğu için kapatılmış düğmeyi geri açmıyoruz.
     if (!b.dataset.sinirDisi) b.disabled = kilit;
@@ -2226,8 +2096,12 @@ function olaylariBagla() {
     // confirm() bilerek yok: acil durdurma bir soru sormaz, uygular.
     jogDurdur();
     komutGonder("acil");
-    S.roleDurum = { su_pompasi: false, hava_pompasi: false, su_vanasi: false };
-    $$(".role").forEach((b) => b.classList.remove("secili"));
+    S.roleDurum = { su_pompasi: false, hava_pompasi: false };
+    $$(".role").forEach((b) => {
+      b.classList.remove("acik");
+      const e = b.querySelector(".role-durum");
+      if (e) e.textContent = "kapalı";
+    });
   };
 
   $("#d-nokta-kaydet").onclick = noktaKaydet;
@@ -2375,48 +2249,24 @@ function olaylariBagla() {
     komutGonder("git", arg);
   };
 
-  const kaydirac = $("#servo-kaydirac");
-  kaydirac.oninput = () => { $("#servo-etiket").textContent = `${kaydirac.value}°`; };
-  $("#d-servo-uygula").onclick = () => komutGonder("servo", { aci: Number(kaydirac.value) });
-  $("#d-kip-oto").onclick = () => komutGonder("kip", { deger: "oto" });
-  $("#d-kip-manuel").onclick = () => komutGonder("kip", { deger: "manuel" });
-
-  // Otomatik sulama ayarları
-  const esikKaydirac = $("#oto-esik");
-  esikKaydirac.oninput = () => {
-    S.otoDuzenleniyor = true;
-    $("#oto-esik-etiket").textContent = `%${esikKaydirac.value}`;
-  };
-  $("#oto-cikis").onchange = () => { S.otoDuzenleniyor = true; };
-  $("#d-oto-kaydet").onclick = async () => {
-    const cikis = $("#oto-cikis").value;
-    const yuzde = Number(esikKaydirac.value);
-    // Panel yüzde gösteriyor, Arduino ham ADC ile karşılaştırıyor: çeviri
-    // burada, tek yerde. toprakYuzde'nin tersi.
-    const ham = Math.round(1023 - (yuzde / 100) * 1023);
-    await komutGonder("oto_cikis", { ad: cikis });
-    await komutGonder("oto_esik", { ham });
-    S.otoDuzenleniyor = false;
-  };
-
-  const kutupKutu = $("#role-kutup");
-  if (kutupKutu) {
-    kutupKutu.onchange = async () => {
-      const sonuc = await komutGonder("role_kutup", { aktif_low: kutupKutu.checked });
-      // Kart kabul etmediyse kutuyu geri al: ekranda kartta olmayan bir
-      // ayarın işaretli durması, sonraki her denemeyi yanlış yorumlatır.
-      if (!sonuc || !sonuc.ok) kutupKutu.checked = !kutupKutu.checked;
-    };
-  }
-
   $$(".role").forEach((dugme) => {
     dugme.onclick = async () => {
       const ad = dugme.dataset.role;
       const yeni = !S.roleDurum[ad];
+      const etiket = dugme.querySelector(".role-durum");
+      // Tıklayınca hemen değişsin: kart durumu 2 saniyede bir bildiriyor ve
+      // o iki saniye boyunca "bastım mı, basmadım mı" hissi veriyordu.
+      // Kart yanıt verince roleDurumSenkron zaten doğrusunu yazıyor —
+      // yani bu geçici gösterim yanlışsa kendiliğinden düzeliyor.
+      if (etiket) etiket.textContent = yeni ? "AÇIK" : "kapalı";
+      dugme.classList.toggle("acik", yeni);
       const sonuc = await komutGonder("role", { ad, durum: yeni });
       if (sonuc && sonuc.ok) {
         S.roleDurum[ad] = yeni;
-        dugme.classList.toggle("secili", yeni);
+      } else {
+        // Komut gitmediyse eski görünüme dön.
+        if (etiket) etiket.textContent = S.roleDurum[ad] ? "AÇIK" : "kapalı";
+        dugme.classList.toggle("acik", !!S.roleDurum[ad]);
       }
     };
   });

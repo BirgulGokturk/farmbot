@@ -77,13 +77,8 @@ IZINLI_KOMUTLAR = {
     "uc_durum_temizle",  # {}                        — takılı uç kaydını sıfırla
     "dizi_baslat",   # {"ad":…,"adimlar":[…],"tekrar":1} — çözülmüş adımlarla
     "dizi_durdur",   # {}
-    "servo",         # {"aci": 90}
-    "kip",           # {"deger": "oto" | "manuel"}
     "kamera",        # {"acik": true|false, "aralik_sn": 3600}
-    "oto_esik",      # {"ham": 600}                  — otomatik sulama eşiği (ADC)
-    "oto_cikis",     # {"ad": "yok"|"servo"|"su_vanasi"|"su_pompasi"}
-    "role",          # {"ad": "su_pompasi"|"hava_pompasi"|"su_vanasi", "durum": true}
-    "role_kutup",    # {"aktif_low": true|false}     — röle kartı kutuplaması
+    "role",          # {"ad": "su_pompasi"|"hava_pompasi", "durum": true}
 }
 
 # Basılı tut jog'unda yanıt beklemiyoruz: panel saniyede 3-4 yenileme
@@ -109,7 +104,6 @@ class Merkez:
         self.son_olcum: dict[str, Any] = {}
         self.son_durum: dict[str, Any] = {
             "bagli": False,
-            "kip": "bilinmiyor",
             "konum": {"x": None, "y": None, "z": None},
             "plc": "bilinmiyor",
             "enable": False,
@@ -608,9 +602,9 @@ async def api_toplu(govde: dict[str, Any], jeton: str = Query(default="")):
     for ad in adlar:
         adimlar.append({"tip": "nokta", "ad": ad})
         if islem == "sula":
-            adimlar.append({"tip": "role", "ad": "su_vanasi", "durum": True})
+            adimlar.append({"tip": "role", "ad": "su_pompasi", "durum": True})
             adimlar.append({"tip": "bekle", "saniye": saniye})
-            adimlar.append({"tip": "role", "ad": "su_vanasi", "durum": False})
+            adimlar.append({"tip": "role", "ad": "su_pompasi", "durum": False})
 
     gecici = {"ad": "Seçim: " + ("sulama" if islem == "sula" else "gezinti"),
               "adimlar": adimlar, "tekrar": 1}

@@ -71,7 +71,6 @@
           <span class="isik" id="rozet-sunucu" tabindex="0"><i class="nokta"></i><span class="ad">Sunucu</span></span>
           <span class="isik" id="rozet-ajan" tabindex="0"><i class="nokta"></i><span class="ad">Raspberry Pi</span></span>
           <span class="isik" id="rozet-plc" tabindex="0"><i class="nokta"></i><span class="ad">PLC</span></span>
-          <span class="isik" id="rozet-kip" tabindex="0"><i class="nokta"></i><span class="ad">Kip: —</span></span>
         </div>
         <button class="dugme tehlike acil-dugme" id="d-acil">Acil durdurma</button>
       </div>
@@ -198,10 +197,10 @@
               <div class="deger" id="d-basinc">—<span class="birim">hPa</span></div>
               <span class="ikincil" id="a-rakim">BMP180</span>
             </div>
-            <div class="olcum" data-kanallar="servo_aci">
-              <span class="olcum-ad">Vana (servo)</span>
-              <div class="deger" id="d-servo">—<span class="birim">°</span></div>
-              <span class="ikincil" id="a-servo">SG-5010</span>
+            <div class="olcum" data-kanallar="uc_toprak">
+              <span class="olcum-ad">Uç probu</span>
+              <div class="deger" id="d-uc-toprak">—<span class="birim">%</span></div>
+              <span class="ikincil" id="a-uc-toprak">Uca takılı prob</span>
             </div>
           </div>
           <p class="bos-durum gizli" id="veri-yok">
@@ -246,7 +245,8 @@
               <div class="grafik-bas">Nem <span class="ikincil">%</span></div>
               <div class="aciklama">
                 <span data-kanal="hava_nem"><i style="background:var(--seri-1)"></i>Hava nemi</span>
-                <span data-kanal="toprak_nem"><i style="background:var(--seri-2)"></i>Toprak nemi</span>
+                <span data-kanal="toprak_nem"><i style="background:var(--seri-2)"></i>Yatak nemi</span>
+                <span data-kanal="uc_toprak"><i style="background:var(--seri-3)"></i>Uç probu</span>
               </div>
               <div class="grafik-kutu"><canvas id="g-nem"></canvas></div>
             </div>
@@ -256,10 +256,6 @@
               <div class="grafik-kutu"><canvas id="g-basinc"></canvas></div>
             </div>
 
-            <div class="grafik" data-kanallar="servo_aci">
-              <div class="grafik-bas">Vana açısı <span class="ikincil">°</span></div>
-              <div class="grafik-kutu"><canvas id="g-servo"></canvas></div>
-            </div>
           </div>
         </div>
       </section>
@@ -338,7 +334,7 @@
          bu; vana, röle ve konuma-git ara sıra kullanılıyor.
 
          Eskiden iki büyük kart vardı ve ikincisinin içinde üç ayrı konu
-         (konuma git, servo, röleler) "ara başlık"la üst üste yığılıydı. -->
+         (konuma git, röleler) "ara başlık"la üst üste yığılıydı. -->
     <section class="sayfa" id="sayfa-sur">
 
       <!-- 1. EKSEN VE JOG — hep açık. -->
@@ -444,51 +440,37 @@
         </div>
       </section>
 
-      <!-- 3. ÇIKIŞLAR — vana, servo, röleler. Ara sıra; katlı başlıyor. -->
+      <!-- 3. ÇIKIŞLAR — su ve hava pompası. Ara sıra; katlı başlıyor. -->
       <section class="bolum kapali" id="bolum-cikis">
         <div class="bolum-ust">
           <button class="bolum-bas" aria-expanded="false">
             <svg class="ikon ok"><use href="#i-ok"/></svg>
             <span class="bolum-ad">Çıkışlar</span>
-            <span class="bolum-not">Vana, pompa, servo</span>
+            <span class="bolum-not">Su ve hava pompası</span>
           </button>
           <button class="yardim" type="button" aria-expanded="false"
                   aria-controls="yardim-cikis" aria-label="Açıklama">?</button>
         </div>
         <div class="bolum-govde">
           <p class="yardim-metin gizli" id="yardim-cikis">
-            Servo açısını elle verir; bu komut kipi otomatikten manuele
-            düşürür. Röleler tıklayınca açılır, tekrar tıklayınca kapanır.
-            Acil durdurma hepsini kapatır.
+            Tıklayınca açılır, tekrar tıklayınca kapanır. Düğmedeki yazı
+            kartın bildirdiği GERÇEK durum — panelin tahmini değil. Acil
+            durdurma ikisini birden kapatır.
           </p>
 
-          <h4 class="alt-baslik">Vana / servo</h4>
-          <div class="kaydirac-satir">
-            <input type="range" id="servo-kaydirac" min="0" max="180" value="0">
-            <b id="servo-etiket" class="sayi">0°</b>
-            <button class="dugme" id="d-servo-uygula">Uygula</button>
+          <div class="role-izgara">
+            <button class="dugme role" data-role="su_pompasi">
+              <span class="role-ad">Su pompası</span>
+              <span class="role-durum">kapalı</span>
+              <span class="ikincil">D7</span>
+            </button>
+            <button class="dugme role" data-role="hava_pompasi">
+              <span class="role-ad">Hava pompası</span>
+              <span class="role-durum">kapalı</span>
+              <span class="ikincil">D8</span>
+            </button>
           </div>
-          <p class="ikincil gizli" id="servo-not"></p>
-
-          <h4 class="alt-baslik">Pompa ve vanalar</h4>
-          <div class="satir-8">
-            <button class="dugme role" data-role="su_pompasi">Su pompası</button>
-            <button class="dugme role" data-role="hava_pompasi">Hava pompası</button>
-            <button class="dugme role" data-role="su_vanasi">Su vanası</button>
-          </div>
-          <p class="ikincil gizli" id="role-not"></p>
-
-          <!-- Kutuplama. Röle kartları hem aktif-LOW hem aktif-HIGH
-               olabiliyor ve yanlış seçim sessiz bir hata değil: sistem
-               tamamen ters çalışıyor. Sketch'i değiştirip yeniden
-               yüklemek yerine buradan denenebiliyor; ayar kartın
-               EEPROM'unda kalıyor. -->
-          <label class="onay"><input type="checkbox" id="role-kutup" checked>
-            Röle kartı aktif-LOW</label>
-          <p class="ikincil">
-            Düğmeler ters çalışıyorsa — "kapalı"da röle çekili kalıyor,
-            "aç"ta kapanıyorsa — bu kutuyu değiştirin.
-          </p>
+          <p class="ikincil" id="role-not"></p>
         </div>
       </section>
     </section>
@@ -749,54 +731,6 @@
         </div>
       </section>
 
-      <section class="bolum kapali" id="bolum-oto">
-        <div class="bolum-ust">
-          <button class="bolum-bas" aria-expanded="false">
-            <svg class="ikon ok"><use href="#i-ok"/></svg>
-            <span class="bolum-ad">Otomatik sulama</span>
-            <span class="bolum-not"><span id="kip-rozet" class="rozet-kip">—</span></span>
-          </button>
-          <button class="yardim" type="button" aria-expanded="false"
-                  aria-controls="yardim-oto" aria-label="Açıklama">?</button>
-        </div>
-        <div class="bolum-govde">
-          <p class="yardim-metin gizli" id="yardim-oto">
-            Bu karar Arduino'nun içinde duruyor, panelde ya da Pi'de değil.
-            Sebebi: Pi kapansa, panel kapansa, ağ gitse bile bitkinin
-            sulanması gerekiyor.<br><br>
-            <b>Otomatik:</b> toprak kuruyunca Arduino seçili çıkışı kendi açar.
-            <b>Manuel:</b> kararı panel ya da program verir. Seçim Arduino'nun
-            EEPROM'una yazılır, fişi çekilse bile korunur.
-          </p>
-          <div class="kip-secim">
-            <button class="dugme kip-dugme" id="d-kip-oto">Otomatik</button>
-            <button class="dugme kip-dugme" id="d-kip-manuel">Manuel</button>
-          </div>
-
-          <div class="oto-ayar">
-            <div class="alanlar">
-              <div class="alan">
-                <label for="oto-cikis">Otomatikte çalışacak çıkış</label>
-                <select id="oto-cikis">
-                  <option value="servo">Vana servosu (SG-5010)</option>
-                  <option value="su_vanasi">Su vanası rölesi</option>
-                  <option value="su_pompasi">Su pompası rölesi</option>
-                  <option value="yok">Yok</option>
-                </select>
-              </div>
-              <div class="alan">
-                <label for="oto-esik">Eşik — bu nemin altında aç</label>
-                <div class="kaydirac-satir">
-                  <input type="range" id="oto-esik" min="0" max="100" step="1" value="41">
-                  <b id="oto-esik-etiket" class="sayi">%41</b>
-                </div>
-              </div>
-            </div>
-            <button class="dugme birincil" id="d-oto-kaydet">Kaydet</button>
-          </div>
-          <p class="ikincil" id="oto-not"></p>
-        </div>
-      </section>
     </section>
 
 

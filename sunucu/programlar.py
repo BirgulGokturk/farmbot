@@ -22,7 +22,7 @@ import noktalar
 
 _KILIT = threading.RLock()
 AZAMI_ADIM = 200
-GECERLI_TIPLER = ("nokta", "bekle", "role", "servo", "uc")
+GECERLI_TIPLER = ("nokta", "bekle", "role", "uc")
 
 # Değişken tipleri. FarmBot'ta Location/Number/Text/Peripheral/Sensor/Sequence
 # var; bizde işi gören üçü: bir noktayı, bir sayıyı ve bir metni dışarıdan
@@ -131,16 +131,9 @@ def adim_dogrula(adim: dict[str, Any]) -> dict[str, Any]:
         return {"tip": "bekle", "saniye": max(0.0, min(600.0, float(adim.get("saniye", 1))))}
     if tip == "role":
         ad = str(adim.get("ad", ""))
-        if ad not in ("su_pompasi", "hava_pompasi", "su_vanasi"):
+        if ad not in ("su_pompasi", "hava_pompasi"):
             raise ProgramHatasi(f"Bilinmeyen röle: '{ad}'")
         return {"tip": "role", "ad": ad, "durum": bool(adim.get("durum"))}
-    if tip == "servo":
-        if degisken_mi(adim.get("aci")):
-            return {"tip": "servo", "aci": str(adim["aci"]).strip()}
-        aci = int(adim.get("aci", 0))
-        if not 0 <= aci <= 180:
-            raise ProgramHatasi("Servo açısı 0-180 arasında olmalı")
-        return {"tip": "servo", "aci": aci}
     return {"tip": "uc", "ad": str(adim.get("ad", "") or "")}
 
 
