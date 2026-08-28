@@ -381,6 +381,28 @@ class Arduino:
             # Tek bir geçerli okuma kalmadı: satırı hiç üretmiyoruz.
             # Boş satır "veri var" izlenimi verip geçmişi şişiriyor.
             return
+        # KARTIN YENIDEN BASLAMASI. `calisma_sn` kartin acik kaldigi sure;
+        # geriye giderse kart sifirlanmis demektir ve setup butun roleleri
+        # kapatmistir. Bunu yalnizca panele birakmak yetmiyor: panel kapaliyken
+        # de olabiliyor ve sebebi arayan kisi gunluge bakiyor. Rolelerin
+        # "kendi kendine acilip kapanmasi" neredeyse her zaman bu.
+        simdiki = veri.get("calisma_sn")
+        if simdiki is not None:
+            try:
+                simdiki = int(simdiki)
+            except (TypeError, ValueError):
+                simdiki = None
+        if simdiki is not None:
+            onceki = getattr(self, "_calisma_sn", None)
+            if onceki is not None and simdiki < onceki:
+                self._sifirlama_sayaci = getattr(self, "_sifirlama_sayaci", 0) + 1
+                logger.warning(
+                    "Arduino yeniden başladı (%d. kez) — röleler kapandı. "
+                    "Sık tekrarlıyorsa besleme çöküyor: röle kartını ve "
+                    "pompaları Arduino'nun 5V'undan değil ayrı bir kaynaktan "
+                    "besleyin.", self._sifirlama_sayaci)
+            self._calisma_sn = simdiki
+
         self.son_veri = veri
         self.son_veri_zamani = time.time()
         if self.geri_cagir:

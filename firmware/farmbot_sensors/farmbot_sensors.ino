@@ -80,13 +80,24 @@ void roleYaz(int pin, bool acik) {
 
 // --------------------------------------------------------------- KURULUM --
 void setup() {
-  Serial.begin(9600);
-
+  /* İLK İŞ BU. Serial.begin bile sonra geliyor: sıfırlamadan bu satıra
+   * kadar geçen her milisaniyede pinler GİRİŞ ve boşta duruyor, aktif-LOW
+   * röle kartında boşta giriş "röle çeksin" demek.
+   *
+   * Ama bu, sorunu tamamen çözmüyor ve çözemez: Uno'nun önyükleyicisi
+   * setup'tan ÖNCE ~1-2 saniye bekliyor ve o sürede hiçbir komut
+   * çalışmıyor. Yani kart her sıfırlandığında pompa bir-iki saniye
+   * çalışıyor. Bunun tek gerçek çözümü donanımda: her röle girişinden
+   * 5V'a 10K direnç (pin boştayken girişi YÜKSEK, yani röleyi kapalı
+   * tutar). Pompanın çekişi kartı sıfırlıyorsa bu kendini besleyen bir
+   * döngüye dönüşüyor — röle kartını ve pompaları Arduino'nun 5V'undan
+   * değil ayrı bir kaynaktan besleyin. */
   roleHazirla(SU_POMPASI_PIN);
   roleHazirla(HAVA_POMPASI_PIN);
   roleYaz(SU_POMPASI_PIN, false);
   roleYaz(HAVA_POMPASI_PIN, false);
 
+  Serial.begin(9600);
   dht.begin();
   bmpVar = bmp.begin();
   if (!bmpVar) Serial.println("UYARI: BMP180 bulunamadi, digerleriyle devam");
