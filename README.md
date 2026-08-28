@@ -99,8 +99,15 @@ Eklenenler:
 | GY-68 (BMP180) | VCC · GND · SDA · SCL | **3.3V** · GND · A4 · A5 | 5V **bağlamayın** |
 | DHT11 / DHT22 | VCC · GND · DATA | 5V · GND · D2 | Kart üstünde direnç yoksa VCC–DATA arası 10K |
 | Toprak probu | VCC · GND · A0 | 5V · GND · **A1** | tool ucuna takılı, toprağa daldırılır |
-| Su pompası rölesi | IN | D7 | |
-| Hava pompası rölesi | IN | D8 | |
+| Su pompası rölesi | IN | D7 | pompa **NO** ucuna |
+| Hava pompası rölesi | IN | D8 | pompa **NO** ucuna |
+
+Pompalar rölenin **NO** (normalde açık) ucuna bağlanır. Bobin enerjisizken
+COM–NC kapalıdır; pompa NC'deyse kart kapalıyken, sıfırlanmışken ya da fişi
+çekilmişken pompa çalışır — su için taşma demek. NO'da enerjisiz durum
+kapalı, yani her arıza güvenli tarafa düşüyor. NC'ye bağlıysa belirti nettir:
+panelde "AÇIK" yazarken motor susar, cihaz ilk açıldığında kendiliğinden
+çalışır.
 
 ### Röle kutuplaması
 

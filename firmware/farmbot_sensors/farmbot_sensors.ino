@@ -13,6 +13,13 @@
  *   D2   DHT11 veri
  *   D7   su pompası rölesi
  *   D8   hava pompası rölesi
+ *
+ * RÖLE KONTAĞI: pompalar NO ucuna bağlanır, NC'ye DEĞİL. Röle bobini
+ * enerjisizken COM–NC kapalıdır; pompa NC'deyse kart kapalıyken, sıfırlanmışken
+ * ya da fişi çekilmişken pompa ÇALIŞIR. Su için bu taşma demek. NO'da ise
+ * enerjisiz durum = kapalı, yani her arıza güvenli tarafa düşüyor.
+ * NC'ye bağlıysa belirti nettir: panelde "AÇIK" yazarken motor susar, cihaz
+ * ilk açıldığında ise kendiliğinden çalışır.
  *   A1   toprak nemi probu — iki uçlu, tool ucuna takılı, toprağa daldırılır
  *   A4/A5 GY-68 / BMP180 (I2C)
  *
