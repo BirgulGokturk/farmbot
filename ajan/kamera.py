@@ -40,6 +40,11 @@ from typing import Any, Callable
 
 logger = logging.getLogger("ajan.kamera")
 
+#: JPEG kare sınırları. MJPEG akışı arka arkaya eklenmiş JPEG'lerden ibaret;
+#: nerede başlayıp bittiğini bu iki işaret söylüyor (SOI ve EOI).
+JPEG_BAS = bytes([0xFF, 0xD8])
+JPEG_SON = bytes([0xFF, 0xD9])
+
 VARSAYILAN = {
     "aktif": False,
     "aralik_sn": 3600.0,   # saatte bir kare
@@ -57,6 +62,12 @@ class Kamera:
         self.gonder = gonder
         self.gunluk_cb = gunluk_cb or (lambda m, s="bilgi": None)
         self._calisiyor = False
+        # Canlı akış: periyodik kare döngüsünden AYRI bir yol. İkisi aynı
+        # cihazı açamadığı için biri çalışırken diğeri duruyor.
+        self._canli = False
+        self._canli_fps = 5.0
+        self._canli_surec = None
+        self._periyodik_geri = False
         # Bekleme time.sleep degil Event.wait ile: saatlik aralikta "kapat"
         # dendiginde is parcaciginin bir saat beklemesi kabul edilemez.
         self._dur = threading.Event()
@@ -103,6 +114,157 @@ class Kamera:
         tampon = io.BytesIO()
         self._picam.capture_file(tampon, format="jpeg")
         return tampon.getvalue()
+
+    # ------------------------------------------------------------- CANLI AKIŞ
+    #
+    # "5 saniyede bir kare" ile "canlı" arasındaki fark yalnızca hız değil,
+    # YÖNTEM. Tek kare almak için her seferinde işlem açmak (rpicam-still)
+    # kare başına 1-2 saniye demek; hızlandırarak canlıya çıkılmıyor.
+    # Akış için ayrı bir yol gerekiyor:
+    #
+    #   picamera2  → kamera açık kalıyor, video yapılandırmasıyla art arda
+    #                JPEG alınıyor.
+    #   rpicam-vid → tek bir işlem sürekli MJPEG basıyor, stdout'tan
+    #                JPEG'lere ayırıyoruz.
+    #
+    # fswebcam'in akış karşılığı yok; o yolda canlı desteklenmiyor ve bunu
+    # sessizce yavaş çalışarak değil, açıkça söyleyerek belirtiyoruz.
+
+    def canli_var_mi(self) -> bool:
+        """Akış yapabilecek bir yol var mı?
+
+        CİHAZI AÇMADAN bakıyoruz. `_yontem_sec()` picamera2'yi deneyip
+        kamerayı tutuyor; bunu panelin yarım saniyede bir sorduğu `durum()`
+        içinden çağırmak cihazı sürekli kilitler. Burada yalnızca aracın
+        kurulu olup olmadığına bakmak yeterli.
+        """
+        if self._yontem in ("picamera2", "rpicam", "libcamera"):
+            return True
+        if self._yontem == "fswebcam":
+            return False          # fswebcam'in akış karşılığı yok
+        if shutil.which("rpicam-vid") or shutil.which("libcamera-vid"):
+            return True
+        try:
+            import picamera2  # type: ignore # noqa: F401
+            return True
+        except ImportError:
+            return False
+
+    def _canli_picamera2(self):
+        """picamera2 ile sürekli kare üretir."""
+        from picamera2 import Picamera2  # type: ignore
+        genislik = int(self.ayar["genislik"])
+        # Video yapılandırması still'den belirgin hızlı: still her karede
+        # tam çözünürlük hazırlığı yapıyor.
+        self._picam_kapat()
+        picam = Picamera2()
+        picam.configure(picam.create_video_configuration(
+            main={"size": (genislik, int(genislik * 3 / 4))}))
+        picam.start()
+        self._picam = picam
+        time.sleep(1)                       # pozlama otursun
+        try:
+            while self._canli:
+                tampon = io.BytesIO()
+                picam.capture_file(tampon, format="jpeg")
+                yield tampon.getvalue()
+        finally:
+            # Canlıdan çıkarken cihazı BIRAKIYORUZ. Video yapılandırmasıyla
+            # açık kalan kamera, sonraki tek kare isteğinde "Pipeline handler
+            # in use" hatasına yol açıyordu.
+            self._picam_kapat()
+
+    def _canli_rpicam(self):
+        """rpicam-vid / libcamera-vid ile sürekli MJPEG."""
+        arac = "rpicam-vid" if shutil.which("rpicam-vid") else "libcamera-vid"
+        genislik = int(self.ayar["genislik"])
+        komut = [arac, "-n", "-t", "0", "--codec", "mjpeg",
+                 "--width", str(genislik), "--height", str(int(genislik * 3 / 4)),
+                 "-q", str(int(self.ayar["kalite"])), "-o", "-"]
+        surec = subprocess.Popen(komut, stdout=subprocess.PIPE,
+                                 stderr=subprocess.DEVNULL, bufsize=0)
+        self._canli_surec = surec
+        tampon = b""
+        try:
+            while self._canli:
+                parca = surec.stdout.read(16384)
+                if not parca:
+                    break
+                tampon += parca
+                # MJPEG akışı arka arkaya eklenmiş JPEG'lerden ibaret;
+                # sınırları SOI (FFD8) ve EOI (FFD9) işaretleri belirliyor.
+                while True:
+                    bas = tampon.find(JPEG_BAS)
+                    if bas < 0:
+                        break
+                    son = tampon.find(JPEG_SON, bas + 2)
+                    if son < 0:
+                        # Kare henüz tamamlanmadı; gerisini bekliyoruz.
+                        if bas > 0:
+                            tampon = tampon[bas:]
+                        break
+                    yield tampon[bas:son + 2]
+                    tampon = tampon[son + 2:]
+        finally:
+            for adim in (surec.terminate, surec.kill):
+                try:
+                    adim()
+                    surec.wait(timeout=2)
+                    break
+                except Exception:
+                    continue
+            self._canli_surec = None
+
+    def canli_ac(self, fps: float = 5.0) -> tuple[bool, str]:
+        if self._canli:
+            return True, "Canlı akış zaten açık"
+        if not self._yontem:
+            self._yontem = self._yontem_sec()
+        if not self.canli_var_mi():
+            return False, (f"Canlı akış bu yöntemle ({self._yontem or 'yok'}) "
+                           "desteklenmiyor; picamera2 ya da rpicam gerekiyor")
+        # Periyodik kare döngüsü ile canlı akış AYNI cihazı açamaz. Canlı
+        # açılırken periyodik döngü duruyor, kapanınca geri geliyor.
+        self._periyodik_geri = self._calisiyor
+        if self._calisiyor:
+            self.durdur()
+        self._canli = True
+        self._canli_fps = max(1.0, min(15.0, float(fps)))
+        threading.Thread(target=self._canli_dongu, name="kamera-canli",
+                         daemon=True).start()
+        return True, f"Canlı akış açıldı ({self._yontem})"
+
+    def canli_kapat(self) -> tuple[bool, str]:
+        if not self._canli:
+            return True, "Canlı akış zaten kapalı"
+        self._canli = False
+        # Periyodik kare döngüsü canlıdan önce açıksa geri getiriyoruz:
+        # kullanıcı canlıyı kapatınca kamera tamamen susmasın.
+        if getattr(self, "_periyodik_geri", False):
+            self.ac()
+        return True, "Canlı akış kapatıldı"
+
+    def _canli_dongu(self) -> None:
+        uretici = (self._canli_picamera2 if self._yontem == "picamera2"
+                   else self._canli_rpicam)
+        en_az_ara = 1.0 / self._canli_fps
+        son = 0.0
+        try:
+            for kare in uretici():
+                if not self._canli:
+                    break
+                # Kaynak istediğimizden hızlı üretebiliyor; fazlasını
+                # göndermek ağı ve paneli boşuna yoruyor.
+                simdi = time.monotonic()
+                if simdi - son < en_az_ara:
+                    continue
+                son = simdi
+                self.gonder(base64.b64encode(kare).decode("ascii"), time.time())
+        except Exception as hata:
+            self.son_hata = str(hata)
+            self.gunluk_cb(f"Canlı akış durdu: {hata}", "hata")
+        finally:
+            self._canli = False
 
     def _komut_kare(self) -> bytes:
         """libcamera-still ya da fswebcam ile tek kare."""
@@ -190,6 +352,11 @@ class Kamera:
             "yontem": self._yontem,
             "aralik_sn": float(self.ayar.get("aralik_sn", 3600.0)),
             "hata": self.son_hata,
+            "canli": self._canli,
+            # Panel "Canlı" düğmesini boşuna göstermesin: fswebcam yolunda
+            # akış karşılığı yok.
+            "canli_var": self.canli_var_mi(),
+            "canli_fps": self._canli_fps,
         }
 
     def ac(self) -> tuple[bool, str]:

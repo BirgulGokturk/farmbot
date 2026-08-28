@@ -1303,8 +1303,20 @@ function kameraDurumYaz(k) {
   // Hangi aralığın seçili olduğu düğmelerde görünsün. Kaynak ajanın
   // bildirdiği değer — panel kendi seçimini hatırlamıyor, çünkü aralık
   // başka bir sekmeden ya da ayar dosyasından da değişmiş olabilir.
+  const canli = !!k.canli;
+  const canliDugme = $("#d-kamera-canli");
+  if (canliDugme) {
+    canliDugme.classList.toggle("secili", canli);
+    // Akış yapamayan bir yolda (fswebcam) düğmeyi tıklanabilir bırakmak,
+    // basıp hata almak demek; sebebini söyleyip kapatmak daha dürüst.
+    canliDugme.disabled = !k.canli_var;
+    canliDugme.title = k.canli_var ? ""
+      : "Bu kamera yönteminde canlı akış yok (picamera2 ya da rpicam gerekiyor)";
+  }
+  // Canlı akış açıkken aralık düğmelerinin anlamı yok: kareler aralıkla
+  // değil akıştan geliyor.
   $$(".kamera-aralik").forEach((d) => {
-    d.classList.toggle("secili", Math.round(sn) === Number(d.dataset.saniye));
+    d.classList.toggle("secili", !canli && Math.round(sn) === Number(d.dataset.saniye));
     // Kamera KAPALIYKEN de tıklanabilir: düğme aralığı seçip kamerayı
     // açıyor. Kapatmak, "5 sn"e basıp hiçbir şey olmamasına yol açardı.
     // Yalnızca ajan yokken kapalı — o zaman komut gidecek yer yok.
@@ -1327,13 +1339,16 @@ function kameraDurumYaz(k) {
 
 // Kare WebSocket'ten gelmiyor; sunucu haber veriyor, tarayıcı <img> ile
 // çekiyor. Böylece büyük base64 dizeleri panel soketini tıkamıyor.
-function kareyiTazele(ts) {
-  const adres = `/api/kare/son?jeton=${encodeURIComponent(S.jeton)}&t=${ts || Date.now()}`;
+function kareyiTazele(ts, canli = false) {
+  // Canlı kare sunucunun BELLEĞİNDEN geliyor, periyodik kare diskten.
+  const uc = canli ? "canli" : "son";
+  const adres = `/api/kare/${uc}?jeton=${encodeURIComponent(S.jeton)}&t=${ts || Date.now()}`;
   const img = $("#kamera-kare");
   img.src = adres;
   img.classList.remove("gizli");
   $("#kamera-yok").classList.add("gizli");
-  $("#kamera-zaman").textContent = "Son kare: " + new Date((ts || Date.now() / 1000) * 1000).toLocaleTimeString("tr-TR");
+  $("#kamera-zaman").textContent = (canli ? "Canlı · " : "Son kare: ")
+    + new Date((ts || Date.now() / 1000) * 1000).toLocaleTimeString("tr-TR");
   // Kalibrasyon karesi de aynı görüntüyü kullanıyor: iki kare yöntemi için
   // makine oynadıkça yeni kare gelmesi gerekiyor.
   const kalibKare = $("#kalib-kare");
@@ -1940,6 +1955,7 @@ function wsBagla() {
     else if (m.tip === "olcum") { kartlariGuncelle(m.veri); noktaEkle(m.veri); }
     else if (m.tip === "durum") durumGuncelle(m.durum);
     else if (m.tip === "kare") kareyiTazele(m.ts);
+    else if (m.tip === "canli") kareyiTazele(m.ts, true);
     else if (m.tip === "gunluk") gunluk(m.metin, m.seviye === "hata" ? "hata" : "");
   };
 
@@ -2171,6 +2187,11 @@ function olaylariBagla() {
     if (!acik) kameraGoruntuTemizle();   // beklemeden kapansin
     komutGonder("kamera", { acik });
   };
+  const canliDugmesi = $("#d-kamera-canli");
+  if (canliDugmesi) {
+    canliDugmesi.onclick = () => komutGonder("kamera",
+      { canli: !canliDugmesi.classList.contains("secili"), fps: 5 });
+  }
   $$(".kamera-aralik").forEach((dugme) => {
     // Aralık komutu kamerayı da açık tutuyor: kapalıyken aralık seçmek
     // "hiçbir şey olmadı" demek olurdu.

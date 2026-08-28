@@ -206,7 +206,11 @@ class Ajan:
     def _kare_geldi(self, b64: str, ts: float) -> None:
         """Kamera iş parçacığından çağrılır."""
         k = (self._son_durum.get("konum") or {}) if self._son_durum else {}
-        self._kuyruga_at({"tip": "kare", "ts": ts, "veri": b64,
+        # Canlı akıştaki kareler DİSKE YAZILMIYOR: saniyede beş kare, SD
+        # kartı boşuna yorar ve 12'lik halka bir dakikada dolup anlamını
+        # yitirir. Sunucu canlı kareyi yalnızca bellekte tutuyor.
+        tip = "canli" if self.kamera.durum().get("canli") else "kare"
+        self._kuyruga_at({"tip": tip, "ts": ts, "veri": b64,
                           "konum": {"x": k.get("x"), "y": k.get("y"), "z": k.get("z")}})
 
     def _gunluk_gonder(self, metin: str, seviye: str = "bilgi") -> None:
@@ -341,6 +345,15 @@ class Ajan:
                 # olsun istenirse ayarlar.json'daki "aktif" elle degistirilir.
                 # Boylece panelden yapilan gecici bir deneme, yeniden
                 # baslatmada beklenmedik bir davranisa donusmuyor.
+                # Canlı akış ayrı bir yol: periyodik kare döngüsüyle aynı
+                # cihazı açamıyor, o yüzden ayrı komut.
+                if "canli" in arg:
+                    if arg.get("canli"):
+                        ok, mesaj = self.kamera.canli_ac(float(arg.get("fps", 5)))
+                    else:
+                        ok, mesaj = self.kamera.canli_kapat()
+                    return {"ok": ok, "mesaj": mesaj}
+
                 acik = bool(arg.get("acik"))
                 if "aralik_sn" in arg:
                     self.kamera.ayar["aralik_sn"] = max(2.0, float(arg["aralik_sn"]))

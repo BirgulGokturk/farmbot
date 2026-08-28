@@ -13,6 +13,7 @@ Böylece internet kopsa bile makine kendi başına güvenli davranmaya devam ede
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
 import logging
 import os
@@ -102,6 +103,10 @@ class Merkez:
         self.paneller: set[WebSocket] = set()
         # Ajandan gelen son değerler — panel açıldığında ekran boş kalmasın.
         self.son_olcum: dict[str, Any] = {}
+        # Canlı akışın son karesi — BELLEKTE, diskte değil. Tek kare tutuluyor:
+        # canlı akışın geçmişi yok, "şu an ne görünüyor" sorusunun cevabı var.
+        self.canli_kare: bytes = b""
+        self.canli_ts: float = 0.0
         self.son_durum: dict[str, Any] = {
             "bagli": False,
             "konum": {"x": None, "y": None, "z": None},
@@ -179,6 +184,18 @@ class Merkez:
             raise HTTPException(status_code=504, detail="Ajan komuta zamanında yanıt vermedi")
         finally:
             self._bekleyen.pop(komut_id, None)
+
+    def canli_kare_yaz(self, b64: str, ts: float) -> None:
+        """Canlı kareyi belleğe alır. Bozuk ya da aşırı büyük kare atılıyor:
+        `kareler.ekle` diskte aynı korumayı yapıyor, bellekte de gerekiyor."""
+        try:
+            ham = base64.b64decode(b64 or "", validate=True)
+        except Exception:
+            return
+        if not ham or len(ham) > kareler.AZAMI_BAYT:
+            return
+        self.canli_kare = ham
+        self.canli_ts = ts
 
     def sonuc_isle(self, mesaj: dict[str, Any]) -> None:
         beklenen = self._bekleyen.get(str(mesaj.get("id")))
@@ -304,6 +321,19 @@ async def ws_ajan(ws: WebSocket, jeton: str = Query(default="")):
                 await asyncio.to_thread(kareler.ekle, mesaj.get("veri", ""), ts,
                                         mesaj.get("konum"))
                 await merkez.yayinla({"tip": "kare", "ts": ts})
+
+            elif tip == "canli":
+                # Canlı akış karesi. Diske YAZILMIYOR: saniyede beş kare SD
+                # kartı boşuna yorar ve 12'lik halka bir dakikada dolup
+                # anlamını yitirir. Bellekte yalnızca EN SON kare duruyor.
+                #
+                # Panele base64'ü yaymıyoruz — periyodik karede olduğu gibi
+                # yalnızca "yeni kare var" haberi gidiyor, tarayıcı <img> ile
+                # çekiyor. Beş panel açıksa 40 KB'ı beş kez yollamak yerine
+                # her biri kendi isteğini yapıyor.
+                ts = float(mesaj.get("ts", time.time()))
+                merkez.canli_kare_yaz(mesaj.get("veri", ""), ts)
+                await merkez.yayinla({"tip": "canli", "ts": ts})
 
             elif tip == "gunluk":
                 await merkez.yayinla(
@@ -896,6 +926,20 @@ async def api_kare_son(jeton: str = Query(default=""), t: float = Query(default=
     kare = await asyncio.to_thread(kareler.son)
     if kare is None:
         raise HTTPException(status_code=404, detail="Henüz kare yok")
+    return Response(content=kare, media_type="image/jpeg",
+                    headers={"Cache-Control": "no-store"})
+
+
+@app.get("/api/kare/canli")
+async def api_kare_canli(jeton: str = Query(default=""), t: float = Query(default=0)):
+    """Canlı akışın SON karesi. `t` yalnızca önbellek kırıcı.
+
+    Diskten değil bellekten okunuyor; canlı kareler saklanmıyor.
+    """
+    _parola_dogrula(jeton)
+    kare = merkez.canli_kare
+    if not kare:
+        raise HTTPException(status_code=404, detail="Canlı akış kapalı")
     return Response(content=kare, media_type="image/jpeg",
                     headers={"Cache-Control": "no-store"})
 
