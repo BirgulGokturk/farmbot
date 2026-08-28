@@ -247,9 +247,15 @@ Ayrıca ölçüm satırında rölelerin gerçek durumu (`r_su_pompasi`,
 `r_hava_pompasi`; 0/1) ve kartın çalışma süresi (`calisma_sn`) geliyor.
 Süre geriye giderse kart yeniden başlamış, yani röleler kapanmıştır.
 
-`toprak_nem` ham geliyor. Yüzdeye çevirmek arayüzün işi:
-`yuzde = (1023 - ham) / 1023 * 100`. Ham değeri de gösterin, ters okuma
-karışıklık yaratıyor.
+`toprak_nem` ham geliyor. Yüzdeye çevirmek arayüzün işi ve **ölçek
+0–1023 değil**: gerçek prob suda sıfır okumuyor. Ajan `durum` paketinde
+`toprak_kalib: {kuru, islak}` gönderiyor; çevirim
+
+    yuzde = (kuru - ham) / (kuru - islak) * 100      # 0..100 arasına kırpın
+
+Kalibrasyon `ajan/ayarlar.json` → `arduino.toprak_kuru` / `toprak_islak`
+altında; ölçmek için `toprak-kalibre.py`. Ham değeri de gösterin, ters okuma
+(kurudukça yükselen sayı) karışıklık yaratıyor.
 
 ### Değerler ajanda düzeltiliyor
 

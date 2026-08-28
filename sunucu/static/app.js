@@ -10,6 +10,9 @@
 
 const S = {
   jeton: localStorage.getItem("farmbot_jeton") || "",
+  // Toprak probunun havada/suda okuduğu ham uçlar. Ajan `durum` paketinde
+  // bildiriyor; gelene kadar teorik uçlar kullanılıyor.
+  toprakKalib: { kuru: 1023, islak: 0 },
   dakika: 60,
   ws: null,
   jogAktif: null,        // {eksen, yon, dugme} — şu an basılı tutulan jog
@@ -73,11 +76,24 @@ const sayiCoz = (deger, azami = 2) => {
   return n.toFixed(azami);
 };
 
-/** HW-103 ham ADC değerini yüzdeye çevirir.
- *  Sensör kuruyken ~1023, suyun içinde ~0 okuyor; yani ham değer arttıkça
- *  nem AZALIYOR. Ham sayıyı panelde göstermek yanıltıcı olurdu. */
-const toprakYuzde = (ham) =>
-  ham === null || ham === undefined ? null : Math.max(0, Math.min(100, ((1023 - ham) / 1023) * 100));
+/** Toprak probunun ham ADC değerini yüzdeye çevirir.
+ *
+ *  Ham değer kurudukça YÜKSELİYOR, yani yön ters. Ölçek 0-1023 varsayılamaz:
+ *  gerçek prob suda sıfır okumuyor (saf su bile sonsuz iletken değil, üstelik
+ *  modülün seri direnci bölücüyü kaydırıyor). Suya sokulunca ham ~590 okuyan
+ *  bir prob, 0-1023'e göre "%42" der ve panel hiçbir zaman ıslak göstermez.
+ *
+ *  Bu yüzden iki uç ölçülüp ajanın ayarına yazılıyor (`toprak-kalibre.py`) ve
+ *  buradan okunuyor. Kalibrasyon gelmediyse teorik uçlara düşüyoruz — yanlış
+ *  ama en azından eski davranışla aynı. */
+const toprakYuzde = (ham) => {
+  if (ham === null || ham === undefined) return null;
+  const kuru = S.toprakKalib.kuru, islak = S.toprakKalib.islak;
+  // Aralık sıfırlanırsa (iki uç eşit girilmişse) bölme patlar; teorik uca dön.
+  const aralik = kuru - islak;
+  if (!aralik) return Math.max(0, Math.min(100, ((1023 - ham) / 1023) * 100));
+  return Math.max(0, Math.min(100, ((kuru - ham) / aralik) * 100));
+};
 
 function saatEtiketi(ts, uzunAralikMi) {
   const t = new Date(ts * 1000);
@@ -1729,6 +1745,7 @@ let _sonHata = "";
 
 function durumGuncelle(d) {
   if (!d) return;
+  if (d.toprak_kalib) S.toprakKalib = d.toprak_kalib;
   rozetYaz("#rozet-ajan", d.bagli ? "canli" : "kopuk", d.bagli ? "Raspberry Pi bağlı" : "Raspberry Pi çevrimdışı");
 
   const acilAcik = d.acil && d.acil.acik;

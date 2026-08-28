@@ -51,7 +51,14 @@ logger = logging.getLogger("ajan")
 VARSAYILAN_AYAR = {
     "sunucu": "wss://farmbot-api.onrender.com/ws/ajan",
     "jeton": "DEGISTIRIN",
-    "arduino": {"port": "/dev/ttyUSB0", "baud": 9600, "sahte": False},
+    # toprak_kuru / toprak_islak: probun havada ve suda okuduğu HAM değerler.
+    # Yüzde bunlara göre ölçekleniyor. Varsayılanlar teorik uçlar (0-1023) ama
+    # gerçek prob suda sıfır okumuyor — saf su bile sonsuz iletken değil ve
+    # modülün seri direnci bölücüyü kaydırıyor. Kalibre edilmezse suya sokulan
+    # prob "%42" der ve panel hiçbir zaman ıslak göstermez.
+    # Ölçmek için:  python3 toprak-kalibre.py
+    "arduino": {"port": "/dev/ttyUSB0", "baud": 9600, "sahte": False,
+                "toprak_kuru": 1023, "toprak_islak": 0},
     "plc": {
         "sahte": False,
         "ip": "192.168.1.88",
@@ -386,6 +393,14 @@ class Ajan:
             durum["tanilar"] = tanilar
             # Panelin ihtiyacı olan her şey tek pakette: dizi ilerlemesi,
             # takılı uç, uç adları ve sensörün bağlı olup olmadığı.
+            # Toprak kalibrasyonu panele gidiyor: ham->yüzde çevirimi orada
+            # yapılıyor ve tek yerde kalsın diye sayıları da oradan alması
+            # gerekiyor. Ajan ham değeri bozmuyor.
+            ard = self.ayar.get("arduino", {})
+            durum["toprak_kalib"] = {
+                "kuru": float(ard.get("toprak_kuru", 1023)),
+                "islak": float(ard.get("toprak_islak", 0)),
+            }
             durum["kamera"] = self.kamera.durum()
             durum["dizi"] = dict(self.dizi.durum)
             durum["uc"] = {

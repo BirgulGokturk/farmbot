@@ -277,8 +277,22 @@ geliyor — "bitkiye git, nemini ölç, ona göre sula" mantığı buna dayanıy
 Yatağa sabit ikinci bir sensör yok; kod bir dönem öyle varsayıyordu ve boş
 bir pini okuyordu.
 
-Toprak nemi panelde **yüzde** gösteriliyor. Prob kuruyken ~1023, ıslakken ~0
-okuyor; ham sayıyı göstermek "nem arttıkça değer düşüyor" gibi tersine bir
+**Prob kalibre edilmeli.** Dirençli prob suda sıfır okumuyor: saf su bile
+sonsuz iletken değil ve modülün seri direnci bölücüyü kaydırıyor. Ölçeği
+0–1023 varsaymak, suya sokulan probun "%42" demesi ve panelin hiçbir zaman
+ıslak göstermemesi demek. İki uç bir kez ölçülüyor:
+
+```bash
+python3 toprak-kalibre.py kuru     # prob havada
+python3 toprak-kalibre.py islak    # prob su dolu bardakta
+sudo systemctl restart farmbot-ajan
+```
+
+Değerler `ajan/ayarlar.json` → `arduino.toprak_kuru` / `toprak_islak`
+altında durur, ajan panele bildirir, çevirimi panel yapar.
+
+Toprak nemi panelde **yüzde** gösteriliyor. Prob kuruyken yüksek, ıslakken
+düşük ham değer okuyor; ham sayıyı göstermek "nem arttıkça değer düşüyor" gibi tersine bir
 okuma yaratıyordu. Ham değer kartın altında ayrıca yazıyor.
 
 ## Komut protokolü (ileride eklemek için)
