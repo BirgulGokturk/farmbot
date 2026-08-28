@@ -348,7 +348,10 @@ class Kamera:
     def durum(self) -> dict[str, Any]:
         """Panelin dugmeyi dogru gostermesi icin."""
         return {
-            "acik": self._calisiyor,
+            # "acik" = kamera KARE URETIYOR mu. Canli akis acilirken
+            # periyodik dongu duruyor (ikisi ayni cihazi acamaz); yalnizca
+            # _calisiyor'a bakmak, canli akarken panele "kapali" dedirtiyordu.
+            "acik": self._calisiyor or self._canli,
             "yontem": self._yontem,
             "aralik_sn": float(self.ayar.get("aralik_sn", 3600.0)),
             "hata": self.son_hata,
@@ -379,6 +382,14 @@ class Kamera:
         return True, f"Kamera acildi ({self._yontem})"
 
     def kapat(self) -> tuple[bool, str]:
+        # Canli akis acikken "kapat" demek onu da kapatmali: kullanici
+        # anahtari kapatirken "periyodik dongu" ile "canli akis" ayrimini
+        # bilmek zorunda degil, kamerayi kapatmak istiyor.
+        if self._canli:
+            self._canli = False
+            self._periyodik_geri = False     # geri getirilecek bir sey yok
+            self._calisiyor = False
+            return True, "Kamera kapatildi (canli akis durduruldu)"
         if not self._calisiyor:
             return True, "Kamera zaten kapali"
         self.durdur()

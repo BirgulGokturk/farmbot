@@ -1298,7 +1298,11 @@ function kameraDurumYaz(k) {
   const aralik = sn >= 3600 ? `${Math.round(sn / 3600)} saatte`
     : sn >= 60 ? `${Math.round(sn / 60)} dakikada`
     : `${Math.round(sn)} saniyede`;
-  not.textContent = acik ? `açık · ${k.yontem || "?"} · ${aralik} bir kare` : "kapalı";
+  // Canlı akışta "30 saniyede bir kare" yazmak yanlış: kareler aralıkla
+  // değil akıştan geliyor.
+  not.textContent = !acik ? "kapalı"
+    : k.canli ? `canlı · ${k.yontem || "?"}`
+    : `açık · ${k.yontem || "?"} · ${aralik} bir kare`;
 
   // Hangi aralığın seçili olduğu düğmelerde görünsün. Kaynak ajanın
   // bildirdiği değer — panel kendi seçimini hatırlamıyor, çünkü aralık
