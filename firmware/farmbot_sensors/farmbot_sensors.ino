@@ -14,12 +14,14 @@
  *   D7   su pompası rölesi
  *   D8   hava pompası rölesi
  *
- * RÖLE KONTAĞI: pompalar NO ucuna bağlanır, NC'ye DEĞİL. Röle bobini
- * enerjisizken COM–NC kapalıdır; pompa NC'deyse kart kapalıyken, sıfırlanmışken
- * ya da fişi çekilmişken pompa ÇALIŞIR. Su için bu taşma demek. NO'da ise
- * enerjisiz durum = kapalı, yani her arıza güvenli tarafa düşüyor.
- * NC'ye bağlıysa belirti nettir: panelde "AÇIK" yazarken motor susar, cihaz
- * ilk açıldığında ise kendiliğinden çalışır.
+ * RÖLE KONTAĞI: pompalar şu an NC ucunda ve bu bilerek böyle bırakıldı —
+ * kutuplama aşağıda ona göre ayarlı. Bilinmesi gereken sonucu var:
+ * bobin enerjisizken COM–NC kapalı olduğu için kart kapalıyken,
+ * sıfırlandığında, USB çıktığında ve açılışta önyükleyicinin beklediği
+ * 1-2 saniye boyunca POMPA ÇALIŞIR. Yazılım bu anlarda çalışmıyor, yani
+ * engelleyemiyor. Makineyi başıboş bırakmayın; su hattını uzun süre
+ * gözetimsiz açık tutacaksanız pompa kablosunu NO ucuna alın, sonra
+ * aşağıdaki satırı 1 yapın.
  *   A1   toprak nemi probu — iki uçlu, tool ucuna takılı, toprağa daldırılır
  *   A4/A5 GY-68 / BMP180 (I2C)
  *
@@ -46,11 +48,12 @@
  * panelin işi, ham değer olduğu gibi gidiyor. */
 #define TOPRAK_PIN     A1
 
-/* Röle kartlarının çoğu AKTİF-LOW: pine LOW verince röle çeker. Kartınız
- * tersse (LOW'da sessiz, HIGH'da çekiyor) burayı 0 yapın. Yanlış seçim
- * sessiz bir hata değil, ters bir sistem: "kapalı" derken röle çekili
- * kalır. Kartın çekince yanan LED'ine bakarak anlarsınız. */
-#define ROLE_AKTIF_LOW 1
+/* 0 = "aç" dediğimizde pine HIGH gidiyor. Bu, kartın kutuplamasıyla değil
+ * KONTAKLA ilgili bir seçim: pompalar NC ucunda olduğu için pompayı
+ * çalıştırmak bobini BIRAKMAK demek, çekmek değil. Yukarıdaki nota bakın.
+ *
+ * Pompa kablosunu NO ucuna alırsanız burayı 1 yapın. */
+#define ROLE_AKTIF_LOW 0
 
 #define OLCUM_ARALIGI_MS 2000
 

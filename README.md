@@ -99,15 +99,20 @@ Eklenenler:
 | GY-68 (BMP180) | VCC · GND · SDA · SCL | **3.3V** · GND · A4 · A5 | 5V **bağlamayın** |
 | DHT11 / DHT22 | VCC · GND · DATA | 5V · GND · D2 | Kart üstünde direnç yoksa VCC–DATA arası 10K |
 | Toprak probu | VCC · GND · A0 | 5V · GND · **A1** | tool ucuna takılı, toprağa daldırılır |
-| Su pompası rölesi | IN | D7 | pompa **NO** ucuna |
-| Hava pompası rölesi | IN | D8 | pompa **NO** ucuna |
+| Su pompası rölesi | IN | D7 | pompa **NC** ucunda |
+| Hava pompası rölesi | IN | D8 | pompa **NC** ucunda |
 
-Pompalar rölenin **NO** (normalde açık) ucuna bağlanır. Bobin enerjisizken
-COM–NC kapalıdır; pompa NC'deyse kart kapalıyken, sıfırlanmışken ya da fişi
-çekilmişken pompa çalışır — su için taşma demek. NO'da enerjisiz durum
-kapalı, yani her arıza güvenli tarafa düşüyor. NC'ye bağlıysa belirti nettir:
-panelde "AÇIK" yazarken motor susar, cihaz ilk açıldığında kendiliğinden
-çalışır.
+Pompalar rölenin **NC** (normalde kapalı) ucunda ve `ROLE_AKTIF_LOW 0` buna
+göre ayarlı: pompayı çalıştırmak bobini bırakmak demek.
+
+Bilinmesi gereken sonucu var. Bobin enerjisizken COM–NC kapalı olduğu için
+**kart kapalıyken, sıfırlandığında, USB çıktığında ve her açılışta
+önyükleyicinin beklediği 1-2 saniye boyunca pompa çalışır.** Yazılım o
+anlarda çalışmadığı için bunu engelleyemez.
+
+Bunu istemiyorsanız çözüm kabloda: pompa ucunu NC vidasından NO'ya alın ve
+`ROLE_AKTIF_LOW`'u 1 yapın. O zaman enerjisiz durum "kapalı" olur, yani güç
+kesintisi ve sıfırlama pompayı durdurur.
 
 ### Röle kutuplaması
 
