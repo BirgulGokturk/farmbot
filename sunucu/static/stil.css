@@ -1786,3 +1786,34 @@ button.dugme.role.acik:hover:not(:disabled) { background: rgba(74, 168, 96, .24)
 @media (max-width: 900px) {
   .kamera-yuzen { width: 180px; }
 }
+
+/* ---------------------------------------------------------- ekrana sığdır
+   Büyük hâlde kutu ızgaradan çıkıp ekranı kaplıyor. `transform` !important
+   ile sıfırlanıyor: sürükleme satır içi stil yazıyor ve o kalırsa büyük
+   kutu ekranın dışına kayıyor. Küçülünce satır içi stil geri geçerli
+   oluyor, yani sürüklediğiniz yer kayboLmuyor. */
+.kamera-yuzen.buyuk {
+  position: fixed;
+  inset: var(--b3);
+  width: auto;
+  max-width: none;
+  /* STRETCH ŞART. Kutu bir ızgara öğesi ve küçük hâlde sağ alta hizalanıyor
+     (justify/align-self: end). Bu hizalama konumlandırılmış kutuda da
+     geçerli kalıyor: genişlik `auto` olunca kutu esnemek yerine içeriğine
+     göre büzülüp köşeye yapışıyor, yani `inset` görmezden geliniyor gibi
+     duruyor. Hizalamayı stretch'e almak esnemeyi geri getiriyor. */
+  justify-self: stretch;
+  align-self: stretch;
+  transform: none !important;
+  z-index: 20;
+}
+/* Görüntü boşluğu doldursun ama ORANI BOZULMASIN: contain, kırpmadan
+   sığdırıyor. cover kullanmak bitkinin kenarını kesmek olurdu. */
+.kamera-yuzen.buyuk img {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  height: auto;
+  object-fit: contain;
+}
+.kamera-yuzen.buyuk .kamera-yuzen-bas { cursor: default; }

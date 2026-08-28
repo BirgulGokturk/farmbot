@@ -2253,6 +2253,7 @@ function olaylariBagla() {
        * kayboluyor, kamera hep köşeye dönüyordu. Ölçülemiyorsa dokunmuyoruz;
        * kutu görünür olunca yeniden sınırlanıyor. */
       if (!y.width || !y.height) return;
+      if (yuzenKutu.classList.contains("buyuk")) return;
       const pay = 24;                    // kutunun bu kadarı hep görünsün
       kayma.x = Math.max(-(y.left + y.width - pay),
                          Math.min(innerWidth - y.left - pay, kayma.x));
@@ -2265,8 +2266,11 @@ function olaylariBagla() {
 
     let surukle = null;
     bas.addEventListener("pointerdown", (e) => {
-      // Kapatma düğmesine basarken sürükleme başlamasın.
+      // Kapatma/büyütme düğmesine basarken sürükleme başlamasın.
       if (e.target.closest("button")) return;
+      // Ekranı kaplarken sürüklemenin anlamı yok; üstelik satır içi
+      // transform yazmak küçülünce kutuyu yanlış yere koyardı.
+      if (yuzenKutu.classList.contains("buyuk")) return;
       surukle = { x: e.clientX, y: e.clientY, bx: kayma.x, by: kayma.y };
       bas.setPointerCapture(e.pointerId);
       yuzenKutu.classList.add("surukleniyor");
@@ -2293,12 +2297,44 @@ function olaylariBagla() {
     addEventListener("resize", () => { sinirla(); uygula(); });
   }
 
+  const yuzenBuyut = $("#d-kamera-yuzen-buyut");
+  if (yuzenBuyut && yuzenKutu) {
+    const buyutYaz = (buyuk) => {
+      yuzenKutu.classList.toggle("buyuk", buyuk);
+      yuzenBuyut.textContent = buyuk ? "⤡" : "⤢";
+      yuzenBuyut.title = buyuk ? "Küçült" : "Ekrana sığdır";
+      yuzenBuyut.setAttribute("aria-label", yuzenBuyut.title);
+      yuzenBuyut.setAttribute("aria-pressed", buyuk ? "true" : "false");
+      // Küçülürken sürüklenmiş konum yeniden sınırlanmalı: pencere
+      // büyükken değişmiş olabilir.
+      if (!buyuk) kameraYuzenSinirla();
+    };
+    yuzenBuyut.onclick = () => buyutYaz(!yuzenKutu.classList.contains("buyuk"));
+    // Esc ile çıkış: ekranı kaplayan bir şeyden çıkışın beklenen yolu.
+    // Diğer Esc davranışlarının önüne geçmesin diye yalnızca büyükken
+    // yakalıyoruz ve olayı durduruyoruz.
+    addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && yuzenKutu.classList.contains("buyuk")) {
+        e.stopPropagation();
+        buyutYaz(false);
+      }
+    }, true);
+  }
+
   const yuzenKapat = $("#d-kamera-yuzen-kapat");
   if (yuzenKapat) {
     yuzenKapat.onclick = () => {
       // Küçültmek kamerayı KAPATMIYOR — yalnızca sahnedeki kopyayı gizliyor.
       // Panel bölümündeki görüntü akmaya devam ediyor.
       S.kameraYuzenKapali = true;
+      // Büyük hâlde gizlemek, geri açınca ekranı kaplayan bir kutuyla
+      // karşılaşmak demek olurdu.
+      $("#kamera-yuzen").classList.remove("buyuk");
+      if (yuzenBuyut) {
+        yuzenBuyut.textContent = "⤢";
+        yuzenBuyut.title = "Ekrana sığdır";
+        yuzenBuyut.setAttribute("aria-pressed", "false");
+      }
       $("#kamera-yuzen").classList.add("gizli");
       gunluk("Sahnedeki kamera küçültüldü — Kamera bölümünden geri açılır");
     };
