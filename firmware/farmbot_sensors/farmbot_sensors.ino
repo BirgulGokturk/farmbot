@@ -39,11 +39,18 @@
  * panelin işi, ham değer olduğu gibi gidiyor. */
 #define TOPRAK_PIN     A1
 
-/* Röle kartlarının çoğu AKTİF-LOW: pine LOW verince röle çeker. Kartınız
- * tersse (LOW'da sessiz, HIGH'da çekiyor) burayı 0 yapın. Yanlış seçim
- * sessiz bir hata değil, ters bir sistem: "kapalı" derken röle çekili
- * kalır. Kartın çekince yanan LED'ine bakarak anlarsınız. */
-#define ROLE_AKTIF_LOW 1
+/* SAHADA ÖLÇÜLDÜ: bu kart AKTİF-HIGH. Yani pine HIGH verince röle çekiyor.
+ * Röle kartlarının çoğu tersi olduğu için burası 1 yazıyordu ve sistem
+ * baştan sona ters çalışıyordu: "aç" deyince kapanıyor, "kapalı" derken
+ * röle çekili kalıyordu.
+ *
+ * Yan etkisi daha kötüydü: 1 iken kapalı seviye HIGH demekti, yani kart
+ * her açılışta iki röleyi de ÇEKİYORDU. Pompanın kalkış akımı beslemeyi
+ * cökertince kart sıfırlanıyor, sıfırlanınca yine çekiyordu — pompaların
+ * "aç kapa yapıp durması" buydu.
+ *
+ * Kart değişirse: LOW'da çekiyorsa 1 yapın. */
+#define ROLE_AKTIF_LOW 0
 
 #define OLCUM_ARALIGI_MS 2000
 
@@ -60,9 +67,11 @@ unsigned long sonOlcum = 0;
 String girisTamponu = "";
 
 // --------------------------------------------------------------- RÖLE -----
-/* Pine kapalı seviyeyi YAZIP sonra OUTPUT yapıyoruz. Ters sırada pin bir
- * an LOW kalıyor ve aktif-LOW kartta röle çekiyor: her açılışta pompaya
- * kısa bir darbe demek. */
+/* Pine kapalı seviyeyi YAZIP sonra OUTPUT yapıyoruz. pinMode bir pini
+ * çıkışa alırken LOW'dan başlatıyor; aktif-LOW bir kartta ters sıra her
+ * açılışta pompaya kısa bir darbe demek olurdu. Bu kart aktif-HIGH, yani
+ * şu an kapalı seviye zaten LOW — ama kart değişirse bu sıra doğru
+ * kalsın diye böyle duruyor. */
 void roleHazirla(int pin) {
   digitalWrite(pin, ROLE_AKTIF_LOW ? HIGH : LOW);
   pinMode(pin, OUTPUT);
