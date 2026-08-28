@@ -306,6 +306,7 @@
             <span class="esnek"></span>
             <button class="ikon-dugme" id="d-kamera-canli">Canlı</button>
           </div>
+          <button class="dugme kucuk" id="d-kamera-yuzen-ac">Sahnede göster</button>
           <div id="kamera-kutu">
             <p class="bos-durum" id="kamera-yok">Henüz kare gelmedi.<br>
               Kamerayı yukarıdaki anahtarla açın; ilk kare birkaç saniye
@@ -1124,6 +1125,21 @@
 
     <!-- Seçilen öğenin kartı — sahnenin sağında yüzüyor. -->
     <div id="tarla-kart" class="tarla-kart gizli"></div>
+
+    <!-- KAMERA — sahnenin sağ ALTINDA yüzüyor. Panel bölümündeki kopyası
+         duruyor ama oraya ulaşmak için sayfayı kaydırmak gerekiyordu;
+         kamera "arada bir bakılan" değil "sürekli göz ucuyla izlenen" bir
+         şey. Öğe kartı sağ ÜSTTE olduğu için ikisi çakışmıyor.
+         Kamera kare üretmiyorken hiç görünmüyor: boş bir kutu yer kaplar. -->
+    <div id="kamera-yuzen" class="kamera-yuzen gizli">
+      <div class="kamera-yuzen-bas">
+        <span class="ad">Kamera</span>
+        <span class="ikincil" id="kamera-yuzen-zaman"></span>
+        <button class="kapat" id="d-kamera-yuzen-kapat" type="button"
+                title="Küçült — panelden geri açılır" aria-label="Küçült">×</button>
+      </div>
+      <img id="kamera-yuzen-kare" alt="Kamera görüntüsü">
+    </div>
 
     <!-- PROFİL GÖRÜNTÜLEYİCİ — Z'yi üstten görünümde anlamanın tek yolu.
          Haritada bir yere tıklayınca o koordinattan geçen X ya da Y

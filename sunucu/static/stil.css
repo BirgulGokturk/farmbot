@@ -321,7 +321,8 @@ main.kabuk {
    Sahnenin üstünde duran her şey: sol panel, araç çubuğu, açılır paneller,
    öğe kartı, toplu işlem çubuğu, profil.
    AYRIM: yarı saydam zemin + TEK kademe gölge. Çerçeve YOK. */
-.yuzen, .sahne-cubuk, .acilir, .tarla-kart, .toplu-cubuk, .profil {
+.yuzen, .sahne-cubuk, .acilir, .tarla-kart, .toplu-cubuk, .profil,
+.kamera-yuzen {
   background: var(--yuzen-zemin);
   -webkit-backdrop-filter: blur(12px);
   backdrop-filter: blur(12px);
@@ -1730,3 +1731,52 @@ button.dugme.role.acik:hover:not(:disabled) { background: rgba(74, 168, 96, .24)
   box-shadow: 0 0 6px rgba(110, 208, 138, .9);
 }
 .role:disabled { opacity: .5; }
+
+
+/* ------------------------------------------------------------ yüzen kamera
+   Sahnenin sağ ALTINDA. Öğe kartı sağ üstte (align-self: start), bu altta
+   (align-self: end) — ikisi aynı sütunda ama çakışmıyorlar ve sahnenin
+   ortası açık kalıyor.
+   Panel bölümündeki kamera duruyor; bu onun yerine değil, yanına: oraya
+   ulaşmak için bölümü açıp kaydırmak gerekiyordu. */
+.kamera-yuzen {
+  grid-column: 3;
+  grid-row: 2;
+  align-self: end;
+  justify-self: end;
+  width: 260px;
+  padding: var(--b2);
+  display: flex;
+  flex-direction: column;
+  gap: var(--b1);
+}
+.kamera-yuzen-bas {
+  display: flex;
+  align-items: center;
+  gap: var(--b2);
+  font-size: var(--yazi-kucuk);
+}
+.kamera-yuzen-bas .ad { font-weight: 600; }
+/* Saat esnek boşluğu yiyor ki kapatma düğmesi hep sağ uçta kalsın. */
+.kamera-yuzen-bas .ikincil { margin-left: auto; font-variant-numeric: tabular-nums; }
+.kamera-yuzen-bas .kapat {
+  background: none;
+  border: none;
+  color: var(--metin-3);
+  font-size: 16px;
+  line-height: 1;
+  padding: 0 var(--b1);
+  cursor: pointer;
+}
+.kamera-yuzen-bas .kapat:hover { color: var(--metin); }
+.kamera-yuzen img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: var(--b2);
+}
+
+/* Dar ekranda sahnenin yarısını kaplamasın. */
+@media (max-width: 900px) {
+  .kamera-yuzen { width: 180px; }
+}

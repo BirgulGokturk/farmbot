@@ -13,6 +13,7 @@ const S = {
   // Toprak probunun havada/suda okuduğu ham uçlar. Ajan `durum` paketinde
   // bildiriyor; gelene kadar teorik uçlar kullanılıyor.
   toprakKalib: { kuru: 1023, islak: 0 },
+  kameraYuzenKapali: false, // sahnedeki yüzen kamera küçültüldü mü
   dakika: 60,
   ws: null,
   jogAktif: null,        // {eksen, yon, dugme} — şu an basılı tutulan jog
@@ -1282,6 +1283,10 @@ function kameraGoruntuTemizle() {
   if (yok) { yok.textContent = "Kamera kapalı."; yok.classList.remove("gizli"); }
   const zaman = $("#kamera-zaman");
   if (zaman) zaman.textContent = "";
+  // Kamera kapandıysa yüzen kutu da gitmeli: son kare orada asılı kalırsa
+  // kapalı bir kamerayı açık sanırsınız.
+  const yuzen = $("#kamera-yuzen");
+  if (yuzen) yuzen.classList.add("gizli");
 }
 
 function kameraDurumYaz(k) {
@@ -1350,6 +1355,16 @@ function kareyiTazele(ts, canli = false) {
   const img = $("#kamera-kare");
   img.src = adres;
   img.classList.remove("gizli");
+
+  // Sahnedeki yüzen kopya. Aynı adresi kullanıyor: tarayıcı iki <img> için
+  // tek istek yapıyor, yani ikinci kopya ağa yük bindirmiyor.
+  const yuzen = $("#kamera-yuzen");
+  if (yuzen && !S.kameraYuzenKapali) {
+    $("#kamera-yuzen-kare").src = adres;
+    yuzen.classList.remove("gizli");
+    $("#kamera-yuzen-zaman").textContent =
+      (canli ? "canlı " : "") + new Date((ts || Date.now() / 1000) * 1000).toLocaleTimeString("tr-TR");
+  }
   $("#kamera-yok").classList.add("gizli");
   $("#kamera-zaman").textContent = (canli ? "Canlı · " : "Son kare: ")
     + new Date((ts || Date.now() / 1000) * 1000).toLocaleTimeString("tr-TR");
@@ -2191,6 +2206,24 @@ function olaylariBagla() {
     if (!acik) kameraGoruntuTemizle();   // beklemeden kapansin
     komutGonder("kamera", { acik });
   };
+  const yuzenKapat = $("#d-kamera-yuzen-kapat");
+  if (yuzenKapat) {
+    yuzenKapat.onclick = () => {
+      // Küçültmek kamerayı KAPATMIYOR — yalnızca sahnedeki kopyayı gizliyor.
+      // Panel bölümündeki görüntü akmaya devam ediyor.
+      S.kameraYuzenKapali = true;
+      $("#kamera-yuzen").classList.add("gizli");
+      gunluk("Sahnedeki kamera küçültüldü — Kamera bölümünden geri açılır");
+    };
+  }
+  const yuzenAc = $("#d-kamera-yuzen-ac");
+  if (yuzenAc) {
+    yuzenAc.onclick = () => {
+      S.kameraYuzenKapali = false;
+      gunluk("Sahnedeki kamera geri açıldı");
+    };
+  }
+
   const canliDugmesi = $("#d-kamera-canli");
   if (canliDugmesi) {
     canliDugmesi.onclick = () => komutGonder("kamera",
