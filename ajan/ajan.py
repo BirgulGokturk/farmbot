@@ -52,13 +52,18 @@ VARSAYILAN_AYAR = {
     "sunucu": "wss://farmbot-api.onrender.com/ws/ajan",
     "jeton": "DEGISTIRIN",
     # toprak_kuru / toprak_islak: probun havada ve suda okuduğu HAM değerler.
-    # Yüzde bunlara göre ölçekleniyor. Varsayılanlar teorik uçlar (0-1023) ama
-    # gerçek prob suda sıfır okumuyor — saf su bile sonsuz iletken değil ve
-    # modülün seri direnci bölücüyü kaydırıyor. Kalibre edilmezse suya sokulan
-    # prob "%42" der ve panel hiçbir zaman ıslak göstermez.
-    # Ölçmek için:  python3 toprak-kalibre.py
+    # Yüzde bunlara göre ölçekleniyor.
+    #
+    # islak 593 BU MAKİNEDE ÖLÇÜLDÜ: prob su dolu bardakta iken panel eski
+    # 0-1023 ölçeğinde %42 gösteriyordu, yani ham 1023-0.42*1023 = 593.
+    # Teorik 0 yanlıştı — dirençli prob suda sıfır okumuyor, saf su bile
+    # sonsuz iletken değil ve modülün seri direnci bölücüyü kaydırıyor.
+    #
+    # kuru 1023 varsayım: havada ~%0 göründüğü için. Prob ya da modül
+    # değişirse ikisini de yeniden ölçün:
+    #   python3 toprak-kalibre.py kuru   /   python3 toprak-kalibre.py islak
     "arduino": {"port": "/dev/ttyUSB0", "baud": 9600, "sahte": False,
-                "toprak_kuru": 1023, "toprak_islak": 0},
+                "toprak_kuru": 1023, "toprak_islak": 593},
     "plc": {
         "sahte": False,
         "ip": "192.168.1.88",
