@@ -54,16 +54,13 @@ VARSAYILAN_AYAR = {
     # toprak_kuru / toprak_islak: probun havada ve suda okuduğu HAM değerler.
     # Yüzde bunlara göre ölçekleniyor.
     #
-    # islak 593 BU MAKİNEDE ÖLÇÜLDÜ: prob su dolu bardakta iken panel eski
-    # 0-1023 ölçeğinde %42 gösteriyordu, yani ham 1023-0.42*1023 = 593.
-    # Teorik 0 yanlıştı — dirençli prob suda sıfır okumuyor, saf su bile
-    # sonsuz iletken değil ve modülün seri direnci bölücüyü kaydırıyor.
-    #
-    # kuru 1023 varsayım: havada ~%0 göründüğü için. Prob ya da modül
-    # değişirse ikisini de yeniden ölçün:
+    # Varsayılan teorik uçlar. Gerçek prob suda sıfır okumuyor, yani bu ölçek
+    # DOĞRU DEĞİL — ama tahmin edilmiş bir sayı yazmaktansa eski, bilinen
+    # davranışta kalmak iyi: ölçmeden konan değer sonradan "kalibre edildi"
+    # sanılıyor. Ölçmek için:
     #   python3 toprak-kalibre.py kuru   /   python3 toprak-kalibre.py islak
     "arduino": {"port": "/dev/ttyUSB0", "baud": 9600, "sahte": False,
-                "toprak_kuru": 1023, "toprak_islak": 593},
+                "toprak_kuru": 1023, "toprak_islak": 0},
     "plc": {
         "sahte": False,
         "ip": "192.168.1.88",
@@ -162,6 +159,33 @@ class Ajan:
         self.kamera = kamera_modulu.Kamera(ayar.get("kamera", {}), self._kare_geldi,
                                            gunluk_cb=self._gunluk_gonder)
         self._son_durum: dict[str, Any] = {}
+
+    #: Kuru ve ıslak ucun arasında en az bu kadar sayım olmalı.
+    #: `toprak-kalibre.py` ile aynı eşik.
+    EN_AZ_KALIB_ARALIK = 100
+
+    def _toprak_kalib(self) -> dict[str, float]:
+        """Panele gidecek toprak ölçeği — makul değilse varsayılana döner.
+
+        Ayar dosyasında dar aralıklı bir kalibrasyon kalabiliyor (prob
+        bağlıyken ölçülmüşse). Onu olduğu gibi kullanmak, gürültüyü %0-100
+        arasında zıplayan sahte bir ölçüme çevirir. Betik böyle bir kaydı
+        artık reddediyor ama dosyada eskiden kalmış olabilir.
+        """
+        ard = self.ayar.get("arduino", {})
+        kuru = float(ard.get("toprak_kuru", 1023))
+        islak = float(ard.get("toprak_islak", 0))
+        if abs(kuru - islak) < self.EN_AZ_KALIB_ARALIK:
+            if not getattr(self, "_kalib_uyarildi", False):
+                self._kalib_uyarildi = True
+                logger.warning(
+                    "Toprak kalibrasyonu makul değil (kuru %.0f, ıslak %.0f — "
+                    "arada yalnızca %.0f sayım). Yok sayılıyor, 0-1023 ölçeği "
+                    "kullanılıyor. Prob çalışır hâle gelince "
+                    "'python3 toprak-kalibre.py kuru' ve '... islak' ile "
+                    "yeniden ölçün.", kuru, islak, abs(kuru - islak))
+            return {"kuru": 1023.0, "islak": 0.0}
+        return {"kuru": kuru, "islak": islak}
 
     def _kosul_baglami(self) -> dict[str, Any]:
         """Bölge koşullarında kullanılan makine durumu.
@@ -416,11 +440,7 @@ class Ajan:
             # Toprak kalibrasyonu panele gidiyor: ham->yüzde çevirimi orada
             # yapılıyor ve tek yerde kalsın diye sayıları da oradan alması
             # gerekiyor. Ajan ham değeri bozmuyor.
-            ard = self.ayar.get("arduino", {})
-            durum["toprak_kalib"] = {
-                "kuru": float(ard.get("toprak_kuru", 1023)),
-                "islak": float(ard.get("toprak_islak", 0)),
-            }
+            durum["toprak_kalib"] = self._toprak_kalib()
             durum["kamera"] = self.kamera.durum()
             durum["dizi"] = dict(self.dizi.durum)
             durum["uc"] = {

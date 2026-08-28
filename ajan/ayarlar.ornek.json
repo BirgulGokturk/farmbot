@@ -9,7 +9,7 @@
     "sahte": false,
     "_toprak": "Probun HAVADA ve SUDA okuduğu ham değerler; yüzde bunlara göre ölçekleniyor. Prob suda sıfır okumaz, teorik 0-1023 varsaymayın. Ölçmek için: python3 toprak-kalibre.py kuru / islak",
     "toprak_kuru": 1023,
-    "toprak_islak": 593
+    "toprak_islak": 0
   },
   "plc": {
     "_not": "sahte:true iken PLC yerine register davranışını taklit eden bir sanal PLC kullanılır. Güvenlik mantığının aynısı çalışır, sadece hareket sanaldır.",
