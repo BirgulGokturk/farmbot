@@ -331,6 +331,12 @@ class Gantry:
 
         self.acil_mandal: dict[str, Any] = {"acik": False, "saat": "", "neden": ""}
         self._iptal = threading.Event()          # süren hareketi kes
+        # Sürücülerin son bilinen durumu. Hareket komutu bunu SORMADAN
+        # geçiyordu: sürücüler kapalıyken `git` "Hedefe gidiliyor" diye
+        # BAŞARI dönüyor ve makine kımıldamıyordu. Sessiz başarısızlığın en
+        # kötü türü — kullanıcı sebebi başka yerde arıyor.
+        # None = henüz bilinmiyor (ilk durum okumasına kadar engellemiyoruz).
+        self._enable_son: bool | None = None
         self._jog: dict[tuple[int, str], float] = {}
         self._jog_kilit = threading.Lock()
         self._hareket_ip: threading.Thread | None = None
@@ -410,6 +416,7 @@ class Gantry:
         try:
             konum = self.konum_mm()
             enable = bool(self.mb.oku(ENABLE_REG, 1)[0])
+            self._enable_son = enable
             with self._jog_kilit:
                 jog_acik = sorted({f"{EKSENLER[i]['ad']}{'+' if k == 'jogf' else '-'}" for (i, k) in self._jog})
             self.son_hata = None
@@ -609,6 +616,7 @@ class Gantry:
         if basili:
             if self.acil_mandal["acik"]:
                 raise PLCHatasi("ACİL DURDURMA mandallı — önce temizleyin")
+            self._surucu_dogrula()
             # Süren bir hareket varken jog, aynı eksenin register'larına iki
             # yazıcı demek: hareket işçisi hedefi tazelerken jog mandalı da
             # açık kalıyor ve eksenin nereye gideceği belirsizleşiyor.
@@ -695,7 +703,27 @@ class Gantry:
             self.mb.yaz(ENABLE_REG, 0)
             time.sleep(0.15)
         self.mb.yaz(ENABLE_REG, 1 if ac else 0)
+        # Onbellek ANINDA guncelleniyor: durum dongusu yarim saniyede bir
+        # okuyor ve o araliga denk gelen ilk jog "surucüler kapali" diye
+        # reddedilirdi.
+        self._enable_son = bool(ac)
         return "Sürücüler açık" if ac else "Sürücüler kapalı"
+
+    def _surucu_dogrula(self) -> None:
+        """Sürücüler kapalıyken hareket komutunu REDDEDER.
+
+        Eskiden komut kabul ediliyor, PLC'ye hedef yazılıyor ve makine
+        kımıldamıyordu; panel "Hedefe gidiliyor" yazdığı için sebep
+        aranacak son yer sürücüler oluyordu.
+
+        `None` iken (henüz hiç durum okunmamış) engellemiyoruz: bilmediğimiz
+        bir şey yüzünden kullanıcıyı durdurmak, yanlış sebeple engellemek
+        olur.
+        """
+        if self._enable_son is False:
+            raise PLCHatasi(
+                "Sürücüler kapalı — makine komutu alır ama kımıldamaz. "
+                "Önce 'Sürücüler' düğmesiyle açın.")
 
     def _onceki_isi_kes(self, yeni_is: str) -> None:
         """Süren işi, kesilebilir bir şeyse iptal edip bitmesini bekler.
@@ -734,6 +762,7 @@ class Gantry:
         """
         if self.acil_mandal["acik"]:
             raise PLCHatasi("ACİL DURDURMA mandallı — önce temizleyin")
+        self._surucu_dogrula()
         self._onceki_isi_kes("hareket")
 
         simdiki = self.konum_mm()
@@ -776,6 +805,7 @@ class Gantry:
         """
         if self.acil_mandal["acik"]:
             raise PLCHatasi("ACİL DURDURMA mandallı")
+        self._surucu_dogrula()
         simdiki = self.konum_mm()
         hedef = [simdiki[0] if x is None else float(x),
                  simdiki[1] if y is None else float(y),
@@ -938,6 +968,7 @@ class Gantry:
         """
         if self.acil_mandal["acik"]:
             raise PLCHatasi("ACİL DURDURMA mandallı")
+        self._surucu_dogrula()
         if not self.sinir_icinde(i, mm):
             raise PLCHatasi(
                 f"{EKSENLER[i]['ad']} hedefi sınır dışı: {mm:.1f} mm "
@@ -974,6 +1005,7 @@ class Gantry:
         """
         if self.acil_mandal["acik"]:
             raise PLCHatasi("ACİL DURDURMA mandallı — önce temizleyin")
+        self._surucu_dogrula()
         self._onceki_isi_kes("referans arama")
 
         sira = [EKSEN_INDEKS[eksen]] if eksen else [2, 0, 1]   # Z, X, Y
