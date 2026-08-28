@@ -23,6 +23,12 @@ import urllib.request
 AYAR = "ajan/ayarlar.json"
 ORTAM = "sunucu/ortam"
 
+#: Hava ile su arasında en az bu kadar sayım fark olmalı. Çalışan bir
+#: dirençli prob yüzlerce sayım oynuyor; bunun altındaki bir fark sensörün
+#: tepki vermediğini gösteriyor. Eşiği düşük tutmak, bozuk bir tesisatı
+#: "kalibre edildi" diye kaydetmek olurdu.
+EN_AZ_ARALIK = 100
+
 
 def parola() -> str:
     """Panel parolasını systemd ortam dosyasından okur."""
@@ -105,9 +111,24 @@ def main() -> int:
     # Hangi ucun büyük olduğu MODÜLE göre değişiyor: bazı problar kurudukça
     # yükseliyor, bazıları ıslandıkça. Çevrim iki noktalı doğrusal olduğu için
     # ikisi de çalışıyor; şart olan tek şey ikisinin FARKLI olması.
-    if kuru == islak:
-        print(f"HATA: kuru ve ıslak aynı değer ({kuru}). Ölçek kurulamaz — "
-              "prob gerçekten havada/suda mıydı?")
+    aralik = abs(kuru - islak)
+    if aralik < EN_AZ_ARALIK:
+        # Çalışan bir prob havayla su arasında YÜZLERCE sayım oynuyor. Dar
+        # aralık "prob hassas değil" demek değil, "prob tepki vermiyor"
+        # demek — ve dar aralığı kaydetmek gürültüyü %0-100 arasında
+        # zıplayan sahte bir ölçüme çeviriyor.
+        oynama = 100 / aralik if aralik else float("inf")
+        print(f"HATA: kuru {kuru} · ıslak {islak} — aradaki fark yalnızca "
+              f"{aralik} sayım.")
+        print(f"Bu ölçekte 1 sayımlık gürültü %{oynama:.0f} oynama demek; "
+              "panel anlamsız bir sayı gösterirdi. Kaydedilmedi.")
+        print()
+        print("Prob elektriksel olarak çalışmıyor. Sırayla bakın:")
+        print("  1. Probun VCC ucu 5V'a bağlı mı? (bağlı değilse AO sabit")
+        print("     bir değerde durur ve suya tepki vermez — belirti tam bu)")
+        print("  2. GND ucu Arduino'nun GND'sine bağlı mı?")
+        print("  3. A1'e giden kablo modülün AO ucundan mı çıkıyor? (DO değil)")
+        print("  4. Modülden proba giden iki kablo sağlam mı, uçlar gevşek mi?")
         return 1
 
     with open(AYAR, "w", encoding="utf-8") as f:
