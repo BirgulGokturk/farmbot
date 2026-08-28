@@ -19,8 +19,10 @@ Neden JPEG ve neden küçük: kare WebSocket üzerinden sunucuya gidiyor ve orad
 saklanıyor. 1640x1232 ham bir kare 6 MB; 640 piksel genişliğinde JPEG ~40 KB.
 Panelde bitki görmek için bu fazlasıyla yeterli, ağ ve disk ise rahat ediyor.
 
-Kare aralığı bilerek uzun (varsayılan 30 sn): bu bir güvenlik kamerası değil,
-"bitkiler nasıl" sorusunun cevabı.
+Kare aralığı varsayılan olarak uzun (bir saat): bu bir güvenlik kamerası
+değil, "bitkiler nasıl" sorusunun cevabı. Panelden kısaltılabiliyor; en
+kısası 2 saniye. Kısa aralıkta kamera yetişemeyebilir — o durumda döngü
+yavaşlamayı sessizce yutmuyor, günlüğe yazıyor.
 """
 
 from __future__ import annotations
@@ -227,7 +229,9 @@ class Kamera:
 
     def _dongu(self) -> None:
         hata_sayaci = 0
+        yavas_sayaci = 0
         while self._calisiyor:
+            basladi = time.monotonic()
             try:
                 ham = self.kare_al()
                 self.gonder(base64.b64encode(ham).decode("ascii"), time.time())
@@ -243,5 +247,42 @@ class Kamera:
             # Aralik her turda okunuyor: panelden degistirilirse bir sonraki
             # turda gecerli oluyor, yeniden baslatmak gerekmiyor.
             aralik = max(2.0, float(self.ayar.get("aralik_sn", 3600.0)))
-            if self._dur.wait(aralik):
-                break
+
+            # Kare cekmek de zaman aliyor — komut satiri yolunda islem acmak
+            # birkac saniye surebiliyor. Bekleme suresinden bunu dusuyoruz,
+            # yoksa "5 saniyede bir" fiilen "5 + cekim suresi" oluyor ve
+            # canli akis istendiginde fark buyuk.
+            gecen = time.monotonic() - basladi
+            kalan = aralik - gecen
+
+            # Cekim istenen araliktan uzun suruyorsa kamera bu hizi
+            # tasiyamiyor demek. Sessizce yavas calismak yerine soyluyoruz:
+            # kullanici "5 sn sectim ama 9 saniyede bir geliyor" diye
+            # aramasin.
+            if kalan <= 0:
+                yavas_sayaci += 1
+                if yavas_sayaci == 1 or yavas_sayaci % 20 == 0:
+                    self.gunluk_cb(
+                        f"Kare almak {gecen:.1f} sn suruyor, istenen aralik "
+                        f"{aralik:.0f} sn — kamera bu hizi tasimiyor, kareler "
+                        f"{gecen:.1f} sn'de bir gelecek.", "uyari")
+                kalan = 0
+            else:
+                yavas_sayaci = 0
+
+            # Beklemeyi PARCA PARCA yapiyoruz. Tek bir uzun wait'te, panelden
+            # "1 saat"ten "5 saniye"ye gecmek bir sonraki tura kadar hicbir
+            # sey yapmiyordu — yani bir saat. Saniyelik dilimlerde beklerken
+            # araligi yeniden okuyoruz, degisiklik en gec bir saniyede
+            # gecerli oluyor.
+            bekleme_basi = time.monotonic()
+            while self._calisiyor:
+                yeni_aralik = max(2.0, float(self.ayar.get("aralik_sn", 3600.0)))
+                if yeni_aralik != aralik:
+                    aralik = yeni_aralik
+                    kalan = aralik - gecen
+                gectiginden = time.monotonic() - bekleme_basi
+                if gectiginden >= kalan:
+                    break
+                if self._dur.wait(min(1.0, kalan - gectiginden)):
+                    return

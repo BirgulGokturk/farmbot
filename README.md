@@ -131,6 +131,26 @@ Pinler çıkışa alınırken önce kapalı seviye yazılıyor, sonra `pinMode`
 çağrılıyor. Ters sırada pin bir an LOW kalıyor ve aktif-LOW kartta röle
 çekiyor — yani her açılışta pompaya kısa bir darbe.
 
+### Kamera
+
+Panelden aç/kapa ve **kare aralığı** (5 sn · 30 sn · 5 dk · 1 saat). 5 saniye
+canlıya en yakın olanı — gerçek bir video akışı değil, art arda kare.
+
+Aralık seçmek kamerayı da açıyor: kapalıyken aralık seçip hiçbir şey
+olmaması kafa karıştırıcıydı.
+
+Döngü, bekleme süresinden **kare çekme süresini düşüyor**; yoksa "5 saniyede
+bir" fiilen "5 + çekim süresi" oluyordu ve komut satırı yolunda çekim
+saniyeler sürebiliyor. Kamera istenen hızı taşıyamıyorsa bu sessizce
+yutulmuyor, günlüğe yazılıyor.
+
+Bekleme parça parça yapılıyor (saniyelik dilimler): tek uzun bir beklemede
+"1 saat"ten "5 saniye"ye geçmek bir sonraki tura, yani bir saat sonrasına
+kalıyordu. Şimdi değişiklik en geç bir saniyede geçerli oluyor.
+
+Sunucu **son 12 kareyi** saklıyor; 5 saniyede bir seçilirse bu son bir
+dakika demek.
+
 ### Grafik düzleştirmesi
 
 Grafikler ham seriyi değil düzleştirilmiş seriyi çiziyor: her nokta **son 10

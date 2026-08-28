@@ -75,7 +75,9 @@ VARSAYILAN_AYAR = {
         "yavaslama": 100.0,
         "kalibrasyon_dosyasi": "gantry_calib.json",
     },
-    "kamera": {"aktif": False, "aralik_sn": 30.0, "genislik": 640, "sahte": False},
+    # aralik_sn kamera.py'deki varsayilanla AYNI olmali: burasi 30 yazarken
+    # oradaki ve belgelerdeki "bir saat" hicbir zaman gecerli olmuyordu.
+    "kamera": {"aktif": False, "aralik_sn": 3600.0, "genislik": 640, "sahte": False},
     "durum_araligi_sn": 0.5,
 }
 

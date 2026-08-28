@@ -281,16 +281,29 @@
         </div>
         <div class="bolum-govde">
           <p class="yardim-metin gizli" id="yardim-kamera">
-            Kare aralığı varsayılan bir saat. Aşağıdaki anahtar kamerayı
-            <b>o an</b> açıp kapatır; ayar dosyasına yazmaz. Her açılışta
-            kendiliğinden çalışsın isterseniz <code>ayarlar.json</code> içinde
-            <code>"kamera": {"aktif": true}</code> yapın.
+            Anahtar kamerayı <b>o an</b> açıp kapatır; ayar dosyasına yazmaz.
+            Her açılışta kendiliğinden çalışsın isterseniz
+            <code>ayarlar.json</code> içinde
+            <code>"kamera": {"aktif": true}</code> yapın.<br><br>
+            <b>Aralık</b> kaç saniyede bir kare alınacağını söyler. <b>5 sn</b>
+            canlıya en yakın olanı — gerçek bir video akışı değil, art arda
+            kare. Kamera bu hızı taşıyamıyorsa kareler daha seyrek gelir ve
+            sebebi günlüğe yazılır. Kısa aralık Pi'yi sürekli meşgul eder,
+            bitkileri izlemek için <b>1 saat</b> yeterli.<br><br>
+            Sunucu son 12 kareyi saklıyor: 5 saniyede bir seçilirse bu son
+            bir dakika demek.
           </p>
           <label class="anahtar">
             <input type="checkbox" id="a-kamera">
             <span class="yuva"></span>
             <span class="ikincil">Kamerayı aç</span>
           </label>
+          <div class="araclar" role="group" aria-label="Kare aralığı">
+            <button class="ikon-dugme kamera-aralik" data-saniye="5">5 sn</button>
+            <button class="ikon-dugme kamera-aralik" data-saniye="30">30 sn</button>
+            <button class="ikon-dugme kamera-aralik" data-saniye="300">5 dk</button>
+            <button class="ikon-dugme kamera-aralik" data-saniye="3600">1 saat</button>
+          </div>
           <div id="kamera-kutu">
             <p class="bos-durum" id="kamera-yok">Henüz kare gelmedi.<br>
               Kamerayı yukarıdaki anahtarla açın; ilk kare birkaç saniye

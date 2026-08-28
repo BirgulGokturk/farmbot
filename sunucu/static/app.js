@@ -1292,12 +1292,23 @@ function kameraDurumYaz(k) {
   // Kullanici anahtari surukluyorken altindan degistirmeyelim.
   if (document.activeElement !== anahtar) anahtar.checked = acik;
   anahtar.disabled = !k;
+  $$(".kamera-aralik").forEach((d) => { d.disabled = !k; });
   if (!k) { not.textContent = "—"; return; }
   const sn = k.aralik_sn || 3600;
   const aralik = sn >= 3600 ? `${Math.round(sn / 3600)} saatte`
     : sn >= 60 ? `${Math.round(sn / 60)} dakikada`
     : `${Math.round(sn)} saniyede`;
   not.textContent = acik ? `açık · ${k.yontem || "?"} · ${aralik} bir kare` : "kapalı";
+
+  // Hangi aralığın seçili olduğu düğmelerde görünsün. Kaynak ajanın
+  // bildirdiği değer — panel kendi seçimini hatırlamıyor, çünkü aralık
+  // başka bir sekmeden ya da ayar dosyasından da değişmiş olabilir.
+  $$(".kamera-aralik").forEach((d) => {
+    d.classList.toggle("secili", Math.round(sn) === Number(d.dataset.saniye));
+    // Kamera KAPALIYKEN de tıklanabilir: düğme aralığı seçip kamerayı
+    // açıyor. Kapatmak, "5 sn"e basıp hiçbir şey olmamasına yol açardı.
+    // Yalnızca ajan yokken kapalı — o zaman komut gidecek yer yok.
+  });
 
   // Ham hata metnini duruma yapistirmiyoruz: libcamera'nin ciktisi satirlarca
   // surer ve karti okunmaz hale getirir. Kisa bir isaret yeter, ayrintisi
@@ -2160,6 +2171,12 @@ function olaylariBagla() {
     if (!acik) kameraGoruntuTemizle();   // beklemeden kapansin
     komutGonder("kamera", { acik });
   };
+  $$(".kamera-aralik").forEach((dugme) => {
+    // Aralık komutu kamerayı da açık tutuyor: kapalıyken aralık seçmek
+    // "hiçbir şey olmadı" demek olurdu.
+    dugme.onclick = () => komutGonder("kamera",
+      { acik: true, aralik_sn: Number(dugme.dataset.saniye) });
+  });
   $("#d-buraya").onclick = () => {
     ["x", "y", "z"].forEach((eksen) => {
       const metin = $(`#k-${eksen}`).textContent.replace(/[^\d.,-]/g, "").replace(",", ".");
