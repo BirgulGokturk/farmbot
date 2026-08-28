@@ -1757,6 +1757,12 @@ button.dugme.role.acik:hover:not(:disabled) { background: rgba(74, 168, 96, .24)
   font-size: var(--yazi-kucuk);
 }
 .kamera-yuzen-bas .ad { font-weight: 600; }
+/* Başlık sürükleme tutamağı. Gövde değil başlık: görüntünün üstünde
+   sürüklemek, resmi sürüklemekle karışıyor. */
+.kamera-yuzen-bas { cursor: move; touch-action: none; user-select: none; }
+.kamera-yuzen-bas button { cursor: pointer; }
+/* Sürüklerken görüntü altındaki sahneyle karışmasın diye hafifçe kalkıyor. */
+.kamera-yuzen.surukleniyor { box-shadow: 0 12px 32px rgba(0, 0, 0, .55); opacity: .92; }
 /* Saat esnek boşluğu yiyor ki kapatma düğmesi hep sağ uçta kalsın. */
 .kamera-yuzen-bas .ikincil { margin-left: auto; font-variant-numeric: tabular-nums; }
 .kamera-yuzen-bas .kapat {

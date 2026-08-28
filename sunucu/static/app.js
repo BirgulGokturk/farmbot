@@ -14,6 +14,9 @@ const S = {
   // bildiriyor; gelene kadar teorik uçlar kullanılıyor.
   toprakKalib: { kuru: 1023, islak: 0 },
   kameraYuzenKapali: false, // sahnedeki yüzen kamera küçültüldü mü
+  sonKareAdres: "",         // son kare adresi — yüzen kutu geri açılınca beklemesin
+  sonKareCanli: false,
+  sonKareTs: 0,
   dakika: 60,
   ws: null,
   jogAktif: null,        // {eksen, yon, dugme} — şu an basılı tutulan jog
@@ -1358,10 +1361,16 @@ function kareyiTazele(ts, canli = false) {
 
   // Sahnedeki yüzen kopya. Aynı adresi kullanıyor: tarayıcı iki <img> için
   // tek istek yapıyor, yani ikinci kopya ağa yük bindirmiyor.
+  // Son kareyi hatırlıyoruz: yüzen kutu geri açıldığında bir sonraki kareyi
+  // beklemesin. Saatlik aralıkta o bekleme bir saat sürerdi.
+  S.sonKareAdres = adres;
+  S.sonKareCanli = canli;
+  S.sonKareTs = ts || Date.now() / 1000;
   const yuzen = $("#kamera-yuzen");
   if (yuzen && !S.kameraYuzenKapali) {
     $("#kamera-yuzen-kare").src = adres;
     yuzen.classList.remove("gizli");
+    kameraYuzenSinirla();
     $("#kamera-yuzen-zaman").textContent =
       (canli ? "canlı " : "") + new Date((ts || Date.now() / 1000) * 1000).toLocaleTimeString("tr-TR");
   }
@@ -1515,6 +1524,10 @@ function eksenPenceresi(veriAlt, veriUst, enAz, sinir) {
   if (ust <= alt) ust = alt + adim;
   return { alt, ust, adim };
 }
+
+/* Yüzen kamera konumunu sınırlar. Kutu görünür olduğunda çağrılıyor:
+ * gizliyken ölçülemediği için sınırlama o anda yapılamıyor. */
+let kameraYuzenSinirla = () => {};
 
 /* --------------------------------------------------- grafik düzleştirmesi
  * Grafikler ham seriyi değil, düzleştirilmiş seriyi çiziyor: önce aykırı
@@ -2206,6 +2219,80 @@ function olaylariBagla() {
     if (!acik) kameraGoruntuTemizle();   // beklemeden kapansin
     komutGonder("kamera", { acik });
   };
+  /* Yüzen kamerayı sürükleme.
+   *
+   * Kutu ızgarayla yerleştirilmiş (sağ alt). Sürüklerken ızgarayı bırakıp
+   * mutlak konuma geçmek yerine `transform` ile KAYDIRIYORUZ: ızgara
+   * yerleşimi başlangıç noktası olarak kalıyor, pencere yeniden
+   * boyutlandığında kutu yine sağ alta göre oturuyor.
+   *
+   * Konum localStorage'da: her açılışta kutuyu yeniden taşımak istemezsiniz.
+   */
+  const yuzenKutu = $("#kamera-yuzen");
+  if (yuzenKutu) {
+    const bas = yuzenKutu.querySelector(".kamera-yuzen-bas");
+    let kayma = { x: 0, y: 0 };
+    try {
+      const kayit = JSON.parse(localStorage.getItem("farmbot_kamera_kayma") || "null");
+      if (kayit && Number.isFinite(kayit.x) && Number.isFinite(kayit.y)) kayma = kayit;
+    } catch { /* bozuk kayıt — varsayılan konumda kal */ }
+
+    const uygula = () => {
+      yuzenKutu.style.transform = `translate(${kayma.x}px, ${kayma.y}px)`;
+    };
+    /* Ekran dışına kaçmasın: kutunun ızgaradaki yerini transform'suz ölçüp
+     * kaymayı o ölçüye göre sınırlıyoruz. Aksi hâlde kutu bir kez dışarı
+     * sürüklenince geri getirilemiyor. */
+    const sinirla = () => {
+      const onceki = yuzenKutu.style.transform;
+      yuzenKutu.style.transform = "";
+      const y = yuzenKutu.getBoundingClientRect();
+      yuzenKutu.style.transform = onceki;
+      /* Kutu GİZLİYKEN ölçüm sıfır dönüyor ve sınırlama kaydedilmiş konumu
+       * eziyordu: açılışta kutu gizli olduğu için kayıt her seferinde
+       * kayboluyor, kamera hep köşeye dönüyordu. Ölçülemiyorsa dokunmuyoruz;
+       * kutu görünür olunca yeniden sınırlanıyor. */
+      if (!y.width || !y.height) return;
+      const pay = 24;                    // kutunun bu kadarı hep görünsün
+      kayma.x = Math.max(-(y.left + y.width - pay),
+                         Math.min(innerWidth - y.left - pay, kayma.x));
+      kayma.y = Math.max(-(y.top + y.height - pay),
+                         Math.min(innerHeight - y.top - pay, kayma.y));
+    };
+    uygula();
+    kameraYuzenSinirla = () => { sinirla(); uygula(); };
+    kameraYuzenSinirla();
+
+    let surukle = null;
+    bas.addEventListener("pointerdown", (e) => {
+      // Kapatma düğmesine basarken sürükleme başlamasın.
+      if (e.target.closest("button")) return;
+      surukle = { x: e.clientX, y: e.clientY, bx: kayma.x, by: kayma.y };
+      bas.setPointerCapture(e.pointerId);
+      yuzenKutu.classList.add("surukleniyor");
+      e.preventDefault();
+    });
+    bas.addEventListener("pointermove", (e) => {
+      if (!surukle) return;
+      kayma.x = surukle.bx + (e.clientX - surukle.x);
+      kayma.y = surukle.by + (e.clientY - surukle.y);
+      sinirla();
+      uygula();
+    });
+    const birak = () => {
+      if (!surukle) return;
+      surukle = null;
+      yuzenKutu.classList.remove("surukleniyor");
+      try {
+        localStorage.setItem("farmbot_kamera_kayma", JSON.stringify(kayma));
+      } catch { /* depolama kapalı olabilir — konum bu oturumda kalır */ }
+    };
+    bas.addEventListener("pointerup", birak);
+    bas.addEventListener("pointercancel", birak);
+    // Pencere küçülünce kutu dışarıda kalabilir.
+    addEventListener("resize", () => { sinirla(); uygula(); });
+  }
+
   const yuzenKapat = $("#d-kamera-yuzen-kapat");
   if (yuzenKapat) {
     yuzenKapat.onclick = () => {
@@ -2220,7 +2307,20 @@ function olaylariBagla() {
   if (yuzenAc) {
     yuzenAc.onclick = () => {
       S.kameraYuzenKapali = false;
-      gunluk("Sahnedeki kamera geri açıldı");
+      // Bayrağı temizleyip bir sonraki kareyi beklemek yetmiyordu: kamera
+      // kapalıysa ya da aralık uzunsa düğme hiçbir şey yapmamış gibi
+      // görünüyordu. Elimizde kare varsa hemen gösteriyoruz.
+      if (S.sonKareAdres) {
+        $("#kamera-yuzen-kare").src = S.sonKareAdres;
+        $("#kamera-yuzen-zaman").textContent =
+          (S.sonKareCanli ? "canlı " : "")
+          + new Date(S.sonKareTs * 1000).toLocaleTimeString("tr-TR");
+        $("#kamera-yuzen").classList.remove("gizli");
+        kameraYuzenSinirla();
+        gunluk("Sahnedeki kamera geri açıldı");
+      } else {
+        gunluk("Sahnedeki kamera açılacak — henüz kare yok, kamerayı açın");
+      }
     };
   }
 
