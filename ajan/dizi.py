@@ -37,6 +37,8 @@ class Dizi:
         self.plc = plc
         self.uclar = uclar
         self.arduino_komut = arduino_komut
+        #: Bu dizinin açtığı ve henüz kapatmadığı röleler.
+        self._acik_roleler: set[str] = set()
         self.gunluk_cb = gunluk_cb or (lambda m, s="bilgi": None)
         self.durum: dict[str, Any] = {
             "calisiyor": False, "ad": "", "adim": 0, "toplam": 0,
@@ -69,6 +71,12 @@ class Dizi:
                 raise DiziHatasi(f"Bilinmeyen röle: '{role}'")
             durum = 1 if adim.get("durum") else 0
             self.arduino_komut(f"ROLE {role} {durum}")
+            # Dizinin AÇTIĞI röleler izleniyor: dizi yarıda kesilirse
+            # kapatma adımı hiç çalışmıyor ve röle açık kalıyor.
+            if durum:
+                self._acik_roleler.add(role)
+            else:
+                self._acik_roleler.discard(role)
             return f"{role} {'açıldı' if durum else 'kapandı'}"
 
 
@@ -111,7 +119,28 @@ class Dizi:
             except Exception:
                 pass
         finally:
+            self._roleleri_kapat()
             self.durum["calisiyor"] = False
+
+    def _roleleri_kapat(self) -> None:
+        """Dizinin açık bıraktığı röleleri kapatır.
+
+        NEDEN GEREKLİ: sulama dizisi "pompa aç → bekle → pompa kapa"
+        şeklinde. Bekleme sırasında dizi durdurulursa (operatör, hata ya da
+        yasak bölge) döngü kesiliyor ve KAPATMA adımı hiç çalışmıyor —
+        `plc.dur()` yalnızca hareketi durduruyor. Su pompası için bu, kimse
+        başında değilken akmaya devam eden bir hortum demek.
+
+        Acil durdurma röleleri zaten kapatıyor; eksik olan normal duruştu.
+        """
+        for role in sorted(self._acik_roleler):
+            try:
+                self.arduino_komut(f"ROLE {role} 0")
+                self.gunluk_cb(f"Dizi bitti/kesildi — {role} kapatıldı", "bilgi")
+            except Exception as hata:
+                # Yutmuyoruz: kapatılamayan bir pompa görülmesi gereken bir şey.
+                self.gunluk_cb(f"UYARI: {role} kapatılamadı: {hata}", "hata")
+        self._acik_roleler.clear()
 
     @staticmethod
     def _ozet(adim: dict[str, Any]) -> str:
