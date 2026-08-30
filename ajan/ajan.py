@@ -598,8 +598,8 @@ class Ajan:
                 "z_safe_reg": int(self.uclar.ayar.get("z_safe_reg", 0) or 0),
                 "ayar": {k: self.uclar.ayar.get(k) for k in
                          ("safe_z", "travel_z", "lift", "approach", "retreat",
-                          "speed", "slide_axis", "lock_dwell", "lock_reg",
-                          "grip_reg", "presence_reg")},
+                          "release", "speed", "slide_axis", "lock_dwell",
+                          "lock_reg", "grip_reg", "presence_reg")},
                 "tools": self.uclar.ayar.get("tools", []),
             }
 

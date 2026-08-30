@@ -52,6 +52,12 @@ VARSAYILAN = {
     # program saniye kullanıyordu (1.5). İkisini de kabul ediyoruz — bkz.
     # `_bekleme_sn`. 1500 saniyelik bir bekleme 25 dakika sürerdi.
     "lock_reg": 0, "lock_dwell": 1500,   # 0 = donanım bağlı değil
+    # AYRILMA KAYMASI — servo bıraktıktan sonraki birkaç milimetrelik ilk
+    # hareket, kafa ucun kilidinden kurtulsun diye. Makinedeki
+    # `gantry_tools.json`da {dx:0, dy:8} yazıyor ama referans program onu
+    # hiç okumuyor. Varsayılan SIFIR: uydurulmuş bir kayma ucu yuvadan
+    # iterek devirebilir. Sıfırken adım hiç üretilmiyor.
+    "release": {"dx": 0.0, "dy": 0.0},
     # BIRAKMADA fazladan iniş: servo bıraktıktan sonra kafa bu kadar
     # daha aşağı iniyor, sonra yandan çıkıyor. Amaç kafanın ucun
     # kenarına takılmadan sıyrılması. 0 = kapalı.
@@ -397,22 +403,91 @@ class Uclar:
         gz = float(getattr(self.plc, "guvenli_z", tz) or tz)
         return max(tz, gz)
 
-    def _cikis_ofseti(self) -> float:
-        """Çıkış ofseti — `retreat` boşsa `approach` kullanılır."""
+    def _kayma_x(self) -> bool:
+        """Kayma ekseni X mi? (değilse Y)"""
+        return str(self.ayar.get("slide_axis", "Y")).upper() == "X"
+
+    def _cikis_ofsetleri(self) -> tuple[float, float]:
+        """Yuvadan çıkarken uygulanan (dx, dy) — MAKİNE eksenlerinde.
+
+        `retreat` üç biçimde gelebiliyor ve üçü de destekleniyor:
+
+          * boş / yok  → `approach` kadar, yalnız kayma ekseninde. Gantry
+            Studio ekranındaki davranış bu ve VARSAYILAN bu kalıyor.
+          * sayı       → o kadar, yalnız kayma ekseninde.
+          * {x, y}     → iki eksenli çıkış; ikisi de uygulanıyor.
+
+        NEDEN iki eksenli biçim var: makinedeki `gantry_tools.json`
+        dosyasında `retreat` iki eksenli bir sözlük olarak duruyor
+        ({x:40, y:20}). Referans program (`gantry_studio.py`) onu
+        "legacy, unused by the new sequence" diye işaretleyip HİÇ
+        okumuyor — yani orada yazan sayının bir karşılığı yok. Bizde de
+        yoktu: sözlük gelince `float()` patlıyor, sessizce `approach`a
+        düşülüyordu. Sessizce yok saymak en kötüsü — kullanıcı ayarı
+        girip çalıştığını sanıyor. Artık gerçekten uygulanıyor.
+        """
         geri = self.ayar.get("retreat")
+        kayma_x = self._kayma_x()
+
+        if isinstance(geri, dict):
+            def _b(ad):
+                try:
+                    return float(geri.get(ad) or 0.0)
+                except (TypeError, ValueError):
+                    return 0.0
+            return _b("x"), _b("y")
+
         if geri is None or geri == "":
-            return float(self.ayar.get("approach", -55.0))
-        try:
-            return float(geri)
-        except (TypeError, ValueError):
-            return float(self.ayar.get("approach", -55.0))
+            ofset = float(self.ayar.get("approach", -55.0))
+        else:
+            try:
+                ofset = float(geri)
+            except (TypeError, ValueError):
+                ofset = float(self.ayar.get("approach", -55.0))
+        return (ofset, 0.0) if kayma_x else (0.0, ofset)
+
+    def _cikis_ofseti(self) -> float:
+        """Çıkış ofsetinin KAYMA EKSENİ bileşeni.
+
+        `_cikis_ofsetleri` geldikten sonra da duruyor: tek sayı bekleyen
+        eski çağıranlar için.
+        """
+        dx, dy = self._cikis_ofsetleri()
+        return dx if self._kayma_x() else dy
+
+    def _birakma_ofseti(self) -> tuple[float, float]:
+        """`release` — servo bıraktıktan sonraki KÜÇÜK ayrılma kayması.
+
+        Makinedeki `gantry_tools.json`da `release: {dx:0, dy:8}` var:
+        uç serbest kaldıktan sonra kafanın ucun kilidinden kurtulması
+        için verilen birkaç milimetrelik ilk hareket. Asıl yandan çıkış
+        (`retreat`/`approach`) bunun ardından geliyor.
+
+        Referans program bu alanı da okumuyor. Varsayılan SIFIR: uydurulmuş
+        bir kayma, ucu yuvadan iterek devirebilir. Sıfırken adım hiç
+        üretilmiyor, yani Gantry Studio ekranındaki yol birebir korunuyor.
+        """
+        b = self.ayar.get("release")
+        if not isinstance(b, dict):
+            return 0.0, 0.0
+        def _b(ad):
+            try:
+                return float(b.get(ad) or 0.0)
+            except (TypeError, ValueError):
+                return 0.0
+        return _b("dx"), _b("dy")
 
     def _cikis_noktasi(self, uc: dict[str, Any]) -> tuple[float, float]:
         tx, ty = float(uc["x"]), float(uc["y"])
-        ofset = self._cikis_ofseti()
-        if str(self.ayar.get("slide_axis", "Y")).upper() == "X":
-            return tx + ofset, ty
-        return tx, ty + ofset
+        dx, dy = self._cikis_ofsetleri()
+        return tx + dx, ty + dy
+
+    def _birakma_noktasi(self, uc: dict[str, Any]) -> tuple[float, float] | None:
+        """Ayrılma kayması uygulanmış nokta; kayma sıfırsa None."""
+        rdx, rdy = self._birakma_ofseti()
+        if abs(rdx) < 1e-9 and abs(rdy) < 1e-9:
+            return None
+        return float(uc["x"]) + rdx, float(uc["y"]) + rdy
 
     def durumu_temizle(self) -> str:
         """Takılı uç kaydını elle sıfırlar.
@@ -539,16 +614,24 @@ class Uclar:
         # çıkış daha kısa ya da ters yönde). `retreat` boşsa `approach`.
         cx, cy = self._cikis_noktasi(uc)
         kayma_ekseni = 0 if str(self.ayar.get("slide_axis", "Y")).upper() == "X" else 1
+        # Kayma ekseninin DIŞINDAKİ eksen: iki eksenli çıkışta buna da
+        # gidiliyor, ama kaymadan SONRA — önce ucun altından kurtul,
+        # sonra serbest eksende uzaklaş.
+        capraz_ekseni = 1 - kayma_ekseni
+        capraz_hedef = cy if kayma_ekseni == 0 else cx
+        capraz_var = abs(capraz_hedef - (ty if kayma_ekseni == 0 else tx)) > 0.05
         fazla = max(0.0, float(self.ayar.get("drop_extra_z", 0.0) or 0.0))
-        toplam = 7 if fazla > 0 else 6
+        ayrilma = self._birakma_noktasi(uc)
+        toplam = 6 + (1 if fazla > 0 else 0) + (1 if ayrilma else 0) + (1 if capraz_var else 0)
 
         self.durum.update(calisiyor=True, dizi=f"'{ad}' bırakılıyor", hata="", dogrulandi=None)
         if self.bolgeler:
             self.bolgeler.yuva_esnetmesi_ac()
             self.gunluk_cb("Yuva bölgesi esnetmesi AÇILDI (uç dizisi)", "uyari")
         try:
-            # `toplam` fazladan iniş varsa 7, yoksa 6. Sabit 6 yazmak,
-            # ilk dört adımın "1/6" sonrakilerin "5/7" demesine yol açıyordu.
+            # `toplam` isteğe bağlı adımlara göre değişiyor (fazladan iniş,
+            # ayrılma kayması, iki eksenli çıkış). Sabit sayı yazmak, ilk
+            # adımların "1/6" sonrakilerin "5/7" demesine yol açıyordu.
             self._adim(1, toplam, f"Z taşıma yüksekliğine ({tz:.0f} mm) — uç yukarıda taşınıyor")
             self.plc.eksen_git_dogrula(2, tz, hiz)
             self._kesildi_kontrol()
@@ -569,17 +652,45 @@ class Uclar:
             self._servo(False)
             self._kesildi_kontrol()
 
+            no = 5
             if fazla > 0:
                 # Sıra önemli: fazladan iniş servo BIRAKTIKTAN sonra. Uç
                 # yuvada duruyor, aşağı inen yalnız kafa; böylece yandan
                 # çıkarken ucun kenarına takılmıyor. Servo bırakmadan önce
                 # inseydik ucu yuvaya bastırmış olurduk.
-                self._adim(6, toplam, f"Z {fazla:.0f} mm daha in — kafa sıyrılarak çıksın")
+                no += 1
+                self._adim(no, toplam, f"Z {fazla:.0f} mm daha in — kafa sıyrılarak çıksın")
                 self.plc.eksen_git_dogrula(2, ze - fazla, hiz)
                 self._kesildi_kontrol()
 
-            self._adim(toplam, toplam, f"{'X' if kayma_ekseni == 0 else 'Y'} ekseninde altından çık")
+            if ayrilma:
+                # AYRILMA KAYMASI (`release`). Yandan çıkıştan önce gelen
+                # birkaç milimetrelik hareket: kafa ucun kilidinden
+                # kurtuluyor. Z açıklığından SONRA, çünkü kendisi de
+                # yatay bir hareket.
+                no += 1
+                self._adim(no, toplam,
+                           f"Ayrılma kayması → X{ayrilma[0]:.1f} Y{ayrilma[1]:.1f}")
+                self.plc.eksen_git_dogrula(0, ayrilma[0], hiz)
+                self.plc.eksen_git_dogrula(1, ayrilma[1], hiz)
+                self._kesildi_kontrol()
+
+            no += 1
+            self._adim(no, toplam, f"{'X' if kayma_ekseni == 0 else 'Y'} ekseninde altından çık")
             self.plc.eksen_git_dogrula(kayma_ekseni, cx if kayma_ekseni == 0 else cy, hiz)
+            self._kesildi_kontrol()
+
+            if capraz_var:
+                # İKİ EKSENLİ ÇIKIŞ, kaymadan SONRA. Sıra keyfi değil:
+                # önce ucun altından kurtulunuyor (kısıtlı hareket),
+                # ikinci eksen ancak ondan sonra serbest.
+                no += 1
+                self._adim(no, toplam,
+                           f"{'Y' if kayma_ekseni == 0 else 'X'} ekseninde uzaklaş "
+                           f"({capraz_hedef:.1f} mm)")
+                self.plc.eksen_git_dogrula(capraz_ekseni, capraz_hedef, hiz)
+                self._kesildi_kontrol()
+
             self.plc.eksen_git_dogrula(2, self._cikis_yuksekligi(), hiz)
 
             varlik = self.varlik_oku()
@@ -644,7 +755,22 @@ class Uclar:
                 cikis_z = ze - fazla
                 yol.append({"x": tx, "y": ty, "z": cikis_z,
                             "not": f"{fazla:.0f} mm daha in — kafa sıyrılarak çıksın"})
-            yol.append({"x": cx, "y": cy, "z": cikis_z, "not": "altından çık"})
+            # AYRILMA KAYMASI ve İKİ EKSENLİ ÇIKIŞ önizlemede de görünüyor.
+            # Dizi bu adımları atıyorsa ekranda da olmalı: bu projede en
+            # çok yanıltan hata sınıfı "okunan yol ile gidilen yol farklı".
+            ayrilma = self._birakma_noktasi(uc)
+            if ayrilma:
+                yol.append({"x": ayrilma[0], "y": ayrilma[1], "z": cikis_z,
+                            "not": "ayrılma kayması (release)"})
+            # Önce kayma ekseninde çık, sonra —varsa— ikinci eksende uzaklaş.
+            if kayma == "X":
+                ara_x, ara_y = cx, ty
+            else:
+                ara_x, ara_y = tx, cy
+            yol.append({"x": ara_x, "y": ara_y, "z": cikis_z, "not": "altından çık"})
+            if abs(ara_x - cx) > 0.05 or abs(ara_y - cy) > 0.05:
+                yol.append({"x": cx, "y": cy, "z": cikis_z,
+                            "not": "ikinci eksende uzaklaş (retreat)"})
             yol.append({"x": cx, "y": cy, "z": cz,
                         "not": "güvenli yüksekliğe"
                                + (" (yuva bölgesinin izin koşulu)" if cz > tz else "")})
@@ -712,6 +838,21 @@ class Uclar:
             uyarilar.append("varlık sensörü bağlı değil — sonuç doğrulanamayacak")
         if int(self.ayar.get("lock_reg", 0) or 0) <= 0:
             uyarilar.append("kilit servosu bağlı değil (lock_reg = 0) — servo adımı sessiz geçecek")
+        # İki eksenli çıkış ve ayrılma kayması ALIŞILMIŞIN DIŞINDA. Referans
+        # program ikisini de hiç uygulamıyor; birini açan kişi bunu bilerek
+        # yapmalı ve önizlemede görmeli.
+        dx, dy = self._cikis_ofsetleri()
+        capraz = dy if self._kayma_x() else dx
+        if abs(capraz) > 0.05:
+            uyarilar.append(
+                f"çıkış İKİ EKSENLİ (retreat X{dx:.0f} Y{dy:.0f}) — önce kayma "
+                f"ekseninde çıkılıyor, sonra {'Y' if self._kayma_x() else 'X'} "
+                f"ekseninde {capraz:.0f} mm uzaklaşılıyor")
+        rdx, rdy = self._birakma_ofseti()
+        if abs(rdx) > 0.05 or abs(rdy) > 0.05:
+            uyarilar.append(
+                f"ayrılma kayması açık (release dx{rdx:.0f} dy{rdy:.0f}) — servo "
+                "bıraktıktan sonra yandan çıkmadan önce uygulanıyor")
         gz = float(getattr(self.plc, "guvenli_z", tz) or tz)
         if gz > tz:
             uyarilar.append(

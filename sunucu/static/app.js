@@ -546,9 +546,35 @@ function ucGuncelle(u) {
   // Ayar alanları: kullanıcı düzenlerken üzerine yazmıyoruz.
   if (u.ayar && !S.ucAyarDuzenleniyor) {
     for (const [ad, deger] of Object.entries(u.ayar)) {
+      // Nesne değerler (retreat {x,y}, release {dx,dy}) kendi alanlarına
+      // aşağıda dağıtılıyor. Genel döngüye bırakılsalardı kutuda
+      // "[object Object]" yazardı ve kaydedince ayarı bozardı.
+      if (deger !== null && typeof deger === "object") continue;
       const el = $("#ua-" + ad);
       if (el && document.activeElement !== el) el.value = deger === null ? "" : deger;
     }
+    /* retreat iki biçimli: sayı = yalnız kayma ekseni, {x,y} = iki eksenli.
+     * Panelde iki kutu var — "retreat" kayma ekseni, "çıkış (2. eksen)"
+     * diğeri — ve ikisi tek alana geri yazılıyor. */
+    const kaymaX = String(u.ayar.slide_axis || "Y").toUpperCase() === "X";
+    const geri = u.ayar.retreat;
+    let kaymaDeger = "", caprazDeger = "";
+    if (geri !== null && typeof geri === "object") {
+      kaymaDeger = kaymaX ? geri.x : geri.y;
+      caprazDeger = kaymaX ? geri.y : geri.x;
+      if (!caprazDeger) caprazDeger = "";
+    } else if (geri !== null && geri !== "" && geri !== undefined) {
+      kaymaDeger = geri;
+    }
+    [["#ua-retreat", kaymaDeger], ["#ua-retreat-capraz", caprazDeger]].forEach(([sec, v]) => {
+      const el = $(sec);
+      if (el && document.activeElement !== el) el.value = v === "" || v == null ? "" : v;
+    });
+    const rel = u.ayar.release || {};
+    [["dx", "#ua-rel-dx"], ["dy", "#ua-rel-dy"]].forEach(([alan, sec]) => {
+      const el = $(sec);
+      if (el && document.activeElement !== el) el.value = rel[alan] || "";
+    });
     const zsr = $("#ua-z_safe_reg");
     if (zsr && document.activeElement !== zsr) zsr.value = u.z_safe_reg ?? 0;
     const kutu = $("#ua-alan-acik");
@@ -2834,7 +2860,21 @@ function olaylariBagla() {
     const ayar = {
       safe_z: sayi_("safe_z", 280), travel_z: sayi_("travel_z", 280),
       lift: sayi_("lift", 80), approach: sayi_("approach", -55),
-      retreat: sayi_("retreat"),          // boş = approach kullan
+      // retreat: iki kutudan tek alana. Çapraz eksen boşsa SAYI (tek
+      // eksenli çıkış, Gantry Studio davranışı); doluysa {x, y} sözlüğü.
+      retreat: (() => {
+        const kayma = sayi_("retreat");             // boş = approach kullan
+        const capraz = sayi_("retreat-capraz");
+        if (capraz === null) return kayma;
+        const kaymaX = $("#ua-slide_axis").value.toUpperCase() === "X";
+        // Kayma ekseni bileşeni boşsa approach'a düşmüyoruz: sözlük
+        // biçiminde iki eksen de açıkça yazılı olmalı, yoksa "yarısı
+        // approach'tan yarısı buradan" gibi okunması zor bir karışım olur.
+        const k = kayma === null ? Number($("#ua-approach").value || 0) : kayma;
+        return kaymaX ? { x: k, y: capraz } : { x: capraz, y: k };
+      })(),
+      release: { dx: Number($("#ua-rel-dx").value || 0),
+                 dy: Number($("#ua-rel-dy").value || 0) },
       speed: sayi_("speed", 20), slide_axis: $("#ua-slide_axis").value,
       lock_dwell: sayi_("lock_dwell", 1500),
       lock_reg: sayi_("lock_reg", 0), grip_reg: sayi_("grip_reg", 0),

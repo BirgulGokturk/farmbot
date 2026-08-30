@@ -948,7 +948,7 @@
               <div class="alan"><label for="ua-travel_z">travel_z</label><input type="number" id="ua-travel_z" step="1"></div>
               <div class="alan"><label for="ua-lift">lift</label><input type="number" id="ua-lift" step="1"></div>
               <div class="alan"><label for="ua-approach">approach</label><input type="number" id="ua-approach" step="1"></div>
-              <div class="alan" title="Çıkış ofseti — boş bırakılırsa approach kullanılır">
+              <div class="alan" title="Çıkış ofseti, kayma ekseninde — boş bırakılırsa approach kullanılır">
                 <label for="ua-retreat">retreat</label><input type="number" id="ua-retreat" step="1" placeholder="approach"></div>
               <div class="alan"><label for="ua-speed">hız (mm/s)</label><input type="number" id="ua-speed" step="1"></div>
               <div class="alan"><label for="ua-slide_axis">kayma ekseni</label>
@@ -963,6 +963,28 @@
               <div class="alan" title="0 = donanım bağlı değil"><label for="ua-presence_reg">presence_reg</label><input type="number" id="ua-presence_reg" step="1"></div>
               <div class="alan" title="PLC'deki Z-güvenli biti. 0 ise karar milimetre hesabına kalır">
                 <label for="ua-z_safe_reg">z_safe_reg</label><input type="number" id="ua-z_safe_reg" step="1"></div>
+            </div>
+
+            <p class="alt-not"><b>İki eksenli çıkış ve ayrılma kayması.</b>
+              Normalde uç yuvadan tek eksende çıkar (<i>retreat</i>, boşsa
+              <i>approach</i>) — Gantry Studio ekranındaki davranış budur ve
+              varsayılan budur. Aşağıdaki alanlar iki istisnayı açıyor:
+              <b>çıkış Y/X</b> dolduğunda kayma ekseninden çıktıktan
+              <i>sonra</i> ikinci eksende de uzaklaşılır; <b>ayrılma dx/dy</b>
+              ise servo bıraktıktan hemen sonra, yandan çıkmadan önce
+              uygulanan birkaç milimetrelik hareket. Makinenin
+              <code>gantry_tools.json</code> dosyasında ikisi de yazılı
+              ({x:40, y:20} ve {dx:0, dy:8}) ama referans program onları
+              "legacy, unused" diye işaretleyip hiç okumuyor — yani oradaki
+              sayıların makinede karşılığı yok. Buraya yazarsanız gerçekten
+              uygulanır ve yol önizlemesinde görünür. <b>Boş/sıfır bırakın</b>
+              — ölçmeden girilen bir kayma ucu yuvadan iterek devirebilir.</p>
+            <div class="alan-izgara">
+              <div class="alan" title="Kayma ekseninin DIŞINDAKİ eksende çıkış ofseti. Boş = tek eksenli çıkış.">
+                <label for="ua-retreat-capraz">çıkış (2. eksen)</label>
+                <input type="number" id="ua-retreat-capraz" step="1" placeholder="yok"></div>
+              <div class="alan"><label for="ua-rel-dx">ayrılma dx</label><input type="number" id="ua-rel-dx" step="1" placeholder="0"></div>
+              <div class="alan"><label for="ua-rel-dy">ayrılma dy</label><input type="number" id="ua-rel-dy" step="1" placeholder="0"></div>
             </div>
 
             <p class="alt-not">Sulama başlığı — Z eksenine ayrı takılı ve ucun
