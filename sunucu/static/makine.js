@@ -213,8 +213,18 @@
 
     // Toprak yüzeyi y = 0. Tezgâh tablası biraz altında, kap onun içinde.
     const tabla = M(MAKINE.tabla);
-    const zemin = tabla - AYAK;
     const rayYuk = M(MAKINE.yan_ray);   // rayların toprak yüzeyinden yüksekliği
+    /* TEK KAT PROFİL. Eskiden iki ayrı sıra vardı: `tabla` seviyesinde bir
+     * çevre çerçevesi ve 85 mm üstünde, `rayYuk`ta köprünün yürüdüğü yan
+     * raylar. Gerçek makinede öyle değil — tek sıra sigma var ve köprü tam
+     * onun üstünde yürüyor. İki sıra, makineyi olduğundan kalın ve kafes
+     * gibi gösteriyordu.
+     *
+     * Çerçeve artık ray seviyesinde; ayaklar oraya kadar çıkıyor. Kaplar
+     * eskisi gibi `tabla`dan asılı, yani çerçevenin ALTINDA kalıyorlar —
+     * fotoğraftaki gibi. */
+    const cerceveY = rayYuk;
+    const zemin = cerceveY - AYAK;
 
     if (sabitIster) {
     /* Zemin ARTIK BURADA DEĞİL. Eskiden makinenin altına 2,6 m'lik düz
@@ -235,12 +245,16 @@
       pabuc.position.set(x, zemin + 0.006, z);
       sabit.add(pabuc);
       // köşe braketi
-      sabit.add(kutu(THREE, [P * 3, P * 0.5, P * 3], [x, tabla - P * 0.75, z]));
+      sabit.add(kutu(THREE, [P * 3, P * 0.5, P * 3], [x, cerceveY - P * 0.75, z]));
     });
-    sabit.add(profil(THREE, [w, P, P], [0, tabla, -d / 2]));
-    sabit.add(profil(THREE, [w, P, P], [0, tabla, d / 2]));
-    sabit.add(profil(THREE, [P, P, d], [-w / 2, tabla, 0]));
-    sabit.add(profil(THREE, [P, P, d], [w / 2, tabla, 0]));
+    // Kısa kenarlar (uçtaki bağlantı profilleri)
+    sabit.add(profil(THREE, [w, P, P], [0, cerceveY, -d / 2]));
+    sabit.add(profil(THREE, [w, P, P], [0, cerceveY, d / 2]));
+    /* Uzun kenarlar KÖPRÜNÜN RAYI. Ayrı bir ray sırası yok: bu profiller
+     * hem çerçeveyi kapatıyor hem köprüyü taşıyor. Genişlikleri P*2 —
+     * köprü tekerleğinin oturduğu yüzey tek profilden geniş. */
+    sabit.add(profil(THREE, [P * 2, P, d], [-w / 2, cerceveY, 0]));
+    sabit.add(profil(THREE, [P * 2, P, d], [w / 2, cerceveY, 0]));
 
     /* --- toprak kabı: çerçevenin içine oturan yarı saydam plastik -------- */
     // Yan duvarın yarı saydam olması toprağın yandan görünmesini sağlıyor,
@@ -444,13 +458,10 @@
       sabit.add(toprak);
     });
 
-    /* --- yan raylar: uzun kenar boyunca -----------------------------------
-     * Gercek makinede raylar yatagin UZUN kenarinda; kopru kisa kenari
-     * kapliyor ve uzun kenar boyunca yuruyor. Onceki surumde tersiydi.
-     */
-    [-1, 1].forEach((ix) => {
-      sabit.add(profil(THREE, [P * 2, P, d], [(ix * w) / 2, rayYuk, 0]));
-    });
+    /* --- yan raylar ARTIK AYRI ÇİZİLMİYOR ---------------------------------
+     * Yukarıdaki çevre çerçevesinin uzun kenarları zaten köprünün rayı.
+     * Eskiden burada ikinci bir sıra profil vardı ve makinede iki kat
+     * sigma görünüyordu; gerçekte tek sıra var. */
 
     /* --- tohumluk BURADA ÇİZİLMİYOR ---------------------------------------
      * Eskiden burada yaklasik konumlu, 3x4 duzgun delikli bir sus tepsisi
