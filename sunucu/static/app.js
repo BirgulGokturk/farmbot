@@ -2519,6 +2519,43 @@ function olaylariBagla() {
     };
   }
 
+  /* Kamera kutusu boyutu — %100 / %150 / %160 arasında dönüyor.
+   *
+   * Tam ekrandan AYRI bir denetim: tam ekran sahneyi tamamen kapatıyor,
+   * burada istenen ise sahneyi görmeye devam ederken görüntüyü okunur
+   * kılmak (Raspberry'nin ekranında 260 px küçük kalıyor).
+   *
+   * Seçim tarayıcıda saklanıyor: her açılışta yeniden büyütmek, günde
+   * yirmi kez panele bakan biri için sinir bozucu. */
+  const OLCEKLER = [
+    { sinif: "", etiket: "%100" },
+    { sinif: "olcek-150", etiket: "%150" },
+    { sinif: "olcek-160", etiket: "%160" },
+  ];
+  const yuzenOlcek = $("#d-kamera-yuzen-olcek");
+  if (yuzenOlcek && yuzenKutu) {
+    let sira = 0;
+    try {
+      const kayit = Number(localStorage.getItem("farmbot_kamera_olcek"));
+      if (Number.isInteger(kayit) && kayit >= 0 && kayit < OLCEKLER.length) sira = kayit;
+    } catch { /* bozuk kayıt — %100'de kal */ }
+
+    const olcekUygula = () => {
+      OLCEKLER.forEach((o) => { if (o.sinif) yuzenKutu.classList.remove(o.sinif); });
+      const secili = OLCEKLER[sira];
+      if (secili.sinif) yuzenKutu.classList.add(secili.sinif);
+      yuzenOlcek.textContent = secili.etiket;
+      // Büyüyen kutu ekranın dışına taşabilir; sınırlama yeniden koşsun.
+      kameraYuzenSinirla();
+    };
+    olcekUygula();
+    yuzenOlcek.onclick = () => {
+      sira = (sira + 1) % OLCEKLER.length;
+      try { localStorage.setItem("farmbot_kamera_olcek", String(sira)); } catch { /* boş */ }
+      olcekUygula();
+    };
+  }
+
   const yuzenBuyut = $("#d-kamera-yuzen-buyut");
   if (yuzenBuyut && yuzenKutu) {
     const buyutYaz = (buyuk) => {

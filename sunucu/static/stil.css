@@ -1878,3 +1878,26 @@ button.dugme.role.acik:hover:not(:disabled) { background: rgba(74, 168, 96, .24)
   padding: 2px 6px;
   font-variant-numeric: tabular-nums;
 }
+
+
+/* ------------------------------------------------- kamera kutusu boyutu
+   Raspberry'nin ekranında 260 px kutu okunmayacak kadar küçük kalıyordu.
+   Tam ekran zaten vardı ama görüntüyü büyütmek için sahneyi tamamen
+   kapatmak gerekiyordu — aradaki iki kademe o yüzden var.
+
+   Genişlik değişiyor, yükseklik görüntünün en-boy oranından geliyor;
+   kutu ızgaradaki yerinde ve sürüklenebilir kalıyor. */
+.kamera-yuzen.olcek-150 { width: 390px; }
+.kamera-yuzen.olcek-160 { width: 416px; }
+@media (max-width: 900px) {
+  .kamera-yuzen.olcek-150 { width: 270px; }
+  .kamera-yuzen.olcek-160 { width: 288px; }
+}
+/* Tam ekranda kademe anlamsız — genişliği `inset` belirliyor. */
+.kamera-yuzen.buyuk.olcek-150,
+.kamera-yuzen.buyuk.olcek-160 { width: auto; }
+.kamera-yuzen-bas .kapat.olcek {
+  font-size: var(--yazi-kucuk);
+  font-variant-numeric: tabular-nums;
+  padding: 0 var(--b1);
+}

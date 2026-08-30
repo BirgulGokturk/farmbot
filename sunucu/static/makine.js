@@ -281,7 +281,12 @@
     /* Doku ve malzeme BİR KEZ üretiliyor, bütün alanlar paylaşıyor. Alan
      * başına ayrı doku üretmek iki kaba çıkarken 13 dokuyu 15'e, dört kaba
      * çıkarken 19'a taşırdı; oysa toprak her kapta aynı toprak. */
-    const dokuOlcek = 6.0;
+    /* Metre başına doku tekrarı. 6.0 iken aynı kesek deseni kabın içinde
+     * dört beş kez göze çarpacak kadar sık tekrarlıyordu — göz düzeni bir
+     * kez yakalayınca yüzey "desen kaplı" görünüyor, toprak değil. 3.6'da
+     * tane biraz büyüyor ama tekrar aralığı kabın boyuna yaklaşıyor ve
+     * ızgara etkisi kayboluyor. */
+    const dokuOlcek = 3.6;
     const yuzeyMal = mal(THREE, {
       color: MAKINE.renk.toprak, roughness: 1, metalness: 0,
       vertexColors: true,      // nem koyulaştırması buradan geliyor
@@ -316,7 +321,9 @@
       const { harita, kabartma } = doku.toprak(THREE, w * dokuOlcek, d * dokuOlcek);
       yuzeyMal.map = harita;
       yuzeyMal.bumpMap = kabartma;
-      yuzeyMal.bumpScale = 0.22;
+      // Gölge kalktığı için yüzeyin BÜTÜN derinliği artık buradan geliyor;
+      // 0.22 gölgeyle birlikte yeterliydi, tek başına yassı kalıyor.
+      yuzeyMal.bumpScale = 0.42;
       yuzeyMal.color.set("#ffffff");   // ton dokudan geliyor
     }
     const govdeMal = mal(THREE, {
@@ -405,7 +412,14 @@
 
       const toprak = new THREE.Mesh(geo, yuzeyMal);
       toprak.position.set(alan.mx, yY, alan.mz);
-      toprak.receiveShadow = true;
+      /* TOPRAK GÖLGE ALMIYOR. Portalın gölgesi toprağın üstüne keskin,
+       * düz kenarlı bir bant olarak düşüyordu: gölge haritası bu ölçekte
+       * kaba ve toprağın kendi kabartması yanında yapay duruyor — asıl
+       * derinliği zaten dokunun eğim gölgelendirmesi veriyor.
+       *
+       * Kapların duvarları ve tezgâh gölge almaya devam ediyor; sahnenin
+       * oturmuşluğu oradan geliyor, düz toprak yüzeyinden değil. */
+      toprak.receiveShadow = false;
       // Gölge ALIYOR ama ATMIYOR: 6 bin üçgenlik yüzeyi gölge geçişinde bir
       // daha çizmenin gözle görülür karşılığı yok.
       toprak.userData.golgeAtma = true;

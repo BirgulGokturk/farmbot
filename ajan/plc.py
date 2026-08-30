@@ -333,6 +333,11 @@ class Gantry:
         self.toprak_z = float(ayar.get("toprak_z", 0.0))
         # PLC'de "referans tamam" biti yok; her eksene bu kadar süre tanınıyor.
         self.home_bekleme = float(ayar.get("home_bekleme_sn", 8.0))
+        # Varış doğrulamasının üst sınırı ve toleransı. Azami süre cömert:
+        # bu bir bekleme değil, takılmış bir eksende sonsuza kadar
+        # beklememek için konmuş emniyet freni.
+        self.home_azami = float(ayar.get("home_azami_sn", 90.0))
+        self.home_tolerans = float(ayar.get("home_tolerans_mm", 2.0))
         self.hiz = float(ayar.get("hiz", 20.0))
         # EKSEN BAŞINA HIZ. Z dikey ve yük altında; X/Y ile aynı hızda
         # sürülmesi için bir sebep yok. Girilmemiş eksen genel `hiz`e
@@ -1079,21 +1084,85 @@ class Gantry:
                 self.mb.yaz(reg, 1)
                 time.sleep(0.2)
                 self.mb.yaz(reg, 0)
-                # Bekleme iptal edilebilir olmalı: 8 saniye boyunca acil
-                # durdurmaya sağır kalan bir döngü kabul edilemez.
-                bitis = time.time() + self.home_bekleme
-                while time.time() < bitis:
-                    if self._iptal.is_set() or self.acil_mandal["acik"]:
-                        self.mb.yaz(reg, 0)
-                        self.gunluk_cb("Referans arama iptal edildi", "uyari")
-                        return
-                    time.sleep(0.1)
-                self.gunluk_cb(f"{EKSENLER[i]['ad']} referans tamam (süreli bekleme)", "bilgi")
+                if not self._home_varisi_bekle(i, reg):
+                    # SIRAYI KESİYORUZ. Z'nin referansa vardığı
+                    # doğrulanamadıysa X ve Y'yi sürmek, uç aşağıdayken
+                    # yatay hareket demek — Z kilidinin önlemeye çalıştığı
+                    # şeyin ta kendisi. Yarım kalan referans, hiç
+                    # başlamamış olandan tehlikeli.
+                    self.gunluk_cb(
+                        f"{EKSENLER[i]['ad']} referansa varmadı — sıra kesildi",
+                        "hata")
+                    return
         except Exception as hata:
             self.gunluk_cb(f"Referans arama hatası: {hata}", "hata")
         finally:
             self.hareket_ediyor = False
             self._iptal_sahipligi_birak()
+
+    def _home_varisi_bekle(self, i: int, reg: int) -> bool:
+        """Eksenin referans anahtarına VARDIĞINI doğrular.
+
+        Eskiden burada sabit bir süre uyunuyordu (`home_bekleme_sn`, 8 sn).
+        Sorun şu: bu bir doğrulama değil tahmindi. Referansı 8 saniyeden
+        uzun süren bir eksende sıra, o eksen hâlâ hareket hâlindeyken
+        sonrakine geçiyordu — kullanıcı açısından "bir kez bastım, hepsi
+        gitmedi" diye görünüyor, tehlike açısından Z inip çıkarken X'in
+        sürülmesi demek.
+
+        PLC'de "referans tamam" biti eşlenmiş değil, ama KONUM okunabiliyor:
+        eksen anahtara varınca PLC sayacı sıfırlanıyor ve konum tam olarak
+        `home` değerine oturuyor. Beklediğimiz işaret bu.
+
+        İki koşul birden aranıyor: konum home'a yeterince yakın VE arka
+        arkaya birkaç okumada değişmiyor. Yalnız yakınlık yetmez — eksen
+        home'un yanından geçerken de bir an yakın görünür.
+
+        Konum hiç okunamıyorsa eski davranışa dönülüyor (süreli bekleme):
+        okuma yoksa doğrulama da yok, ama makineyi büsbütün kullanılamaz
+        hâle getirmek doğru olmaz.
+        """
+        hedef = float(self.kalib[i].get("home", 0.0))
+        bitis = time.time() + self.home_azami
+        kararli = 0
+        onceki = None
+        okunamadi = 0
+        while time.time() < bitis:
+            if self._iptal.is_set() or self.acil_mandal["acik"]:
+                self.mb.yaz(reg, 0)
+                self.gunluk_cb("Referans arama iptal edildi", "uyari")
+                return False
+            try:
+                simdi = self.eksen_konum_mm(i)
+                okunamadi = 0
+            except Exception:
+                okunamadi += 1
+                # Üst üste okunamıyorsa doğrulama yapamıyoruz; eski
+                # süreli beklemeye düşüyoruz.
+                if okunamadi >= 5:
+                    self.gunluk_cb(
+                        f"{EKSENLER[i]['ad']} konumu okunamıyor — "
+                        f"{self.home_bekleme:.0f} sn süreli beklemeye dönüldü",
+                        "uyari")
+                    time.sleep(self.home_bekleme)
+                    return True
+                time.sleep(0.2)
+                continue
+
+            yakin = abs(simdi - hedef) <= self.home_tolerans
+            durgun = onceki is not None and abs(simdi - onceki) < 0.05
+            onceki = simdi
+            kararli = kararli + 1 if (yakin and durgun) else 0
+            if kararli >= 3:                    # ~0.6 sn boyunca yerinde
+                self.gunluk_cb(
+                    f"{EKSENLER[i]['ad']} referans tamam ({simdi:.2f} mm)", "bilgi")
+                return True
+            time.sleep(0.2)
+
+        self.gunluk_cb(
+            f"{EKSENLER[i]['ad']} {self.home_azami:.0f} sn içinde referansa "
+            f"varmadı (hedef {hedef:.2f} mm)", "hata")
+        return False
 
     def dur(self) -> str:
         """Süren hareketi kes ve jog bitlerini bırak. Mandal bırakmaz."""
