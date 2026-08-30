@@ -9,10 +9,25 @@ cd "$(dirname "$0")"
 echo "[1/3] Kod cekiliyor"
 if ! git pull --ff-only; then
     echo
-    echo "Pull reddedildi — Pi'de yerel degisiklik var demektir."
-    echo "SILMEYIN. Once neyin degistigine bakin:"
-    echo "  git status --short"
-    echo "Gerekiyorsa kenara alin:  git stash push -m 'pi-yerel'"
+    # Pull iki AYRI sebeple basarisiz olabiliyor ve ikisinin yapilacagi
+    # bambaska. Eskiden hepsine "yerel degisiklik var" deniyordu; depo
+    # bozuldugunda kullanici olmayan bir degisikligi ariyordu.
+    if find .git/objects -type f -size 0 2>/dev/null | grep -q .; then
+        echo "DEPO BOZULMUS — bos git nesnesi var."
+        echo "Bu bir kod sorunu degil, ani kapanma izi (SD kartlarda sik)."
+        echo "Onarmak icin:  bash git-onar.sh"
+        exit 1
+    fi
+    if [ -n "$(git status --porcelain)" ]; then
+        echo "Pull reddedildi — Pi'de yerel degisiklik var."
+        echo "SILMEYIN. Once neyin degistigine bakin:"
+        echo "  git status --short"
+        echo "Gerekiyorsa kenara alin:  git stash push -m 'pi-yerel'"
+        exit 1
+    fi
+    echo "Pull basarisiz ama calisma agaci temiz ve nesneler saglam."
+    echo "Genellikle ag ya da uzak depo sorunudur. Yukaridaki git ciktisina"
+    echo "bakin; depo bozuklugundan supheleniyorsaniz:  bash git-onar.sh"
     exit 1
 fi
 

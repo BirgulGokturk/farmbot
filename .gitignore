@@ -2,6 +2,9 @@ __pycache__/
 *.pyc
 .venv/
 ajan/ayarlar.json
+# Panel parolasi ve ajan jetonu burada. Takipsizdi ama yok sayilmiyordu:
+# yanlislikla `git add -A` yapan biri sirlari depoya sokabilirdi.
+sunucu/ortam
 sunucu/farmbot.db*
 sunucu/noktalar.json
 sunucu/egriler.json
