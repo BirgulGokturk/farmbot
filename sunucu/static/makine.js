@@ -452,25 +452,18 @@
       sabit.add(profil(THREE, [P * 2, P, d], [(ix * w) / 2, rayYuk, 0]));
     });
 
-    /* --- tohumluk: uclarin ilerisinde, kose disinda ------------------------
-     * Fotograftaki delikli fide tepsisi. Konumu yaklasik; gercek koordinat
-     * verilirse buraya baglanir.
+    /* --- tohumluk BURADA ÇİZİLMİYOR ---------------------------------------
+     * Eskiden burada yaklasik konumlu, 3x4 duzgun delikli bir sus tepsisi
+     * vardi ve yorumunda "gercek koordinat verilirse buraya baglanir"
+     * yaziyordu. Koordinatlar geldi: gozler artik `uclar.json`da, her
+     * birinin kendi X/Y/Z'siyle.
+     *
+     * Cizim `katmanlar/20-uc-yuvalari.js`e tasindi, cunku tepsi ORADA
+     * gercek koordinatlardan turuyor ve gozun dolu/bos durumunu da
+     * gosteriyor. Ikisini birden cizmek, sahnede biri dogru biri yanlis
+     * yerde iki tohumluk demekti — bu projede en pahali hata sinifi,
+     * "sahnede gordugum yer makinenin gittigi yer" varsayimini bozan sey.
      */
-    const tepsi = new THREE.Group();
-    tepsi.add(kutu(THREE, [0.11, 0.03, 0.16], [0, 0, 0],
-      { color: "#1e2124", roughness: 0.88, metalness: 0.1 }));
-    const delikMal = mal(THREE, { color: "#15181b", roughness: 0.95 });
-    for (let i = 0; i < 3; i++) {
-      for (let j = 0; j < 4; j++) {
-        const delik = new THREE.Mesh(
-          new THREE.CylinderGeometry(0.013, 0.011, 0.026, 10), delikMal);
-        delik.position.set(-0.033 + i * 0.033, 0.006, -0.055 + j * 0.037);
-        delik.userData.golgeAtma = true;   // 12 delik, 12 çizim çağrısı
-        tepsi.add(delik);
-      }
-    }
-    tepsi.position.set(-w / 2 - 0.085, tabla + 0.015, d / 2 - 0.1);
-    sabit.add(tepsi);
     }  /* sabitIster */
 
     /* GÖLGE. Bir ağ gölge haritasına ancak castShadow ile giriyor; bayrak

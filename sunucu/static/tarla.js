@@ -1469,6 +1469,27 @@
         gunluk(`⚠ Sulama önizlemesi alınamadı: ${h.message}`, "uyari");
       }
     }
+    if (islem === "ek") {
+      /* ÖNİZLEME, sulamadakinden daha da gerekli: toprağa giren tohum
+       * geri alınamıyor ve hangi gözün boşalacağını önceden görmek
+       * gerekiyor. Ret varsa hiç denemiyoruz — sunucu zaten 422 verir
+       * ama kullanıcı sebebi burada, tek satırda okusun. */
+      try {
+        const o = await P().apiIste("/api/ekim/onizle", {
+          method: "POST", body: JSON.stringify({ noktalar: adlar }),
+        });
+        if (o.ret && o.ret.length) {
+          gunluk(`✕ Ekim başlatılmadı — ${o.ret.join(" · ")}`, "hata");
+          return;
+        }
+        (o.uyari || []).slice(0, 4).forEach((u) => gunluk(`⚠ ${u}`, "uyari"));
+        gunluk(`${o.tohum_sayisi} tohum · gözler: ${
+          (o.bos_kalacak_gozler || []).join(", ")} boşalacak · ${
+          o.kalan_dolu_goz} dolu göz kalacak · ${o.adim} adım`, "iyi");
+      } catch (h) {
+        gunluk(`⚠ Ekim önizlemesi alınamadı: ${h.message}`, "uyari");
+      }
+    }
     if (islem === "dizi") {
       govde.dizi = ($("#toplu-dizi") || {}).value || "";
       if (!govde.dizi) { gunluk("Uygulanacak dizi seçilmedi", "uyari"); return; }
@@ -2022,9 +2043,8 @@
     dikimDurumu() {
       const uc = (VERI.durum && VERI.durum.uc) || {};
       const yuvalar = uc.tools_konum || [];
-      const th = (uc.tohumluk && uc.tohumluk.x != null) ? uc.tohumluk : null;
+      const gozler = (uc.tohumluk_gozleri || []).filter((g) => g && g.x != null);
       const dayanak = yuvalar.map((t) => ({ x: t.x, y: t.y, z: t.z }));
-      if (th) dayanak.push({ x: th.x, y: th.y, z: th.z });
       const profil = dayanak.length ? {
         x: [Math.min(...dayanak.map((d) => d.x)), Math.max(...dayanak.map((d) => d.x))],
         y: [Math.min(...dayanak.map((d) => d.y)), Math.max(...dayanak.map((d) => d.y))],
@@ -2039,7 +2059,12 @@
           yuzeyY: sy(a.toprak_z != null ? Number(a.toprak_z) : T.toprakZ),
         })),
         sahne: dikimSahne(),
-        tohumluk: th,
+        // Gözlerin tamamı: denemeler "sahnedeki delik makinenin indiği
+        // koordinat mı" diye tek tek sorabilsin.
+        gozler: gozler.map((g) => ({ ad: g.ad, x: g.x, y: g.y, z: g.z,
+                                     dolu: !!g.dolu, y3b: sy(Number(g.z) || 0) })),
+        tohumluk: gozler.length
+          ? { x: gozler[0].x, y: gozler[0].y, z: gozler[0].z } : null,
         profil,
       };
     },
@@ -2246,6 +2271,8 @@
     $("#d-kip-tasi").onclick = () => kipSec("tasi");
     $("#d-kip-sec").onclick = () => kipSec("sec");
     $("#d-toplu-sula").onclick = () => topluIslem("sula");
+    const ekDugme = $("#d-toplu-ek");
+    if (ekDugme) ekDugme.onclick = () => topluIslem("ek");
     $("#d-toplu-gez").onclick = () => topluIslem("gez");
     $("#d-toplu-sil").onclick = () => topluIslem("sil");
     $("#d-toplu-dizi").onclick = () => topluIslem("dizi");

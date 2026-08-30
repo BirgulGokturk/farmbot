@@ -33,6 +33,8 @@ const S = {
   ucListesi: [],
   sonTakiliUc: undefined,
   ucAyarDuzenleniyor: false,
+  sonGozler: null,      // tohumluk gözleri imzası
+  gozDuzenleniyor: false,
   programlar: [],
   adimlar: [],
   bolgeDuzenleniyor: false,   // kullanıcı yazarken durum akışı üzerine yazmasın
@@ -530,6 +532,17 @@ function ucGuncelle(u) {
     S.sonUcAyar = { tools };
   }
 
+  // Tohumluk gözleri — aynı kural: kullanıcı düzenlerken üzerine yazma.
+  // Burada fazladan bir sebep var: ekim dizisi süregelirken gözler
+  // ajanda boş işaretleniyor ve tablo yenilenmezse kullanıcı dolu
+  // görmeye devam ederdi.
+  const gozler = u.tohumluk_gozleri || [];
+  const gozImza = JSON.stringify(gozler);
+  if (!S.gozDuzenleniyor && gozImza !== S.sonGozler) {
+    S.sonGozler = gozImza;
+    gozTablosuCiz(gozler);
+  }
+
   // Ayar alanları: kullanıcı düzenlerken üzerine yazmıyoruz.
   if (u.ayar && !S.ucAyarDuzenleniyor) {
     for (const [ad, deger] of Object.entries(u.ayar)) {
@@ -545,15 +558,6 @@ function ucGuncelle(u) {
       const ex = $(`#ua-k${i}x`), ey = $(`#ua-k${i}y`);
       if (ex && document.activeElement !== ex) ex.value = p[0];
       if (ey && document.activeElement !== ey) ey.value = p[1];
-    });
-    // Tohumluk: tanımsızsa alanlar BOŞ kalıyor, sıfır yazılmıyor —
-    // sıfır geçerli bir koordinat ve ikisi karışmamalı.
-    const th = u.tohumluk || {};
-    ["x", "y", "z"].forEach((eksen) => {
-      const el = $("#ua-th-" + eksen);
-      if (el && document.activeElement !== el) {
-        el.value = th[eksen] == null ? "" : th[eksen];
-      }
     });
     const sb = u.sulama_basligi || {};
     [["dx", "dx"], ["dy", "dy"], ["zmin", "z_min"]].forEach(([kimlik, alan]) => {
@@ -693,6 +697,93 @@ async function ucTablosuKaydet() {
     gunluk(`✓ ${tools.length} uç yuvası kaydedildi`, "ok");
     // Yolları yeniden çekiyoruz: koordinat değişti, yol da değişti.
     await ucYollariTazele(true);
+  }
+}
+
+/* ---------------------------------------------------- tohumluk gözleri
+ *
+ * Gözlerin koordinatı ve dolu/boş durumu `ajan/uclar.json`da. Tablo
+ * ikisini de düzenliyor ama İKİ AYRI yoldan yazıyor:
+ *
+ *   • koordinat/ad/tohum → `uc_kaydet` (toplu, "Gözleri kaydet")
+ *   • dolu/boş kutusu    → `goz_isaretle` (tek göz, anında)
+ *
+ * Ayrım keyfi değil. Ekim dizisi çalışırken gözleri boş işaretliyor;
+ * kullanıcı o sırada tabloyu toptan kaydetseydi, ekranındaki eski
+ * "dolu" değeri dizinin az önce boşalttığı gözün üstüne yazılırdı.
+ * Tek göze dokunan komut bu yarışı ortadan kaldırıyor.
+ */
+function gozTablosuCiz(gozler) {
+  const kutu = $("#goz-tablo");
+  if (!kutu) return;
+  const liste = gozler || [];
+  if (!liste.length) {
+    kutu.innerHTML = '<p class="alt-not">Tanımlı tohumluk gözü yok.</p>';
+    return;
+  }
+  kutu.innerHTML = `<div class="goz-baslik">
+      <span>Göz</span><span>X mm</span><span>Y mm</span><span>Z mm</span>
+      <span>Tohum</span><span title="İçinde tohum var mı">Dolu</span><span></span>
+    </div>` + liste.map((g, i) => `
+    <div class="goz-satir${g.dolu ? "" : " goz-bos"}" data-i="${i}" data-ad="${kacisli(g.ad || "")}">
+      <div class="goz-hucreler">
+        <input class="gz-ad" value="${kacisli(g.ad || "")}" maxlength="24">
+        <input type="number" class="gz-x" step="0.1" value="${g.x != null ? g.x : ""}">
+        <input type="number" class="gz-y" step="0.1" value="${g.y != null ? g.y : ""}">
+        <input type="number" class="gz-z" step="0.1"
+               title="Gözün dibi — vakum ucu bu Z'ye iniyor"
+               value="${g.z != null ? g.z : ""}">
+        <input class="gz-tohum" value="${kacisli(g.tohum || "")}" maxlength="40"
+               placeholder="—" title="Bu gözde hangi tohum var">
+        <input type="checkbox" class="gz-dolu" ${g.dolu ? "checked" : ""}
+               title="İşareti kaldırmak gözü ANINDA boş yazar">
+        <button class="ut-sil gz-sil" title="Bu gözü sil">✕</button>
+      </div>
+    </div>`).join("");
+
+  $$("#goz-tablo .gz-sil").forEach((d) => {
+    d.onclick = () => {
+      const l = gozTablosuTopla();
+      l.splice(Number(d.closest(".goz-satir").dataset.i), 1);
+      gozTablosuCiz(l);
+      S.gozDuzenleniyor = true;
+    };
+  });
+  // Dolu kutusu ANINDA yazıyor: "işaretledim ama kaydetmeyi unuttum"
+  // durumunda dizi boş göze inerdi.
+  $$("#goz-tablo .gz-dolu").forEach((k) => {
+    k.onchange = async () => {
+      const satir = k.closest(".goz-satir");
+      const ad = satir.dataset.ad;
+      const sonuc = await komutGonder("goz_isaretle", { ad, dolu: k.checked });
+      if (!sonuc || !sonuc.ok) { k.checked = !k.checked; return; }
+      satir.classList.toggle("goz-bos", !k.checked);
+      gunluk(`'${ad}' gözü ${k.checked ? "dolu" : "boş"} işaretlendi`, "ok");
+    };
+  });
+  kutu.querySelectorAll("input:not(.gz-dolu)").forEach((g) => {
+    g.oninput = () => { S.gozDuzenleniyor = true; };
+  });
+}
+
+function gozTablosuTopla() {
+  return $$("#goz-tablo .goz-satir").map((el) => ({
+    ad: el.querySelector(".gz-ad").value.trim(),
+    x: Number(el.querySelector(".gz-x").value),
+    y: Number(el.querySelector(".gz-y").value),
+    z: Number(el.querySelector(".gz-z").value),
+    tohum: el.querySelector(".gz-tohum").value.trim(),
+    dolu: el.querySelector(".gz-dolu").checked,
+  })).filter((g) => g.ad);
+}
+
+async function gozTablosuKaydet() {
+  const gozler = gozTablosuTopla();
+  const sonuc = await komutGonder("uc_kaydet", { ayar: { tohumluk: { gozler } } });
+  if (sonuc && sonuc.ok) {
+    S.gozDuzenleniyor = false;
+    S.sonGozler = null;          // bir sonraki durumda ajanın hâli çizilsin
+    gunluk(`✓ ${gozler.length} tohumluk gözü kaydedildi`, "ok");
   }
 }
 
@@ -2707,6 +2798,25 @@ function olaylariBagla() {
   }
   const tabloKaydet = $("#d-uc-tablo-kaydet");
   if (tabloKaydet) tabloKaydet.onclick = ucTablosuKaydet;
+
+  const gozEkle = $("#d-goz-satir-ekle");
+  if (gozEkle) {
+    gozEkle.onclick = () => {
+      const l = gozTablosuTopla();
+      // Yeni göz, son gözün 40 mm yanına: tohumluk gözleri sırada ve
+      // aynı Y'de duruyor, sıfırdan koordinat yazdırmak gereksiz.
+      const son = l[l.length - 1];
+      l.push({ ad: `s${l.length + 1}`,
+               x: son ? Number(son.x) + 40 : 0,
+               y: son ? son.y : 0, z: son ? son.z : 0,
+               tohum: "", dolu: true });
+      gozTablosuCiz(l);
+      S.gozDuzenleniyor = true;
+    };
+  }
+  const gozKaydet = $("#d-goz-tablo-kaydet");
+  if (gozKaydet) gozKaydet.onclick = gozTablosuKaydet;
+
   $("#d-uc-temizle").onclick = async () => {
     if (!confirm("Takılı uç kaydı sıfırlanacak. Hiçbir eksen hareket etmez — "
                  + "makinede uç olup olmadığını gözle doğrulayın. Devam?")) return;
@@ -2733,11 +2843,11 @@ function olaylariBagla() {
         on: $("#ua-alan-acik").checked,
         pts: [0, 1, 2, 3].map((i) => [Number($(`#ua-k${i}x`).value), Number($(`#ua-k${i}y`).value)]),
       },
-      // Boş X = tohumluk tanımsız. Sayıya çevirmiyoruz: "" -> 0 olur ve
-      // tohumluk sahnenin X0 köşesine çizilirdi.
-      tohumluk: { x: $("#ua-th-x").value === "" ? null : Number($("#ua-th-x").value),
-                  y: $("#ua-th-y").value === "" ? null : Number($("#ua-th-y").value),
-                  z: $("#ua-th-z").value === "" ? null : Number($("#ua-th-z").value) },
+      // Tohumluk gözleri BİLEREK burada yok: kendi tablosundan
+      // kaydediliyor. Buraya konsaydı "Ayarları kaydet"e basmak, ekim
+      // dizisinin az önce boşalttığı gözleri ekrandaki eski hâlleriyle
+      // geri yazardı.
+      //
       // Boş = 0: kayma yoksa sıfır, "tanımsız" diye bir hâli yok.
       sulama_basligi: { dx: Number($("#ua-sb-dx").value || 0),
                         dy: Number($("#ua-sb-dy").value || 0),

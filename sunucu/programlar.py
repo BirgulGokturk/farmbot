@@ -22,7 +22,7 @@ import noktalar
 
 _KILIT = threading.RLock()
 AZAMI_ADIM = 200
-GECERLI_TIPLER = ("nokta", "bekle", "role", "uc")
+GECERLI_TIPLER = ("nokta", "bekle", "role", "uc", "goz")
 
 # Değişken tipleri. FarmBot'ta Location/Number/Text/Peripheral/Sensor/Sequence
 # var; bizde işi gören üçü: bir noktayı, bir sayıyı ve bir metni dışarıdan
@@ -134,6 +134,14 @@ def adim_dogrula(adim: dict[str, Any]) -> dict[str, Any]:
         if ad not in ("su_pompasi", "hava_pompasi"):
             raise ProgramHatasi(f"Bilinmeyen röle: '{ad}'")
         return {"tip": "role", "ad": ad, "durum": bool(adim.get("durum"))}
+    if tip == "goz":
+        # Tohumluk gözünü dolu/boş işaretler. Hareket etmiyor; gözün
+        # gerçekten var olup olmadığına AJAN karar veriyor (gözler orada
+        # tanımlı), sunucu adı taşımakla yetiniyor.
+        ad = str(adim.get("ad", "")).strip()
+        if not ad:
+            raise ProgramHatasi("Göz adımı bir tohumluk gözü adı ister")
+        return {"tip": "goz", "ad": ad, "dolu": bool(adim.get("dolu"))}
     return {"tip": "uc", "ad": str(adim.get("ad", "") or "")}
 
 

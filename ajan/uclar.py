@@ -68,9 +68,18 @@ VARSAYILAN = {
     # TOHUMLUK — uç profilinin en ucundaki delikli blok. Konumu uçlarla aynı
     # kaynakta duruyor çünkü aynı profilin üstünde: panel uç profilini bu
     # noktaların kapsayan kutusundan türetiyor, hiçbir yerde elle yazılmış
-    # konum yok. `x` boş bırakılırsa tohumluk tanımsız sayılıyor ve
-    # çizilmiyor — varsayılan da bu, çünkü her kurulumda tohumluk yok.
-    "tohumluk": {"x": None, "y": None, "z": None},
+    # konum yok.
+    #
+    # Tek koordinat DEĞİL, göz listesi: her gözün kendi X/Y/Z'si var ve
+    # sahada ölçülen değerler tek bir "tohumluk konumu"na sığmıyordu —
+    # gözün `z`si gözün DİBİ (vakum ucu oraya iniyor) ve bu makinede
+    # büyük Z yukarısı olduğu için s4'ün dibi (Z285) diğerlerinkinden
+    # (Z260) 25 mm yukarıda, yani s4 sığ göz. `tohum` gözde hangi türün
+    # durduğunu, `dolu` içinde tohum kalıp kalmadığını söylüyor; ikisi de
+    # dosyada KALICI, çünkü makine kapanıp açılınca hangi gözün boşaldığı
+    # unutulursa ekim dizisi boş göze iner ve boşa iner.
+    # Liste boşken tohumluk tanımsız sayılıyor ve çizilmiyor.
+    "tohumluk": {"gozler": []},
     # SULAMA BAŞLIĞI — Z eksenine ayrı takılı ve ucun merkezinden kaymış.
     # Makine `hedef + (dx, dy)`ye gidince su hedefe düşüyor. Türden
     # BAĞIMSIZ: desen ofsetinin üstüne biniyor, her sulamada geçerli.
@@ -127,33 +136,84 @@ class UcHatasi(Exception):
     """Dizi başlatılamadı ya da ortasında durdu."""
 
 
-def _tohumluk_dogrula(ham: Any) -> dict[str, Any]:
-    """Tohumluk koordinatını normalleştirir.
+# Tohumlukta bir seferde en fazla bu kadar göz tanımlanabilir. Sınır
+# keyfî değil: gözler panelde tabloya, sahnede ayrı nesneye dönüşüyor ve
+# ekim dizisinin adım sınırı (AZAMI_ADIM) zaten çok daha önce doluyor.
+AZAMI_GOZ = 48
+
+
+def _goz_dogrula(ham: Any, sira: int, kullanilan: set[str]) -> dict[str, Any] | None:
+    """Tek bir tohumluk gözünü normalleştirir; kurulamazsa None.
 
     Panelden boş alan gelebiliyor ve boş metin sıfır DEĞİL: sıfır geçerli
-    bir makine koordinatı, boş ise "tohumluk tanımlı değil". İkisini
-    karıştırmak tohumluğu sahnenin köşesine, X0 Y0'a çizerdi.
+    bir makine koordinatı, boş ise "göz tanımsız". İkisini karıştırmak
+    gözü sahnenin köşesine, X0 Y0'a çizerdi.
     """
     if not isinstance(ham, dict):
-        return {"x": None, "y": None, "z": None}
-    cikti: dict[str, Any] = {}
+        return None
+    konum: dict[str, Any] = {}
     for eksen in ("x", "y", "z"):
         deger = ham.get(eksen)
         if deger in (None, ""):
-            cikti[eksen] = None
+            konum[eksen] = None
             continue
         try:
-            cikti[eksen] = round(float(deger), 1)
+            konum[eksen] = round(float(deger), 1)
         except (TypeError, ValueError):
-            cikti[eksen] = None
+            konum[eksen] = None
     # X yoksa tanım yok sayılıyor; tek eksenle bir konum kurulamaz.
-    if cikti["x"] is None:
-        return {"x": None, "y": None, "z": None}
-    if cikti["y"] is None:
-        cikti["y"] = 0.0
-    if cikti["z"] is None:
-        cikti["z"] = 0.0
-    return cikti
+    if konum["x"] is None:
+        return None
+    if konum["y"] is None:
+        konum["y"] = 0.0
+    if konum["z"] is None:
+        konum["z"] = 0.0
+
+    ad = str(ham.get("ad") or "").strip()[:24] or f"s{sira}"
+    # Ad ÇAKIŞMASI sessiz geçilmiyor: ekim dizisi gözü adıyla buluyor,
+    # iki "s1" olsaydı hangi gözün boşaldığı belirsiz kalırdı.
+    if ad in kullanilan:
+        kok, n = ad, 2
+        while f"{kok}-{n}" in kullanilan:
+            n += 1
+        ad = f"{kok}-{n}"
+    kullanilan.add(ad)
+
+    return {
+        "ad": ad,
+        "x": konum["x"], "y": konum["y"], "z": konum["z"],
+        "tohum": str(ham.get("tohum") or "").strip()[:40],
+        # Belirtilmemişse DOLU sayılıyor: yeni tanımlanan bir göze
+        # kullanıcı tohum koyuyor demektir, boş varsaymak ekim dizisini
+        # sebepsiz reddettirirdi.
+        "dolu": bool(ham.get("dolu", True)),
+    }
+
+
+def _tohumluk_dogrula(ham: Any) -> dict[str, Any]:
+    """Tohumluk göz listesini normalleştirir.
+
+    Eski biçimi (tek `{x, y, z}` koordinat) da kabul ediyor ve tek gözlük
+    listeye çeviriyor: sahada çalışan bir `uclar.json` bu sürümle
+    güncellendiğinde tohumluğun sessizce kaybolmaması gerekiyor.
+    """
+    if not isinstance(ham, dict):
+        return {"gozler": []}
+
+    liste = ham.get("gozler")
+    if liste is None and ("x" in ham or "y" in ham or "z" in ham):
+        liste = [{"ad": "s1", "x": ham.get("x"), "y": ham.get("y"),
+                  "z": ham.get("z"), "tohum": "", "dolu": True}]
+    if not isinstance(liste, list):
+        liste = []
+
+    gozler: list[dict[str, Any]] = []
+    kullanilan: set[str] = set()
+    for g in liste[:AZAMI_GOZ]:
+        temiz = _goz_dogrula(g, len(gozler) + 1, kullanilan)
+        if temiz is not None:
+            gozler.append(temiz)
+    return {"gozler": gozler}
 
 
 def _atomik_yaz(yol: str, veri: Any) -> None:
@@ -202,6 +262,10 @@ class Uclar:
                         self.ayar = {**VARSAYILAN, **json.load(dosya)}
                 except (json.JSONDecodeError, OSError) as hata:
                     self.gunluk_cb(f"Uç ayarları okunamadı ({hata}) — varsayılanlar kullanılıyor", "hata")
+            # Eski biçimli tohumluk (tek koordinat) OKURKEN göz listesine
+            # çevriliyor. Yükleme anında yapmasak dosyada eski biçim
+            # kalırdı ve bir sonraki `kaydet` onu geri yazardı.
+            self.ayar["tohumluk"] = _tohumluk_dogrula(self.ayar.get("tohumluk"))
             self.durum["uc"] = self.ayar.get("current_tool")
 
     def kaydet(self, yeni: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -224,10 +288,46 @@ class Uclar:
                 return vars_
         return {"dx": _s("dx"), "dy": _s("dy"), "z_min": _s("z_min")}
 
+    def tohumluk_gozleri(self) -> list[dict[str, Any]]:
+        """Tohumluk gözleri — tek doğru kaynak."""
+        t = _tohumluk_dogrula(self.ayar.get("tohumluk"))
+        return [dict(g) for g in t["gozler"]]
+
     def tohumluk(self) -> dict[str, Any] | None:
-        """Tanımlıysa tohumluk konumu, değilse None."""
-        t = self.ayar.get("tohumluk") or {}
-        return t if t.get("x") is not None else None
+        """İlk gözün konumu — tohumluk tanımlı değilse None.
+
+        Yalnız "tohumluk nerede" diye soran eski tüketiciler için duruyor
+        (sahnedeki profil kutusu). Göz başına iş yapan her yer
+        `tohumluk_gozleri`ni kullanmalı.
+        """
+        gozler = self.tohumluk_gozleri()
+        if not gozler:
+            return None
+        g = gozler[0]
+        return {"x": g["x"], "y": g["y"], "z": g["z"]}
+
+    def goz_bul(self, ad: str) -> dict[str, Any] | None:
+        return next((g for g in self.tohumluk_gozleri() if g["ad"] == ad), None)
+
+    def goz_isaretle(self, ad: str, dolu: bool, tohum: str | None = None) -> dict[str, Any] | None:
+        """Bir gözün dolu/boş durumunu KALICI olarak yazar.
+
+        Ekim dizisi bir gözden tohum aldığında burayı çağırıyor. Yazma
+        atomik ve dosyaya iniyor: makine kapanıp açılınca hangi gözün
+        boşaldığı hatırlanmazsa dizi boş göze iner, pompayı çalıştırır ve
+        hedefe boş varır — bu sessiz başarısızlık, en pahalısı.
+        """
+        with self._kilit:
+            gozler = self.tohumluk_gozleri()
+            hedef = next((g for g in gozler if g["ad"] == ad), None)
+            if hedef is None:
+                return None
+            hedef["dolu"] = bool(dolu)
+            if tohum is not None:
+                hedef["tohum"] = str(tohum).strip()[:40]
+            self.ayar = {**self.ayar, "tohumluk": {"gozler": gozler}}
+            _atomik_yaz(self.yol, self.ayar)
+        return dict(hedef)
 
     def uc_bul(self, ad: str) -> dict[str, Any] | None:
         return next((t for t in self.ayar.get("tools", []) if t.get("name") == ad), None)

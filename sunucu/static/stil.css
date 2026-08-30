@@ -1870,6 +1870,28 @@ button.dugme.role.acik:hover:not(:disabled) { background: rgba(74, 168, 96, .24)
 }
 .uc-servo { color: #e8a33d; }
 
+/* Tohumluk gözleri: uç tablosuyla aynı düzen, iki sütun fazla (tohum adı
+   ve dolu kutusu). Sayı sütunları biraz daha dar ki 380 pikselde sığsın. */
+.goz-baslik, .goz-hucreler {
+  display: grid;
+  grid-template-columns: minmax(0, 54px) 52px 52px 52px minmax(0, 1fr) 20px 24px;
+  gap: 4px;
+  align-items: center;
+}
+.goz-baslik {
+  font-size: var(--yazi-kucuk);
+  color: var(--metin-2);
+  padding: 0 0 4px;
+}
+.goz-hucreler input { width: 100%; min-width: 0; }
+.goz-hucreler input[type="checkbox"] { width: auto; justify-self: center; }
+.goz-satir { padding: var(--b2) 0; border-bottom: 1px solid var(--cizgi); }
+.goz-satir:last-child { border-bottom: none; }
+/* Boş göz soluk: tabloya bakınca hangi gözde tohum kaldığı bir bakışta
+   görünmeli — ekim dizisi buraya bakarak gözü atlıyor. */
+.goz-satir.goz-bos .gz-ad,
+.goz-satir.goz-bos .gz-tohum { opacity: .45; }
+
 
 /* Kalibrasyon tablosundaki duzenlenebilir hucreler. Dar tutuluyor: tablo
    alti sutun ve panel zaten dar; genis kutular satiri tasiriyordu. */

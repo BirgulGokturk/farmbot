@@ -14,6 +14,13 @@ Adım tipleri
     {"tip": "bekle",  "saniye": 5}
     {"tip": "role",   "ad": "su_pompasi", "durum": true}
     {"tip": "uc",     "ad": "tool1"}      # uç değiştir (birak için ad boş)
+    {"tip": "goz",    "ad": "s2", "dolu": false}   # tohumluk gözünü işaretle
+
+`goz` adımı HAREKET ETMİYOR; yalnız tohumluk gözünün dolu/boş durumunu
+kalıcı olarak yazıyor. Ekim dizisinde vakum açılıp tohum tutulduktan
+hemen sonra geliyor. Adım sırasına göre bir "göz haritası" tutmak yerine
+adımın kendisine yazılmasının sebebi: dizi birleştirilip uzatıldığında
+indeks kayar, adımın içindeki ad kaymaz.
 
 Hepsi mevcut komutları çağırıyor; yeni bir hareket yolu yok.
 """
@@ -39,6 +46,10 @@ class Dizi:
         self.arduino_komut = arduino_komut
         #: Bu dizinin açtığı ve henüz kapatmadığı röleler.
         self._acik_roleler: set[str] = set()
+        #: Gözden alınmış ama henüz toprağa bırakılmamış tohumun gözü.
+        #: Dizi burada kesilirse o tohum "havada" kalıyor ve kullanıcının
+        #: hangi göze bakacağını bilmesi gerekiyor.
+        self._asili_goz: str | None = None
         self.gunluk_cb = gunluk_cb or (lambda m, s="bilgi": None)
         self.durum: dict[str, Any] = {
             "calisiyor": False, "ad": "", "adim": 0, "toplam": 0,
@@ -77,7 +88,24 @@ class Dizi:
                 self._acik_roleler.add(role)
             else:
                 self._acik_roleler.discard(role)
+                # Hava pompası kapandı = vakum bırakıldı = tohum düştü.
+                # Buradan sonra "havada tohum" uyarısı yanlış olurdu.
+                if role == "hava_pompasi":
+                    self._asili_goz = None
             return f"{role} {'açıldı' if durum else 'kapandı'}"
+
+        if tip == "goz":
+            # Tohumluk gözünün durumunu yazar. Hareket yok, dosya yazma var:
+            # göz boşaldığı ANDA kalıcı olmalı, dizinin sonunu beklerse
+            # yarıda kesilen bir dizi gözü dolu gösterir ve bir sonraki
+            # ekim boş göze iner.
+            ad = str(adim.get("ad", "") or "")
+            dolu = bool(adim.get("dolu"))
+            sonuc = self.uclar.goz_isaretle(ad, dolu, adim.get("tohum"))
+            if sonuc is None:
+                raise DiziHatasi(f"Tohumluk gözü bulunamadı: '{ad}'")
+            self._asili_goz = None if dolu else ad
+            return f"'{ad}' gözü {'dolu' if dolu else 'BOŞ'} işaretlendi"
 
 
         if tip == "uc":
@@ -114,12 +142,21 @@ class Dizi:
             self.durum["hata"] = str(hata)
             self.gunluk_cb(
                 f"Dizi '{ad}' {self.durum['adim']}. adımda DURDU: {hata}", "hata")
+            if self._asili_goz:
+                # Kullanıcı hangi gözün tohumunun boşa gittiğini bilmeli:
+                # göz artık boş yazılı ama tohum toprağa girmedi.
+                self.gunluk_cb(
+                    f"UYARI: '{self._asili_goz}' gözünden alınan tohum toprağa "
+                    f"bırakılmadan dizi durdu. Göz BOŞ işaretlendi; tohum uçta "
+                    f"ya da yolda. Gözü yeniden doldurup panelden 'dolu' "
+                    f"işaretleyin.", "hata")
             try:
                 self.plc.dur()
             except Exception:
                 pass
         finally:
             self._roleleri_kapat()
+            self._asili_goz = None
             self.durum["calisiyor"] = False
 
     def _roleleri_kapat(self) -> None:
@@ -154,6 +191,8 @@ class Dizi:
             return f"{adim.get('ad')} {'aç' if adim.get('durum') else 'kapat'}"
         if tip == "uc":
             return f"uç: {adim.get('ad') or 'bırak'}"
+        if tip == "goz":
+            return f"göz {adim.get('ad')}: {'dolu' if adim.get('dolu') else 'boş'}"
         return str(tip)
 
     def baslat(self, ad: str, adimlar: list[dict[str, Any]], tekrar: int = 1,

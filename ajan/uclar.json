@@ -9,6 +9,7 @@
  "speed": 40,
  "lock_reg": 0,
  "lock_dwell": 2000,
+ "drop_extra_z": 4,
  "grip_reg": 0,
  "grip_dwell": 1000,
  "presence_reg": 0,
@@ -34,25 +35,66 @@
    ]
   ]
  },
+ "tohumluk": {
+  "gozler": [
+   {
+    "ad": "s1",
+    "x": 60.0,
+    "y": 605.0,
+    "z": 260.0,
+    "tohum": "",
+    "dolu": true
+   },
+   {
+    "ad": "s2",
+    "x": 100.0,
+    "y": 605.0,
+    "z": 260.0,
+    "tohum": "",
+    "dolu": true
+   },
+   {
+    "ad": "s3",
+    "x": 140.0,
+    "y": 605.0,
+    "z": 260.0,
+    "tohum": "",
+    "dolu": true
+   },
+   {
+    "ad": "s4",
+    "x": 180.0,
+    "y": 605.0,
+    "z": 285.0,
+    "tohum": "",
+    "dolu": true
+   }
+  ]
+ },
+ "sulama_basligi": {
+  "dx": 50.0,
+  "dy": 50.0,
+  "z_min": 230.0
+ },
  "current_tool": null,
  "tools": [
   {
    "name": "tool1",
-   "x": 43.0,
-   "y": 125.0,
-   "z": 158.0
+   "x": 43,
+   "y": 125,
+   "z": 158
   },
   {
    "name": "tool2",
-   "x": 42.0,
-   "y": 321.0,
-   "z": 158.0
+   "x": 42,
+   "y": 321,
+   "z": 158
   },
   {
    "name": "tool3",
-   "x": 38.0,
-   "y": 519.0,
-   "z": 158.0
+   "x": 38,
+   "y": 519,
+   "z": 158
   }
  ],
  "_aciklama": "Uç değiştirme ayarları. Sahadan gelen gerçek değerler.",
@@ -63,6 +105,6 @@
  "_tc_area": "İçinde X/Y jog için Z güvenlik şartı devre dışı. Kapalıyken hiçbir muafiyet yok.",
  "_release": "gantry_tools.json'da release {dx:0, dy:8} var — ucu birakirken uygulanan kucuk ofset. Bizde karsiligi yok, eklenmeli.",
  "_kaynak": "Degerler Gantry Studio ekranindan alindi (26.08.2026).",
- "drop_extra_z": 4,
- "_drop_extra_z": "Birakmada servo biraktiktan SONRA bu kadar daha inilir, sonra yandan cikilir — kafa ucun kenarina takilmasin diye."
+ "_drop_extra_z": "Birakmada servo biraktiktan SONRA bu kadar daha inilir, sonra yandan cikilir — kafa ucun kenarina takilmasin diye.",
+ "_tohumluk": "Gozler sahada olculdu (30.08.2026). `z` gozun DIBI, tepsinin yuzeyi degil; bu makinede buyuk Z yukarisi oldugu icin s4'un dibi (Z285) digerlerininkinden (Z260) 25 mm YUKARIDA, yani s4 sig goz. `dolu` kalici: ekim dizisi gozden tohum alinca ayni anda false yaziliyor."
 }

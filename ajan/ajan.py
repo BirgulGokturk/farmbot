@@ -362,6 +362,22 @@ class Ajan:
                 yeni = await asyncio.to_thread(self.uclar.kaydet, gelen)
                 return {"ok": True, "mesaj": "Uç ayarları kaydedildi", "veri": {"ayar": yeni}}
 
+            if ad == "goz_isaretle":
+                # Tohumluğu ELLE doldurup boşaltmanın yolu. Bütün uç
+                # ayarını geri yazan `uc_kaydet` yerine tek göze dokunuyor:
+                # ekim dizisi süregelirken tabloyu kaydeden bir kullanıcı,
+                # dizinin az önce boşalttığı gözü dolu yazmasın.
+                hedef = str(arg.get("ad", "") or "")
+                sonuc = await asyncio.to_thread(
+                    self.uclar.goz_isaretle, hedef, bool(arg.get("dolu")),
+                    arg.get("tohum"))
+                if sonuc is None:
+                    return {"ok": False, "mesaj": f"Tohumluk gözü bulunamadı: '{hedef}'"}
+                return {"ok": True,
+                        "mesaj": f"'{hedef}' gözü {'dolu' if sonuc['dolu'] else 'boş'} işaretlendi",
+                        "veri": {"goz": sonuc,
+                                 "gozler": self.uclar.tohumluk_gozleri()}}
+
             if ad == "uc_yollari":
                 # Panelin uç tablosunun altına yazdığı yol satırları.
                 # Tek çağrıda hepsi ve yolu AJAN hesaplıyor: panelde ikinci
@@ -567,6 +583,10 @@ class Ajan:
                 "slide_axis": self.uclar.ayar.get("slide_axis"),
                 # Tohumluk: harita profili bu noktadan türetiyor, adı yetmiyor.
                 "tohumluk": self.uclar.tohumluk() or {},
+                # Gözlerin tamamı — panel tabloyu ve haritayı buradan
+                # kuruyor, ekim dizisi de hangi gözün dolu olduğunu
+                # buradan öğreniyor. `tohumluk` yalnız ilk gözün konumu.
+                "tohumluk_gozleri": self.uclar.tohumluk_gozleri(),
                 # Sulama başlığı kayması — sunucu sulama noktasını buna
                 # göre kaydırıyor, panel de önizlemede iki noktayı ayrı
                 # çiziyor (su nereye düşüyor / uç nereye gidiyor).

@@ -1,9 +1,18 @@
-/* Uç yuvaları, uç profili ve tohumluk.
+/* Uç yuvaları, uç profili ve tohumluk gözleri.
  *
- * `durum.uc.tools_konum`, `durum.uc.tohumluk` ve `durum.uc.alan`dan
+ * `durum.uc.tools_konum`, `durum.uc.tohumluk_gozleri` ve `durum.uc.alan`dan
  * besleniyor. Alan AÇIKKEN içeride Z güvenlik kilidi devre dışı; bu yüzden
  * alan açıkken haritada da belirgin çiziliyor — kilit kapalıyken bunu
  * bilmemek tehlikeli.
+ *
+ * TOHUMLUK TEK NOKTA DEĞİL. Her gözün kendi X/Y/Z'si var ve sahada
+ * ölçülen değerlerde derinlikler farklı: `z` gözün DİBİ ve büyük Z
+ * yukarısı olduğu için s4 (Z285), dibi Z260 olan diğerlerinden 25 mm
+ * SIĞ. Delikler artık düzgün aralıklı bir süs deseni değil, gözlerin GERÇEK
+ * koordinatları — haritada bir göze bakıp "makine oraya iner" demek
+ * ancak böyle doğru oluyor. Dolu göz tohum rengiyle, boş göz karanlık
+ * çiziliyor: ekim dizisi boş gözü atlıyor ve bunun haritada görünmesi
+ * gerekiyor.
  *
  * UÇLAR TOPRAĞIN ÜSTÜNDE DURMUYOR. Gerçek makinede yatağın yanında, ayrı
  * bir sigma profil var; uçlar onun üzerinde dizili ve tohumluk profilin en
@@ -41,28 +50,33 @@ Tarla.katman({
     }
 
     const yuvalar = uc.tools_konum || [];
-    const tohumluk = (uc.tohumluk && uc.tohumluk.x != null) ? uc.tohumluk : null;
-    if (!yuvalar.length && !tohumluk) return;
+    const gozler = (uc.tohumluk_gozleri || []).filter((g) => g && g.x != null);
+    if (!yuvalar.length && !gozler.length) return;
 
-    /* Yuva modelinin yüksekliği: taban plakasının altından tanıtıcı
-     * bandın üstüne. Profilin üstü buradan çıkıyor — `uclar.json`daki
-     * `z` ucun KAVRAMA yüksekliği, yani modelin tepesine denk geliyor. */
-    const YUVA_YUK = 0.056;
-    const dayanaklar = yuvalar.map((t) => ({ x: t.x, y: t.y, z: t.z, yuva: t }));
-    if (tohumluk) dayanaklar.push({ x: tohumluk.x, y: tohumluk.y, z: tohumluk.z, yuva: null });
-
-    /* --- profil: dayanak noktalarının kapsayan kutusu ------------------- */
-    const xs = dayanaklar.map((d) => d.x), ys = dayanaklar.map((d) => d.y);
+    /* --- profil: kapsayan kutu -----------------------------------------
+     *
+     * GENİŞLİK yalnız UÇLARDAN geliyor, gözlerden değil. Gözler profilin
+     * ucundaki tepsinin içinde ve X'te yayılıyor (60→180); onları
+     * kapsayan kutuya katmak profili tepsinin genişliğine şişirip
+     * uçların altından kaydırıyordu. Profil uzun ekseninde tepsiye kadar
+     * UZUYOR, ama enini uçlar belirliyor.
+     */
+    const kaynak = yuvalar.length ? yuvalar : gozler;
+    const xs = kaynak.map((d) => d.x), ys = kaynak.map((d) => d.y);
+    const gx = gozler.map((g) => g.x), gy = gozler.map((g) => g.y);
     const xEn = Math.max(...xs) - Math.min(...xs);
     const yEn = Math.max(...ys) - Math.min(...ys);
     // Uçlar hangi eksen boyunca dizilmişse profil o eksende uzuyor.
     const uzunY = yEn >= xEn;
     // Uçların ucundan taşan pay: profil son yuvada bıçak gibi bitmiyor.
     const PAY = 40;
-    const px1 = uzunY ? Math.min(...xs) : Math.min(...xs) - PAY;
-    const px2 = uzunY ? Math.max(...xs) : Math.max(...xs) + PAY;
-    const py1 = uzunY ? Math.min(...ys) - PAY : Math.min(...ys);
-    const py2 = uzunY ? Math.max(...ys) + PAY : Math.max(...ys);
+    // Uzun eksende gözlere kadar uzat; kısa eksende uçların ölçüsü kalsın.
+    const uzunMin = uzunY ? Math.min(...ys, ...gy) : Math.min(...xs, ...gx);
+    const uzunMax = uzunY ? Math.max(...ys, ...gy) : Math.max(...xs, ...gx);
+    const px1 = uzunY ? Math.min(...xs) : uzunMin - PAY;
+    const px2 = uzunY ? Math.max(...xs) : uzunMax + PAY;
+    const py1 = uzunY ? uzunMin - PAY : Math.min(...ys);
+    const py2 = uzunY ? uzunMax + PAY : Math.max(...ys);
     // Genişliği tek bir yuvanın çapından: profil yuvayı taşıyacak kadar
     // geniş, ama yatağa taşacak kadar değil.
     const GENIS = 45;
@@ -169,41 +183,61 @@ Tarla.katman({
       o.grup.add(g);
     });
 
-    /* --- tohumluk: profilin ucundaki delikli blok ----------------------- */
-    if (tohumluk) {
-      // Sütun sayısı 3'ten 2'ye indiği için genişlik de daraldı;
-      // yoksa delikler tepsinin ortasında seyrek kalıyordu.
-      const TB_EN = 0.055, TB_BOY = 0.13, TB_YUK = 0.035;
+    /* --- tohumluk: gözlerin gerçek koordinatlarında delikli tepsi ------ */
+    if (gozler.length) {
+      const TEPSI_PAY = 22;          // gözlerin dışında kalan kenar payı
+      const tx1 = Math.min(...gx) - TEPSI_PAY, tx2 = Math.max(...gx) + TEPSI_PAY;
+      const ty1 = Math.min(...gy) - TEPSI_PAY, ty2 = Math.max(...gy) + TEPSI_PAY;
+      /* Z YÖNÜ. Bu makinede BÜYÜK Z YUKARISI: güvenli yükseklik 390,
+       * toprak 170, uç kavrama 158. `sy(z) = (z - toprakZ) * MM`, yani
+       * sahnede de büyük z yukarı. Gözlerin `z`si gözün DİBİ (vakum ucu
+       * oraya iniyor), tepsinin yüzeyi değil.
+       *
+       * Dolayısıyla dibi en YÜKSEKTE olan göz en SIĞ olanı. Sahadaki
+       * ölçümde s4'ün dibi Z285, diğerlerininki Z260 — s4 sığ göz.
+       */
+      const dipEnAlt = Math.min(...gozler.map((g_) => Number(g_.z) || 0));
+      const dipEnUst = Math.max(...gozler.map((g_) => Number(g_.z) || 0));
+      // Tepsinin üst yüzeyi en sığ gözün dibinden de yukarıda: yoksa o
+      // göz kuyu değil tümsek olurdu.
+      const AGIZ_MM = 12;
+      const ustY = o.sy(dipEnUst + AGIZ_MM);
+      // Tepsi, en derin gözün dibini de içine alacak kadar kalın.
+      const yuk = Math.max(0.02, (dipEnUst + AGIZ_MM - dipEnAlt) * o.MM + 0.006);
+
       const g = new o.THREE.Group();
       const blok = new o.THREE.Mesh(
-        new o.THREE.BoxGeometry(TB_EN, TB_YUK, TB_BOY),
+        new o.THREE.BoxGeometry((tx2 - tx1) * o.MM, yuk, (ty2 - ty1) * o.MM),
         o.malzeme("#1b1d21", { metalness: 0.15, roughness: 0.9 }));
-      blok.position.y = TB_YUK / 2;
+      blok.position.set(o.sx((tx1 + tx2) / 2), ustY - yuk / 2, o.sz((ty1 + ty2) / 2));
+      blok.raycast = () => {};
       g.add(blok);
-      /* Delikler TEK bir örneklenmiş ağ: 12 delik = 12 çizim çağrısı
-       * olurdu, InstancedMesh ile bir tane. Pi'de çizim çağrısı sayısı
-       * üçgen sayısından daha çok yakıyor. */
-      // Gerçek tepside 4 satır × 2 sütun delik var (fotoğraf).
-      const sutun = 2, satir = 4, adet = sutun * satir;
-      const delik = new o.THREE.InstancedMesh(
-        new o.THREE.CylinderGeometry(0.0092, 0.0092, 0.02, 12),
-        o.malzeme("#0a0b0d", { metalness: 0.1, roughness: 1 }), adet);
-      const gecici = new o.THREE.Object3D();
-      let i = 0;
-      for (let r = 0; r < satir; r++) {
-        for (let c = 0; c < sutun; c++) {
-          gecici.position.set(
-            (c - (sutun - 1) / 2) * (TB_EN / sutun),
-            TB_YUK - 0.009,
-            (r - (satir - 1) / 2) * (TB_BOY / satir));
-          gecici.updateMatrix();
-          delik.setMatrixAt(i++, gecici.matrix);
+
+      /* Her göz kendi koordinatında ve kendi derinliğinde. Delikler
+       * örneklenmiş tek ağ DEĞİL: dolu ve boş gözler ayrı renkte,
+       * derinlikleri farklı ve gözler tek tek seçilebilmeli. Göz sayısı
+       * `AZAMI_GOZ` = 48 ile sınırlı, yani en kötü durumda 96 çizim
+       * çağrısı — tepsi tek katman ve bu sınırın altında kalıyor. */
+      gozler.forEach((goz) => {
+        const dipY = o.sy(Number(goz.z) || 0);
+        const derinlik = Math.max(0.004, ustY - dipY);
+        const delik = new o.THREE.Mesh(
+          new o.THREE.CylinderGeometry(0.0092, 0.0092, derinlik, 12),
+          o.malzeme("#08090b", { metalness: 0.1, roughness: 1 }));
+        delik.position.set(o.sx(goz.x), dipY + derinlik / 2 + 0.0005, o.sz(goz.y));
+        delik.userData.goz = goz;
+        g.add(delik);
+        // Dolu göz: deliğin DİBİNDE tohum. Boş gözde hiçbir şey yok,
+        // yani haritaya bakan kişi hangi gözün tükendiğini görüyor.
+        if (goz.dolu) {
+          const tohum = new o.THREE.Mesh(
+            new o.THREE.SphereGeometry(0.0068, 10, 8),
+            o.malzeme("#8d7a4e", { metalness: 0.05, roughness: 0.95 }));
+          tohum.position.set(o.sx(goz.x), dipY + 0.007, o.sz(goz.y));
+          tohum.userData.goz = goz;
+          g.add(tohum);
         }
-      }
-      delik.instanceMatrix.needsUpdate = true;
-      g.add(delik);
-      g.position.set(o.sx(tohumluk.x), o.sy(Number(tohumluk.z) || 0), o.sz(tohumluk.y));
-      g.traverse((n) => { n.userData.tohumluk = tohumluk; });
+      });
       o.grup.add(g);
     }
   },
@@ -234,25 +268,40 @@ Tarla.katman({
       c.font = "10px ui-sans-serif, system-ui";
       c.fillText(t.name || "", p.x + 10, p.y + 3);
     });
-    const th = uc.tohumluk;
-    if (th && th.x != null) {
-      const p = o.mm2b(th.x, th.y);
+    /* Tohumluk: tepsinin çerçevesi + her göz kendi yerinde. Dolu göz
+     * dolu daire, boş göz içi boş — üstten bakınca hangi gözde tohum
+     * kaldığı sayılabilsin. */
+    const gozler = (uc.tohumluk_gozleri || []).filter((g) => g && g.x != null);
+    if (gozler.length) {
+      const gx = gozler.map((g) => g.x), gy = gozler.map((g) => g.y);
+      const k1 = o.mm2b(Math.min(...gx) - 22, Math.min(...gy) - 22);
+      const k2 = o.mm2b(Math.max(...gx) + 22, Math.max(...gy) + 22);
       c.fillStyle = "#1b1d21";
       c.strokeStyle = "#c3c2b7";
       c.lineWidth = 1.5;
-      c.beginPath(); c.rect(p.x - 9, p.y - 13, 18, 26); c.fill(); c.stroke();
-      c.fillStyle = "#c3c2b7";
-      c.font = "10px ui-sans-serif, system-ui";
-      c.fillText("tohumluk", p.x + 13, p.y + 3);
+      c.beginPath();
+      c.rect(Math.min(k1.x, k2.x), Math.min(k1.y, k2.y),
+             Math.abs(k2.x - k1.x), Math.abs(k2.y - k1.y));
+      c.fill(); c.stroke();
+      c.font = "9px ui-sans-serif, system-ui";
+      gozler.forEach((g) => {
+        const p = o.mm2b(g.x, g.y);
+        c.beginPath();
+        c.arc(p.x, p.y, 4, 0, Math.PI * 2);
+        if (g.dolu) { c.fillStyle = "#8d7a4e"; c.fill(); }
+        else { c.strokeStyle = "#6b6a63"; c.lineWidth = 1; c.stroke(); }
+        c.fillStyle = "#c3c2b7";
+        c.fillText(g.ad || "", p.x + 6, p.y + 3);
+      });
     }
   },
 
   vur(o, mm) {
     const uc = o.veri.durum.uc || {};
-    const th = uc.tohumluk;
-    if (th && th.x != null && Math.hypot(th.x - mm.x, th.y - mm.y) < 35) {
-      return { tohumluk: true, name: "Tohumluk", x: th.x, y: th.y, z: th.z };
-    }
+    const goz = (uc.tohumluk_gozleri || []).find((g) =>
+      g && g.x != null && Math.hypot(g.x - mm.x, g.y - mm.y) < 18);
+    if (goz) return { goz: true, name: goz.ad, x: goz.x, y: goz.y, z: goz.z,
+                      tohum: goz.tohum, dolu: goz.dolu };
     return (uc.tools_konum || []).find((t) =>
       Math.hypot(t.x - mm.x, t.y - mm.y) < 25) || null;
   },
@@ -260,14 +309,19 @@ Tarla.katman({
   kart(o, t) {
     const yuzey = o.toprakZ;
     const aciklik = (Number(t.z) || 0) - yuzey;
-    const not = `${t.tohumluk ? "tohumluk" : "uç yuvası"} · `
+    const not = `${t.goz ? "tohumluk gözü" : "uç yuvası"} · `
       + `X${o.say(t.x, 1)} Y${o.say(t.y, 1)} Z${o.say(t.z, 1)}`;
     return `<div class="tarla-kart-bas"><div><b>${o.kacisli(t.name)}</b>
       <div class="alt-not">${not}</div></div></div>
       <p class="alt-not">Toprak yüzeyinden açıklık <b>${o.say(aciklik, 0)} mm</b>
       (yüzey Z${o.say(yuzey, 0)}).</p>
-      ${t.tohumluk ? `<p class="alt-not">Tohumluk konumu Ayarlar sekmesindeki uç
-      değiştirme bölümünden girilir.</p>`
+      ${t.goz ? `<p class="alt-not">${t.dolu
+        ? `<b>Dolu</b>${t.tohum ? " — " + o.kacisli(t.tohum) : ""}. Ekim dizisi
+           bu gözden tohum alabilir.`
+        : "<b>Boş</b> — ekim dizisi bu gözü atlar."}</p>
+      <p class="alt-not">Gözün Z'si gözün DİBİ: vakum ucu buraya iner.
+      Koordinat ve dolu/boş durumu Ayarlar → Uç değiştirme → Tohumluk
+      gözleri bölümünden düzenlenir.</p>`
       : `<p class="alt-not">Takmak ve bırakmak Ayarlar sekmesindeki uç değiştirme
       bölümünden yapılır — dizi güvenlik denetimleriyle birlikte orada.</p>`}`;
   },

@@ -157,6 +157,8 @@
     <div id="toplu-cubuk" class="toplu-cubuk gizli">
       <span id="toplu-sayi" class="toplu-sayi"></span>
       <button class="dugme birincil" id="d-toplu-sula">Sula</button>
+      <button class="dugme" id="d-toplu-ek"
+              title="Tohumluk gözünden tohum alıp seçili noktalara eker">Ek</button>
       <button class="dugme" id="d-toplu-gez">Sırayla gez</button>
       <!-- Nokta değişkeni tanımlı bir dizi seçime uygulanıyor: dizi seçili
            her nokta için bir kez, o noktayla çalışıyor. -->
@@ -916,6 +918,29 @@
           </details>
 
           <details class="uc-ayar">
+            <summary>Tohumluk gözleri</summary>
+            <p class="alt-not">Tohumluk — uç profilinin ucundaki delikli blok.
+              Her <b>gözün</b> kendi X/Y/Z'si var. <b>Z, gözün DİBİ</b> —
+              vakum ucunun ineceği yer, tepsinin yüzeyi değil. Bu makinede
+              büyük Z yukarısı olduğu için Z'si daha büyük olan göz daha
+              SIĞ demek. Sahada ölçülen değerlerde gözlerin derinliği aynı
+              değil, tek bir "tohumluk konumu" bunu
+              taşıyamıyor. <b>Tohum</b> gözde ne durduğunu, <b>dolu</b>
+              içinde tohum kalıp kalmadığını söylüyor. Dolu/boş durumu
+              kalıcı: ekim dizisi bir gözden tohum alınca o gözü aynı anda
+              boş yazıyor, makine kapansa da unutulmuyor. Tohumluğu elle
+              doldurduğunuzda kutuyu geri işaretleyin.<br>
+              3B sahnedeki uç profili uçların ve gözlerin konumundan
+              türetiliyor; elle girilen bir profil ölçüsü yok. Liste boşsa
+              tohumluk tanımsız sayılır ve çizilmez.</p>
+            <div id="goz-tablo"></div>
+            <div class="satir-8">
+              <button class="dugme" id="d-goz-satir-ekle">Göz ekle</button>
+              <button class="dugme birincil" id="d-goz-tablo-kaydet">Gözleri kaydet</button>
+            </div>
+          </details>
+
+          <details class="uc-ayar">
             <summary>Uç ayarları ve değiştirme alanı</summary>
 
             <div class="alan-izgara">
@@ -949,16 +974,6 @@
               <div class="alan"><label for="ua-sb-dx">başlık dx</label><input type="number" id="ua-sb-dx" step="0.1"></div>
               <div class="alan"><label for="ua-sb-dy">başlık dy</label><input type="number" id="ua-sb-dy" step="0.1"></div>
               <div class="alan"><label for="ua-sb-zmin">sulama Z tabanı</label><input type="number" id="ua-sb-zmin" step="1"></div>
-            </div>
-
-            <p class="alt-not">Tohumluk — uç profilinin ucundaki delikli blok.
-              3B sahnedeki uç profili uçların ve tohumluğun konumundan
-              türetiliyor, elle girilen bir profil ölçüsü yok. X boş
-              bırakılırsa tohumluk tanımsız sayılır ve çizilmez.</p>
-            <div class="alan-izgara">
-              <div class="alan"><label for="ua-th-x">tohumluk X</label><input type="number" id="ua-th-x" step="0.1" placeholder="tanımsız"></div>
-              <div class="alan"><label for="ua-th-y">tohumluk Y</label><input type="number" id="ua-th-y" step="0.1"></div>
-              <div class="alan"><label for="ua-th-z">tohumluk Z</label><input type="number" id="ua-th-z" step="0.1"></div>
             </div>
 
             <label class="onay"><input type="checkbox" id="ua-alan-acik"> Uç değiştirme alanını aç</label>

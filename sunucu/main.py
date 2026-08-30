@@ -32,6 +32,7 @@ from fastapi.staticfiles import StaticFiles
 import depo
 import dikim
 import egriler
+import ekim
 import geri_al
 import kalibrasyon
 import kareler
@@ -81,6 +82,7 @@ IZINLI_KOMUTLAR = {
     "uc_onizle",     # {"islem":"al"|"birak","ad":"tool1"} — yolu koordinatla göster
     "uc_yollari",    # {}                            — HER ucun al/bırak yolu
     "uc_durum_temizle",  # {}                        — takılı uç kaydını sıfırla
+    "goz_isaretle",  # {"ad":"s1","dolu":false,"tohum":"marul"} — tohumluk gözü
     "nokta_denetle", # {"noktalar":[{x,y,z}…]}      — yasak bölge + sınır ÖN kontrolü
     "dizi_baslat",   # {"ad":…,"adimlar":[…],"tekrar":1} — çözülmüş adımlarla
     "dizi_durdur",   # {}
@@ -616,6 +618,22 @@ async def api_toplu(govde: dict[str, Any], jeton: str = Query(default="")):
             "tekrar": 1, "hiz": govde.get("hiz"),
         })
 
+    if islem == "ek":
+        cozum = await asyncio.to_thread(_ekim_coz, adlar)
+        if cozum["ret"]:
+            # Sulamadaki kararla aynı: bir hedef bile kabul edilmiyorsa
+            # dizi HİÇ başlamıyor. Kısmi ekim, hangi gözden hangi tohumun
+            # nereye gittiğini bilinmez yapardı ve toprağa giren tohum
+            # geri alınamaz.
+            raise HTTPException(
+                status_code=422,
+                detail="Ekim başlatılmadı — " + " · ".join(cozum["ret"]))
+        await _adim_on_kontrol(cozum["adimlar"], "Ekim")
+        return await merkez.komut_gonder("dizi_baslat", {
+            "ad": f"Ekim: {cozum['tohum_sayisi']} tohum",
+            "adimlar": cozum["adimlar"], "tekrar": 1, "hiz": govde.get("hiz"),
+        })
+
     if islem not in ("sula", "gez"):
         raise HTTPException(status_code=400, detail=f"Bilinmeyen toplu işlem: {islem!r}")
 
@@ -740,15 +758,20 @@ def _sulama_coz(adlar: list[str], saniye: float) -> dict[str, Any]:
 
 
 async def _sulama_on_kontrol(cozum: dict[str, Any]) -> None:
+    """Sulama adımları için ön kontrol — bkz. `_adim_on_kontrol`."""
+    await _adim_on_kontrol(cozum["adimlar"], "Sulama")
+
+
+async def _adim_on_kontrol(adimlar: list[dict[str, Any]], etiket: str) -> None:
     """Ajana "bu koordinatlar geçer mi" diye sorar; geçmiyorsa 422.
 
-    Ajan bağlı değilse sessizce geçiyoruz: sulama zaten ajansız
+    Ajan bağlı değilse sessizce geçiyoruz: dizi zaten ajansız
     başlamıyor ve `komut_gonder` birazdan kendi hatasını verecek.
     Burada "bilinmiyor"u "engelli" saymak, ajan kopukken önizlemeyi de
     kilitlerdi.
     """
     hedefler = [{"x": a["x"], "y": a["y"], "z": a["z"]}
-                for a in cozum["adimlar"] if a.get("tip") == "nokta"
+                for a in adimlar if a.get("tip") == "nokta"
                 and a.get("x") is not None]
     if not hedefler:
         return
@@ -766,7 +789,7 @@ async def _sulama_on_kontrol(cozum: dict[str, Any]) -> None:
         ayrinti.append(f"X{h.get('x')} Y{h.get('y')} Z{h.get('z')}: {s['engel']}")
     raise HTTPException(
         status_code=422,
-        detail=(f"Sulama başlatılmadı — {len(engelli)} nokta ajanın "
+        detail=(f"{etiket} başlatılmadı — {len(engelli)} nokta ajanın "
                 f"denetiminden geçmedi: " + " · ".join(ayrinti)
                 + ("" if len(engelli) <= 6 else f" · … ve {len(engelli) - 6} tane daha")))
 
@@ -794,6 +817,86 @@ async def api_sulama_onizle(govde: dict[str, Any], jeton: str = Query(default=""
             "adim": len(cozum["adimlar"]),
             "toplam_nokta": cozum["toplam_nokta"],
             "toplam_saniye": cozum["toplam_saniye"],
+            "azami_adim": programlar.AZAMI_ADIM}
+
+
+# --------------------------------------------------------------------------- #
+# Ekim dizisi
+#
+# Sulamayla aynı kalıp: koordinatlar BURADA donuyor ve diziye mutlak
+# olarak yazılıyor. Gözlerin nerede olduğu ve hangisinde tohum kaldığı
+# AJANDA (`uclar.json`), çünkü orası hem kalıcı hem de dizinin gözü
+# boşalttığı yer. Sunucu onu durum paketinden okuyor.
+# --------------------------------------------------------------------------- #
+
+
+def _ekim_coz(adlar: list[str]) -> dict[str, Any]:
+    """Seçili noktalar için ekim adımlarını üretir."""
+    kayitli = {n.get("ad"): n for n in noktalar.hepsi()}
+    tur_indeks = {t.get("slug"): t for t in turler.hepsi()}
+    alanlar = dikim.listele()
+    durum = merkez.son_durum or {}
+    uc = durum.get("uc") or {}
+    guvenli_z = float(durum.get("guvenli_z") or 340.0)
+    toprak_z = float(durum.get("toprak_z") or 0.0)
+
+    hedefler: list[dict[str, Any]] = []
+    eksik: list[str] = []
+    for ad in adlar:
+        bitki = kayitli.get(ad)
+        if bitki is None:
+            eksik.append(ad)
+            continue
+        slug = bitki.get("tur")
+        tur = tur_indeks.get(slug) or {}
+        # Ekim derinliği tür zincirinden: bitkinin `ozel` alanı > tür
+        # ezmesi > katalog. Sulamadaki `ayar_coz` ile aynı öncelik.
+        derinlik = ((bitki.get("ozel") or {}).get("sow_depth_mm")
+                    if (bitki.get("ozel") or {}).get("sow_depth_mm") not in (None, "")
+                    else tur.get("sow_depth_mm"))
+        if derinlik in (None, ""):
+            derinlik = turler.VARSAYILAN.get("sow_depth_mm", 0.0)
+        hedefler.append({"ad": ad, "x": bitki.get("x"), "y": bitki.get("y"),
+                         "tur": slug or "", "sow_depth_mm": derinlik})
+
+    cozum = ekim.coz(
+        hedefler, uc.get("tohumluk_gozleri") or [],
+        guvenli_z=guvenli_z, genel_toprak_z=toprak_z, dikim_alanlari=alanlar,
+        lock_reg=int((uc.get("ayar") or {}).get("lock_reg") or 0),
+        uc_takili=uc.get("uc"))
+    if eksik:
+        cozum["ret"].insert(0, "Şu noktalar bulunamadı: " + ", ".join(sorted(set(eksik))))
+    if len(cozum["adimlar"]) > programlar.AZAMI_ADIM:
+        sigar = programlar.AZAMI_ADIM // ekim.ADIM_BASINA_TOHUM
+        cozum["ret"].append(
+            f"{cozum['tohum_sayisi']} tohum x {ekim.ADIM_BASINA_TOHUM} adım = "
+            f"{len(cozum['adimlar'])} adım, sınır {programlar.AZAMI_ADIM}. "
+            f"Tek dizide en fazla {sigar} tohum ekilebilir.")
+    return cozum
+
+
+@app.post("/api/ekim/onizle")
+async def api_ekim_onizle(govde: dict[str, Any], jeton: str = Query(default="")):
+    """Ekimi BAŞLATMADAN hangi gözden nereye gidileceğini gösterir.
+
+    Toprağa giren tohum geri alınamaz; hangi gözün boşalacağını önceden
+    görmek, sulama önizlemesinden daha da gerekli.
+    """
+    _parola_dogrula(jeton)
+    adlar = [str(a) for a in (govde.get("noktalar") or []) if str(a).strip()]
+    if not adlar:
+        raise HTTPException(status_code=400, detail="Seçim boş")
+    if len(adlar) > AZAMI_SECIM:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Tek seferde en fazla {AZAMI_SECIM} nokta işlenebilir "
+                   f"(seçili: {len(adlar)})")
+    cozum = await asyncio.to_thread(_ekim_coz, adlar)
+    return {"ozet": cozum["ozet"], "ret": cozum["ret"], "uyari": cozum["uyari"],
+            "adim": len(cozum["adimlar"]),
+            "tohum_sayisi": cozum["tohum_sayisi"],
+            "bos_kalacak_gozler": cozum["bos_kalacak_gozler"],
+            "kalan_dolu_goz": cozum["kalan_dolu_goz"],
             "azami_adim": programlar.AZAMI_ADIM}
 
 
