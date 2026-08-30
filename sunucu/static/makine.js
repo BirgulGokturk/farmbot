@@ -576,20 +576,22 @@
                       { color: "#15181a", metalness: 0.04, roughness: 0.8 }));
     });
     // Alt bağlantı plakası — fotoğrafta gövdeden öne taşıyor ve vidalı.
-    ucKafa.add(kutu(THREE, [P * 2.6, P * 0.34, P * 2.4], [P * 1.25, P * 0.12, 0], baski));
+    /* Alt plaka İKİ UCU birden taşıyor: sağda vakum/ekim ucu, solda
+     * sulama başlığı. Plaka o yüzden geniş. */
+    ucKafa.add(kutu(THREE, [P * 4.2, P * 0.34, P * 2.4], [P * 1.05, P * 0.12, 0], baski));
     // Plakadaki vida başları: dört köşe, küçük ve parlak.
     [[-1, -1], [1, -1], [-1, 1], [1, 1]].forEach(([ix, iz]) => {
       const v = new THREE.Mesh(
         new THREE.CylinderGeometry(P * 0.12, P * 0.12, P * 0.1, 8),
         mal(THREE, { color: "#9aa1a8", metalness: 0.85, roughness: 0.3 }));
-      v.position.set(P * 1.25 + ix * P * 0.95, P * 0.3, iz * P * 0.85);
+      v.position.set(P * 1.05 + ix * P * 1.75, P * 0.3, iz * P * 0.85);
       ucKafa.add(v);
     });
     // Uç: ince, koyu, hafif konik. Turkuaz gitti — fotoğrafta uç siyah.
     const uc = new THREE.Mesh(
       new THREE.CylinderGeometry(P * 0.16, P * 0.09, P * 1.5, 12),
       mal(THREE, { color: "#2a2e31", metalness: 0.35, roughness: 0.5 }));
-    uc.position.set(P * 1.25, -P * 0.7, 0);
+    uc.position.set(P * 2.15, -P * 0.7, 0);
     ucKafa.add(uc);
 
     /* --- SULAMA BAŞLIĞI ----------------------------------------------------
@@ -601,19 +603,20 @@
      * sulama hesabının kullandığı SAYININ AYNISI. Ayrı yazsaydık ikisi
      * ayrışır ve sahnede su bir yere, gerçekte başka yere düşerdi.
      */
-    /* Konum SABİT ve uç kafasının SOLUNDA.
+    /* Başlık ALT PLAKANIN ALTINDA, vakum ucunun solunda.
      *
-     * Önce `sulama_basligi.dx/dy` ayarından türetiliyordu. İki sorun çıktı:
-     * ayar +50/+50 olduğu için başlık sağa düşüyordu, ayrıca kullanıcı bu
-     * ayarın sulama HESABINA ait olduğunu, görselin ondan bağımsız durması
-     * gerektiğini söyledi — başlık makineye kalıcı olarak takılı ve
-     * yeri belli.
+     * İki kez yanlış yere kondu. Önce `sulama_basligi.dx/dy` ayarından
+     * türetiliyordu ve ayar +50/+50 olduğu için sağa düşüyordu. Sonra
+     * sabit olarak -P*1.5'e alındı; orası Z sütununun dibi, yani başlık
+     * OYNAYAN kafaya değil İSKELETE takılmış gibi duruyordu.
      *
-     * Kafadan bir kafa boyu kadar sola: iki uç yan yana, birbirine
-     * girmeden okunuyor. */
-    const basY = -P * 0.45;
+     * Doğru yer burası: kafanın alt plakasından aşağı sarkıyor, tıpkı
+     * vakum ucu gibi. İkisi yan yana, ikisi de aşağı bakıyor, ikisi de
+     * Z ile birlikte iniyor. Ayar sulama HESABINA ait; görsel ondan
+     * bağımsız, çünkü başlık makineye kalıcı takılı. */
+    const basY = -P * 0.55;
     const baslik = new THREE.Group();
-    baslik.position.set(-P * 1.5, basY, 0);
+    baslik.position.set(-P * 0.15, basY, 0);
     /* Başlık gövdesi — KISA ve GENİŞ silindir, altı delikli.
      *
      * Önce ince bir silindirdi ve sahnede uç kafasının gölgesinde
@@ -656,11 +659,9 @@
       mal(THREE, { color: "#d9dde0", metalness: 0.05, roughness: 0.55 }));
     hortum.position.y = P * 2.4;
     baslik.add(hortum);
-    // Başlığı Z eksenine bağlayan kol — havada durmasın, bağlı görünsün.
-    const kol = kutu(THREE, [P * 1.6, P * 0.34, P * 0.5],
-                     [-P * 0.75, basY + P * 0.5, 0],
-                     { color: "#1a1d20", metalness: 0.06, roughness: 0.7 });
-    ucKafa.add(kol);
+    /* KOL YOK. Başlığı Z sütununa uzatan bir kol vardı; başlık iskelete
+     * takılı görünmesinin sebebi oydu. Başlık artık kafanın kendi
+     * plakasına asılı, ayrı bir bağlantı parçası gerekmiyor. */
     ucKafa.add(baslik);
 
     /* SU HUZMESİ. Pompa açıkken görünüyor, kapalıyken değil — 90-robot.js

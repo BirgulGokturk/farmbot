@@ -1242,6 +1242,24 @@
     return { x: mmx(k[0].point.x), y: mmy(k[0].point.z) };
   }
 
+  /** İmleci TOPRAK DEĞİL, verilen yükseklikteki düzleme düşürür.
+   *
+   * Toprak düzlemine düşürmek her şey için doğru değil: tohumluk tepsisi
+   * sigmanın üstünde, toprağın ~45 mm yukarısında duruyor. Işını toprakta
+   * kesince, eğik kameradan bakarken hesaplanan X/Y tepsinin gerçek
+   * yerinden onlarca mm sapıyor ve gözün üstündeyken "göz yok" çıkıyordu.
+   *
+   * Işın denklemi: başlangıç + t·yön, y = hedef yükseklik olacak şekilde t.
+   */
+  function yukseklikteMM(olay, sahneY) {
+    const r = isin(olay, tuval).ray;
+    if (!r || Math.abs(r.direction.y) < 1e-6) return null;
+    const t = (sahneY - r.origin.y) / r.direction.y;
+    if (t < 0) return null;                       // düzlem imlecin arkasında
+    const p = r.origin.clone().addScaledVector(r.direction, t);
+    return { x: mmx(p.x), y: mmy(p.z) };
+  }
+
   /** Katmanlara "bu mm'de senin bir öğen var mı" diye sorar; ilk bulan alır. */
   function vurTara(mm) {
     for (const k of T.katmanlar) {
@@ -1561,7 +1579,18 @@
            * öğrenmek için kartı açmak ya da Ayarlar'a gitmek gerekiyordu.
            * İmleci getirmek yetiyor artık. Emoji, adın önünde: dört göz
            * yan yanayken hangisinin ne olduğu okumadan da seçilebiliyor. */
-          const gozVurus = (mm && !T.ekleme) ? vurTara(mm) : null;
+          /* Göz araması AYRI bir düzlemde: tepsi sigmanın üstünde.
+           * Aynı imleç iki farklı yükseklikte iki farklı mm veriyor;
+           * toprak için `mm`, tepsi için `tepsiMm`. */
+          const uc0 = (VERI.durum && VERI.durum.uc) || {};
+          const gozVar = ucBoyutlu && !T.ekleme
+                         && (uc0.tohumluk_gozleri || []).length;
+          // Sahne yüksekliği: sy(z) = (z - toprakZ)·MM olduğu için tepsinin
+          // toprak üstündeki payı doğrudan profil ölçülerinden geliyor.
+          const MK = window.MAKINE || { yan_ray: 35, profil: 20 };
+          const tepsiY = (MK.yan_ray + MK.profil / 2) * MM;
+          const tepsiMm = gozVar ? yukseklikteMM(o, tepsiY) : null;
+          const gozVurus = tepsiMm ? vurTara(tepsiMm) : null;
           const gz = gozVurus && gozVurus.kayit && gozVurus.kayit.goz
                        ? gozVurus.kayit : null;
           if (gz) {
