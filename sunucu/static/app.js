@@ -2025,6 +2025,26 @@ function roleDurumSenkron(o) {
   }
 }
 
+/** Eksen hızı kutuları — kaynak ajan, panel kendi kopyasını tutmuyor.
+ *
+ * Kullanıcı bir kutuya yazarken üstüne yazmıyoruz; yarım kalan bir sayı
+ * yarım saniyede bir silinirse alan doldurulamaz hâle geliyor. */
+function eksenHizYaz(d) {
+  const ozet = $("#eksen-hiz-ozet");
+  const genel = d.hiz != null ? Math.round(Number(d.hiz)) : null;
+  ["x", "y", "z"].forEach((e) => {
+    const el = $("#hiz-" + e);
+    if (!el || document.activeElement === el) return;
+    const v = d["hiz_" + e];
+    el.value = v == null ? "" : Math.round(Number(v));
+  });
+  if (ozet) {
+    const yaz = (e) => (d["hiz_" + e] == null ? "genel" : Math.round(Number(d["hiz_" + e])));
+    ozet.textContent = d.hiz == null ? "—"
+      : `X ${yaz("x")} · Y ${yaz("y")} · Z ${yaz("z")}  (genel ${genel})`;
+  }
+}
+
 /** Bir durum ışığı — renk ve (üstüne gelince çıkan) ad.
  *
  * Metin artık çubukta durmuyor: dört rozet dört kelimeyle üst çubuğun
@@ -2045,6 +2065,7 @@ let _sonHata = "";
 function durumGuncelle(d) {
   if (!d) return;
   if (d.toprak_kalib) S.toprakKalib = d.toprak_kalib;
+  eksenHizYaz(d);
   rozetYaz("#rozet-ajan", d.bagli ? "canli" : "kopuk", d.bagli ? "Raspberry Pi bağlı" : "Raspberry Pi çevrimdışı");
 
   const acilAcik = d.acil && d.acil.acik;
@@ -2459,6 +2480,18 @@ function olaylariBagla() {
     bas.addEventListener("pointercancel", birak);
     // Pencere küçülünce kutu dışarıda kalabilir.
     addEventListener("resize", () => { sinirla(); uygula(); });
+  }
+
+  const hizKaydet = $("#d-eksen-hiz-kaydet");
+  if (hizKaydet) {
+    hizKaydet.onclick = () => {
+      // Boş alan "bu eksende genel hız geçerli" demek — sıfır değil null.
+      const oku = (e) => {
+        const v = $("#hiz-" + e).value.trim();
+        return v === "" ? null : Number(v);
+      };
+      komutGonder("hiz_eksen", { x: oku("x"), y: oku("y"), z: oku("z") });
+    };
   }
 
   const yuzenBuyut = $("#d-kamera-yuzen-buyut");

@@ -71,7 +71,7 @@ JOG_TICK = 0.1
 VARSAYILAN_KALIB = [
     {"cpm": 17.1782, "dir": 1, "home": 0.0, "min": 0.0, "max": 535.0},    # X
     {"cpm": 4.2686, "dir": 1, "home": 0.0, "min": 0.0, "max": 630.0},     # Y
-    {"cpm": 37.074, "dir": -1, "home": 438.0, "min": 0.0, "max": 550.0},  # Z
+    {"cpm": 37.074, "dir": -1, "home": 414.23, "min": 0.0, "max": 550.0},  # Z
 ]
 
 
@@ -329,6 +329,15 @@ class Gantry:
         # PLC'de "referans tamam" biti yok; her eksene bu kadar süre tanınıyor.
         self.home_bekleme = float(ayar.get("home_bekleme_sn", 8.0))
         self.hiz = float(ayar.get("hiz", 20.0))
+        # EKSEN BAŞINA HIZ. Z dikey ve yük altında; X/Y ile aynı hızda
+        # sürülmesi için bir sebep yok. Girilmemiş eksen genel `hiz`e
+        # düşüyor, yani ayar dosyasına dokunmayan kurulumda davranış
+        # değişmiyor. Sıra [X, Y, Z].
+        self.hiz_eksen: list[float | None] = [
+            self._hiz_oku(ayar, "hiz_x"),
+            self._hiz_oku(ayar, "hiz_y"),
+            self._hiz_oku(ayar, "hiz_z"),
+        ]
         self.ivme = float(ayar.get("ivme", 100.0))
         self.yavaslama = float(ayar.get("yavaslama", 100.0))
         self.gunluk_cb = gunluk_cb or (lambda metin, seviye="bilgi": None)
@@ -455,6 +464,11 @@ class Gantry:
                     for e, i in EKSEN_INDEKS.items()
                 },
                 "hiz": self.hiz,
+                # Panel eksen kutularini bunlarla dolduruyor; bos olan
+                # "genel hiz gecerli" demek.
+                "hiz_x": self.hiz_eksen[0],
+                "hiz_y": self.hiz_eksen[1],
+                "hiz_z": self.hiz_eksen[2],
                 "bolgeler": (self.bolgeler.liste if self.bolgeler else []),
                 "esnetme_acik": bool(self.bolgeler and self.bolgeler.esnetme_acik),
                 "islem": self._islem_ad if self.hareket_ediyor else "",
@@ -503,7 +517,10 @@ class Gantry:
             mesafe = abs(self.eksen_konum_mm(i) - hedef_mm)
         except Exception:
             mesafe = 550.0
-        hiz = max(0.5, float(hiz or self.hiz))
+        # Eksenin KENDİ hızı: Z yavaş ayarlanmışsa genel hızla hesaplanan
+        # zaman aşımı, hareket bitmeden dolar ve sağlam bir eksene
+        # "ulaşamadı" dedirtir.
+        hiz = self.eksen_hizi(i, hiz)
         return min(300.0, max(20.0, mesafe / hiz * 3.0 + 10.0))
 
     def _eksen_bekle(self, i: int, hedef_mm: float, tolerans: float = 0.6,
@@ -583,8 +600,11 @@ class Gantry:
                 except Exception:
                     konum = None
                 if konum is not None:
-                    pay = max(2.0, self.hiz * 0.5)
                     for (i, tur) in kalanlar:
+                        # Pay EKSEN BAŞINA: hızlı bir eksende dar pay, sınıra
+                        # varmadan bırakmayı kaçırır. Hesap döngünün içine
+                        # alındı ki her eksen kendi hızına göre paylansın.
+                        pay = max(2.0, self.eksen_hizi(i) * 0.5)
                         yon = self._jog_mm_yonu(i, tur)
                         alt = self.kalib[i].get("min")
                         ust = self.kalib[i].get("max")
@@ -665,7 +685,7 @@ class Gantry:
                         f"Makine bölge ihlali hâlinde ({bas_ihlal}). "
                         "Bu konumdan yalnızca Z+ (yukarı) hareket edebilirsiniz.")
                 ileri = list(simdiki)
-                ileri[i] += yon * self.hiz * JOG_TTL
+                ileri[i] += yon * self.eksen_hizi(i) * JOG_TTL
                 ileri[i] = max(float(self.kalib[i].get("min", -1e9)),
                                min(float(self.kalib[i].get("max", 1e9)), ileri[i]))
                 try:
@@ -674,7 +694,7 @@ class Gantry:
                     self.jog(eksen, yon, False)
                     raise PLCHatasi(str(hata))
             self._iptal.clear()
-            self._hiz_ivme_yaz(i, self.hiz)
+            self._hiz_ivme_yaz(i, self.eksen_hizi(i))
             # Kirayı ÖNCE al: bit açıldıktan sonra alsaydık, arada bekçi turu
             # geçerse açık bir biti hiç görmeyebilirdi.
             with self._jog_kilit:
@@ -795,7 +815,10 @@ class Gantry:
         # dururdu — yarım kalmış bir hareket, hiç başlamamış olandan kötü.
         self._bolge_plani_denetle(simdiki, adimlar)
 
-        hiz_mm_s = float(hiz or self.hiz)
+        # None geçiyor: aşağıdaki `_git_isci` her eksen için `eksen_hizi`
+        # çağırıyor ve eksenin kendi ayarı geçerli oluyor. Çağrıda AÇIK bir
+        # hız verildiyse o aynen taşınıyor ve eksen ayarını eziyor.
+        hiz_mm_s = float(hiz) if hiz else None
         self._iptal.clear()
         self._islem_ad = "hareket"
         self._hareket_ip = threading.Thread(
@@ -832,8 +855,9 @@ class Gantry:
                 raise PLCHatasi("Hareket durduruldu")
             if abs(self.eksen_konum_mm(i) - deger) < 0.2:
                 continue
-            self._eksen_git(i, deger, float(hiz or self.hiz))
-            if not self._eksen_bekle(i, deger, hiz=float(hiz or self.hiz)):
+            eh = self.eksen_hizi(i, hiz)
+            self._eksen_git(i, deger, eh)
+            if not self._eksen_bekle(i, deger, hiz=eh):
                 if self.kesildi_mi():
                     raise PLCHatasi("Hareket durduruldu")
                 raise PLCHatasi(f"{etiket} ekseni {deger:.1f} mm'ye ulaşamadı (zaman aşımı)")
@@ -912,8 +936,9 @@ class Gantry:
                 if abs(self.eksen_konum_mm(i) - deger) < 0.2:
                     continue
                 self.gunluk_cb(f"{etiket} → {deger:.1f} mm", "bilgi")
-                self._eksen_git(i, deger, hiz)
-                if not self._eksen_bekle(i, deger, hiz=hiz):
+                eh = self.eksen_hizi(i, hiz)
+                self._eksen_git(i, deger, eh)
+                if not self._eksen_bekle(i, deger, hiz=eh):
                     neden = "iptal edildi" if (self._iptal.is_set() or self.acil_mandal["acik"]) \
                         else f"{deger:.1f} mm'ye ulaşamadı (zaman aşımı)"
                     self.gunluk_cb(f"{etiket} {neden}", "hata")
@@ -991,8 +1016,9 @@ class Gantry:
 
         if abs(simdiki[i] - mm) < 0.2:
             return
-        self._eksen_git(i, mm, float(hiz or self.hiz))
-        if not self._eksen_bekle(i, mm, tolerans=tolerans, hiz=float(hiz or self.hiz)):
+        eh = self.eksen_hizi(i, hiz)
+        self._eksen_git(i, mm, eh)
+        if not self._eksen_bekle(i, mm, tolerans=tolerans, hiz=eh):
             if self.kesildi_mi():
                 raise PLCHatasi("Dizi durduruldu")
             raise PLCHatasi(
@@ -1107,6 +1133,29 @@ class Gantry:
         self._iptal.clear()
         self.gunluk_cb("ACİL DURDURMA temizlendi", "bilgi")
         return "Acil durdurma temizlendi — sürücüleri açabilirsiniz"
+
+    @staticmethod
+    def _hiz_oku(ayar: dict[str, Any], ad: str) -> float | None:
+        """Ayardan bir eksen hızı; yoksa None (genel hız geçerli)."""
+        deger = ayar.get(ad)
+        if deger in (None, ""):
+            return None
+        try:
+            return max(1.0, min(200.0, float(deger)))
+        except (TypeError, ValueError):
+            return None
+
+    def eksen_hizi(self, i: int, hiz: float | None = None) -> float:
+        """Bu eksen hangi hızla sürülecek.
+
+        Öncelik: çağrıda AÇIKÇA verilen hız > eksenin kendi ayarı > genel
+        hız. Açık değerin kazanması önemli: uç değiştirme dizisi kendi
+        yaklaşma hızını veriyor ve eksen ayarı onu ezmemeli.
+        """
+        if hiz:
+            return max(0.5, float(hiz))
+        ozel = self.hiz_eksen[i] if 0 <= i < len(self.hiz_eksen) else None
+        return max(0.5, float(ozel if ozel is not None else self.hiz))
 
     def hiz_ayarla(self, mm_s: float) -> str:
         mm_s = max(1.0, min(200.0, float(mm_s)))

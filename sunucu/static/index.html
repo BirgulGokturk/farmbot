@@ -1043,6 +1043,48 @@
         </div>
       </section>
 
+      <!-- EKSEN HIZLARI. Genel hız kaydıracı Sür sayfasında ve o tek bir
+           sayı; burada eksen başına ayarlanıyor. Z dikey ve yük altında,
+           X/Y ile aynı hızda sürülmesi için sebep yok. -->
+      <section class="bolum kapali" id="bolum-eksen-hiz">
+        <div class="bolum-ust">
+          <button class="bolum-bas" aria-expanded="false">
+            <svg class="ikon ok"><use href="#i-ok"/></svg>
+            <span class="bolum-ad">Eksen hızları</span>
+            <span class="bolum-not" id="eksen-hiz-ozet">—</span>
+          </button>
+          <button class="yardim" type="button" aria-expanded="false"
+                  aria-controls="yardim-eksen-hiz" aria-label="Açıklama">?</button>
+        </div>
+        <div class="bolum-govde">
+          <p class="yardim-metin gizli" id="yardim-eksen-hiz">
+            Her eksenin kendi hızı. <b>Boş bırakılan eksen genel hızı
+            kullanır</b> — Sür sayfasındaki kaydıraç. Bir dizi ya da uç
+            değiştirme kendi hızını açıkça veriyorsa o kazanır; buradaki
+            değer yalnızca hız belirtilmeyen hareketler için geçerli.<br><br>
+            Değişiklik <b>o an</b> geçerli olur, ajan yeniden başlayınca
+            sıfırlanır. Kalıcı olması için Pi'de <code>ajan/ayarlar.json</code>
+            içindeki <code>plc</code> bölümüne <code>hiz_x</code>,
+            <code>hiz_y</code>, <code>hiz_z</code> yazın.
+          </p>
+          <div class="satir-8">
+            <div class="alan">
+              <label for="hiz-x">X <span class="ikincil">mm/s</span></label>
+              <input type="number" id="hiz-x" min="1" max="200" step="1" placeholder="genel">
+            </div>
+            <div class="alan">
+              <label for="hiz-y">Y <span class="ikincil">mm/s</span></label>
+              <input type="number" id="hiz-y" min="1" max="200" step="1" placeholder="genel">
+            </div>
+            <div class="alan">
+              <label for="hiz-z">Z <span class="ikincil">mm/s</span></label>
+              <input type="number" id="hiz-z" min="1" max="200" step="1" placeholder="genel">
+            </div>
+          </div>
+          <button class="dugme birincil" id="d-eksen-hiz-kaydet">Uygula</button>
+        </div>
+      </section>
+
       <section class="bolum kapali" id="bolum-sinir">
         <div class="bolum-ust">
           <button class="bolum-bas" aria-expanded="false">

@@ -75,6 +75,11 @@ VARSAYILAN_AYAR = {
         # Ölçmek için: python3 toprak-olc.py
         "toprak_z": 170.0,
         "hiz": 20.0,
+        # Eksen başına hız — boş bırakılan eksen genel `hiz`e düşüyor.
+        # Z dikey ve yük altında; X/Y ile aynı hızda sürülmesi için sebep yok.
+        "hiz_x": None,
+        "hiz_y": None,
+        "hiz_z": None,
         "ivme": 100.0,
         "yavaslama": 100.0,
         "kalibrasyon_dosyasi": "gantry_calib.json",
@@ -451,6 +456,31 @@ class Ajan:
                     self.kamera.ayar["aralik_sn"] = max(2.0, float(arg["aralik_sn"]))
                 ok, mesaj = self.kamera.ac() if acik else self.kamera.kapat()
                 return {"ok": ok, "mesaj": mesaj}
+
+            if ad == "hiz_eksen":
+                # Eksen başına hız. Boş/None gelen eksen genel hıza düşüyor.
+                # Çalışma anında geçerli; kalıcı olması için ayarlar.json
+                # düzenlenir — ajanın o dosyayı kendi yeniden yazması, içinde
+                # jeton ve PLC adresi de olduğu için istenmiyor.
+                yeni_hiz = []
+                for eksen in ("x", "y", "z"):
+                    deger = arg.get(eksen)
+                    if deger in (None, ""):
+                        yeni_hiz.append(None)
+                        continue
+                    try:
+                        sayi = float(deger)
+                    except (TypeError, ValueError):
+                        return {"ok": False, "mesaj": f"{eksen.upper()} hızı sayı olmalı"}
+                    if not 1.0 <= sayi <= 200.0:
+                        return {"ok": False,
+                                "mesaj": f"{eksen.upper()} hızı 1-200 mm/s arasında olmalı"}
+                    yeni_hiz.append(sayi)
+                self.plc.hiz_eksen = yeni_hiz
+                yazi = " · ".join(
+                    f"{ad_}{'genel' if h is None else f'{h:.0f}'}"
+                    for ad_, h in zip(("X", "Y", "Z"), yeni_hiz))
+                return {"ok": True, "mesaj": f"Eksen hızları: {yazi}"}
 
             if ad == "role":
                 role_adi = str(arg.get("ad", ""))
