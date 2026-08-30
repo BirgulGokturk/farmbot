@@ -27,7 +27,9 @@ Bu dosyadaki güvenlik kuralları pazarlık konusu değil:
 
 from __future__ import annotations
 
+import json
 import logging
+import os
 import socket
 import struct
 import threading
@@ -320,6 +322,9 @@ class Gantry:
         self.z_guvenli_kaynagi: Callable[[], bool | None] | None = None
         self.tc_alani: Callable[[float, float], bool] | None = None
         self.kalib = ayar.get("kalibrasyon") or VARSAYILAN_KALIB
+        # Panelden kaydedince nereye yazılacağı. Ajan dosyayı okurken bu
+        # yolu da geçiriyor; yoksa kayıt yalnızca bellekte kalır.
+        self.kalib_yolu = ayar.get("kalibrasyon_tam_yol")
         self.guvenli_z = float(ayar.get("guvenli_z", 340.0))
         # Toprak YÜZEYİNİN makine Z'sindeki yeri. Şimdiye kadar her yer
         # yüzeyi 0 kabul ediyordu; gerçek makinede toprak kabın içinde
@@ -1156,6 +1161,61 @@ class Gantry:
             return max(0.5, float(hiz))
         ozel = self.hiz_eksen[i] if 0 <= i < len(self.hiz_eksen) else None
         return max(0.5, float(ozel if ozel is not None else self.hiz))
+
+    #: Panelden düzenlenebilen kalibrasyon alanları. `cpm` ve `dir`
+    #: BİLEREK dışarıda: yanlış cpm "gitmeyi reddediyor" değil YANLIŞ
+    #: MESAFE gitmek demek ve panelden yanlışlıkla değiştirilmesi çok
+    #: pahalı. Onlar Gantry Studio ölçümünden geliyor ve dosyadan
+    #: düzenleniyor.
+    DUZENLENEBILIR_KALIB = ("home", "min", "max")
+
+    def kalibrasyon_kaydet(self, yeni: list[dict[str, Any]]) -> str:
+        """Panelden gelen home/min/max değerlerini doğrular ve uygular.
+
+        Dosyaya da yazıyor: ayar yalnızca bellekte kalsaydı ajan yeniden
+        başlayınca eski değere dönerdi ve kullanıcı sebebini aramazdı.
+        """
+        if not isinstance(yeni, list) or len(yeni) != N:
+            raise PLCHatasi(f"Kalibrasyon {N} eksen içermeli")
+        temiz = [dict(k) for k in self.kalib]
+        for i, gelen in enumerate(yeni):
+            if not isinstance(gelen, dict):
+                raise PLCHatasi(f"{EKSENLER[i]['ad']} ekseni bir nesne olmalı")
+            for alan in self.DUZENLENEBILIR_KALIB:
+                if alan not in gelen or gelen[alan] in (None, ""):
+                    continue
+                try:
+                    deger = float(gelen[alan])
+                except (TypeError, ValueError):
+                    raise PLCHatasi(f"{EKSENLER[i]['ad']} {alan} sayı olmalı") from None
+                if not -10000.0 <= deger <= 10000.0:
+                    raise PLCHatasi(f"{EKSENLER[i]['ad']} {alan} makul aralıkta değil")
+                temiz[i][alan] = round(deger, 2)
+            # Sınırların sırası bozulursa her hedef reddedilir ve sebebi
+            # görünmez; burada yakalıyoruz.
+            if float(temiz[i]["min"]) >= float(temiz[i]["max"]):
+                raise PLCHatasi(
+                    f"{EKSENLER[i]['ad']} min ({temiz[i]['min']}) max'tan "
+                    f"({temiz[i]['max']}) küçük olmalı")
+        self.kalib = temiz
+        self._kalib_dosyaya_yaz(temiz)
+        return " · ".join(
+            f"{EKSENLER[i]['ad']} home {temiz[i]['home']:g} "
+            f"({temiz[i]['min']:g}–{temiz[i]['max']:g})" for i in range(N))
+
+    def _kalib_dosyaya_yaz(self, kalib: list[dict[str, Any]]) -> None:
+        yol = self.kalib_yolu
+        if not yol:
+            self.gunluk_cb(
+                "Kalibrasyon dosyası tanımlı değil — değişiklik yalnızca "
+                "bu oturum için geçerli", "uyari")
+            return
+        gecici = yol + ".tmp"
+        with open(gecici, "w", encoding="utf-8") as dosya:
+            json.dump(kalib, dosya, ensure_ascii=False, indent=1)
+            dosya.write(chr(10))
+        os.replace(gecici, yol)          # yarım dosya bırakmayan değiştirme
+        self.gunluk_cb(f"Kalibrasyon yazıldı: {yol}", "bilgi")
 
     def hiz_ayarla(self, mm_s: float) -> str:
         mm_s = max(1.0, min(200.0, float(mm_s)))

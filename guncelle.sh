@@ -6,8 +6,36 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
+# MAKINE VERISI depodaki kopyayi EZER. Bu dosyalari panel yaziyor: uc
+# koordinatlari, olculen kalibrasyon. Pi'deki degerler sahadan olculmus,
+# depodaki kopya baskasinin makinesinden kalma bir baslangic degeri — yani
+# catisma halinde dogru olan her zaman Pi'dekidir.
+#
+# Once kenara aliyoruz, pull'dan sonra geri koyuyoruz. Boylece pull hic
+# reddedilmiyor ve kullanici "silmeli miyim" diye karar vermek zorunda
+# kalmiyor. Yedekler .yedek-guncelle uzantisiyla duruyor.
+MAKINE_DOSYALARI="ajan/uclar.json ajan/gantry_calib.json"
+
+for d in $MAKINE_DOSYALARI; do
+    if [ -f "$d" ] && ! git diff --quiet -- "$d" 2>/dev/null; then
+        cp -p "$d" "$d.yedek-guncelle"
+        git checkout -- "$d"
+        echo "  $d kenara alindi (yedek: $d.yedek-guncelle)"
+    fi
+done
+
+geri_koy() {
+    for d in $MAKINE_DOSYALARI; do
+        if [ -f "$d.yedek-guncelle" ]; then
+            cp -p "$d.yedek-guncelle" "$d"
+            echo "  $d geri konuldu (Pi'deki olculmus degerler korundu)"
+        fi
+    done
+}
+
 echo "[1/3] Kod cekiliyor"
 if ! git pull --ff-only; then
+    geri_koy
     echo
     # Pull iki AYRI sebeple basarisiz olabiliyor ve ikisinin yapilacagi
     # bambaska. Eskiden hepsine "yerel degisiklik var" deniyordu; depo
@@ -30,6 +58,8 @@ if ! git pull --ff-only; then
     echo "bakin; depo bozuklugundan supheleniyorsaniz:  bash git-onar.sh"
     exit 1
 fi
+
+geri_koy
 
 echo "[2/3] Servisler yenileniyor"
 # SIRA ONEMLI: ikisini ayni anda yeniden baslatmak, ajanin kapanmakta olan

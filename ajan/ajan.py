@@ -122,6 +122,8 @@ def ayar_yukle(yol: str) -> dict[str, Any]:
         if os.path.exists(tam):
             with open(tam, encoding="utf-8") as dosya:
                 ayar["plc"]["kalibrasyon"] = json.load(dosya)
+            # Panelden kaydedilince aynı dosyaya geri yazılabilsin.
+            ayar["plc"]["kalibrasyon_tam_yol"] = tam
             logger.info("Kalibrasyon okundu: %s", tam)
         else:
             # Hangi zarfın geçerli olduğunu SAYIYLA yazıyoruz. "Varsayılanlar
@@ -456,6 +458,11 @@ class Ajan:
                     self.kamera.ayar["aralik_sn"] = max(2.0, float(arg["aralik_sn"]))
                 ok, mesaj = self.kamera.ac() if acik else self.kamera.kapat()
                 return {"ok": ok, "mesaj": mesaj}
+
+            if ad == "kalibrasyon_kaydet":
+                # Yalnız home/min/max; cpm ve dir panelden değiştirilemiyor.
+                return {"ok": True, "mesaj": await asyncio.to_thread(
+                    self.plc.kalibrasyon_kaydet, arg.get("eksenler") or [])}
 
             if ad == "hiz_eksen":
                 # Eksen başına hız. Boş/None gelen eksen genel hıza düşüyor.

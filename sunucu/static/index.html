@@ -1097,10 +1097,16 @@
         </div>
         <div class="bolum-govde">
           <p class="yardim-metin gizli" id="yardim-sinir">
-            Ajanın o an kullandığı değerler — salt okunur. Değiştirmek için
-            Pi'de <code>ajan/gantry_calib.json</code> düzenlenir ve ajan
-            yeniden başlatılır. <code>cpm</code> = adım/mm, <code>dir</code> =
-            yön işareti, <code>home</code> = referans anahtarındaki mm değeri.
+            <code>home</code> (referans anahtarındaki mm değeri),
+            <code>min</code> ve <code>max</code> buradan düzenlenebilir;
+            kaydedince hem ajana hem dosyaya yazılır.<br><br>
+            <code>cpm</code> (adım/mm) ve <code>dir</code> (yön) <b>bilerek
+            salt okunur</b>: yanlış cpm "gitmeyi reddediyor" değil YANLIŞ
+            MESAFE gitmek demek. Onlar Gantry Studio ölçümünden geliyor ve
+            Pi'de <code>ajan/gantry_calib.json</code> düzenlenerek
+            değiştirilir.<br><br>
+            <b>home değiştirdikten sonra o eksene referans arattırın</b> —
+            ekrandaki konum ancak sayaç sıfırlanınca yeni değere oturur.
           </p>
           <div class="tablo-kutu">
             <table class="veri">
@@ -1111,6 +1117,10 @@
                 <tr><td colspan="6" class="ikincil">Ajan bağlanınca dolacak.</td></tr>
               </tbody>
             </table>
+          </div>
+          <div class="satir-8" style="margin-top:8px">
+            <button class="dugme birincil" id="d-kalib-kaydet">Kaydet</button>
+            <button class="dugme" id="d-kalib-geri">Geri al</button>
           </div>
           <div class="ikincil" id="kalib-ek"></div>
         </div>

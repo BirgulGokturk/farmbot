@@ -1869,3 +1869,12 @@ button.dugme.role.acik:hover:not(:disabled) { background: rgba(74, 168, 96, .24)
   color: var(--metin-2);
 }
 .uc-servo { color: #e8a33d; }
+
+
+/* Kalibrasyon tablosundaki duzenlenebilir hucreler. Dar tutuluyor: tablo
+   alti sutun ve panel zaten dar; genis kutular satiri tasiriyordu. */
+.kalib-girdi {
+  width: 78px;
+  padding: 2px 6px;
+  font-variant-numeric: tabular-nums;
+}

@@ -2482,6 +2482,31 @@ function olaylariBagla() {
     addEventListener("resize", () => { sinirla(); uygula(); });
   }
 
+  const kalibKaydet = $("#d-kalib-kaydet");
+  if (kalibKaydet) {
+    kalibKaydet.onclick = async () => {
+      const eksenler = ["x", "y", "z"].map((e) => {
+        const al = (alan) => {
+          const el = document.querySelector(
+            `.kalib-girdi[data-eksen="${e}"][data-alan="${alan}"]`);
+          const v = el ? el.value.trim() : "";
+          return v === "" ? null : Number(v);
+        };
+        return { home: al("home"), min: al("min"), max: al("max") };
+      });
+      const sonuc = await komutGonder("kalibrasyon_kaydet", { eksenler });
+      // Kaydedilen değerler ajandan geri gelsin diye imzayı sıfırlıyoruz;
+      // yoksa tablo eski imzayla aynı kalıp tazelenmiyor.
+      if (sonuc && sonuc.ok) S.kalibImza = "";
+    };
+  }
+  const kalibGeri = $("#d-kalib-geri");
+  if (kalibGeri) {
+    // Kutulara yazılmış ama kaydedilmemiş değerleri atar: ajandan gelen
+    // hâle döner.
+    kalibGeri.onclick = () => { S.kalibImza = ""; gunluk("Kalibrasyon kutuları geri alındı"); };
+  }
+
   const hizKaydet = $("#d-eksen-hiz-kaydet");
   if (hizKaydet) {
     hizKaydet.onclick = () => {
@@ -2802,6 +2827,10 @@ function olaylariBagla() {
 function kalibrasyonCiz(d) {
   const govde = $("#kalib-govde");
   if (!govde) return;
+  // Kullanıcı bir kutuya yazarken tabloyu yeniden kurmuyoruz: yarım kalan
+  // sayı yarım saniyede bir silinirse alan doldurulamaz hâle geliyor.
+  if (document.activeElement && document.activeElement.classList
+      && document.activeElement.classList.contains("kalib-girdi")) return;
   const imza = JSON.stringify([d.kalibrasyon || null, d.sinirlar || null, d.guvenli_z]);
   if (imza === S.kalibImza) return;
   S.kalibImza = imza;
@@ -2811,11 +2840,16 @@ function kalibrasyonCiz(d) {
     govde.innerHTML = '<tr><td colspan="6" class="alt-not">Ajan bağlanınca dolacak.</td></tr>';
     return;
   }
+  // cpm ve dir metin, home/min/max girdi. Ayrım bilinçli: yanlış cpm
+  // yanlış MESAFE gitmek demek ve panelden yanlışlıkla değiştirilmemeli.
   govde.innerHTML = ["x", "y", "z"].map((e) => {
     const c = k[e] || {}, s = sn[e] || {};
+    const kutu = (alan, deger) =>
+      `<td><input type="number" class="kalib-girdi" data-eksen="${e}" `
+      + `data-alan="${alan}" step="0.01" value="${deger == null ? "" : deger}"></td>`;
     return `<tr><td><b>${e.toUpperCase()}</b></td>
       <td>${sayi(c.cpm, 4)}</td><td>${c.dir > 0 ? "+1" : "−1"}</td>
-      <td>${sayi(c.home, 1)}</td><td>${sayi(s.min, 1)}</td><td>${sayi(s.max, 1)}</td></tr>`;
+      ${kutu("home", c.home)}${kutu("min", s.min)}${kutu("max", s.max)}</tr>`;
   }).join("");
   $("#kalib-ek").innerHTML =
     `Güvenli Z yüksekliği: <b>${sayi(d.guvenli_z, 0)} mm</b> — X/Y hareketi için ` +
