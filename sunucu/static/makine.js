@@ -53,7 +53,14 @@
      * hâlâ görünüyor ama kutu öne çıkmıyor. */
     kap: { yukseklik: 62, cidar: 6 },
     /** 2B haritada çizilen karık sayısı. */
-    yatak: { karik_sayisi: 4 },
+    /* karik_sayisi: toprakta acilmis oluk sayisi.
+     *
+     * 0 = DUZ TOPRAK, varsayilan. Once 4 idi ve kaplarda tahta lata gibi
+     * duzenli koyu bantlar olusturuyordu — sahnedeki en yapay duran sey
+     * oydu. Gercek kaplarda karik yok, toprak duz ve topakli.
+     *
+     * Ayar olarak duruyor: karik acan bir kurulumda 3-4 yapmak yeterli. */
+    yatak: { karik_sayisi: 0 },
     renk: {
       arka: "#0e1210",
       toprak: "#4a3b2c", toprak_koyu: "#3a2e22",
@@ -381,7 +388,9 @@
       const karikGenis = M(34);             // oyuğun yarı genişliği
       // Tohum alan adından: iki kap aynı gürültüyü taşımasın, kopyalanmış
       // gibi durmasınlar.
-      const N = 24;
+      // 24'te kabin icinde sayili tumsek olusuyor ve goz onlari tek tek
+      // sayabiliyor — dogal degil. 40'ta topak boyu gercege yaklasiyor.
+      const N = 40;
       const puruz = doku ? doku.alan(N, 3, doku.tohumla("toprak-puruz-" + (alan.ad || sira)))
                          : new Float32Array(N * N).fill(0.5);
       for (let i = 0; i < konum.count; i++) {
@@ -399,7 +408,10 @@
         // Pürüz
         const ix = Math.min(N - 1, Math.max(0, Math.floor((x / kapEn + 0.5) * N)));
         const iz = Math.min(N - 1, Math.max(0, Math.floor((z / kapBoy + 0.5) * N)));
-        y += (puruz[iz * N + ix] - 0.5) * M(3.5);
+        // Karik kalkinca yuzeyin BUTUN kabartmasi buradan geliyor; 3.5 mm
+        // duz bir levha gibi kaliyordu. 9 mm gercek bir yatakta elle
+        // duzeltilmis topragin topak farki.
+        y += (puruz[iz * N + ix] - 0.5) * M(9.0);
         konum.setY(i, Math.min(0, y));
       }
       geo.computeVertexNormals();
