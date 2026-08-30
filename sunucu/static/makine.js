@@ -605,11 +605,36 @@
     const basY = -P * 0.55;
     const baslik = new THREE.Group();
     baslik.position.set(P * 1.25 + M(ofs.dx), basY, M(ofs.dy));
-    // Başlık gövdesi — koyu, kısa silindir.
+    /* Başlık gövdesi — KISA ve GENİŞ silindir, altı delikli.
+     *
+     * Önce ince bir silindirdi ve sahnede uç kafasının gölgesinde
+     * kayboluyordu; kullanıcı "başlık yok" dedi, haklıydı. Duş başlığı
+     * gibi okunması için çapı büyütüldü ve alt yüzüne delikler açıldı —
+     * ayırt edici olan biçim değil, o delikler.
+     */
     const bg = new THREE.Mesh(
-      new THREE.CylinderGeometry(P * 0.38, P * 0.44, P * 0.7, 14),
+      new THREE.CylinderGeometry(P * 0.62, P * 0.72, P * 0.55, 18),
       mal(THREE, { color: "#17191b", metalness: 0.1, roughness: 0.62 }));
     baslik.add(bg);
+    // Alt yüzeydeki delik deseni: ortada bir, çevresinde altı.
+    const delikMal2 = mal(THREE, { color: "#050607", metalness: 0.05, roughness: 1 });
+    const delikYer = [[0, 0]];
+    for (let i = 0; i < 6; i++) {
+      const a = (i / 6) * Math.PI * 2;
+      delikYer.push([Math.cos(a) * P * 0.42, Math.sin(a) * P * 0.42]);
+    }
+    delikYer.forEach(([dx2, dz2]) => {
+      const dl = new THREE.Mesh(
+        new THREE.CylinderGeometry(P * 0.09, P * 0.09, P * 0.14, 8), delikMal2);
+      dl.position.set(dx2, -P * 0.26, dz2);
+      baslik.add(dl);
+    });
+    // Deliklerin oturduğu tabla — gövdeden biraz taşan ince disk.
+    const tabla2 = new THREE.Mesh(
+      new THREE.CylinderGeometry(P * 0.76, P * 0.76, P * 0.08, 18),
+      mal(THREE, { color: "#101214", metalness: 0.12, roughness: 0.6 }));
+    tabla2.position.y = -P * 0.3;
+    baslik.add(tabla2);
     // Üstteki rakor
     const rakor = new THREE.Mesh(
       new THREE.CylinderGeometry(P * 0.17, P * 0.17, P * 0.4, 10),
@@ -638,7 +663,9 @@
     });
     const su = new THREE.Mesh(
       new THREE.CylinderGeometry(P * 0.1, P * 0.3, 1, 12, 1, true), suMal);
+    // Huzme deliklerin ALTINDAN başlıyor, gövdenin ortasından değil.
     su.position.copy(baslik.position);
+    su.position.y -= P * 0.34;
     su.visible = false;
     su.raycast = () => {};
     su.userData.golgeAtma = true;
