@@ -229,6 +229,7 @@ olgun bitki mesafesi verilir. Tür formunda alanın altında bu yazıyor ve
 | `sulama_aci` | 0–359° (makine çerçevesi, 0 = +X) | 0 |
 | `sulama_nokta` | 2–8 (yalnız `cember`) | 4 |
 | `sulama_aciklik_mm` | 0–300 (kanopinin üstünde) | 50 |
+| `sulama_nem_esigi` | 0–100 % (altındaysa sula) | 100 = kapalı |
 
 `sulama_deseni` şemadaki ilk **seçenekli** alan: `turler.alan_dogrula`
 sayısal aralık yerine kapalı listeye bakıyor. Öncelik `spread_mm` ile aynı:
@@ -236,6 +237,56 @@ sayısal aralık yerine kapalı listeye bakıyor. Öncelik `spread_mm` ile aynı
 
 **Varsayılan `ust` + oran 0**, yani güncelleme sonrası hiçbir kurulumun
 davranışı değişmiyor; sulama eskisi gibi bitkinin tam üstüne akıtıyor.
+
+#### Sulama başlığı kayması
+
+Başlık Z eksenine ayrı takılı ve ucun merkezinden kaymış. `uclar.json`
+içinde `sulama_basligi: {dx, dy, z_min}`, `durum.uc.sulama_basligi` ile
+yayınlanıyor. Türden **bağımsız**: desen ofsetinin üstüne biniyor.
+
+    makinenin gittiği nokta = suyun düşeceği nokta + (dx, dy)
+
+İki nokta **ayrı denetleniyor** ve bu ayrım önemli:
+
+| nokta | ne | denetim |
+|---|---|---|
+| `su_x, su_y` | suyun düştüğü yer | **dikim alanı** |
+| `x, y` | makinenin gittiği yer | **yumuşak sınır + yasak bölge** (ajanda) |
+
+Tek noktaya bakmak ya suyu kabın dışına döktürür ya da geçerli bir
+sulamayı reddeder. Haritada halka suyu, ince daire ucu gösteriyor; ikisi
+çizgiyle bağlı, yani kayma gözle görünüyor.
+
+`z_min` mutlak Z tabanı: `sulama_z = kıs(yüzey + boy + açıklık, alt=z_min,
+üst=guvenli_z)`. Ölçülen kurulumda yüzey 170 + açıklık 50 = 220 çıkıyor ve
+başlık o yükseklikte sürtüyor; taban 230. Tabana çekilme **sessiz değil**,
+`uyari` düşüyor.
+
+#### Sulama kararı toprak nemine göre
+
+Tür alanı `sulama_nem_esigi` (%). Toprak nemi bu yüzdenin **altındaysa**
+sulanıyor, üstündeyse **atlanıyor** ve o bitki hiç adım üretmiyor.
+**100 = nem bakılmaz, her zaman sula** ve varsayılan bu — güncelleme
+sonrası hiçbir kurulumun sulaması sessizce durmuyor.
+
+- Kaynak `toprak_nem` (A1'deki prob), **`hava_nem` DEĞİL**. Karışırsa
+  yağmurlu bir günde hava nemi yüksek olur ve susuz toprakta sulama
+  atlanır. Ayrım koda ve teste açıkça yazılı.
+- Karşılaştırma **kalibre yüzde** üzerinden: `(kuru − ham) / (kuru − ıslak)
+  × 100`, `durum.toprak_kalib`'den. Ham 0-1023 varsayımı yok — bu makinede
+  ıslak uç 593 ölçüldü, ham ölçek %42 derken gerçek %100. Formül yön
+  bağımsız, ters bağlanmış probda da doğru. Haritadaki sensör katmanı da
+  artık aynı formülü kullanıyor.
+- Okuma **100 mm** yarıçapta ve en fazla **24 saatlik** olmalı. Daha
+  uzaktaki bir okuma bu bitkinin kökü hakkında bir şey söylemiyor; üç gün
+  önceki okuma bugünün kararını veremez.
+- **Okuma yoksa SULANIR** ve gerekçesi yazılır. Bitki kaybetmek, su
+  israfından kötü; sessizce atlamak "neden kurudu" sorusunu cevapsız
+  bırakır.
+
+Önizleme her bitki için `sulanacak`, `nem_yuzde`, `nem_esigi`,
+`nem_gerekce` döndürüyor; panel atlananları adıyla ve gerekçesiyle
+yazıyor.
 
 #### Desen maliyeti
 

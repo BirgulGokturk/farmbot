@@ -681,6 +681,13 @@ def _sulama_coz(adlar: list[str], saniye: float) -> dict[str, Any]:
     # ÖNİZLEME ajan kapalıyken de anlamlı bir sayı göstermeli.
     guvenli_z = float(durum.get("guvenli_z") or 340.0)
     toprak_z = float(durum.get("toprak_z") or 0.0)
+    baslik = ((durum.get("uc") or {}).get("sulama_basligi")) or {}
+    kalib = durum.get("toprak_kalib") or {}
+    # Konumlu TOPRAK nemi okumaları — sulama kararı bunlara bakıyor.
+    # Hava nemi (DHT) buraya hiç girmiyor: yağmurlu bir günde hava nemi
+    # yüksek olur ve karışırsa susuz toprakta sulama atlanır.
+    okumalar = depo.konumlu_okumalar(
+        int(sulama.NEM_AZAMI_YAS_SN / 60), 400)
     simdi = time.time()
 
     adimlar: list[dict[str, Any]] = []
@@ -697,13 +704,19 @@ def _sulama_coz(adlar: list[str], saniye: float) -> dict[str, Any]:
         c = sulama.noktalar(
             bitki, tur, toplam_saniye=saniye, simdi=simdi, guvenli_z=guvenli_z,
             genel_toprak_z=toprak_z, egri_listesi=egri_listesi,
-            dikim_alanlari=alanlar)
+            dikim_alanlari=alanlar, baslik=baslik, okumalar=okumalar,
+            toprak_kalib=kalib)
         ret.extend(f"{ad}: {m}" for m in c["ret"])
         uyari.extend(f"{ad}: {m}" for m in c["uyari"])
         ozet.append({"ad": ad, "desen": c["desen"], "ofset_mm": c["ofset_mm"],
                      "yuzey_z": c["yuzey_z"], "boy_mm": c.get("boy_mm"),
                      "egriden": c["egriden"], "noktalar": c["noktalar"],
-                     "ret": c["ret"], "uyari": c["uyari"]})
+                     "ret": c["ret"], "uyari": c["uyari"],
+                     "sulanacak": c.get("sulanacak", True),
+                     "nem_yuzde": c.get("nem_yuzde"),
+                     "nem_esigi": c.get("nem_esigi"),
+                     "nem_gerekce": c.get("nem_gerekce", ""),
+                     "baslik": c.get("baslik")})
         for i, nk in enumerate(c["noktalar"], 1):
             adimlar.append({"tip": "nokta",
                             "ad": ad if len(c["noktalar"]) == 1 else f"{ad}#{i}",

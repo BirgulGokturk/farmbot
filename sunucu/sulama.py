@@ -56,8 +56,25 @@ EN_KISA_SANIYE = 1.0
 
 # Ucun toprak yüzeyine en fazla bu kadar yaklaşmasına izin var. Sulama
 # ucunun toprağa dalması gerekmiyor; 20 mm, ölçüm hatası ve bitki
-# hareketi için makul bir pay.
+# hareketi için makul bir pay. Mutlak Z tabanı ayrıca var
+# (`sulama_basligi.z_min`) ve ikisinin büyüğü uygulanıyor.
 EN_AZ_ACIKLIK_MM = 20.0
+
+# NEM OKUMASI ne kadar yakın ve ne kadar taze olmalı.
+#
+# Yarıçap: 100 mm ötedeki bir okuma bu bitkinin kökü hakkında pek bir şey
+# söylemiyor — sulanmış komşunun ıslaklığını okuyup bu bitkiyi susuz
+# bırakmak, hiç ölçmemekten kötü.
+#
+# Tazelik: üç gün önceki bir okuma bugünün kararını veremez. 24 saat,
+# günlük sulama döngüsüyle aynı mertebe.
+NEM_YARICAP_MM = 100.0
+NEM_AZAMI_YAS_SN = 24 * 3600.0
+
+# Sulama başlığının varsayılanı — ajan `durum.uc.sulama_basligi`
+# göndermezse bu geçerli. Kayma SIFIR: uydurulmuş bir kayma, suyu
+# sessizce yanlış yere döker.
+VARSAYILAN_BASLIK = {"dx": 0.0, "dy": 0.0, "z_min": 0.0}
 
 
 class SulamaHatasi(Exception):
@@ -80,6 +97,64 @@ def _egri_deger(ad: str, gun: float, egri_listesi: list[dict[str, Any]] | None):
         if e.get("ad") == ad:
             return egriler.deger(e, gun)
     return None
+
+
+def nem_yuzde(ham: Any, kalib: dict[str, Any] | None) -> float | None:
+    """Ham toprak nemi sayımını KALİBRE yüzdeye çevirir.
+
+    Ham 0-1023 üzerinden karşılaştırma yapmak yanlış: probun kuru ve ıslak
+    uçları sahada 1023/0 değil (bu makinede ıslak ~593 ölçüldü). Ajan
+    `durum.toprak_kalib` ile {kuru, islak} sayımlarını gönderiyor,
+    karşılaştırma buradan geçiyor.
+
+    Formül yön bağımsız: ters bağlanmış bir probda `kuru < islak` olur ve
+    aynı ifade yine doğru yüzdeyi verir.
+    """
+    if ham in (None, ""):
+        return None
+    try:
+        h = float(ham)
+    except (TypeError, ValueError):
+        return None
+    k = kalib or {}
+    kuru = _sayi(k.get("kuru"), 1023.0)
+    islak = _sayi(k.get("islak"), 0.0)
+    if kuru == islak:
+        return None
+    oran = (kuru - h) / (kuru - islak)
+    return max(0.0, min(100.0, oran * 100.0))
+
+
+def en_yakin_nem(x: float, y: float, okumalar, simdi: float,
+                 kalib: dict[str, Any] | None):
+    """(yüzde, uzaklık_mm, yaş_sn) — yakında taze okuma yoksa (None, …).
+
+    Yalnız TOPRAK nemi (`toprak_nem`). Hava nemi (`hava_nem`, DHT) buraya
+    ASLA girmiyor: yağmurlu bir günde hava nemi yüksek olur ve karışırsa
+    sulama susuz toprakta atlanır.
+    """
+    en_iyi = None
+    for k in (okumalar or []):
+        ham = k.get("toprak_nem")
+        if ham in (None, ""):
+            continue
+        try:
+            kx, ky = float(k.get("x")), float(k.get("y"))
+        except (TypeError, ValueError):
+            continue
+        uzak = math.hypot(kx - x, ky - y)
+        if uzak > NEM_YARICAP_MM:
+            continue
+        yas = max(0.0, simdi - _sayi(k.get("ts"), simdi))
+        if yas > NEM_AZAMI_YAS_SN:
+            continue
+        # Aynı yarıçapta birden çok okuma varsa EN TAZE olanı: toprak
+        # kuruyor, eski okuma bugünkü hâli anlatmıyor.
+        if en_iyi is None or yas < en_iyi[2]:
+            yuzde = nem_yuzde(ham, kalib)
+            if yuzde is not None:
+                en_iyi = (yuzde, uzak, yas)
+    return en_iyi if en_iyi else (None, None, None)
 
 
 def yas_gun(bitki: dict[str, Any], simdi: float) -> float:
@@ -143,6 +218,20 @@ def guncel_yukseklik_mm(bitki: dict[str, Any], gun: float, egri_listesi=None) ->
     return max(0.0, _sayi(deger, 0.0))
 
 
+def _nokta(su_x: float, su_y: float, z: float, saniye: float,
+           aci: float | None, bas: dict[str, Any]) -> dict[str, Any]:
+    """Suyun düştüğü noktadan makinenin gideceği noktayı üretir."""
+    return {
+        "x": round(su_x + _sayi(bas.get("dx"), 0.0), 2),
+        "y": round(su_y + _sayi(bas.get("dy"), 0.0), 2),
+        "z": round(z, 2),
+        "su_x": round(su_x, 2),
+        "su_y": round(su_y, 2),
+        "saniye": saniye,
+        "aci": aci,
+    }
+
+
 def _yonler(desen: str, aci_derece: float, adet: int) -> list[float]:
     """Desenin ürettiği açılar (radyan). `ust` için boş liste."""
     taban = math.radians(aci_derece % 360.0)
@@ -187,6 +276,9 @@ def noktalar(bitki: dict[str, Any], tur: dict[str, Any] | None, *,
              genel_toprak_z: float = 0.0,
              egri_listesi: list[dict[str, Any]] | None = None,
              dikim_alanlari: list[dict[str, Any]] | None = None,
+             baslik: dict[str, Any] | None = None,
+             okumalar: list[dict[str, Any]] | None = None,
+             toprak_kalib: dict[str, Any] | None = None,
              ) -> dict[str, Any]:
     """Bir bitki için sulama noktalarını çözer.
 
@@ -204,6 +296,35 @@ def noktalar(bitki: dict[str, Any], tur: dict[str, Any] | None, *,
     gun = yas_gun(bitki, simdi)
     bx, by = _sayi(bitki.get("x")), _sayi(bitki.get("y"))
     desen = str(ayar["sulama_deseni"])
+    bas = {**VARSAYILAN_BASLIK, **(baslik or {})}
+
+    # --- SULANACAK MI: karar TOPRAK NEMİNE göre --------------------------
+    esik = _sayi(ayar.get("sulama_nem_esigi"), 100.0)
+    yuzde, uzak, yas = en_yakin_nem(bx, by, okumalar, simdi, toprak_kalib)
+    sulanacak, nem_gerekce = True, ""
+    if esik >= 100.0:
+        nem_gerekce = "nem eşiği kapalı (%100) — her zaman sulanıyor"
+    elif yuzde is None:
+        # Okuma yoksa SULUYORUZ. Bitki kaybetmek, su israfından kötü;
+        # ve sessizce atlamak "neden kurudu" sorusunu cevapsız bırakır.
+        nem_gerekce = (f"{NEM_YARICAP_MM:.0f} mm içinde son "
+                       f"{NEM_AZAMI_YAS_SN / 3600:.0f} saatte toprak nemi "
+                       f"okuması yok — sulanıyor")
+        uyari.append(nem_gerekce)
+    elif yuzde < esik:
+        nem_gerekce = (f"toprak nemi %{yuzde:.0f} < eşik %{esik:.0f} "
+                       f"({uzak:.0f} mm ötede, {yas / 60:.0f} dk önce) — sulanıyor")
+    else:
+        sulanacak = False
+        nem_gerekce = (f"toprak nemi %{yuzde:.0f} ≥ eşik %{esik:.0f} "
+                       f"({uzak:.0f} mm ötede, {yas / 60:.0f} dk önce) — atlandı")
+
+    if not sulanacak:
+        return {"noktalar": [], "desen": desen, "ofset_mm": 0.0,
+                "yuzey_z": dikim.toprak_yuzeyi(bx, by, genel_toprak_z, dikim_alanlari),
+                "egriden": False, "uyari": uyari, "ret": [],
+                "sulanacak": False, "nem_yuzde": yuzde, "nem_esigi": esik,
+                "nem_gerekce": nem_gerekce}
 
     toplam_saniye = max(EN_KISA_SANIYE, _sayi(toplam_saniye, 3.0))
     adet, n_uyari = _nokta_sayisi(desen, int(_sayi(ayar["sulama_nokta"], 4.0)), toplam_saniye)
@@ -224,6 +345,13 @@ def noktalar(bitki: dict[str, Any], tur: dict[str, Any] | None, *,
     boy = guncel_yukseklik_mm(bitki, gun, egri_listesi)
     aciklik = max(EN_AZ_ACIKLIK_MM, _sayi(ayar["sulama_aciklik_mm"], 50.0))
     sulama_z = yuzey_z + boy + aciklik
+    # MUTLAK Z TABANI. Yüzey 170 + varsayılan açıklık 50 = 220 çıkıyor ve
+    # bu, ölçülen kurulumda istenenin altında; başlık o yükseklikte
+    # bitkiye/kaba sürtüyor. `sulama_basligi.z_min` ile taban veriliyor.
+    z_min = _sayi(bas.get("z_min"), 0.0)
+    if z_min > sulama_z:
+        uyari.append(f"Sulama Z'si {sulama_z:.0f} → taban {z_min:.0f} mm'ye çekildi")
+        sulama_z = z_min
     # Güvenli Z tavan: ucun daha yükseğe çıkmasına gerek yok ve güvenli
     # Z'nin ÜSTÜ zaten serbest gezinme yüksekliği.
     if sulama_z > guvenli_z:
@@ -245,43 +373,52 @@ def noktalar(bitki: dict[str, Any], tur: dict[str, Any] | None, *,
             f"{boy:.0f} + açıklık {aciklik:.0f} mm, güvenli Z {guvenli_z:.0f} mm'nin "
             f"üstüne çıkıyor. Güvenli Z'yi yükseltin ya da uç açıklığını düşürün.")
         return {"noktalar": [], "desen": desen, "ofset_mm": ofset,
-                "yuzey_z": yuzey_z, "egriden": egriden, "uyari": uyari, "ret": ret}
+                "yuzey_z": yuzey_z, "egriden": egriden, "uyari": uyari, "ret": ret,
+                "sulanacak": True, "nem_yuzde": yuzde, "nem_esigi": esik,
+                "nem_gerekce": nem_gerekce}
 
     # --- noktalar -----------------------------------------------------------
     yonler = _yonler(desen, _sayi(ayar["sulama_aci"]), adet)
     pay = round(toplam_saniye / max(1, len(yonler) or 1), 2)
+
+    # BAŞLIK KAYMASI. Sulama başlığı Z eksenine ayrı takılı ve ucun
+    # merkezinden kaymış: makine `hedef + (dx, dy)`ye gidince su hedefe
+    # düşüyor. Yani iki ayrı nokta var ve İKİSİ AYRI DENETLENİYOR:
+    #
+    #   su_x, su_y  → suyun düştüğü yer    → DİKİM ALANI denetimi buna
+    #   x, y        → makinenin gittiği yer → yumuşak sınır ve yasak
+    #                                          bölge denetimi buna (ajanda)
+    #
+    # Tek noktaya bakmak ya suyu kabın dışına döktürür ya da geçerli bir
+    # sulamayı reddeder.
     cikti: list[dict[str, Any]] = []
     if not yonler:
-        cikti.append({"x": round(bx, 2), "y": round(by, 2), "z": round(sulama_z, 2),
-                      "saniye": round(toplam_saniye, 2), "aci": None})
+        cikti.append(_nokta(bx, by, sulama_z, round(toplam_saniye, 2), None, bas))
     else:
         for a in yonler:
-            cikti.append({
-                "x": round(bx + ofset * math.cos(a), 2),
-                "y": round(by + ofset * math.sin(a), 2),
-                "z": round(sulama_z, 2),
-                "saniye": pay,
-                "aci": round(math.degrees(a) % 360.0, 1),
-            })
+            cikti.append(_nokta(bx + ofset * math.cos(a), by + ofset * math.sin(a),
+                                sulama_z, pay, round(math.degrees(a) % 360.0, 1), bas))
 
     # --- dikim alanı denetimi: OFSETLİ konuma göre --------------------------
     # Bitkinin kendi konumu alanın içinde olsa bile ofsetli nokta dışına
     # düşebiliyor; denetlenen artık su GERÇEKTEN nereye gidiyorsa orası.
     if dikim_alanlari:
         for nk in cikti:
-            kabul, _, _ = dikim.nokta_kabul(nk["x"], nk["y"], dikim_alanlari)
+            # SU noktası denetleniyor, makinenin gittiği nokta değil:
+            # kabın içinde olması gereken şey su.
+            kabul, _, _ = dikim.nokta_kabul(nk["su_x"], nk["su_y"], dikim_alanlari)
             if kabul:
                 continue
             if desen == "ust":
                 ret.append(
-                    f"X{nk['x']:.1f} Y{nk['y']:.1f} dikim alanı dışında — "
+                    f"X{nk['su_x']:.1f} Y{nk['su_y']:.1f} dikim alanı dışında — "
                     f"bitkiyi alanın içine taşıyın")
             else:
                 # SEBEP + ÇÖZÜM. Sabit açı, kenardaki bitkide suyu duvara
                 # nişanlayabiliyor; kullanıcıya ne yapacağını söylemek
                 # "reddedildi" demekten çok daha işe yarıyor.
                 ret.append(
-                    f"X{nk['x']:.1f} Y{nk['y']:.1f} dikim alanı dışında "
+                    f"X{nk['su_x']:.1f} Y{nk['su_y']:.1f} dikim alanı dışında "
                     f"({nk['aci']:.0f}° yönünde {ofset:.0f} mm ofset) — "
                     f"ofset yönünü (sulama_aci) çevirin, ofseti "
                     f"(sulama_oran) küçültün ya da bu bitkide deseni "
@@ -289,4 +426,9 @@ def noktalar(bitki: dict[str, Any], tur: dict[str, Any] | None, *,
 
     return {"noktalar": cikti, "desen": desen, "ofset_mm": round(ofset, 1),
             "yuzey_z": round(yuzey_z, 1), "boy_mm": round(boy, 1),
-            "egriden": egriden, "uyari": uyari, "ret": ret}
+            "egriden": egriden, "uyari": uyari, "ret": ret,
+            "sulanacak": True, "nem_yuzde": yuzde, "nem_esigi": esik,
+            "nem_gerekce": nem_gerekce,
+            "baslik": {"dx": _sayi(bas.get("dx"), 0.0),
+                       "dy": _sayi(bas.get("dy"), 0.0),
+                       "z_min": _sayi(bas.get("z_min"), 0.0)}}

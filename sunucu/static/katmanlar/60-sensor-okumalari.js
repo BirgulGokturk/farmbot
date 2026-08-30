@@ -19,7 +19,16 @@ Tarla.katman({
    *  gidince ara değerler sarı-yeşil-camgöbeği olarak okunuyor.
    */
   renk(ham) {
-    const yuzde = Math.max(0, Math.min(100, ((1023 - ham) / 1023) * 100));
+    /* KALİBRE yüzde. Eskiden 0-1023 varsayılıyordu; probun kuru ve ıslak
+     * uçları sahada o değerler değil (bu makinede ıslak 593 ölçüldü) ve
+     * ham ölçekle hesaplanan yüzde gerçeğin epey altında çıkıyordu.
+     * Ajan `durum.toprak_kalib` ile {kuru, islak} gönderiyor; sunucudaki
+     * `sulama.nem_yuzde` ile AYNI formül. */
+    const kalib = (o.veri.durum && o.veri.durum.toprak_kalib) || {};
+    const kuru = Number(kalib.kuru != null ? kalib.kuru : 1023);
+    const islak = Number(kalib.islak != null ? kalib.islak : 0);
+    const yuzde = kuru === islak ? 0
+      : Math.max(0, Math.min(100, ((kuru - ham) / (kuru - islak)) * 100));
     const ton = 40 + (210 - 40) * (yuzde / 100);
     return { css: `hsl(${ton.toFixed(0)}, 62%, 52%)`, yuzde };
   },

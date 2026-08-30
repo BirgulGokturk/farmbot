@@ -52,6 +52,11 @@ Tarla.katman({
       const redli = (b.ret || []).length > 0;
       const renk = redli ? "#e2564a" : "#3f9fd8";
       (b.noktalar || []).forEach((nk) => {
+        // İKİ NOKTA: su nereye düşüyor (halka) ve uç nereye gidiyor
+        // (dikey çizginin tepesi). Sulama başlığı ucun merkezinden
+        // kaymış; ikisini tek nokta çizmek, kaymayı görünmez yapardı.
+        const sux = nk.su_x != null ? nk.su_x : nk.x;
+        const suy = nk.su_y != null ? nk.su_y : nk.y;
         // Su damlasının düşeceği yer: toprağa yatık bir halka.
         const halka = new o.THREE.Mesh(
           new o.THREE.RingGeometry(0.012, 0.019, 20),
@@ -59,10 +64,10 @@ Tarla.katman({
                                           opacity: 0.85, side: o.THREE.DoubleSide,
                                           depthWrite: false }));
         halka.rotation.x = -Math.PI / 2;
-        const yer = o.dikimAlani(nk.x, nk.y);
+        const yer = o.dikimAlani(sux, suy);
         const yy = (yer && yer.toprak_z != null)
           ? (Number(yer.toprak_z) - o.toprakZ) * o.MM : 0;
-        halka.position.set(o.sx(nk.x), yy + 0.004, o.sz(nk.y));
+        halka.position.set(o.sx(sux), yy + 0.004, o.sz(suy));
         halka.raycast = () => {};
         o.grup.add(halka);
 
@@ -71,9 +76,11 @@ Tarla.katman({
          * buraya iner" ile "su buraya düşer" arasındaki farkı görünür
          * yapıyor. */
         const ucY = o.sy(nk.z);
+        // Çizgi SU noktasından UÇ noktasına eğik gidiyor: başlık kayması
+        // böylece gözle görünüyor.
         const cizgi = new o.THREE.Line(
           new o.THREE.BufferGeometry().setFromPoints([
-            new o.THREE.Vector3(o.sx(nk.x), yy + 0.004, o.sz(nk.y)),
+            new o.THREE.Vector3(o.sx(sux), yy + 0.004, o.sz(suy)),
             new o.THREE.Vector3(o.sx(nk.x), ucY, o.sz(nk.y))]),
           new o.THREE.LineBasicMaterial({ color: renk, transparent: true,
                                           opacity: 0.5 }));
@@ -92,7 +99,15 @@ Tarla.katman({
       c.fillStyle = redli ? "#e2564a33" : "#3f9fd833";
       c.lineWidth = 2;
       (b.noktalar || []).forEach((nk, i) => {
-        const p = o.mm2b(nk.x, nk.y);
+        const sux = nk.su_x != null ? nk.su_x : nk.x;
+        const suy = nk.su_y != null ? nk.su_y : nk.y;
+        const p = o.mm2b(sux, suy);
+        // Başlık kaymışsa ucun gideceği yeri ince bir çizgiyle bağlıyoruz.
+        if (sux !== nk.x || suy !== nk.y) {
+          const u = o.mm2b(nk.x, nk.y);
+          c.beginPath(); c.moveTo(p.x, p.y); c.lineTo(u.x, u.y); c.stroke();
+          c.beginPath(); c.arc(u.x, u.y, 3, 0, Math.PI * 2); c.stroke();
+        }
         c.beginPath(); c.arc(p.x, p.y, 6, 0, Math.PI * 2); c.fill(); c.stroke();
         // Birden çok nokta varsa sıra numarası: robotun gideceği sıra.
         if ((b.noktalar || []).length > 1) {
@@ -114,7 +129,11 @@ Tarla.katman({
     }
     const nokta = ozet.reduce((t, b) => t + (b.noktalar || []).length, 0);
     const redli = ozet.filter((b) => (b.ret || []).length);
+    const atlanan = ozet.filter((b) => b.sulanacak === false);
     return `<p class="alt-not">${ozet.length} bitki · ${nokta} sulama noktası
-      ${redli.length ? `· <b>${redli.length} bitki reddedilecek</b>` : ""}</p>`;
+      ${redli.length ? `· <b>${redli.length} bitki reddedilecek</b>` : ""}
+      ${atlanan.length ? `· <b>${atlanan.length} bitki nem yeterli, atlanacak</b>` : ""}</p>
+      ${atlanan.slice(0, 6).map((b) => `<div class="alt-not">${o.kacisli(b.ad)}:
+        ${o.kacisli(b.nem_gerekce || "")}</div>`).join("")}`;
   },
 });

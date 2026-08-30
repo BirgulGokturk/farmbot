@@ -34,7 +34,7 @@ _KILIT = threading.RLock()
 # doğru yol olur.
 DUZENLENEBILIR = ("spread_mm", "sow_depth_mm", "days_to_harvest", "water_ml_per_day",
                   "sulama_deseni", "sulama_oran", "sulama_aci", "sulama_nokta",
-                  "sulama_aciklik_mm")
+                  "sulama_aciklik_mm", "sulama_nem_esigi")
 
 # SULAMA OFSETİ — bitkinin tam üstüne akıtmak her tür için doğru değil.
 # Besleyici kökler kanopinin kenarında (damlama hattı); fideye 80 mm uzağa
@@ -75,6 +75,7 @@ VARSAYILAN = {
     "sulama_aci": 0.0,
     "sulama_nokta": 4.0,
     "sulama_aciklik_mm": 50.0,
+    "sulama_nem_esigi": 100.0,
 }
 
 # Hangi alan hangi desende anlamlı — panel gereksiz alanı gizliyor.
@@ -106,6 +107,13 @@ NOT = {
                           "yoksa yüzeyden bu kadar yukarısı kullanılır."),
     "sulama_deseni": ("Suyun bırakılacağı desen. Tam üst eski davranış ve "
                       "varsayılan; fide, tohum ve kök sebzesi için doğrusu bu."),
+    "sulama_nem_esigi": (
+        "TOPRAK nemi (hava nemi değil) bu yüzdenin altındaysa sulanır, "
+        "üstündeyse atlanır. 100 = nem bakılmaz, her zaman sula "
+        "(varsayılan). Karşılaştırma kalibre edilmiş yüzde üzerinden "
+        "yapılır, ham 0-1023 sayımı üzerinden değil. Bitkinin yakınında "
+        "taze bir okuma yoksa SULANIR ve gerekçesi yazılır — bitki "
+        "kaybetmek, su israfından kötü."),
 }
 
 # Makul aralıklar — panelden gelen sayıya körlemesine güvenmiyoruz. Sıfır
@@ -124,6 +132,10 @@ SINIR = {
     # noktalı "çember" zaten `yan` deseni.
     "sulama_nokta": (2.0, 8.0),
     "sulama_aciklik_mm": (0.0, 300.0),
+    # Toprak nemi bu YÜZDENİN altındaysa sulanıyor, üstündeyse atlanıyor.
+    # 100 = "nem bakılmaz, her zaman sula" ve VARSAYILAN bu: güncelleme
+    # sonrası hiçbir kurulumun sulaması sessizce durmuyor.
+    "sulama_nem_esigi": (0.0, 100.0),
 }
 
 BIRIM = {
@@ -136,6 +148,7 @@ BIRIM = {
     "sulama_aci": "°",
     "sulama_nokta": "nokta",
     "sulama_aciklik_mm": "mm",
+    "sulama_nem_esigi": "% nem",
 }
 
 BASLIK = {
@@ -148,6 +161,7 @@ BASLIK = {
     "sulama_aci": "Ofset yönü",
     "sulama_nokta": "Çember noktası",
     "sulama_aciklik_mm": "Uç açıklığı",
+    "sulama_nem_esigi": "Sulama nem eşiği",
 }
 
 

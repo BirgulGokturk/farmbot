@@ -555,6 +555,13 @@ function ucGuncelle(u) {
         el.value = th[eksen] == null ? "" : th[eksen];
       }
     });
+    const sb = u.sulama_basligi || {};
+    [["dx", "dx"], ["dy", "dy"], ["zmin", "z_min"]].forEach(([kimlik, alan]) => {
+      const el = $("#ua-sb-" + kimlik);
+      if (el && document.activeElement !== el) {
+        el.value = sb[alan] == null ? "" : sb[alan];
+      }
+    });
   }
 
   // Uç listesi ajandan geliyor; seçim kutusunu yalnız değiştiğinde yeniden
@@ -2636,6 +2643,10 @@ function olaylariBagla() {
       tohumluk: { x: $("#ua-th-x").value === "" ? null : Number($("#ua-th-x").value),
                   y: $("#ua-th-y").value === "" ? null : Number($("#ua-th-y").value),
                   z: $("#ua-th-z").value === "" ? null : Number($("#ua-th-z").value) },
+      // Boş = 0: kayma yoksa sıfır, "tanımsız" diye bir hâli yok.
+      sulama_basligi: { dx: Number($("#ua-sb-dx").value || 0),
+                        dy: Number($("#ua-sb-dy").value || 0),
+                        z_min: Number($("#ua-sb-zmin").value || 0) },
     };
     const sonuc = await komutGonder("uc_kaydet", { ayar });
     if (sonuc && sonuc.ok) {

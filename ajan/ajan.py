@@ -530,6 +530,10 @@ class Ajan:
                 "slide_axis": self.uclar.ayar.get("slide_axis"),
                 # Tohumluk: harita profili bu noktadan türetiyor, adı yetmiyor.
                 "tohumluk": self.uclar.tohumluk() or {},
+                # Sulama başlığı kayması — sunucu sulama noktasını buna
+                # göre kaydırıyor, panel de önizlemede iki noktayı ayrı
+                # çiziyor (su nereye düşüyor / uç nereye gidiyor).
+                "sulama_basligi": self.uclar.sulama_basligi(),
                 "alan": self.uclar.ayar.get("tc_area") or {},
                 "alanda": bool(self.uclar.tc_alani_icinde(
                     (durum.get("konum") or {}).get("x") or 0,

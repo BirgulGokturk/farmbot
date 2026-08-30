@@ -1449,10 +1449,18 @@
           return;
         }
         (o.uyari || []).slice(0, 4).forEach((u) => gunluk(`⚠ ${u}`, "uyari"));
+        const atlanan = (o.ozet || []).filter((b2) => b2.sulanacak === false);
+        atlanan.slice(0, 4).forEach((b2) =>
+          gunluk(`↷ ${b2.ad}: ${b2.nem_gerekce}`, "iyi"));
+        if (atlanan.length === adlar.length) {
+          gunluk("Seçilen bitkilerin toprağı yeterince nemli — sulama yapılmadı", "iyi");
+          return;
+        }
         const desenli = (o.ozet || []).some((b2) => (b2.noktalar || []).length > 1);
-        if (desenli) {
-          gunluk(`${adlar.length} bitki · ${o.toplam_nokta} sulama noktası · `
-                 + `${o.toplam_saniye} sn su · ${o.adim} adım`, "iyi");
+        if (desenli || atlanan.length) {
+          gunluk(`${adlar.length - atlanan.length}/${adlar.length} bitki · `
+                 + `${o.toplam_nokta} sulama noktası · ${o.toplam_saniye} sn su · `
+                 + `${o.adim} adım`, "iyi");
         }
       } catch (h) {
         // Önizleme alınamadıysa sulamayı yine de deniyoruz: asıl denetim

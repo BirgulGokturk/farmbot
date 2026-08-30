@@ -71,6 +71,12 @@ VARSAYILAN = {
     # konum yok. `x` boş bırakılırsa tohumluk tanımsız sayılıyor ve
     # çizilmiyor — varsayılan da bu, çünkü her kurulumda tohumluk yok.
     "tohumluk": {"x": None, "y": None, "z": None},
+    # SULAMA BAŞLIĞI — Z eksenine ayrı takılı ve ucun merkezinden kaymış.
+    # Makine `hedef + (dx, dy)`ye gidince su hedefe düşüyor. Türden
+    # BAĞIMSIZ: desen ofsetinin üstüne biniyor, her sulamada geçerli.
+    # `z_min` mutlak Z tabanı: yüzey + açıklık bunun altında kalırsa
+    # başlık bitkiye/kaba sürtüyor.
+    "sulama_basligi": {"dx": 0.0, "dy": 0.0, "z_min": 0.0},
     "current_tool": None,
     "tools": [
         {"name": "tool1", "x": 10.0, "y": 70.5, "z": 150.0},
@@ -207,6 +213,16 @@ class Uclar:
             _atomik_yaz(self.yol, self.ayar)
             self.durum["uc"] = self.ayar.get("current_tool")
         return self.ayar
+
+    def sulama_basligi(self) -> dict[str, float]:
+        """Sulama başlığının kayması ve Z tabanı — sunucu buradan okuyor."""
+        b = self.ayar.get("sulama_basligi") or {}
+        def _s(ad, vars_=0.0):
+            try:
+                return float(b.get(ad, vars_))
+            except (TypeError, ValueError):
+                return vars_
+        return {"dx": _s("dx"), "dy": _s("dy"), "z_min": _s("z_min")}
 
     def tohumluk(self) -> dict[str, Any] | None:
         """Tanımlıysa tohumluk konumu, değilse None."""
