@@ -1827,3 +1827,45 @@ button.dugme.role.acik:hover:not(:disabled) { background: rgba(74, 168, 96, .24)
   object-fit: contain;
 }
 .kamera-yuzen.buyuk .kamera-yuzen-bas { cursor: default; }
+
+/* --------------------------------------------------- uç yuvası tablosu
+   Her satır bir yuva; altındaki ince satır o uca giderken izlenecek yol.
+   Yol UZUN olabiliyor (bırakmada yedi durak): sarmak yerine yatay
+   kaydırıyoruz, yoksa satır üç sıraya yayılıp tablo okunmaz oluyor. */
+/* Satır ızgarası: ad esner, üç sayı sabit dar, silme düğmesi kare.
+   Yan panel 380 piksel; ölçüler oraya sığacak şekilde seçildi. */
+.uc-baslik, .uc-hucreler {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 62px 62px 62px 28px;
+  gap: 5px;
+  align-items: center;
+}
+.uc-baslik {
+  font-size: var(--yazi-kucuk);
+  color: var(--metin-2);
+  padding: 0 0 4px;
+}
+.uc-hucreler input { width: 100%; min-width: 0; }
+.uc-satir { padding: var(--b2) 0; border-bottom: 1px solid var(--cizgi); }
+.uc-satir:last-child { border-bottom: none; }
+.ut-sil {
+  background: none;
+  border: none;
+  color: var(--tehlike, #e2564a);
+  cursor: pointer;
+  font-size: 15px;
+  padding: 4px;
+  line-height: 1;
+}
+.ut-sil:hover { background: rgba(226, 86, 74, .12); border-radius: var(--b1); }
+
+/* Yol satırı UZUN (bırakmada yedi durak). Sarmak yerine yatay kaydırıyoruz:
+   sarınca satır üç sıraya yayılıp tabloyu okunmaz yapıyordu. */
+.uc-yol { margin-top: 5px; font-variant-numeric: tabular-nums; line-height: 1.8; }
+.uc-yol > div { overflow-x: auto; white-space: nowrap; }
+.uc-yol-etiket {
+  display: inline-block;
+  min-width: 40px;
+  color: var(--metin-2);
+}
+.uc-servo { color: #e8a33d; }

@@ -431,19 +431,21 @@ class Uclar:
             self.bolgeler.yuva_esnetmesi_ac()
             self.gunluk_cb("Yuva bölgesi esnetmesi AÇILDI (uç dizisi)", "uyari")
         try:
-            self._adim(1, 6, f"Z taşıma yüksekliğine ({tz:.0f} mm) — uç yukarıda taşınıyor")
+            # `toplam` fazladan iniş varsa 7, yoksa 6. Sabit 6 yazmak,
+            # ilk dört adımın "1/6" sonrakilerin "5/7" demesine yol açıyordu.
+            self._adim(1, toplam, f"Z taşıma yüksekliğine ({tz:.0f} mm) — uç yukarıda taşınıyor")
             self.plc.eksen_git_dogrula(2, tz, hiz)
             self._kesildi_kontrol()
 
-            self._adim(2, 6, f"Y yuvanın üstüne ({ty:.1f} mm)")
+            self._adim(2, toplam, f"Y yuvanın üstüne ({ty:.1f} mm)")
             self.plc.eksen_git_dogrula(1, ty, hiz)
             self._kesildi_kontrol()
 
-            self._adim(3, 6, f"X yuvanın üstüne ({tx:.1f} mm)")
+            self._adim(3, toplam, f"X yuvanın üstüne ({tx:.1f} mm)")
             self.plc.eksen_git_dogrula(0, tx, hiz)
             self._kesildi_kontrol()
 
-            self._adim(4, 6, f"Z ile ucu yuvaya otur ({ze:.1f} mm)")
+            self._adim(4, toplam, f"Z ile ucu yuvaya otur ({ze:.1f} mm)")
             self.plc.eksen_git_dogrula(2, ze, hiz)
             self._kesildi_kontrol()
 
@@ -508,31 +510,75 @@ class Uclar:
         cz = self._cikis_yuksekligi()      # dizi gerçekte buraya çıkıyor
         kayma = "X" if str(self.ayar.get("slide_axis", "Y")).upper() == "X" else "Y"
 
+        # BIRAKMADAKİ fazladan iniş önizlemede de görünmeli. Eskiden
+        # yoktu: dizi servo bıraktıktan sonra 4 mm daha iniyordu ama
+        # önizleme bunu hiç yazmıyordu, yani ekranda okunan yol makinenin
+        # gittiği yol değildi. Bu projede en çok yanıltan hata sınıfı bu.
+        fazla = max(0.0, float(self.ayar.get("drop_extra_z", 0.0) or 0.0))
+
         if islem == "birak":
-            adimlar = [
-                f"Z → {tz:.1f} (taşıma yüksekliği, uç yukarıda)",
-                f"Y → {ty:.1f}",
-                f"X → {tx:.1f}",
-                f"Z → {ze:.1f} (yuvaya otur)",
-                "servo BIRAK",
-                f"{kayma} → {(cx if kayma == 'X' else cy):.1f} (altından çık)",
-                f"Z → {cz:.1f}" + (" (yuva bölgesinin güvenli yüksekliği)" if cz > tz else ""),
+            yol = [
+                {"z": tz, "not": "taşıma yüksekliği, uç yukarıda"},
+                {"x": tx, "y": ty, "z": tz, "not": "yuvanın üstüne"},
+                {"x": tx, "y": ty, "z": ze, "not": "yuvaya otur"},
+                {"servo": "birak", "not": "servo BIRAK"},
             ]
+            cikis_z = ze
+            if fazla > 0:
+                cikis_z = ze - fazla
+                yol.append({"x": tx, "y": ty, "z": cikis_z,
+                            "not": f"{fazla:.0f} mm daha in — kafa sıyrılarak çıksın"})
+            yol.append({"x": cx, "y": cy, "z": cikis_z, "not": "altından çık"})
+            yol.append({"x": cx, "y": cy, "z": cz,
+                        "not": "güvenli yüksekliğe"
+                               + (" (yuva bölgesinin izin koşulu)" if cz > tz else "")})
         else:
-            adimlar = [
-                f"Z → {tz:.1f} (taşıma yüksekliği)",
-                f"Y → {ay:.1f} (yaklaşma)",
-                f"X → {ax:.1f} (yaklaşma)",
-                f"Z → {ze:.1f} (kavrama yüksekliği)",
-                f"{kayma} → {(tx if kayma == 'X' else ty):.1f} (uca kay)",
-                "servo KİLİTLE",
-                f"Z → {max(ze + lift, cz):.1f} (yuvadan kaldır)",
+            # Kalkış yüksekliği: `ze + lift` yuvadan kurtulmaya yetiyor, ama
+            # yuva bölgesinin izin koşulu genellikle `z >= safe_z` ve dizi
+            # bitince esnetme kapanıyor. Alçakta bırakmak makineyi anında
+            # ihlal durumuna sokuyor — bkz. `_cikis_yuksekligi`.
+            kalkis = max(ze + lift, cz)
+            yol = [
+                {"z": tz, "not": "taşıma yüksekliği"},
+                {"x": ax, "y": ay, "z": tz, "not": "yaklaşma noktası"},
+                {"x": ax, "y": ay, "z": ze, "not": "kavrama yüksekliğine in"},
+                {"x": tx, "y": ty, "z": ze, "not": f"{kayma} ekseninde uca kay"},
+                {"servo": "kilitle", "not": "servo KİLİTLE"},
+                {"x": tx, "y": ty, "z": kalkis, "not": "yuvadan kaldır"},
             ]
 
+        # Metin biçimi geriye uyum için duruyor; panel `yol`u kullanıyor.
+        def _metin(a):
+            if a.get("servo"):
+                return a["not"]
+            parca = ",".join("" if a.get(e) is None else f"{a[e]:.0f}"
+                             for e in ("x", "y", "z"))
+            return f"{parca} ({a['not']})"
+
         return {
-            "ok": True, "islem": islem, "ad": ad, "adimlar": adimlar,
+            "ok": True, "islem": islem, "ad": ad,
+            "yol": yol,
+            "adimlar": [_metin(a) for a in yol],
             "uyari": self._onizleme_uyarilari(uc, ze, tz),
         }
+
+    def yollar(self) -> dict[str, Any]:
+        """HER ucun al/bırak yolu — panelin tablo altına yazdığı satır.
+
+        Tek çağrıda hepsi: panel uç başına ayrı istek atmasın ve —daha
+        önemlisi— yolu KENDİ hesaplamasın. Panelde ikinci bir hesap,
+        ekranda okunan yol ile makinenin gittiği yolun ayrışması demek.
+        """
+        cikti = {}
+        for t in self.ayar.get("tools", []):
+            ad = str(t.get("name") or "")
+            if not ad or t.get("x") is None:
+                continue
+            cikti[ad] = {
+                "al": self.yol_onizleme("al", ad).get("yol") or [],
+                "birak": self.yol_onizleme("birak", ad).get("yol") or [],
+            }
+        return cikti
 
     def _onizleme_uyarilari(self, uc: dict[str, Any], ze: float, tz: float) -> list[str]:
         """Önizlemede göze çarpması gereken tutarsızlıklar."""

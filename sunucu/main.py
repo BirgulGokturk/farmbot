@@ -76,6 +76,7 @@ IZINLI_KOMUTLAR = {
     "uc_birak",      # {}
     "uc_degistir",   # {"ad":"tool3"}
     "uc_onizle",     # {"islem":"al"|"birak","ad":"tool1"} — yolu koordinatla göster
+    "uc_yollari",    # {}                            — HER ucun al/bırak yolu
     "uc_durum_temizle",  # {}                        — takılı uç kaydını sıfırla
     "nokta_denetle", # {"noktalar":[{x,y,z}…]}      — yasak bölge + sınır ÖN kontrolü
     "dizi_baslat",   # {"ad":…,"adimlar":[…],"tekrar":1} — çözülmüş adımlarla

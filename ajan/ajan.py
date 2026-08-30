@@ -355,6 +355,14 @@ class Ajan:
                 yeni = await asyncio.to_thread(self.uclar.kaydet, gelen)
                 return {"ok": True, "mesaj": "Uç ayarları kaydedildi", "veri": {"ayar": yeni}}
 
+            if ad == "uc_yollari":
+                # Panelin uç tablosunun altına yazdığı yol satırları.
+                # Tek çağrıda hepsi ve yolu AJAN hesaplıyor: panelde ikinci
+                # bir hesap olsaydı ekranda okunan yol ile makinenin
+                # gittiği yol ayrışabilirdi.
+                return {"ok": True, "mesaj": "", "sessiz": True,
+                        "veri": {"yollar": self.uclar.yollar()}}
+
             if ad == "uc_onizle":
                 return {"ok": True, "mesaj": "", "sessiz": True,
                         "veri": self.uclar.yol_onizleme(str(arg.get("islem", "al")),

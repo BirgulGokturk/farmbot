@@ -26,6 +26,9 @@ const S = {
   roleDurum: { su_pompasi: false, hava_pompasi: false },
   noktalar: [],
   bolgeler: [],
+  ucYollar: {},      // uç adı -> {al:[…], birak:[…]} — ajandan geliyor
+  sonUcTools: null,  // tablo imzası: değişmedikçe yeniden çizmiyoruz
+  sonUcAyar: null,
   dikim: [],        // sunucudaki dikim alanları (sunucu/dikim.py)
   ucListesi: [],
   sonTakiliUc: undefined,
@@ -514,6 +517,19 @@ function ucGuncelle(u) {
       : "Makine şu anda alanın dışında, kilit uygulanıyor.";
   }
 
+  // Uç yuvası tablosu. Kullanıcı düzenlerken ÜZERİNE YAZMIYORUZ, yoksa
+  // yazdığı koordinat bir sonraki durum paketinde siliniyor.
+  const tools = u.tools || (u.ayar && u.ayar.tools) || [];
+  const imza = JSON.stringify(tools);
+  if (!S.ucAyarDuzenleniyor && imza !== S.sonUcTools) {
+    S.sonUcTools = imza;
+    S.sonUcAyar = { tools };
+    ucTablosuCiz(tools, S.ucYollar);
+    ucYollariTazele(false);
+  } else if (!S.sonUcAyar) {
+    S.sonUcAyar = { tools };
+  }
+
   // Ayar alanları: kullanıcı düzenlerken üzerine yazmıyoruz.
   if (u.ayar && !S.ucAyarDuzenleniyor) {
     for (const [ad, deger] of Object.entries(u.ayar)) {
@@ -584,6 +600,104 @@ function ucGuncelle(u) {
 
   // Takılı uç değişince önizleme de değişmeli (al → bırak).
   if (u.uc !== S.sonTakiliUc) { S.sonTakiliUc = u.uc; onizlemeTazele(); }
+}
+
+/* ------------------------------------------------------- uç yuva tablosu
+ *
+ * Uç yuvalarının koordinatları `ajan/uclar.json`da; buradan düzenleniyor
+ * ve `uc_kaydet` ile ajana yazılıyor. Her satırın altında o uca giderken
+ * izlenecek YOL var.
+ *
+ * Yolu AJAN hesaplıyor (`uc_yollari`), panel değil. Panelde ikinci bir
+ * hesap kurmak, ekranda okunan yol ile makinenin gittiği yolun sessizce
+ * ayrışması demek — uç değiştirme makinenin kendine çarpma riski en
+ * yüksek hareketi olduğu için burada özellikle tehlikeli.
+ */
+function ucYoluYaz(adimlar) {
+  if (!adimlar || !adimlar.length) return "";
+  return adimlar.map((a) => {
+    if (a.servo) {
+      return `<b class="uc-servo" title="${kacisli(a.not || "")}">${
+        a.servo === "kilitle" ? "🔒 kilitle" : "🔓 bırak"}</b>`;
+    }
+    const say_ = (v) => (v == null ? "·" : Math.round(v));
+    return `<span title="${kacisli(a.not || "")}">${say_(a.x)},${say_(a.y)},${say_(a.z)}</span>`;
+  }).join(" → ");
+}
+
+function ucTablosuCiz(tools, yollar) {
+  const kutu = $("#uc-tablo");
+  if (!kutu) return;
+  const liste = tools || [];
+  if (!liste.length) {
+    kutu.innerHTML = '<p class="alt-not">Tanımlı uç yuvası yok.</p>';
+    return;
+  }
+  /* Başlıklar bir kez, en üstte. Satır başına etiket tekrarlamak, 380
+   * piksellik yan panelde alanları iki sıraya kırıyor ve tablo okunmaz
+   * oluyordu. */
+  kutu.innerHTML = `<div class="uc-baslik">
+      <span>Uç</span><span>X mm</span><span>Y mm</span><span>Z kavrama</span><span></span>
+    </div>` + liste.map((t, i) => {
+    const y = (yollar || {})[t.name] || {};
+    return `<div class="uc-satir" data-i="${i}">
+      <div class="uc-hucreler">
+        <input class="ut-ad" value="${kacisli(t.name || "")}" maxlength="40">
+        <input type="number" class="ut-x" step="0.1" value="${t.x != null ? t.x : ""}">
+        <input type="number" class="ut-y" step="0.1" value="${t.y != null ? t.y : ""}">
+        <input type="number" class="ut-z" step="0.1"
+               title="Kavrama yüksekliği — baş bu Z'de yandan kayıp kilitliyor"
+               value="${t.z != null ? t.z : ""}">
+        <button class="ut-sil" title="Bu yuvayı sil">✕</button>
+      </div>
+      ${(y.al || y.birak) ? `<div class="uc-yol alt-not">
+        <div><span class="uc-yol-etiket">al</span>${ucYoluYaz(y.al)}</div>
+        <div><span class="uc-yol-etiket">bırak</span>${ucYoluYaz(y.birak)}</div></div>` : ""}
+    </div>`;
+  }).join("");
+
+  $$(".ut-sil").forEach((d) => {
+    d.onclick = () => {
+      const l = ucTablosuTopla();
+      l.splice(Number(d.closest(".uc-satir").dataset.i), 1);
+      ucTablosuCiz(l, S.ucYollar);
+      S.ucAyarDuzenleniyor = true;
+    };
+  });
+  kutu.querySelectorAll("input").forEach((g) => {
+    g.oninput = () => { S.ucAyarDuzenleniyor = true; };
+  });
+}
+
+function ucTablosuTopla() {
+  return $$("#uc-tablo .uc-satir").map((el) => ({
+    name: el.querySelector(".ut-ad").value.trim(),
+    x: Number(el.querySelector(".ut-x").value),
+    y: Number(el.querySelector(".ut-y").value),
+    z: Number(el.querySelector(".ut-z").value),
+  })).filter((t) => t.name);
+}
+
+async function ucTablosuKaydet() {
+  const tools = ucTablosuTopla();
+  const sonuc = await komutGonder("uc_kaydet", { ayar: { tools } });
+  if (sonuc && sonuc.ok) {
+    S.ucAyarDuzenleniyor = false;
+    gunluk(`✓ ${tools.length} uç yuvası kaydedildi`, "ok");
+    // Yolları yeniden çekiyoruz: koordinat değişti, yol da değişti.
+    await ucYollariTazele(true);
+  }
+}
+
+async function ucYollariTazele(zorla) {
+  if (!S.ajanBagli) return;
+  const sonuc = await komutGonder("uc_yollari", {});
+  const v = sonuc && sonuc.veri;
+  if (!v) return;
+  S.ucYollar = v.yollar || {};
+  if (zorla || !S.ucAyarDuzenleniyor) {
+    ucTablosuCiz((S.sonUcAyar && S.sonUcAyar.tools) || [], S.ucYollar);
+  }
 }
 
 /** Tak/Bırak'a basmadan önce izlenecek yolu koordinat koordinat göster. */
@@ -2479,6 +2593,18 @@ function olaylariBagla() {
   $("#d-uc-birak").onclick = () => komutGonder("uc_birak");
   $("#d-uc-dur").onclick = () => komutGonder("dur");
   $("#uc-secim").onchange = onizlemeTazele;
+
+  const satirEkle = $("#d-uc-satir-ekle");
+  if (satirEkle) {
+    satirEkle.onclick = () => {
+      const l = ucTablosuTopla();
+      l.push({ name: `tool${l.length + 1}`, x: 0, y: 0, z: 0 });
+      ucTablosuCiz(l, S.ucYollar);
+      S.ucAyarDuzenleniyor = true;
+    };
+  }
+  const tabloKaydet = $("#d-uc-tablo-kaydet");
+  if (tabloKaydet) tabloKaydet.onclick = ucTablosuKaydet;
   $("#d-uc-temizle").onclick = async () => {
     if (!confirm("Takılı uç kaydı sıfırlanacak. Hiçbir eksen hareket etmez — "
                  + "makinede uç olup olmadığını gözle doğrulayın. Devam?")) return;
