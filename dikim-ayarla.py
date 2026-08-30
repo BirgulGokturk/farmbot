@@ -21,10 +21,42 @@ Eski alanları siliyor. Panelden girdiğiniz başka bir alan varsa önce
 
 import json
 import os
+import re
 import shutil
 import sys
 
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "sunucu"))
+KOK = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, os.path.join(KOK, "sunucu"))
+
+
+def ortami_yukle() -> None:
+    """`sunucu/ortam` içindeki VERI_YOLU'nu bu sürece de taşır.
+
+    ŞART: sunucu systemd altında EnvironmentFile=sunucu/ortam ile
+    çalışıyor ve dikim dosyasının yerini VERI_YOLU belirliyor. Betik düz
+    kabuktan çalıştığında o değişken yok; ayarları yazar, sunucu başka bir
+    dosyayı okur ve panelde hiçbir şey değişmez — sessiz ve kafa karıştırıcı.
+    """
+    yol = os.path.join(KOK, "sunucu", "ortam")
+    if not os.path.exists(yol):
+        return
+    with open(yol, encoding="utf-8") as f:
+        for satir in f:
+            esles = re.match(r"^\s*([A-Z_]+)=(.*)$", satir)
+            if not esles:
+                continue
+            ad, deger = esles.group(1), esles.group(2).strip()
+            if deger.startswith('"'):
+                try:
+                    deger = json.loads(deger)
+                except ValueError:
+                    deger = deger.strip('"')
+            # Kabukta zaten verilmişse ona dokunmuyoruz: elle yol vermek
+            # (DIKIM_YOLU=... gibi) her zaman kazanmalı.
+            os.environ.setdefault(ad, deger)
+
+
+ortami_yukle()
 
 ALANLAR = [
     {"ad": "kap 1", "x1": 235.0, "y1": 0.0,   "x2": 495.0, "y2": 275.0, "toprak_z": 170.0},
@@ -36,6 +68,7 @@ def main() -> int:
     import dikim
 
     yol = dikim._yol()
+    print(f"Yazılacak dosya: {yol}")
     if os.path.exists(yol):
         yedek = yol + ".yedek"
         shutil.copy2(yol, yedek)
