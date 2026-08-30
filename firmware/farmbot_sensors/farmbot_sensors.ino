@@ -104,7 +104,11 @@ void dhtSec() {
     DHT *aday = tip == 0 ? &dht11 : &dht22;
     aday->begin();
     for (int deneme = 0; deneme < 2; deneme++) {
-      delay(1200);                       // DHT iki okuma arası bekliyor
+      /* 2 saniye: DHT11 veri sayfası açılıştan sonra 1 sn kararlılık
+       * istiyor, klonlar daha uzun sürebiliyor ve iki okuma arası da en az
+       * 2 sn olmalı. 1,2 sn ile ilk deneme sınırda kalıyordu — sağlam bir
+       * sensörü "yok" saymak, olmayan bir arızayı aratır. */
+      delay(2000);
       if (!isnan(aday->readTemperature())) {
         dht = aday;
         dhtAdi = tip == 0 ? "DHT11" : "DHT22";
