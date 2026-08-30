@@ -1604,6 +1604,16 @@
           const gozVurus = tepsiMm ? vurTara(tepsiMm) : null;
           const gz = gozVurus && gozVurus.kayit && gozVurus.kayit.goz
                        ? gozVurus.kayit : null;
+          // Simgeyi göster/gizle — sahne yeniden kurulmuyor, yalnız
+          // görünürlük değişiyor.
+          const ucKatman = BAGLAM.katmanTanimi("uclar");
+          if (ucKatman && ucKatman.gozVurgula) {
+            const kayit = T.katmanlar.find((x) => x.tanim.kimlik === "uclar");
+            if (kayit && kayit.acik
+                && ucKatman.gozVurgula(katmanBaglami(kayit), gz ? gz.name : null)) {
+              kirlet("goz-vurgu");
+            }
+          }
           if (gz) {
             const tur = gz.tohum ? VERI.turler[gz.tohum] : null;
             const ad = tur ? `${tur.icon || "🌱"} ${tur.name_tr || gz.tohum}`
@@ -2227,6 +2237,33 @@
         nesne: k.grup ? k.grup.children.length : 0,
         sahnede: !!(k.grup && k.grup.parent),
       }));
+    },
+
+    /** Deneme yardımcısı — sahnenin o anki karesini PNG olarak verir.
+     *
+     * NEDEN VAR: bu projede görsel değişiklikleri doğrulamak tekrar tekrar
+     * sorun oldu. Çizici `preserveDrawingBuffer` olmadan kuruluyor (haklı
+     * olarak — bellek maliyeti var), dolayısıyla tuval sonradan
+     * okunamıyor. Burada AYNI KARE içinde önce çizip sonra okuyoruz, o
+     * pencerede tampon hâlâ geçerli.
+     *
+     * `enBoy` ile küçültülebiliyor: tam çözünürlük veri URL'si megabaytlar
+     * tutuyor ve çoğu doğrulama için gereksiz.
+     */
+    kareYakala(enBoy) {
+      if (!ciz || !sahne) return null;
+      // Etkin kamerayı çizim döngüsüyle AYNI yerden alıyoruz; üstten
+      // görünümde başka bir kamera etkin ve onu bilmezsek yakalanan kare
+      // ekrandakinden farklı olurdu.
+      ciz.render(sahne, etkinKamera());
+      const kaynak = ciz.domElement;
+      const hedefEn = Math.max(64, Math.min(kaynak.width, enBoy || 900));
+      const olcek = hedefEn / kaynak.width;
+      const k = document.createElement("canvas");
+      k.width = Math.round(kaynak.width * olcek);
+      k.height = Math.round(kaynak.height * olcek);
+      k.getContext("2d").drawImage(kaynak, 0, 0, k.width, k.height);
+      return k.toDataURL("image/png");
     },
 
     /** Deneme yardımcısı — bir katmanın kendi tanı çıktısı.

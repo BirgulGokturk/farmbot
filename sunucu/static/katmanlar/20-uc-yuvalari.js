@@ -265,6 +265,15 @@ Tarla.katman({
           s.scale.setScalar(0.052);          // bitkininkinden hafif küçük
           s.position.set(o.sx(goz.x), ustY + 0.030, o.sz(goz.y));
           s.raycast = () => {};
+          /* GİZLİ BAŞLIYOR, imleç üstüne gelince çıkıyor.
+           *
+           * Önce hepsi birden duruyordu ve dört emoji yan yana tepsinin
+           * üstünü kaplıyordu — tepsi, delikleri ve dolu/boş durumu
+           * simgelerin altında kayboluyordu. İstenen, bakınca hepsini
+           * görmek değil, hangisine baktığını öğrenmek. */
+          s.visible = false;
+          s.userData.gozAd = goz.ad;
+          this._simgeAgi = this._simgeAgi || {};
           g.add(s);
         }
 
@@ -335,6 +344,22 @@ Tarla.katman({
         c.fillText(g.ad || "", p.x + 6, p.y + 3);
       });
     }
+  },
+
+  /** İmlecin üstünde durduğu gözün simgesini gösterir, ötekileri gizler.
+   *
+   * `tarla.js` fare hareketinde çağırıyor. Sahneyi burada yeniden
+   * kurmuyoruz: yalnız `visible` değişiyor, yani fare hareketi başına
+   * geometri üretilmiyor.
+   */
+  gozVurgula(o, ad) {
+    let degisti = false;
+    o.grup.traverse((n) => {
+      if (n.type !== "Sprite" || !n.userData.gozAd) return;
+      const olmali = n.userData.gozAd === ad;
+      if (n.visible !== olmali) { n.visible = olmali; degisti = true; }
+    });
+    return degisti;
   },
 
   /** Deneme yardımcısı — tepsinin ve simgelerin o anki hâli.
