@@ -73,7 +73,7 @@ JOG_TICK = 0.1
 VARSAYILAN_KALIB = [
     {"cpm": 17.1782, "dir": 1, "home": 0.0, "min": 0.0, "max": 535.0},    # X
     {"cpm": 4.2686, "dir": 1, "home": 0.0, "min": 0.0, "max": 630.0},     # Y
-    {"cpm": 37.074, "dir": -1, "home": 414.23, "min": 0.0, "max": 550.0},  # Z
+    {"cpm": 37.074, "dir": -1, "home": 414.23, "min": 0.0, "max": 414.23},  # Z
 ]
 
 
@@ -1266,6 +1266,28 @@ class Gantry:
                 raise PLCHatasi(
                     f"{EKSENLER[i]['ad']} min ({temiz[i]['min']}) max'tan "
                     f"({temiz[i]['max']}) küçük olmalı")
+# ULAŞILAMAZ SINIR. Konum `dir * sayaç / cpm + home` ile hesaplanıyor
+            # ve sayaç hiçbir zaman negatif olmuyor. Dolayısıyla dir NEGATİFSE
+            # konum home'un ÜSTÜNE çıkamaz, POZİTİFSE altına inemez. Bunun
+            # dışında bir sınır yazmak, makinenin hiçbir zaman varamayacağı
+            # bir bölgeyi "geçerli" ilan etmek demek: hedef kabul edilir,
+            # eksen sürülür, zaman aşımına kadar beklenir ve "ulaşamadı"
+            # denir. Sahada tam bu yaşandı — Z'nin max'ı 550 yazıyordu ama
+            # home 414.23 olduğu için 135 mm'lik bölge ulaşılamazdı.
+            k = self.kalib[i]
+            yon = float(k.get("dir", 1))
+            ev = float(temiz[i]["home"])
+            if yon < 0 and float(temiz[i]["max"]) > ev + 0.01:
+                raise PLCHatasi(
+                    f"{EKSENLER[i]['ad']} max ({temiz[i]['max']:g}) home'dan "
+                    f"({ev:g}) büyük olamaz: bu eksende yön negatif, yani "
+                    f"konum home'un üstüne çıkamıyor. Makine oraya hiç "
+                    f"varamaz.")
+            if yon > 0 and float(temiz[i]["min"]) < ev - 0.01:
+                raise PLCHatasi(
+                    f"{EKSENLER[i]['ad']} min ({temiz[i]['min']:g}) home'dan "
+                    f"({ev:g}) küçük olamaz: bu eksende yön pozitif, yani "
+                    f"konum home'un altına inemiyor.")
         self.kalib = temiz
         self._kalib_dosyaya_yaz(temiz)
         return " · ".join(
