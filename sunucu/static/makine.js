@@ -43,15 +43,28 @@
     ayak: 160,
     /** Yan rayların toprak yüzeyinden yüksekliği. */
     yan_ray: 35,
-    /** Tezgâh tablası toprak yüzeyinin bu kadar altında (negatif). */
-    tabla: -50,
+    /** Zemin, toprak yüzeyinin bu kadar altında (negatif). Ayak boyu
+     *  bununla çerçeve yüksekliğinin farkı. */
+    zemin: -210,
+    /** Kabın TABANI toprak yüzeyinin bu kadar altında (negatif).
+     *
+     * Önce -50 idi ve kaplar sığ birer tepsi gibi duruyordu: altlarından
+     * çim görünüyor, toprak da 5 cm'lik ince bir katman gibi okunuyordu.
+     * Gerçekte bunlar derin plastik saklama kutuları ve içleri toprak
+     * dolu. -170'te kap tabanı zeminin 4 cm üstünde kalıyor — kutu asılı
+     * duruyor ama yere değmiyor, fotoğraftaki gibi. */
+    tabla: -170,
     /** Toprak kabı. */
     /* Kap yüksekliği 90 mm'ydi ve tabla −50'de olduğu için kabın ağzı
      * toprak yüzeyinin 40 mm ÜSTÜNE çıkıyordu: sahnede kap komple yukarıda
      * duran bir kutu gibi görünüyordu. Gerçekte kap aşağıda ve ağzı sigmayı
      * çok az geçiyor. 62 mm'de ağız yüzeyin 12 mm üstünde kalıyor — kenar
      * hâlâ görünüyor ama kutu öne çıkmıyor. */
-    kap: { yukseklik: 62, cidar: 6 },
+    /* Duvar TABANDAN ağza: 170 mm derinlik + ağız yüzeyin 12 mm üstünde.
+     * Duvar yüksekliği kabın derinliğiyle birlikte büyümeliydi; 62'de
+     * kalsaydı duvarlar tabandan başlayıp toprak yüzeyine varamadan
+     * biterdi. */
+    kap: { yukseklik: 182, cidar: 6 },
     /** 2B haritada çizilen karık sayısı. */
     /* karik_sayisi: toprakta acilmis oluk sayisi.
      *
@@ -229,7 +242,11 @@
      * yüksekliği artık çerçeveden bağımsız: eskiden neredeyse orada.
      * Ayak boyu ikisinin farkı, yani çerçeve nereye giderse gitsin ayak
      * yere kadar uzuyor. */
-    const zemin = M(MAKINE.tabla) - AYAK;
+    /* Zemin yüksekliği KAPTAN BAĞIMSIZ. Önce `tabla - AYAK` ile
+     * türetiliyordu; kap derinleştirilince ayaklar da onunla birlikte
+     * uzuyor ve makine yere gömülüyordu. İkisi ayrı sorular: biri
+     * "makine hangi yükseklikte duruyor", öteki "kap ne kadar derin". */
+    const zemin = M(MAKINE.zemin);
     const ayakBoy = cerceveY - zemin;
 
     if (sabitIster) {
