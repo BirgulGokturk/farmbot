@@ -37,6 +37,7 @@
   "use strict";
 
   const MM = 0.001;              // 1 mm = 0.001 sahne birimi (metre)
+  let hayalet = null, hayaletDisk = null, hayaletHalka = null;
   const KENAR_MM = 150;          // yatak dışına tıklanabilen pay
   const IZ_AZAMI = 240;          // robot izinde saklanan konum sayısı
 
@@ -719,6 +720,30 @@
     kokGrup = new THREE.Group();
     sahne.add(kokGrup);
 
+    /* YERLEŞTİRME ÖNİZLEMESİ. Bitki eklerken çapı ancak tıkladıktan sonra
+     * görmek, yeri gözle kestirip sonra taşımak demekti. İmleç nerede
+     * duruyorsa oradaki halkayı önceden çiziyoruz.
+     *
+     * Katman sistemine değil doğrudan sahneye bağlı: katman `guncelle`
+     * bütün bitkileri yeniden kuruyor ve bunu her fare hareketinde yapmak
+     * kalabalık bir yatakta pahalı. Burada tek bir nesnenin konumu ve
+     * yarıçapı değişiyor. */
+    hayalet = new THREE.Group();
+    hayalet.visible = false;
+    hayaletDisk = new THREE.Mesh(
+      new THREE.CircleGeometry(1, 44),
+      new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.16,
+        side: THREE.DoubleSide, depthWrite: false }));
+    hayaletDisk.rotation.x = -Math.PI / 2;
+    hayaletHalka = new THREE.Mesh(
+      new THREE.RingGeometry(0.996, 1, 52),
+      new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.95,
+                                    side: THREE.DoubleSide }));
+    hayaletHalka.rotation.x = -Math.PI / 2;
+    hayaletDisk.raycast = hayaletHalka.raycast = () => {};
+    hayalet.add(hayaletDisk); hayalet.add(hayaletHalka);
+    kokGrup.add(hayalet);
+
     // Görünmez seçme düzlemi — ışın testleri buna çarpıyor.
     secmeDuzlem = new THREE.Mesh(new THREE.PlaneGeometry(1, 1),
                                  new THREE.MeshBasicMaterial({ visible: false }));
@@ -915,6 +940,51 @@
    * ROBOT HAREKET HALİNDEYKEN sürekli işaretli kalıyor: durum paketleri
    * arasında konum ara değerlenmese de, hareket biterken gelen son paketi
    * kaçırmamak ve akıcılığı bozmamak için hareket bitene kadar çiziyoruz. */
+  /** Yerleştirme önizlemesini imlece taşır.
+   *
+   * Yarıçap seçili türün yayılım çapının yarısı — bitki eklendikten sonra
+   * çizilecek halkanın AYNISI, o yüzden aynı çözüm zincirinden (bitki
+   * ezmesi > tür > katalog) geçiyor. Renk çakışmayı söylüyor: bu yere
+   * konursa komşusuyla iç içe geçecekse kırmızı, değilse türün rengi.
+   * "Sonra bakarız" değil, tıklamadan önce görülmesi gereken bilgi.
+   */
+  function hayaletTazele(mm) {
+    if (!hayalet) return;
+    const slug = document.querySelector("#tur-secim");
+    if (!T.ekleme || !mm || !slug || !slug.value) {
+      if (hayalet.visible) { hayalet.visible = false; kirlet("hayalet"); }
+      return;
+    }
+    const tur = VERI.turler[slug.value];
+    if (!tur) { hayalet.visible = false; return; }
+    const r = (Number(turAlani({ tur: slug.value }, "spread_mm").deger) || 200) / 2;
+
+    // Komşularla çakışma: iki halkanın merkez uzaklığı yarıçap toplamından
+    // küçükse iç içe geçiyorlar.
+    let cakisiyor = false;
+    for (const n of VERI.noktalar) {
+      if (!n || !n.tur) continue;
+      const nr = (Number(turAlani(n, "spread_mm").deger) || 200) / 2;
+      if (Math.hypot(n.x - mm.x, n.y - mm.y) < r + nr) { cakisiyor = true; break; }
+    }
+    const renk = cakisiyor ? "#e05252" : (tur.color || "#5f9e46");
+
+    const olcek = r * MM;
+    hayaletDisk.scale.set(olcek, olcek, 1);
+    hayaletHalka.scale.set(olcek, olcek, 1);
+    hayaletDisk.material.color.set(renk);
+    hayaletHalka.material.color.set(renk);
+    // Alan yüzeyi genel yüzeyden farklı olabiliyor; halka toprağın altında
+    // kalmasın diye tıklanan noktanın alanına oturuyor.
+    const alan = VERI.dikim.find((a) => a.toprak_z != null
+      && mm.x >= Math.min(a.x1, a.x2) && mm.x <= Math.max(a.x1, a.x2)
+      && mm.y >= Math.min(a.y1, a.y2) && mm.y <= Math.max(a.y1, a.y2));
+    const dy = alan ? (Number(alan.toprak_z) - T.toprakZ) * MM : 0;
+    hayalet.position.set(sx(mm.x), dy + 0.0016, sz(mm.y));
+    if (!hayalet.visible) hayalet.visible = true;
+    kirlet("hayalet");
+  }
+
   function kirlet(kaynak) {
     T.kirli = true;
     // Hangi olayın çizdirdiğini sayıyoruz: boşa dönen bir kaynak çıkarsa
@@ -1444,6 +1514,8 @@
         if (vurus) sec(vurus);
       });
 
+      hedef.addEventListener("pointerleave", () => hayaletTazele(null));
+
       hedef.addEventListener("pointermove", (o) => {
         const mm = ucBoyutlu ? zemindeMM(o) : olay2bMM(o);
         if (!bas) {
@@ -1451,6 +1523,7 @@
             : T.ekleme ? "crosshair"
             : (mm && vurTara(mm)) ? "grab" : "default";
           if (mm && !ucBoyutlu) ipucu(`X ${say(mm.x, 1)} · Y ${say(mm.y, 1)} mm`);
+          hayaletTazele(mm);
           return;
         }
         const dx = o.clientX - bas.x, dy = o.clientY - bas.y;
@@ -2071,6 +2144,7 @@
 
   function eklemeKipi(acik) {
     T.ekleme = !!acik;
+    if (!T.ekleme) hayaletTazele(null);
     const ekle = $("#d-ekleme-kipi");
     if (!ekle) return;
     ekle.classList.toggle("secili", T.ekleme);
