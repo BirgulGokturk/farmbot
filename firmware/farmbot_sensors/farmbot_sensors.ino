@@ -58,7 +58,14 @@
 #define OLCUM_ARALIGI_MS 2000
 
 // --------------------------------------------------------------- DURUM ----
-DHT dht(DHT_PIN, DHT11);
+/* DHT tipi ELLE SEÇİLMİYOR. Yanlış tip seçilince kütüphane sessizce NaN
+ * döndürüyor: panelde sıcaklık ve nem kartları hiç görünmüyor ve sensör
+ * bozuk sanılıyor. Açılışta ikisi de deneniyor, hangisi okuma veriyorsa o
+ * kullanılıyor ve adı panele bildiriliyor. */
+DHT dht11(DHT_PIN, DHT11);
+DHT dht22(DHT_PIN, DHT22);
+DHT *dht = &dht11;
+const char *dhtAdi = "DHT11";
 Adafruit_BMP085 bmp;
 bool bmpVar = false;
 
@@ -88,6 +95,32 @@ void roleYaz(int pin, bool acik) {
   else if (pin == HAVA_POMPASI_PIN) havaPompasiAcik = acik;
 }
 
+/** Hangi DHT takılı? Okuma verene karar veriyoruz.
+ *
+ * DHT11 önce deneniyor çünkü sahadaki kart o. İlk okuma kütüphane
+ * ısınırken NaN dönebiliyor, o yüzden iki deneme yapılıyor. */
+void dhtSec() {
+  for (int tip = 0; tip < 2; tip++) {
+    DHT *aday = tip == 0 ? &dht11 : &dht22;
+    aday->begin();
+    for (int deneme = 0; deneme < 2; deneme++) {
+      delay(1200);                       // DHT iki okuma arası bekliyor
+      if (!isnan(aday->readTemperature())) {
+        dht = aday;
+        dhtAdi = tip == 0 ? "DHT11" : "DHT22";
+        Serial.print("BILGI: DHT tipi ");
+        Serial.println(dhtAdi);
+        return;
+      }
+    }
+  }
+  // İkisi de okumadı: sensör bağlı değil ya da bozuk. Sıcaklık/nem null
+  // gidecek, geri kalan ölçümler çalışmaya devam edecek.
+  dht = &dht11;
+  dhtAdi = "yok";
+  Serial.println("UYARI: DHT okumuyor — kabloyu ve D2'yi kontrol edin");
+}
+
 // --------------------------------------------------------------- KURULUM --
 void setup() {
   /* İLK İŞ BU. Serial.begin bile sonra geliyor: sıfırlamadan bu satıra
@@ -108,7 +141,7 @@ void setup() {
   roleYaz(HAVA_POMPASI_PIN, false);
 
   Serial.begin(9600);
-  dht.begin();
+  dhtSec();
   bmpVar = bmp.begin();
   if (!bmpVar) Serial.println("UYARI: BMP180 bulunamadi, digerleriyle devam");
 
@@ -178,8 +211,8 @@ void sayiYaz(float d) {
 }
 
 void olcVeYaz() {
-  float nem      = dht.readHumidity();
-  float sicaklik = dht.readTemperature();
+  float nem      = dht->readHumidity();
+  float sicaklik = dht->readTemperature();
 
   float bmpSicaklik = NAN, basinc = NAN, rakim = NAN;
   if (bmpVar) {
@@ -193,7 +226,10 @@ void olcVeYaz() {
   Serial.print(",\"bmp_sicaklik\":");         sayiYaz(bmpSicaklik);
   Serial.print(",\"basinc\":");               sayiYaz(basinc);
   Serial.print(",\"rakim\":");                sayiYaz(rakim);
-  Serial.print(",\"toprak_nem\":");           Serial.print(analogRead(TOPRAK_PIN));
+  /* Hangi DHT bulundu — ajan makul aralığı buna göre seçiyor (DHT11 ile
+   * DHT22'nin çalışma aralıkları farklı) ve panel kartın altına yazıyor. */
+  Serial.print(",\"dht\":\"");                 Serial.print(dhtAdi);
+  Serial.print("\",\"toprak_nem\":");           Serial.print(analogRead(TOPRAK_PIN));
   Serial.print(",\"r_su_pompasi\":");         Serial.print(suPompasiAcik ? 1 : 0);
   Serial.print(",\"r_hava_pompasi\":");       Serial.print(havaPompasiAcik ? 1 : 0);
   /* Kartın açık kaldığı süre. Geriye giderse kart yeniden başlamıştır ve
