@@ -64,7 +64,7 @@ Anlık makine durumu ve son ölçüm.
     "z_guvenli": true, "guvenli_z": 340.0, "toprak_z": 110.0,
     "acil": {"acik": false, "saat": "", "neden": ""},
     "sinirlar": {"x": {"min": 0, "max": 425},
-                 "y": {"min": 0, "max": 600},
+                 "y": {"min": 0, "max": 630},
                  "z": {"min": 0, "max": 550}},
     "hiz": 20.0, "hata": null, "arduino": true,
     "sunucu_saati": 1787496298.5

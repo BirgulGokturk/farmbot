@@ -119,7 +119,15 @@ def ayar_yukle(yol: str) -> dict[str, Any]:
                 ayar["plc"]["kalibrasyon"] = json.load(dosya)
             logger.info("Kalibrasyon okundu: %s", tam)
         else:
-            logger.warning("Kalibrasyon dosyası yok (%s) — koddaki ölçülmüş varsayılanlar kullanılacak", tam)
+            # Hangi zarfın geçerli olduğunu SAYIYLA yazıyoruz. "Varsayılanlar
+            # kullanılacak" demek yetmiyor: sahadaki koordinatlar reddedilmeye
+            # başlarsa sebebin bu satır olduğu ancak sayılar görününce anlaşılıyor.
+            zarf = " · ".join(
+                f"{ad} 0–{k['max']:.0f} mm"
+                for ad, k in zip(("X", "Y", "Z"), plc_modulu.VARSAYILAN_KALIB))
+            logger.warning(
+                "Kalibrasyon dosyası yok (%s) — koddaki ölçülmüş varsayılanlar "
+                "kullanılacak: %s", tam, zarf)
     return ayar
 
 

@@ -235,9 +235,14 @@ Kalibrasyon değerleri (`gantry_calib.json`):
 
 | Eksen | cpm | dir | home | sınırlar |
 |---|---|---|---|---|
-| X | 7.0 | +1 | 0 mm | 0 – 425 mm |
-| Y | 2.2746 | +1 | 0 mm | 0 – 600 mm |
-| Z | 56.8376 | **−1** | **438 mm** | 0 – 550 mm |
+| X | 17.1782 | +1 | 0 mm | 0 – 535 mm |
+| Y | 4.2686 | +1 | 0 mm | 0 – 630 mm |
+| Z | 37.074 | **−1** | **438 mm** | 0 – 550 mm |
+
+Aynı değerler `plc.py`'deki `VARSAYILAN_KALIB` listesinde de duruyor: o
+liste yalnız `gantry_calib.json` bulunamazsa devreye giriyor ve dosyayla
+**aynı** tutulmalı. Ayrışırsa, dosyanın kaybolduğu gün makine sahadaki
+koordinatları sessizce sınır dışı sayar.
 
 ### Güvenlik — dört kural, hepsi ajanda
 

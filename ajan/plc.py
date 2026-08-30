@@ -59,10 +59,19 @@ EKSEN_INDEKS = {"x": 0, "y": 1, "z": 2}
 JOG_TTL = 1.2
 JOG_TICK = 0.1
 
+# `gantry_calib.json` BULUNAMAZSA devreye giren yedek. Sahadaki ölçümle
+# AYNI olmak zorunda ve bir dönem değildi: burası X425 / Y550'de kalmışken
+# dosya X535 / Y630'a güncellenmişti. Dosya kaybolduğu gün makine, tohumluk
+# (Y605), Kap 1'in uzak kenarı (X495) ve Kap 2 (Y610) dahil sahadaki her
+# yeni koordinatı "sınır dışı" diye reddederdi — hem de sebebi görünmeden,
+# çünkü panel sınırları ajandan okuyor ve ajan da bu listeden.
+#
+# cpm değerleri de güncellendi: yanlış cpm ile yedek devreye girmek, yanlış
+# MESAFE gitmek demek ve o, yanlış sınırdan daha tehlikeli.
 VARSAYILAN_KALIB = [
-    {"cpm": 7.0, "dir": 1, "home": 0.0, "min": 0.0, "max": 425.0},      # X
-    {"cpm": 2.2746, "dir": 1, "home": 0.0, "min": 0.0, "max": 550.0},   # Y
-    {"cpm": 56.8376, "dir": -1, "home": 438.0, "min": 0.0, "max": 550.0},  # Z
+    {"cpm": 17.1782, "dir": 1, "home": 0.0, "min": 0.0, "max": 535.0},    # X
+    {"cpm": 4.2686, "dir": 1, "home": 0.0, "min": 0.0, "max": 630.0},     # Y
+    {"cpm": 37.074, "dir": -1, "home": 438.0, "min": 0.0, "max": 550.0},  # Z
 ]
 
 

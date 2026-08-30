@@ -53,10 +53,14 @@
    */
   const HARITA_VARSAYILAN = {
     dondur: false, koseX: "sol", koseY: "ust",
-    boyutKip: "dinamik", elleEn: 425, elleBoy: 600,
+    boyutKip: "dinamik", elleEn: 535, elleBoy: 630,
   };
 
-  const VARSAYILAN_SINIR = { x: { min: 0, max: 425 }, y: { min: 0, max: 600 }, z: { min: 0, max: 550 } };
+  /* Ajan bağlıyken sınırlar ondan geliyor (`durum.sinirlar`); bu liste
+   * yalnız AJAN KOPUKKEN geçerli. Sahadaki ölçümle aynı tutuluyor, yoksa
+   * robot kapalıyken panel yatağı yanlış boyda çiziyor ve o boyda ekim
+   * planlanıyor. */
+  const VARSAYILAN_SINIR = { x: { min: 0, max: 535 }, y: { min: 0, max: 630 }, z: { min: 0, max: 550 } };
 
   /* --------------------------------------------------------------- durum */
   const T = {
@@ -91,7 +95,7 @@
   };
 
   /** Tek seferde işlenebilecek nokta sayısı — sunucudaki sınırla aynı.
-   *  Yatağımız 425 x 600 mm; sığan fide sayısı bu mertebede. */
+   *  Yatağımız 535 x 630 mm; sığan fide sayısı bu mertebede. */
   const AZAMI_SECIM = 40;
 
   /* Bütün katmanların ortak veri havuzu. Tek kaynak: ayrı bir depo yok,

@@ -537,7 +537,7 @@ async def api_geri_al(govde: dict[str, Any], jeton: str = Query(default="")):
 # göndermiyor: sıralama, yasak bölge denetimi, Z kilidi ve acil durdurma
 # mandalı ajanın elinde kalıyor.
 #
-# Seçim en fazla 40 nokta: yatağımız 425 x 600 mm, sığan fide sayısı bu
+# Seçim en fazla 40 nokta: yatağımız 535 x 630 mm, sığan fide sayısı bu
 # mertebede. Üstü hem adım sınırını (200) zorlar hem de yanlışlıkla
 # yapılmış bir seçimi tehlikeli hâle getirir.
 # --------------------------------------------------------------------------- #
