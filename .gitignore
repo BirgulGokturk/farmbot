@@ -18,3 +18,4 @@ fb-*.tar.gz
 
 # Ajanin kendi yazdigi calisma durumu — makineye ozel, depoya girmez.
 ajan/bolgeler.json
+kamera_kalibrasyon.json

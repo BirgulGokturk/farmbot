@@ -24,6 +24,7 @@ const S = {
   enable: false,
   grafikler: {},
   roleDurum: { su_pompasi: false, hava_pompasi: false },
+  kalibElle: {},           // kalibrasyonda elle girilip henüz kaydedilmemiş kutular
   noktalar: [],
   bolgeler: [],
   ucYollar: {},      // uç adı -> {al:[…], birak:[…]} — ajandan geliyor
@@ -2659,22 +2660,31 @@ function olaylariBagla() {
         const al = (alan) => {
           const el = document.querySelector(
             `.kalib-girdi[data-eksen="${e}"][data-alan="${alan}"]`);
-          const v = el ? el.value.trim() : "";
-          return v === "" ? null : Number(v);
+          // Virgül -> nokta: Türkçe klavyede ondalık ayırıcı virgül ve
+          // kullanıcının "414,23" yazması en doğal hâli.
+          const v = el ? el.value.trim().replace(",", ".") : "";
+          if (v === "") return null;
+          const s = Number(v);
+          return Number.isFinite(s) ? s : null;
         };
         return { home: al("home"), min: al("min"), max: al("max") };
       });
       const sonuc = await komutGonder("kalibrasyon_kaydet", { eksenler });
       // Kaydedilen değerler ajandan geri gelsin diye imzayı sıfırlıyoruz;
       // yoksa tablo eski imzayla aynı kalıp tazelenmiyor.
-      if (sonuc && sonuc.ok) S.kalibImza = "";
+      // Kayıt başarılıysa elle girilenler artık ajanın değeri; tabloyu
+      // ondan tazelesin diye izi siliyoruz.
+      if (sonuc && sonuc.ok) { S.kalibElle = {}; S.kalibImza = ""; }
     };
   }
   const kalibGeri = $("#d-kalib-geri");
   if (kalibGeri) {
     // Kutulara yazılmış ama kaydedilmemiş değerleri atar: ajandan gelen
     // hâle döner.
-    kalibGeri.onclick = () => { S.kalibImza = ""; gunluk("Kalibrasyon kutuları geri alındı"); };
+    kalibGeri.onclick = () => {
+      S.kalibElle = {}; S.kalibImza = "";
+      gunluk("Kalibrasyon kutuları geri alındı");
+    };
   }
 
   const hizKaydet = $("#d-eksen-hiz-kaydet");
@@ -3067,8 +3077,21 @@ function olaylariBagla() {
 function kalibrasyonCiz(d) {
   const govde = $("#kalib-govde");
   if (!govde) return;
-  // Kullanıcı bir kutuya yazarken tabloyu yeniden kurmuyoruz: yarım kalan
-  // sayı yarım saniyede bir silinirse alan doldurulamaz hâle geliyor.
+  /* TABLO CANLI KALIR, YAZILAN KORUNUR.
+   *
+   * Sorun şuydu: kullanıcı kutuya yazıp başka bir yere tıklayınca odak
+   * gidiyor, ilk durum paketinde tablo yeniden kuruluyor ve yazdığı değer
+   * siliniyordu. Ekranda hiçbir hata çıkmıyor, sayı kayboluyordu —
+   * "değer yazamıyorum" bunun gibi görünür.
+   *
+   * İlk çözüm bir "kirli" bayrağıydı: bir kutuya dokunulduğu anda tablo
+   * donduruluyordu. Ama kayıt başarısız olursa ya da bayrak bir yerde
+   * temizlenmeden kalırsa tablo SONSUZA KADAR donuyor — sessiz ve daha
+   * kötü bir hata. Denemede tam bu görüldü.
+   *
+   * Doğrusu: tablo her zaman tazelenir, kullanıcının ELLE GİRDİĞİ kutular
+   * yeniden yazıldıktan sonra geri konur. Böylece ne donma olur ne kayıp;
+   * ajandan gelen yeni değerler de görünmeye devam eder. */
   if (document.activeElement && document.activeElement.classList
       && document.activeElement.classList.contains("kalib-girdi")) return;
   const imza = JSON.stringify([d.kalibrasyon || null, d.sinirlar || null, d.guvenli_z]);
@@ -3084,13 +3107,32 @@ function kalibrasyonCiz(d) {
   // yanlış MESAFE gitmek demek ve panelden yanlışlıkla değiştirilmemeli.
   govde.innerHTML = ["x", "y", "z"].map((e) => {
     const c = k[e] || {}, s = sn[e] || {};
+    /* METİN girdi, `number` DEĞİL.
+     *
+     * `type="number"` Türkçe klavyede virgülü reddediyor: "414,23" yazan
+     * kullanıcının alanı boş kalıyor, hiçbir hata da görünmüyor — "değer
+     * yazamıyorum" şikâyetinin en olası sebebi bu. Ayrıca tarayıcı
+     * `step` ile uyuşmayan ara değerleri de sessizce geçersiz sayıyor ve
+     * odaklı bir sayı alanının üstünde tekerlek çevirmek değeri
+     * değiştiriyor.
+     *
+     * Metin alanında böyle bir sürpriz yok; virgülü noktaya kaydederken
+     * çeviriyoruz. `inputmode="decimal"` dokunmatikte sayı klavyesi
+     * açıyor — Pi'nin ekranında bu fark ediyor. */
     const kutu = (alan, deger) =>
-      `<td><input type="number" class="kalib-girdi" data-eksen="${e}" `
-      + `data-alan="${alan}" step="0.01" value="${deger == null ? "" : deger}"></td>`;
+      `<td><input type="text" inputmode="decimal" class="kalib-girdi" `
+      + `data-eksen="${e}" data-alan="${alan}" `
+      + `value="${deger == null ? "" : deger}"></td>`;
     return `<tr><td><b>${e.toUpperCase()}</b></td>
       <td>${sayi(c.cpm, 4)}</td><td>${c.dir > 0 ? "+1" : "−1"}</td>
       ${kutu("home", c.home)}${kutu("min", s.min)}${kutu("max", s.max)}</tr>`;
   }).join("");
+  // Elle girilmiş kutuları geri koy ve yenilerini izlemeye al.
+  $$("#kalib-govde .kalib-girdi").forEach((el) => {
+    const anahtar = `${el.dataset.eksen}.${el.dataset.alan}`;
+    if (S.kalibElle[anahtar] !== undefined) el.value = S.kalibElle[anahtar];
+    el.addEventListener("input", () => { S.kalibElle[anahtar] = el.value; });
+  });
   $("#kalib-ek").innerHTML =
     `Güvenli Z yüksekliği: <b>${sayi(d.guvenli_z, 0)} mm</b> — X/Y hareketi için ` +
     `Z'nin bulunması gereken en düşük yükseklik. Hız: <b>${sayi(d.hiz, 0)} mm/s</b>.`;
