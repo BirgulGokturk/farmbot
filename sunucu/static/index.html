@@ -123,7 +123,32 @@
         <div id="secim-kutusu" class="secim-kutusu gizli"></div>
 
       </div>
+    </div>
+
+    <!-- SAHNE ÜSTÜ UYARILAR — kabuk ızgarasının ORTA sütununda, esnek
+         satırın en üstünde. Sahne katmanının içinde mutlak konumlandırmak
+         iki kez yanlış çıktı: konumsuz bırakınca sol panelin altına girip
+         düğmeleri tıklanamaz oluyordu, üst-ortaya alınca da araç çubuğu
+         üstüne biniyordu. Izgaraya koyunca ikisi de kendiliğinden çözülüyor:
+         2. sütun panellerin arası, 2. satırın üstü araç çubuğunun altı. -->
+    <div class="sahne-uyarilar">
       <div id="tarla-uyari" class="uyari-kutu gizli"></div>
+
+      <!-- YÜZEYALTI Z TARAMASI. Sahadaki kayıtlar koddan bağımsız bozuk
+           olabiliyor: bir dönem tarla tasarımcısı bitkinin z'sine
+           "yüzey − ekim derinliği" yazıyordu ve o noktaya gitmek ucu
+           toprağa indiriyor. Kodu düzeltmek kayıtlı noktaları
+           düzeltmediği için panel bunları tarayıp söylüyor.
+           Kimlik `bitki-z-uyari`: jog panelindeki `z-uyari` bambaşka bir
+           uyarı (Z kilidi) ve aynı kimliği iki kez kullanmak onu
+           sessizce bozuyordu. -->
+      <div id="bitki-z-uyari" class="uyari-kutu gizli">
+        <div id="bitki-z-uyari-metin"></div>
+        <div class="satir-8" style="margin-top:6px">
+          <button class="dugme" id="d-bitki-z-duzelt">Hepsini güvenli Z'ye çek</button>
+          <button class="dugme" id="d-bitki-z-gizle">Şimdilik gizle</button>
+        </div>
+      </div>
     </div>
 
     <!-- TOPLU İŞLEM ÇUBUĞU — seçim boşken görünmüyor. Komutlar tek tek

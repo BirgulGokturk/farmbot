@@ -69,6 +69,7 @@
     secili: null,                // {katman, kayit}
     sinir: VARSAYILAN_SINIR,
     guvenliZ: 280,
+    zUyariGizli: false,   // yüzeyaltı Z uyarısı bu oturumda kapatıldı mı
     // Toprak yüzeyinin makine Z'sindeki yeri. Sıfır DEĞİL: toprak
     // kabın içinde ve yüzey sıfırdan yukarıda (ajandan geliyor).
     toprakZ: 0,
@@ -246,6 +247,9 @@
     /** Nokta hangi alanın içinde — hiçbirinde değilse null. Alan
      *  tanımsızsa da null döner; "kabul edilir mi" ayrı soru. */
     dikimAlani(mx, my) { return dikimAlani(mx, my); },
+    /** Bu noktadaki toprak yüzeyinin makine Z'si — alanın kendi
+     *  `toprak_z`si varsa o, yoksa genel değer. */
+    toprakYuzeyi(mx, my) { return toprakYuzeyi(mx, my); },
     /** Bir eğrinin `gun` yaşındaki değeri — `egriler.py`deki `deger()` ile
      *  aynı kural: aradaki günler doğrusal, uçlarda düz devam. Sunucuya
      *  gitmeden çizebilmek için burada da var; tek gerçek kaynak sunucu. */
@@ -1476,6 +1480,64 @@
     return `${slug}-${Date.now()}`;
   }
 
+  /* ================================================ yüzeyaltı Z taraması
+   *
+   * Noktanın `z`si "bu noktaya gidilirken ucun bulunacağı yükseklik".
+   * Bir dönem tarla tasarımcısı bitkiye `yüzey − ekim derinliği`
+   * yazıyordu; o kayıtlarla sulama, "Git" düğmesi ve `nokta` adımı ucu
+   * toprağın içine indirir. Kod düzeldi ama DEPODAKİ kayıtlar düzelmedi
+   * — sahada zaten böyle noktalar olabilir, o yüzden panel tarıyor.
+   *
+   * Yalnız BİTKİLER taranıyor: uç yuvası ve kalibrasyon noktalarının
+   * güvenli Z'nin altında olması normal, onları uyarıya katmak taramayı
+   * gürültüye boğardı.
+   *
+   * Güvenli Z ajandan geliyor; ajan bağlı değilken tarama yapılmıyor —
+   * "bilinmiyor"u "sorun yok" diye göstermek yanlış olurdu. */
+  function yuzeyaltiBitkiler() {
+    if (!VERI.durum || VERI.durum.guvenli_z == null) return null;   // bilinmiyor
+    const gz = Number(VERI.durum.guvenli_z);
+    if (!isFinite(gz)) return null;
+    return VERI.noktalar.filter(
+      (nk) => (nk.etiket === "bitki" || nk.tur) && Number(nk.z) < gz - 0.5);
+  }
+
+  function zTaramasi() {
+    const kutu = $("#bitki-z-uyari");
+    if (!kutu) return;
+    if (T.zUyariGizli) { kutu.classList.add("gizli"); return; }
+    const bozuk = yuzeyaltiBitkiler();
+    if (!bozuk || !bozuk.length) { kutu.classList.add("gizli"); return; }
+    const gz = Number(VERI.durum.guvenli_z);
+    const ilk = bozuk.slice(0, 6).map(
+      (nk) => `${kacisli(nk.ad)} (Z${say(nk.z, 1)})`).join(", ");
+    $("#bitki-z-uyari-metin").innerHTML =
+      `⚠ <b>${bozuk.length} bitkinin Z'si güvenli Z'nin (${say(gz, 0)} mm) altında:</b> `
+      + `${ilk}${bozuk.length > 6 ? ` … ve ${bozuk.length - 6} tane daha` : ""}.<br>`
+      + "Bu noktalara gitmek — sulama, “Git” düğmesi ya da kayıtlı bir dizi ile — "
+      + "ucu toprağın içine indirir. Ekim derinliği türde tutuluyor; noktanın "
+      + "Z'si güvenli Z olmalı.";
+    kutu.classList.remove("gizli");
+  }
+
+  /** Taranan bitkilerin Z'sini güvenli Z'ye çeker. Kaydın GERİ KALANI
+   *  korunuyor: `bitkiYaz` tam kaydı yazıyor, yoksa `ustune_yaz` tür,
+   *  ekim tarihi ve ezmeleri silerdi. */
+  async function zDuzelt() {
+    const bozuk = yuzeyaltiBitkiler() || [];
+    if (!bozuk.length) return;
+    const gz = Number(VERI.durum.guvenli_z);
+    let sayac = 0, hata = 0;
+    for (const nk of bozuk) {
+      try { await bitkiYaz(nk, { z: gz }); sayac++; }
+      catch (h) { hata++; gunluk(`✕ ${nk.ad}: ${h.message}`, "hata"); }
+    }
+    await P().noktalariYukle();
+    gunluk(`✓ ${sayac} bitkinin Z'si ${say(gz, 0)} mm'ye çekildi`
+           + (hata ? ` — ${hata} tanesi yazılamadı` : ""), hata ? "uyari" : "ok");
+    zTaramasi();
+  }
+
   async function bitkiEkle(mm) {
     const slug = $("#tur-secim").value;
     const tur = VERI.turler[slug];
@@ -1489,23 +1551,33 @@
              + `tanımlı alanlar: ${VERI.dikim.map((a) => a.ad).join(", ")}`, "hata");
       return;
     }
-    /* Z ARTIK GÜVENLİ Z DEĞİL: tohum toprak yüzeyinin altına bırakılıyor.
-     * Yüzey makine sıfırında değil (ölçülen kurulumda 110 mm) ve kaplar
-     * aynı hizada olmayabiliyor, o yüzden yüzey noktadan noktaya
-     * soruluyor. Eksen sınırlarına kısıyoruz: derin ekilen bir tür
-     * yüzeyi sığ bir kapta eksiye taşımasın. */
-    const derinlik = Number(turAlani({ tur: slug }, "sow_depth_mm").deger) || 0;
-    const zMin = (T.sinir.z && T.sinir.z.min != null) ? T.sinir.z.min : 0;
-    const zMax = (T.sinir.z && T.sinir.z.max != null) ? T.sinir.z.max : 550;
+    /* NOKTANIN Z'Sİ = GÜVENLİ Z. Tohum ızgarasıyla (`izgara_uret`) aynı
+     * kural; iki ekleme yolunun aynı şeyi yazması şart.
+     *
+     * Bir ara buraya `yüzey − ekim derinliği` yazılıyordu. Yanlıştı,
+     * çünkü noktanın `z`si "tohumun gömüleceği derinlik" değil,
+     * "bu noktaya gidilirken ucun bulunacağı yükseklik". Nokta deposunun
+     * TEK tüketicisi ekim değil:
+     *
+     *   - toplu sulama (`/api/toplu`) noktanın kendi z'sine iniyor,
+     *   - kayıtlı nokta listesindeki "Git" düğmesi `z: n.z` gönderiyor,
+     *   - kayıtlı programlardaki `nokta` adımı da aynı z'yi çözüyor.
+     *
+     * Yüzeyin altında bir z yazmak, bu üç yoldan herhangi biriyle o
+     * bitkiye gitmeyi "ucu toprağa sok" komutuna çeviriyordu. Yumuşak
+     * sınırlar durdurmaz (yüzeyaltı z hâlâ 0-550 aralığında), yasak
+     * bölge de durdurmaz.
+     *
+     * Ekim derinliği TÜRDE kalıyor (`sow_depth_mm`) ve ekim sırasında
+     * ne kadar inileceğine karar veren yer orası olacak — noktanın
+     * kendisi değil. */
     const govde = {
-      ad: bosAd(slug), x, y,
-      z: Math.round(kis(toprakYuzeyi(x, y) - derinlik, zMin, zMax) * 10) / 10,
+      ad: bosAd(slug), x, y, z: T.guvenliZ,
       etiket: "bitki", tur: slug, ekim: Math.floor(Date.now() / 1000),
     };
     try {
       await P().apiIste("/api/noktalar", { method: "POST", body: JSON.stringify(govde) });
-      gunluk(`✓ ${tur.name_tr} eklendi (${govde.ad}) X${say(govde.x, 1)} Y${say(govde.y, 1)} `
-             + `Z${say(govde.z, 1)} (yüzey ${say(toprakYuzeyi(x, y), 0)} − ${say(derinlik, 0)} mm derin)`, "ok");
+      gunluk(`✓ ${tur.name_tr} eklendi (${govde.ad}) X${say(govde.x, 1)} Y${say(govde.y, 1)}`, "ok");
       await P().noktalariYukle();
     } catch (h) { gunluk(`✕ Bitki eklenemedi: ${h.message}`, "hata"); }
   }
@@ -1634,6 +1706,12 @@
       T.hazir = true;
       sahneyiKur();
       araclariBagla();
+      const dz = $("#d-bitki-z-duzelt");
+      if (dz) dz.onclick = zDuzelt;
+      const gz = $("#d-bitki-z-gizle");
+      if (gz) {
+        gz.onclick = () => { T.zUyariGizli = true; zTaramasi(); };
+      }
       Tarla.noktalarDegisti();
       yanVeriTazele();
     },
@@ -1653,6 +1731,7 @@
         (n) => [n.ad, n.x, n.y, n.z, n.tur, n.ekim, n.ozel || null,
                 n.egri_su, n.egri_yayilim, n.egri_yukseklik]));
       // `zorla`: veri aynı ama ÇİZİM kuralı değişti (simge anahtarı gibi).
+      zTaramasi();          // nokta kümesi değişti, yeniden bak
       if (imza === T.sonNoktaImzasi && !zorla) return;
       T.sonNoktaImzasi = imza;
       katmanlariGuncelle();
@@ -1661,7 +1740,10 @@
     durumDegisti(d) {
       if (!T.hazir || !d) return;
       VERI.durum = d;
+      const oncekiGz = VERI.durum && VERI.durum.guvenli_z;
       if (d.guvenli_z != null) T.guvenliZ = Number(d.guvenli_z);
+      // Güvenli Z ölçüt: değiştiyse (ya da ilk kez geldiyse) tarama tazelensin.
+      if (d.guvenli_z !== oncekiGz) zTaramasi();
       if (d.toprak_z != null) T.toprakZ = Number(d.toprak_z);
 
       const s = d.sinirlar;

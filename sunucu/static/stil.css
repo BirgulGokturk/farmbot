@@ -308,14 +308,24 @@ main.kabuk {
   z-index: 0;
   background: #0d100e;
 }
-#tarla-uyari {
-  position: absolute;
-  left: 50%;
-  top: var(--b3);
-  transform: translateX(-50%);
-  max-width: 80%;
-  z-index: 6;
+/* Sahne üstü uyarı sütunu. z-index 8: yüzen paneller 5'te, yani uyarı
+   onların ÜSTÜNDE kalıyor ve düğmelerine tıklanabiliyor — kutuyu panelin
+   altında bırakmak, düzeltme düğmesini tıklanamaz yapıyordu.
+   Sütunun kendisi tıklamayı geçiriyor, yalnız kutular yakalıyor: yoksa
+   görünmez bir şerit sahnenin üst kenarını tıklanamaz yapardı. */
+.sahne-uyarilar {
+  grid-column: 2;          /* panellerin ARASI */
+  grid-row: 2;             /* araç çubuğunun altındaki esnek satır */
+  align-self: start;       /* o satırın en üstü */
+  justify-self: center;
+  z-index: 8;
+  display: flex;
+  flex-direction: column;
+  gap: var(--b2);
+  align-items: center;
+  pointer-events: none;
 }
+.sahne-uyarilar > * { pointer-events: auto; }
 
 /* ------------------------------------------------------------ yüzen katman
    Sahnenin üstünde duran her şey: sol panel, araç çubuğu, açılır paneller,

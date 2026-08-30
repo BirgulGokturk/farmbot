@@ -452,11 +452,24 @@ async def api_nokta_ekle(govde: dict[str, Any], jeton: str = Query(default="")):
         # DİKİM ALANI. Yalnız BİTKİ için: uç yuvası, kalibrasyon noktası,
         # gezinti noktası toprağın dışında olabilir ve olmalı da. Alan
         # tanımlı değilse hiçbir şey reddedilmiyor — eski davranış.
+        #
+        # Denetim KONUMA karar veren yazmalarda: yeni nokta, ya da mevcut
+        # bir noktanın taşınması. Konumu değişmeyen bir güncelleme
+        # (tür değiştirme, eğri bağlama, bozuk Z'yi düzeltme) geçiyor —
+        # yoksa alan tanımlanmadan önce eklenmiş, şimdi alan dışında
+        # kalan bir bitki DÜZELTİLEMEZ hâle gelirdi. Kuralın amacı yanlış
+        # yere ekmeyi durdurmak, var olan kaydı rehin almak değil.
         if str(govde.get("etiket", "")) == "bitki":
-            kabul, gerekce, _ = await asyncio.to_thread(
-                dikim.nokta_kabul, float(govde["x"]), float(govde["y"]))
-            if not kabul:
-                raise HTTPException(status_code=422, detail=gerekce)
+            yeni_x, yeni_y = float(govde["x"]), float(govde["y"])
+            eski = await asyncio.to_thread(noktalar.bul, str(govde.get("ad", "")))
+            tasindi = (eski is None
+                       or abs(float(eski.get("x", 0)) - yeni_x) > 0.05
+                       or abs(float(eski.get("y", 0)) - yeni_y) > 0.05)
+            if tasindi:
+                kabul, gerekce, _ = await asyncio.to_thread(
+                    dikim.nokta_kabul, yeni_x, yeni_y)
+                if not kabul:
+                    raise HTTPException(status_code=422, detail=gerekce)
         nokta = await asyncio.to_thread(
             noktalar.ekle, govde.get("ad", ""),
             float(govde["x"]), float(govde["y"]), float(govde["z"]),
