@@ -419,6 +419,9 @@
        *
        * Kapların duvarları ve tezgâh gölge almaya devam ediyor; sahnenin
        * oturmuşluğu oradan geliyor, düz toprak yüzeyinden değil. */
+      // Bayrak ŞART: aşağıdaki `golgeVer` bütün ağları gezip receiveShadow
+      // yazıyor ve buradaki doğrudan atamayı ezerdi.
+      toprak.userData.golgeAlmaz = true;
       toprak.receiveShadow = false;
       // Gölge ALIYOR ama ATMIYOR: 6 bin üçgenlik yüzeyi gölge geçişinde bir
       // daha çizmenin gözle görülür karşılığı yok.
@@ -460,13 +463,20 @@
 
     /* GÖLGE. Bir ağ gölge haritasına ancak castShadow ile giriyor; bayrak
      * hiç konmadığı için ışık vardı ama gölge yoktu ve her şey aynı
-     * düzlemde duruyordu. Toprak İSTİSNA: yalnız gölge ALIYOR. Kendi
-     * gölgesini de atsaydı gölge haritasının yarısını 6 bin üçgenlik
-     * yüzey yiyecek, karşılığında hiçbir şey görünmeyecekti. */
+     * düzlemde duruyordu.
+     *
+     * İki ayrı bayrak var ve ikisi de gerekiyor:
+     *   golgeAtma  — gölge haritasına girmesin (çizim maliyeti)
+     *   golgeAlmaz — üstüne gölge düşmesin (görünüm)
+     *
+     * Toprak ikisini de taşıyor. Gölge ALMAMASININ sebebi görünüm:
+     * portalın gölgesi toprağın üstüne keskin, düz kenarlı bir bant
+     * olarak düşüyordu — gölge haritası bu ölçekte kaba ve toprağın
+     * kendi kabartması yanında yapay duruyordu. */
     const golgeVer = (kok) => kok && kok.traverse((n) => {
       if (!n.isMesh) return;
       n.castShadow = !n.userData.golgeAtma;
-      n.receiveShadow = true;
+      n.receiveShadow = !n.userData.golgeAlmaz;
     });
     golgeVer(sabit);
 
