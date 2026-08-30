@@ -578,20 +578,24 @@
     // Alt bağlantı plakası — fotoğrafta gövdeden öne taşıyor ve vidalı.
     /* Alt plaka İKİ UCU birden taşıyor: sağda vakum/ekim ucu, solda
      * sulama başlığı. Plaka o yüzden geniş. */
-    ucKafa.add(kutu(THREE, [P * 4.2, P * 0.34, P * 2.4], [P * 1.05, P * 0.12, 0], baski));
+    /* Plaka İKİ UCU birden taşıyor ve KAFANIN ALTINDA duruyor. Önce
+     * merkezi kafadan kaymıştı ve plaka sağa doğru sarkıyordu; iki uç da
+     * plakanın bir ucuna toplanmıştı. Merkez artık kafanın merkeziyle
+     * aynı, iki uç merkeze göre simetrik. */
+    ucKafa.add(kutu(THREE, [P * 3.4, P * 0.34, P * 2.4], [P * 1.5, P * 0.12, 0], baski));
     // Plakadaki vida başları: dört köşe, küçük ve parlak.
     [[-1, -1], [1, -1], [-1, 1], [1, 1]].forEach(([ix, iz]) => {
       const v = new THREE.Mesh(
         new THREE.CylinderGeometry(P * 0.12, P * 0.12, P * 0.1, 8),
         mal(THREE, { color: "#9aa1a8", metalness: 0.85, roughness: 0.3 }));
-      v.position.set(P * 1.05 + ix * P * 1.75, P * 0.3, iz * P * 0.85);
+      v.position.set(P * 1.5 + ix * P * 1.4, P * 0.3, iz * P * 0.85);
       ucKafa.add(v);
     });
     // Uç: ince, koyu, hafif konik. Turkuaz gitti — fotoğrafta uç siyah.
     const uc = new THREE.Mesh(
       new THREE.CylinderGeometry(P * 0.16, P * 0.09, P * 1.5, 12),
       mal(THREE, { color: "#2a2e31", metalness: 0.35, roughness: 0.5 }));
-    uc.position.set(P * 2.15, -P * 0.7, 0);
+    uc.position.set(P * 2.4, -P * 0.7, 0);
     ucKafa.add(uc);
 
     /* --- SULAMA BAŞLIĞI ----------------------------------------------------
@@ -614,9 +618,9 @@
      * vakum ucu gibi. İkisi yan yana, ikisi de aşağı bakıyor, ikisi de
      * Z ile birlikte iniyor. Ayar sulama HESABINA ait; görsel ondan
      * bağımsız, çünkü başlık makineye kalıcı takılı. */
-    const basY = -P * 0.55;
+    const basY = -P * 0.62;
     const baslik = new THREE.Group();
-    baslik.position.set(-P * 0.15, basY, 0);
+    baslik.position.set(P * 0.6, basY, 0);
     /* Başlık gövdesi — KISA ve GENİŞ silindir, altı delikli.
      *
      * Önce ince bir silindirdi ve sahnede uç kafasının gölgesinde
@@ -625,7 +629,7 @@
      * ayırt edici olan biçim değil, o delikler.
      */
     const bg = new THREE.Mesh(
-      new THREE.CylinderGeometry(P * 0.62, P * 0.72, P * 0.55, 18),
+      new THREE.CylinderGeometry(P * 0.66, P * 0.78, P * 0.66, 18),
       mal(THREE, { color: "#17191b", metalness: 0.1, roughness: 0.62 }));
     baslik.add(bg);
     // Alt yüzeydeki delik deseni: ortada bir, çevresinde altı.

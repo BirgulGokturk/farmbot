@@ -391,6 +391,17 @@
     return Object.assign(Object.create(BAGLAM), { grup: k.grup });
   }
 
+  /** Bir katmanın TANIMINA erişim — katmanlar arası paylaşım için.
+   *
+   * Uç yuvaları katmanı, bitki katmanındaki emoji simgesi üretecini
+   * kullanıyor: aynı font, aynı arka daire, aynı ekran üstü boyut. İki
+   * yerde iki farklı simge görünümü olsaydı kullanıcı ikisini ayrı şey
+   * sanardı. Kopyalamak yerine paylaşıyoruz. */
+  BAGLAM.katmanTanimi = (kimlik) => {
+    const k = T.katmanlar.find((x) => x.tanim.kimlik === kimlik);
+    return k ? k.tanim : null;
+  };
+
   function katmanlariGuncelle() {
     if (!T.hazir) return;
     T.katmanlar.forEach((k) => {
@@ -2223,7 +2234,8 @@
     katmanTanisi(kimlik, ad) {
       const k = T.katmanlar.find((x) => x.tanim.kimlik === kimlik);
       if (!k || typeof k.tanim[ad] !== "function") return null;
-      return k.tanim[ad]();
+      // Bağlamı geçiyoruz: bazı tanılar katmanın kendi grubuna bakıyor.
+      return k.tanim[ad](katmanBaglami(k));
     },
 
     gorunurluk(acik) {

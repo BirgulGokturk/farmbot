@@ -246,6 +246,28 @@ Tarla.katman({
         delik.position.set(o.sx(goz.x), dipY + derinlik / 2 + 0.0005, o.sz(goz.y));
         delik.userData.goz = goz;
         g.add(delik);
+        /* GÖZÜN ÜSTÜNDE TÜR SİMGESİ.
+         *
+         * Önce yalnız imleci getirince ipucu çıkıyordu, ama dört göz yan
+         * yana dururken hangisinde ne olduğunu görmek için tek tek üstlerine
+         * gitmek gerekiyordu — hâlbuki asıl istenen bakınca görmek.
+         * Simge duruyor artık; ipucu ayrıntı için kalıyor.
+         *
+         * Bitki katmanındaki simge düzeninin AYNISI kullanılıyor: aynı
+         * emoji fontu, aynı arka daire, ekran üstünde sabit boyut. İki yerde
+         * iki farklı simge görünümü olsaydı kullanıcı ikisini ayrı şey
+         * sanardı. */
+        const tur = goz.tohum ? (o.veri.turler || {})[goz.tohum] : null;
+        const bitkiKatman = o.katmanTanimi && o.katmanTanimi("bitkiler");
+        if (tur && bitkiKatman && bitkiKatman.simgeMal) {
+          const s = new o.THREE.Sprite(
+            bitkiKatman.simgeMal(o.THREE, tur.icon || "🌱"));
+          s.scale.setScalar(0.052);          // bitkininkinden hafif küçük
+          s.position.set(o.sx(goz.x), ustY + 0.030, o.sz(goz.y));
+          s.raycast = () => {};
+          g.add(s);
+        }
+
         // Dolu göz: deliğin DİBİNDE tohum. Boş gözde hiçbir şey yok,
         // yani haritaya bakan kişi hangi gözün tükendiğini görüyor.
         if (goz.dolu) {
@@ -313,6 +335,30 @@ Tarla.katman({
         c.fillText(g.ad || "", p.x + 6, p.y + 3);
       });
     }
+  },
+
+  /** Deneme yardımcısı — tepsinin ve simgelerin o anki hâli.
+   *
+   * Sahnede küçük ve uzak duran nesnelerin çizilip çizilmediğini ekran
+   * görüntüsünden anlamak zor; sayıyla sormak mümkün. `suDurumu` ve
+   * `katmanDurumu` da aynı sebeple var.
+   */
+  tepsiDurumu(o) {
+    const g = o.grup.children.find(
+      (c) => c.type === "Group" && c.children.some((x) => x.type === "Sprite"));
+    if (!g) {
+      const her = o.grup.children.filter((c) => c.type === "Group");
+      return { tepsiVar: her.length > 0, simge: 0,
+               gruplar: her.map((x) => x.children.length) };
+    }
+    const simgeler = g.children.filter((c) => c.type === "Sprite");
+    return {
+      tepsiVar: true,
+      parca: g.children.length,
+      simge: simgeler.length,
+      simgeY: simgeler.map((s) => +s.position.y.toFixed(4)),
+      blokUstY: +(g.children[0] ? g.children[0].position.y.toFixed(4) : 0),
+    };
   },
 
   vur(o, mm) {
