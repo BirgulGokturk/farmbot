@@ -344,6 +344,10 @@
     /** Silme yanıtındaki geri alma özetini şeride veriyor — 30 sn pencere. */
     geriAlGoster: (parti) => P().geriAlGoster && P().geriAlGoster(parti),
     tazele: () => { kirlet("tazele"); ciz2bTumu(); },
+    /** Yalnız 3B sahneyi yeniden çizdirir — 2B tuvale dokunmaz.
+     *  Kare kare süren şeyler (su akışı) için: `tazele` her karede 2B'yi de
+     *  yeniden çizerdi ve Pi'nin işlemcisinde karşılığı olmayan bir yük. */
+    kirlet: (kaynak) => kirlet(kaynak || "katman"),
     /** Bir katman kendi verisini asenkron çektiğinde yeniden çizdiriyor. */
     katmanlariGuncelle: () => katmanlariGuncelle(),
     /** Toplu sulama süresi (sn). Sunucudaki varsayılanla AYNI sayı olmalı:
@@ -2165,6 +2169,14 @@
         nesne: k.grup ? k.grup.children.length : 0,
         sahnede: !!(k.grup && k.grup.parent),
       }));
+    },
+
+    /** Deneme yardımcısı — bir katmanın kendi tanı çıktısı.
+     *  Katman `<ad>Durumu()` diye bir fonksiyon veriyorsa onu çağırıyor. */
+    katmanTanisi(kimlik, ad) {
+      const k = T.katmanlar.find((x) => x.tanim.kimlik === kimlik);
+      if (!k || typeof k.tanim[ad] !== "function") return null;
+      return k.tanim[ad]();
     },
 
     gorunurluk(acik) {

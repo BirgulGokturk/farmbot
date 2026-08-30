@@ -224,7 +224,13 @@
      * eskisi gibi `tabla`dan asılı, yani çerçevenin ALTINDA kalıyorlar —
      * fotoğraftaki gibi. */
     const cerceveY = rayYuk;
-    const zemin = cerceveY - AYAK;
+    /* ZEMİN SABİT. Çerçeveyi yukarı taşırken ayak boyunu sabit bırakmıştım
+     * ve makine 85 mm havada kaldı — ayaklar çime değmiyordu. Zemin
+     * yüksekliği artık çerçeveden bağımsız: eskiden neredeyse orada.
+     * Ayak boyu ikisinin farkı, yani çerçeve nereye giderse gitsin ayak
+     * yere kadar uzuyor. */
+    const zemin = M(MAKINE.tabla) - AYAK;
+    const ayakBoy = cerceveY - zemin;
 
     if (sabitIster) {
     /* Zemin ARTIK BURADA DEĞİL. Eskiden makinenin altına 2,6 m'lik düz
@@ -238,7 +244,7 @@
     const koseler = [[-1, -1], [1, -1], [-1, 1], [1, 1]];
     koseler.forEach(([ix, iz]) => {
       const x = (ix * w) / 2, z = (iz * d) / 2;
-      sabit.add(profil(THREE, [P, AYAK, P], [x, zemin + AYAK / 2, z]));
+      sabit.add(profil(THREE, [P, ayakBoy, P], [x, zemin + ayakBoy / 2, z]));
       // ayarlanabilir ayak pabucu
       const pabuc = new THREE.Mesh(
         new THREE.CylinderGeometry(P * 0.7, P * 0.7, 0.012, 12), mal(THREE, KOYU));
@@ -585,11 +591,67 @@
       mal(THREE, { color: "#2a2e31", metalness: 0.35, roughness: 0.5 }));
     uc.position.set(P * 1.25, -P * 0.7, 0);
     ucKafa.add(uc);
+
+    /* --- SULAMA BAŞLIĞI ----------------------------------------------------
+     * Z eksenine KALICI olarak bağlı: uç değişse de o duruyor. Fotoğrafta
+     * ucun solunda, siyah silindirik bir başlık ve ona yukarıdan gelen ince
+     * bir hortum var.
+     *
+     * Konumu `uclar.json`daki `sulama_basligi.dx/dy` ofsetinden geliyor —
+     * sulama hesabının kullandığı SAYININ AYNISI. Ayrı yazsaydık ikisi
+     * ayrışır ve sahnede su bir yere, gerçekte başka yere düşerdi.
+     */
+    const ofs = opt.sulamaOfset || { dx: 0, dy: 0 };
+    const basY = -P * 0.55;
+    const baslik = new THREE.Group();
+    baslik.position.set(P * 1.25 + M(ofs.dx), basY, M(ofs.dy));
+    // Başlık gövdesi — koyu, kısa silindir.
+    const bg = new THREE.Mesh(
+      new THREE.CylinderGeometry(P * 0.38, P * 0.44, P * 0.7, 14),
+      mal(THREE, { color: "#17191b", metalness: 0.1, roughness: 0.62 }));
+    baslik.add(bg);
+    // Üstteki rakor
+    const rakor = new THREE.Mesh(
+      new THREE.CylinderGeometry(P * 0.17, P * 0.17, P * 0.4, 10),
+      mal(THREE, { color: "#8f969d", metalness: 0.8, roughness: 0.32 }));
+    rakor.position.y = P * 0.5;
+    baslik.add(rakor);
+    // Hortum: yukarı giden ince beyaz boru.
+    const hortum = new THREE.Mesh(
+      new THREE.CylinderGeometry(P * 0.09, P * 0.09, P * 3.4, 8),
+      mal(THREE, { color: "#d9dde0", metalness: 0.05, roughness: 0.55 }));
+    hortum.position.y = P * 2.4;
+    baslik.add(hortum);
+    ucKafa.add(baslik);
+
+    /* SU HUZMESİ. Pompa açıkken görünüyor, kapalıyken değil — 90-robot.js
+     * röle durumundan sürüyor. Konisi aşağı doğru hafif açılıyor: gerçek
+     * bir başlıktan çıkan su da dağılıyor.
+     *
+     * Boyu 1 birim kuruluyor ve her karede toprağa kadar UZATILIYOR:
+     * yükseklik uçla birlikte değişiyor, sabit bir boy ya toprağın içine
+     * girer ya havada kalırdı. */
+    const suMal = new THREE.MeshStandardMaterial({
+      color: "#8fd4ee", transparent: true, opacity: 0.42,
+      roughness: 0.12, metalness: 0.0, depthWrite: false,
+      emissive: new THREE.Color("#4aa8d8"), emissiveIntensity: 0.25,
+    });
+    const su = new THREE.Mesh(
+      new THREE.CylinderGeometry(P * 0.1, P * 0.3, 1, 12, 1, true), suMal);
+    su.position.copy(baslik.position);
+    su.visible = false;
+    su.raycast = () => {};
+    su.userData.golgeAtma = true;
+    su.userData.golgeAlmaz = true;
+    ucKafa.add(su);
+    ucKafa.userData.su = su;
+    ucKafa.userData.baslikY = basY;
     kizak.add(ucKafa);
 
     portal.add(kizak);
     golgeVer(portal);
-    return { sabit: sabit, portal: portal, kizak: kizak, sutun: sutun, ucKafa: ucKafa };
+    return { sabit: sabit, portal: portal, kizak: kizak, sutun: sutun,
+             ucKafa: ucKafa, su: ucKafa.userData.su };
   }
 
   /* ==================================================== toprak nemi

@@ -16,15 +16,21 @@ Tarla.katman({
   guncelle(o) {
     const M = o.makine, MM = o.MM;
     const w = o.genislikM, d = o.derinlikM, rayY = M.ray_yuksekligi * MM;
-    const imza = `${w}|${d}|${rayY}`;
+    const sbi = (o.veri.durum.uc && o.veri.durum.uc.sulama_basligi) || {};
+    const imza = `${w}|${d}|${rayY}|${sbi.dx}|${sbi.dy}`;
 
     // Katman kapatılınca çekirdek grubu boşaltıp geometriyi atıyor; grup
     // boşsa imza aynı olsa da yeniden kurmak gerekiyor.
     if (imza !== this._imza || !o.grup.children.length) {
       this._imza = imza;
       o.bosalt(o.grup);
+      // Sulama başlığının ofseti uclar.json'dan; sulama hesabıyla AYNI
+      // sayı. Ayrı yazsaydık sahnede su bir yere, gerçekte başka yere
+      // düşerdi ve hangisinin doğru olduğu anlaşılmazdı.
+      const sb = (o.veri.durum.uc && o.veri.durum.uc.sulama_basligi) || {};
       const makine = window.FarmbotMakine.kur(o.THREE, {
         w: w, d: d, rayY: rayY, parca: "hareketli",
+        sulamaOfset: { dx: Number(sb.dx) || 0, dy: Number(sb.dy) || 0 },
       });
       this._p = makine;
       // Makineye tıklamak bitki seçmek/taşımak değil — ışın testinden çıksın.
@@ -57,6 +63,97 @@ Tarla.katman({
     const boy = Math.max(0.05, rayY - 0.045 - (ucY + 0.08));
     p.sutun.scale.y = boy;
     p.sutun.position.set(0, ucY + 0.08 + boy / 2, 0);
+
+    /* SU HUZMESİ. Kaynak tek: kartın bildirdiği röle durumu (`r_su_pompasi`).
+     * Panel kendi tahminini tutmuyor — "sulama komutu gönderdim, demek ki
+     * akıyordur" demek, pompa gerçekte çalışmadığında sahnede su gösterirdi
+     * ve bu, olmayan bir şeyi olmuş gibi göstermek olurdu.
+     *
+     * Huzme başlıktan TOPRAĞA kadar uzatılıyor: uç yükseldikçe boy artıyor.
+     * Sabit boy, ya toprağın içine girerdi ya havada kalırdı. */
+    if (p.su) {
+      /* Röle durumu `durum` paketinde DEĞİL, ölçüm paketinde geliyor
+       * (`r_su_pompasi`) ve onu app.js `S.roleDurum`da tutuyor. Buradan
+       * okumamızın sebebi bu; `window.Panel` zaten tam bu iş için açılmış
+       * bir köprü. Panel yoksa (deneme sayfası) su hiç görünmüyor —
+       * olmayan bir şeyi varmış gibi göstermektense hiç göstermemek. */
+      const P = window.Panel;
+      const akiyor = !!(P && P.S && P.S.roleDurum && P.S.roleDurum.su_pompasi);
+      p.su.visible = akiyor;
+      /* Döngüyü SUYU GİZLEYEN kod kapatıyor.
+       *
+       * Önce kapanışı döngünün kendisine bırakmıştım ve sekme arka plandayken
+       * `requestAnimationFrame` duraklıyor: kare hiç koşmuyor, tutamak null
+       * olmuyor. Sonuç sessiz bir hata — su gizleniyor ama tutamak dolu
+       * kaldığı için BİR SONRAKİ sulamada `_akisBasla` "zaten çalışıyor"
+       * deyip çıkıyor ve su görünüyor ama akmıyordu. */
+      if (!akiyor && this._akis) {
+        cancelAnimationFrame(this._akis);
+        this._akis = null;
+      }
+      if (akiyor) {
+        const basY = p.ucKafa.userData.baslikY || 0;
+        // Başlığın sahnedeki yüksekliği = uç kafasının yüksekliği + yerel ofset.
+        const bas = ucY + 0.04 + basY;
+        const yer = Math.max(0.01, bas);      // toprak yüzeyi y = 0
+        p.su.scale.y = yer;
+        p.su.position.y = basY - yer / 2;
+        this._akisBasla(o);
+      }
+    }
+  },
+
+  /** Deneme yardımcısı — su huzmesinin o anki hâli.
+   *
+   * Sahnedeki bir nesnenin gerçekten çizildiğini gözle doğrulamak zor;
+   * ekran görüntüsünde ince bir çizgi ile Z kılavuzu ayırt edilemiyor.
+   * Katman durumunu sayı olarak soruyoruz. `katmanDurumu` ve
+   * `dikimDurumu` de aynı sebeple var.
+   */
+  suDurumu() {
+    const p = this._p;
+    if (!p || !p.su) return { kuruldu: false };
+    return {
+      kuruldu: true,
+      gorunur: p.su.visible,
+      boy: +p.su.scale.y.toFixed(4),
+      y: +p.su.position.y.toFixed(4),
+      saydamlik: +p.su.material.opacity.toFixed(3),
+      dongu: !!this._akis,
+    };
+  },
+
+  /** Huzmeyi akar gösteren döngü.
+   *
+   * YALNIZ pompa açıkken dönüyor. Sürekli çizim Pi'nin GPU'sunda bedava
+   * değil; su akmıyorken sahneyi her karede yeniden çizmenin karşılığı yok.
+   * Döngü kendini kapatıyor: röle kapanınca bir sonraki karede duruyor.
+   */
+  _akisBasla(o) {
+    if (this._akis) return;
+    const adim = () => {
+      const p = this._p;
+      if (!p || !p.su) { this._akis = null; return; }
+      /* Pompayı BURADA da soruyoruz. `guncelle` yalnız durum paketi
+       * geldiğinde koşuyor; huzmeyi ona bırakırsak pompa kapandıktan
+       * sonra bir sonraki pakete kadar su akmaya devam eder. Kapanışın
+       * gecikmesi, açılışın gecikmesinden daha yanıltıcı. */
+      const P = window.Panel;
+      const akiyor = !!(P && P.S && P.S.roleDurum && P.S.roleDurum.su_pompasi);
+      if (!akiyor) {
+        p.su.visible = false;
+        if (o.kirlet) o.kirlet("su-akisi-bitti");
+        this._akis = null;
+        return;
+      }
+      // Damla izlenimi: çapı ve saydamlığı hafifçe nabız gibi değiştiriyoruz.
+      const t = (this._faz = (this._faz || 0) + 0.16);
+      p.su.material.opacity = 0.34 + 0.12 * Math.sin(t);
+      p.su.scale.x = p.su.scale.z = 1 + 0.08 * Math.sin(t * 1.7);
+      o.kirlet && o.kirlet("su-akisi");
+      this._akis = requestAnimationFrame(adim);
+    };
+    this._akis = requestAnimationFrame(adim);
   },
 
   ciz2b(o, c) {
