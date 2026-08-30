@@ -214,8 +214,15 @@
     en = en || BOY.toprak;
     const kesek = kesekAlani(en, tohumla("toprak-kesek"));
     const toz = alan(en, 3, tohumla("toprak-toz"), 3);     // ince tanecik
-    const kizil = alan(en, 3, tohumla("toprak-kizil"));      // kızılımsı lekeler
-    const gri = alan(en, 3, tohumla("toprak-gri"));        // griye çalan lekeler
+    /* Leke alanları YÜKSEK frekanstan başlıyor (`bas = 2`).
+     *
+     * Önce 0'dan başlıyorlardı: ilk oktav 4×4 ızgara demek, yani leke boyu
+     * dokunun dörtte biri. Kabın üstünde bu, avuç içi kadar bulanık kahve
+     * bulutları oluşturuyordu ve kesek yapısı onların altında kayboluyordu
+     * — ekranda toprak değil, sulu boya lekesi gibi duruyordu. 2'den
+     * başlayınca ilk oktav 16×16 ve lekeler tane ölçeğine iniyor. */
+    const kizil = alan(en, 3, tohumla("toprak-kizil"), 2);  // kızılımsı lekeler
+    const gri = alan(en, 3, tohumla("toprak-gri"), 2);      // griye çalan lekeler
     const cakil = alan(en, 4, tohumla("toprak-cakil"), 2);
 
     // Işık yönü doku düzleminde. Sahnedeki güneş +x/+z'den geliyor;
@@ -235,9 +242,16 @@
         // Ölçek ve pay bilerek ölçülü: 9.0/0.55 denendi, kesekler ışıklı
         // yüzü bembeyaz çıkan çakıl taşlarına dönüşüyor, toprak değil
         // dere yatağı gibi duruyordu.
-        const yamac = -(gx * Lx + gy * Ly) * 5.5;
-        const ortme = 0.70 + 0.30 * kesek[i];              // çukur kapalı, tepe açık
-        const parlak = kis(ortme * (1 + kis(yamac, -0.8, 0.8) * 0.34), 0.20, 1.45);
+        /* Kesek gölgelendirmesi GÜÇLENDİ (5.5 -> 9.0, pay 0.34 -> 0.46).
+         *
+         * Lekeler küçülünce yüzeyin okunurluğu tamamen keseklerin ışık
+         * alan/almayan yüzlerine kaldı; eski değerlerde o fark çok
+         * yumuşaktı ve toprak düz görünüyordu. Örtme payı da açıldı
+         * (0.70+0.30 -> 0.58+0.42): çukurlar daha koyu, tepeler daha
+         * açık, yani tane tane okunuyor. */
+        const yamac = -(gx * Lx + gy * Ly) * 9.0;
+        const ortme = 0.58 + 0.42 * kesek[i];              // çukur kapalı, tepe açık
+        const parlak = kis(ortme * (1 + kis(yamac, -0.85, 0.85) * 0.46), 0.16, 1.55);
 
         // Ana ton: kesek yüksekliği + ince toz
         // Ton keseğin yüksekliğini AZ izliyor: çok izlerse renk tamamen
@@ -283,10 +297,37 @@
           r += q * 18; ye += q * 17; m += q * 15;
         }
 
+        /* KONTRAST GERME. Ölçüldü: bu noktada piksellerin standart sapması
+         * 6 idi; gerçek toprak fotoğrafında 25-40 arası. Sayı, ekranda
+         * "bulanık kahverengi bir yüzey" görülmesinin tam karşılığıydı —
+         * bütün pikseller dar bir bantta toplanıyordu.
+         *
+         * Her kanal sabit bir orta noktadan uzaklaştırılıyor. Orta nokta
+         * SABİT (piksel ortalaması değil): değişken bir orta nokta, koyu
+         * ve açık bölgeleri birbirine yaklaştırıp etkiyi geri alırdı.
+         * Aşağı doğru daha çok geriliyor, çünkü nemli toprakta gölgeler
+         * ışıklardan daha derin.
+         */
+        /* PARLAKLIK gerilir, KANALLAR DEĞİL.
+         *
+         * İlk denemede her kanal ayrı ayrı aynı orta noktadan gerildi ve
+         * renk bozuldu: yeşille mavinin ortalaması kırmızıdan düşük olduğu
+         * için o ikisi sıfıra ezildi, toprak turuncuya kaçtı (ölçüldü:
+         * R-G farkı 11'den 24'e çıkmıştı).
+         *
+         * Doğrusu parlaklığı gerip kanalları AYNI oranla ölçeklemek: ton
+         * korunur, yalnız açık-koyu farkı açılır. Aşağı doğru biraz daha
+         * geriliyor — nemli toprakta gölgeler ışıklardan derindir. */
+        const ORTA = 30, GER = 2.0;
+        const rr = r * parlak, gg = ye * parlak, bb = m * parlak;
+        const l = (rr + gg + bb) / 3;
+        const d = l - ORTA;
+        const hedef = Math.max(1, ORTA + d * (d < 0 ? GER * 1.12 : GER));
+        const k2 = l > 0.5 ? hedef / l : 1;
         const p = i * 4;
-        im.data[p] = kis(r * parlak, 0, 255);
-        im.data[p + 1] = kis(ye * parlak, 0, 255);
-        im.data[p + 2] = kis(m * parlak, 0, 255);
+        im.data[p] = kis(rr * k2, 0, 255);
+        im.data[p + 1] = kis(gg * k2, 0, 255);
+        im.data[p + 2] = kis(bb * k2, 0, 255);
         im.data[p + 3] = 255;
       }
     }
