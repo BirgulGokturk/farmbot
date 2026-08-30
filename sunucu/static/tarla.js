@@ -2089,6 +2089,16 @@
       };
     },
 
+    /** Tür kataloğu: slug -> kayıt (katalog + tür ezmesi birleşmiş).
+     *
+     * Panelin başka yerleri (Ayarlar'daki tohumluk göz tablosu) tür
+     * adlarını buradan okuyor. Kendi listesini kurmuyorlar bilerek:
+     * ikinci bir liste, Tarla sayfasında görülen adla Ayarlar'da görülen
+     * adın ayrışması demek — ve yeni bir tür eklendiğinde biri
+     * güncellenip diğeri eski kalır.
+     */
+    turler() { return VERI.turler; },
+
     /** Deneme yardımcısı — katmanların ortak veri havuzu. */
     veriDurumu() {
       return { nokta: VERI.noktalar.length, kare: VERI.kareler.length,

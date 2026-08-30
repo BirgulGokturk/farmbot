@@ -537,7 +537,12 @@ function ucGuncelle(u) {
   // ajanda boş işaretleniyor ve tablo yenilenmezse kullanıcı dolu
   // görmeye devam ederdi.
   const gozler = u.tohumluk_gozleri || [];
-  const gozImza = JSON.stringify(gozler);
+  // İmzaya TÜR SAYISI da giriyor: türler durum paketlerinden sonra
+  // yükleniyor ve yalnız gözlere baksaydık tohum listesi ilk çizimdeki
+  // boş hâliyle kalırdı.
+  const turAdet = Object.keys(
+    (window.Tarla && Tarla.turler && Tarla.turler()) || {}).length;
+  const gozImza = JSON.stringify(gozler) + "|" + turAdet;
   if (!S.gozDuzenleniyor && gozImza !== S.sonGozler) {
     S.sonGozler = gozImza;
     gozTablosuCiz(gozler);
@@ -738,7 +743,42 @@ async function ucTablosuKaydet() {
  * kullanıcı o sırada tabloyu toptan kaydetseydi, ekranındaki eski
  * "dolu" değeri dizinin az önce boşalttığı gözün üstüne yazılırdı.
  * Tek göze dokunan komut bu yarışı ortadan kaldırıyor.
+ *
+ * TOHUM SÜTUNU AÇILIR LİSTE ve değeri tür SLUG'ı.
+ *
+ * Serbest metin kutusuydu ve iki şeyi birden bozuyordu. Birincisi yazım
+ * hatası: "marul" yerine "marlu" yazan bir gözü hiçbir şey yakalamıyordu.
+ * İkincisi ve asıl önemlisi, `ekim.goz_ata` gözdeki tohumu bitkinin tür
+ * SLUG'ıyla karşılaştırıyor — kullanıcı ekranda gördüğü Türkçe adı
+ * ("Marul") yazdığında eşleşme tutmuyor ve dizi "gözde başka tohum var"
+ * diye reddediliyordu. Kullanıcının yazdığı şey doğruyken.
+ *
+ * Liste tür kataloğundan (`Tarla.turler()`) doluyor: Tarla sayfasında
+ * görülen adla burada görülen ad aynı, ve yeni bir tür eklendiğinde bu
+ * liste kendiliğinden güncelleniyor. Ekranda `name_tr`, kaydedilen
+ * `slug`.
  */
+
+/** Tohum sütununun `<option>` listesi. `secili` bilinmeyen bir değerse
+ *  KAYBEDİLMİYOR: ayrıca eklenip işaretleniyor. Eski serbest metinle
+ *  yazılmış gözler sessizce boşalmasın — kullanıcı ne yazdığını görüp
+ *  düzeltebilsin. */
+function tohumSecenekleri(secili) {
+  const turler = (window.Tarla && Tarla.turler && Tarla.turler()) || {};
+  const liste = Object.values(turler)
+    .slice()
+    .sort((a, b) => String(a.name_tr).localeCompare(String(b.name_tr), "tr"));
+  const s = String(secili || "");
+  let cikti = `<option value=""${s ? "" : " selected"}>— belirsiz —</option>`;
+  cikti += liste.map((t) =>
+    `<option value="${kacisli(t.slug)}"${t.slug === s ? " selected" : ""}>${
+      kacisli(t.icon || "🌱")} ${kacisli(t.name_tr)}</option>`).join("");
+  if (s && !turler[s]) {
+    cikti += `<option value="${kacisli(s)}" selected>⚠ ${kacisli(s)} (bilinmeyen)</option>`;
+  }
+  return cikti;
+}
+
 function gozTablosuCiz(gozler) {
   const kutu = $("#goz-tablo");
   if (!kutu) return;
@@ -747,9 +787,16 @@ function gozTablosuCiz(gozler) {
     kutu.innerHTML = '<p class="alt-not">Tanımlı tohumluk gözü yok.</p>';
     return;
   }
+  /* SATIR BAŞINA İKİ SIRA. Tek sıraya sığdırmayı denedim: yan panel 380
+   * piksel ve yedi sütun oraya girmiyor — sayılar "60!" diye kırpılıyor,
+   * tür adı ise hiç görünmüyordu (yalnız açılır listenin oku). Kırpılmış
+   * bir koordinat, yanlış okunan bir koordinattır.
+   *
+   * Üstte koordinatlar (başlıkları var), altta tür + dolu + sil. Alt
+   * sıranın başlığı yok çünkü kendini anlatıyor: listede türün adı
+   * yazılı, kutunun yanında "dolu" etiketi duruyor. */
   kutu.innerHTML = `<div class="goz-baslik">
       <span>Göz</span><span>X mm</span><span>Y mm</span><span>Z mm</span>
-      <span>Tohum</span><span title="İçinde tohum var mı">Dolu</span><span></span>
     </div>` + liste.map((g, i) => `
     <div class="goz-satir${g.dolu ? "" : " goz-bos"}" data-i="${i}" data-ad="${kacisli(g.ad || "")}">
       <div class="goz-hucreler">
@@ -759,10 +806,16 @@ function gozTablosuCiz(gozler) {
         <input type="number" class="gz-z" step="0.1"
                title="Gözün dibi — vakum ucu bu Z'ye iniyor"
                value="${g.z != null ? g.z : ""}">
-        <input class="gz-tohum" value="${kacisli(g.tohum || "")}" maxlength="40"
-               placeholder="—" title="Bu gözde hangi tohum var">
-        <input type="checkbox" class="gz-dolu" ${g.dolu ? "checked" : ""}
+      </div>
+      <div class="goz-alt">
+        <select class="gz-tohum"
+                title="Bu gözde hangi tür var — liste tür kataloğundan geliyor">
+          ${tohumSecenekleri(g.tohum)}
+        </select>
+        <label class="goz-dolu-etiket"
                title="İşareti kaldırmak gözü ANINDA boş yazar">
+          <input type="checkbox" class="gz-dolu" ${g.dolu ? "checked" : ""}> dolu
+        </label>
         <button class="ut-sil gz-sil" title="Bu gözü sil">✕</button>
       </div>
     </div>`).join("");
@@ -787,7 +840,7 @@ function gozTablosuCiz(gozler) {
       gunluk(`'${ad}' gözü ${k.checked ? "dolu" : "boş"} işaretlendi`, "ok");
     };
   });
-  kutu.querySelectorAll("input:not(.gz-dolu)").forEach((g) => {
+  kutu.querySelectorAll("input:not(.gz-dolu), select").forEach((g) => {
     g.oninput = () => { S.gozDuzenleniyor = true; };
   });
 }

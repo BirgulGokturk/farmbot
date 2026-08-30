@@ -1870,12 +1870,15 @@ button.dugme.role.acik:hover:not(:disabled) { background: rgba(74, 168, 96, .24)
 }
 .uc-servo { color: #e8a33d; }
 
-/* Tohumluk gözleri: uç tablosuyla aynı düzen, iki sütun fazla (tohum adı
-   ve dolu kutusu). Sayı sütunları biraz daha dar ki 380 pikselde sığsın. */
+/* Tohumluk gözleri: SATIR BAŞINA İKİ SIRA.
+   Üstte ad + üç koordinat (uç tablosuyla aynı düzen), altta tür seçimi +
+   dolu kutusu + silme. Tek sıraya sığdırma denendi ve olmadı: yan panel
+   380 piksel, yedi sütun oraya girmiyor — sayılar kırpılıyor, tür adı hiç
+   görünmüyordu. Kırpılmış koordinat yanlış okunan koordinattır. */
 .goz-baslik, .goz-hucreler {
   display: grid;
-  grid-template-columns: minmax(0, 54px) 52px 52px 52px minmax(0, 1fr) 20px 24px;
-  gap: 4px;
+  grid-template-columns: minmax(0, 1fr) 58px 58px 58px;
+  gap: 5px;
   align-items: center;
 }
 .goz-baslik {
@@ -1884,7 +1887,24 @@ button.dugme.role.acik:hover:not(:disabled) { background: rgba(74, 168, 96, .24)
   padding: 0 0 4px;
 }
 .goz-hucreler input { width: 100%; min-width: 0; }
-.goz-hucreler input[type="checkbox"] { width: auto; justify-self: center; }
+.goz-alt {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 6px;
+  align-items: center;
+  margin-top: 4px;
+}
+.goz-alt select { width: 100%; min-width: 0; }
+.goz-dolu-etiket {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--yazi-kucuk);
+  color: var(--metin-2);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.goz-dolu-etiket input { width: auto; margin: 0; }
 .goz-satir { padding: var(--b2) 0; border-bottom: 1px solid var(--cizgi); }
 .goz-satir:last-child { border-bottom: none; }
 /* Boş göz soluk: tabloya bakınca hangi gözde tohum kaldığı bir bakışta

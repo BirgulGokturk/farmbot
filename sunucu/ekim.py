@@ -78,9 +78,14 @@ def dolu_gozler(gozler: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
             if isinstance(g, dict) and g.get("x") is not None and g.get("dolu")]
 
 
-def goz_ata(hedefler: list[dict[str, Any]], gozler: list[dict[str, Any]] | None
+def goz_ata(hedefler: list[dict[str, Any]], gozler: list[dict[str, Any]] | None,
+            tur_adlari: dict[str, str] | None = None
             ) -> tuple[list[tuple[dict[str, Any], dict[str, Any]]], list[str], list[str]]:
     """Her hedefe bir göz eşler. -> (eşleşmeler, ret, uyarı)
+
+    Eşleşme SLUG üzerinden yapılıyor (gözdeki `tohum` da, bitkideki `tur`
+    de slug). `tur_adlari` yalnız MESAJ metni için: kullanıcı panelde
+    "Marul" görüyor, ret sebebinde "marul" okumak kafa karıştırıyor.
 
     Eşleme sırası:
 
@@ -99,6 +104,13 @@ def goz_ata(hedefler: list[dict[str, Any]], gozler: list[dict[str, Any]] | None
     eslesme: list[tuple[dict[str, Any], dict[str, Any]]] = []
     ret: list[str] = []
     uyari: list[str] = []
+    adlar = tur_adlari or {}
+
+    def _ad(slug: str) -> str:
+        """Mesajda görünecek tür adı. Katalogda yoksa slug'ın kendisi —
+        uydurmuyoruz, kullanıcı elindeki değerin ne olduğunu görsün."""
+        s_ = str(slug or "").strip()
+        return adlar.get(s_, s_)
 
     for hedef in hedefler:
         tur = str(hedef.get("tur") or "").strip()
@@ -120,20 +132,20 @@ def goz_ata(hedefler: list[dict[str, Any]], gozler: list[dict[str, Any]] | None
             secilen = bos_etiket[0]
             uyari.append(
                 f"{hedef.get('ad')}: '{secilen['ad']}' gözünde ne olduğu yazılı "
-                f"değil, '{tur or 'tür belirsiz'}' olduğu varsayıldı. Göz "
-                "tablosundaki 'Tohum' alanını doldurun.")
+                f"değil, {_ad(tur) or 'tür belirsiz'} olduğu varsayıldı. Göz "
+                "tablosundaki 'Tohum' sütununu doldurun.")
         else:
             icerik = ", ".join(
-                f"{g['ad']}='{g.get('tohum')}'" for g in kalan[:4])
+                f"{g['ad']}={_ad(g.get('tohum')) or '?'}" for g in kalan[:4])
             # Sayıyı da yazıyoruz: çoğu zaman asıl sorun "gözde yanlış
             # tohum" değil, "yeterli uygun göz yok". Sebebi sayıyla
             # görmeden kullanıcı göz etiketlerini kurcalamaya başlıyor.
             ret.append(
-                f"{hedef.get('ad')}: türü '{tur or 'belirsiz'}' ama kalan "
+                f"{hedef.get('ad')}: türü {_ad(tur) or 'belirsiz'} ama kalan "
                 f"{len(kalan)} dolu gözde başka tohum var ({icerik}). "
                 f"{len(hedefler)} bitki seçildi, {len(eslesme)} tanesine göz "
                 "bulundu. Yanlış tohum ekilmesin diye dizi başlatılmadı — göz "
-                "tablosundaki 'Tohum' alanını düzeltin, eşleşen bir gözü "
+                "tablosundaki 'Tohum' sütununu düzeltin, eşleşen bir gözü "
                 "doldurun ya da daha az bitki seçin.")
             continue
 
@@ -179,6 +191,7 @@ def coz(hedefler: list[dict[str, Any]], gozler: list[dict[str, Any]] | None, *,
         dikim_alanlari: list[dict[str, Any]] | None = None,
         lock_reg: int = 0, uc_takili: str | None = None,
         vakum_sn: float = VAKUM_SANIYE, dusme_sn: float = DUSME_SANIYE,
+        tur_adlari: dict[str, str] | None = None,
         ) -> dict[str, Any]:
     """Ekim dizisini çözer: mutlak koordinatlı adımlar + özet + ret sebepleri.
 
@@ -219,7 +232,7 @@ def coz(hedefler: list[dict[str, Any]], gozler: list[dict[str, Any]] | None, *,
         ret.append("Seçim boş — ekilecek nokta yok.")
 
     # --- göz eşlemesi -----------------------------------------------------
-    eslesme, esl_ret, esl_uyari = goz_ata(hedefler, gozler)
+    eslesme, esl_ret, esl_uyari = goz_ata(hedefler, gozler, tur_adlari)
     ret.extend(esl_ret)
     uyari.extend(esl_uyari)
 

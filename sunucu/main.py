@@ -863,7 +863,11 @@ def _ekim_coz(adlar: list[str]) -> dict[str, Any]:
         hedefler, uc.get("tohumluk_gozleri") or [],
         guvenli_z=guvenli_z, genel_toprak_z=toprak_z, dikim_alanlari=alanlar,
         lock_reg=int((uc.get("ayar") or {}).get("lock_reg") or 0),
-        uc_takili=uc.get("uc"))
+        uc_takili=uc.get("uc"),
+        # Mesajlarda slug degil TÜRKÇE AD gorunsun: kullanici panelde
+        # "Marul" seciyor, ret sebebinde "marul" okumak kafa karistiriyor.
+        tur_adlari={t.get("slug"): t.get("name_tr") or t.get("slug")
+                    for t in tur_indeks.values() if t.get("slug")})
     if eksik:
         cozum["ret"].insert(0, "Şu noktalar bulunamadı: " + ", ".join(sorted(set(eksik))))
     if len(cozum["adimlar"]) > programlar.AZAMI_ADIM:
