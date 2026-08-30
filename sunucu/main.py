@@ -36,6 +36,7 @@ import kalibrasyon
 import kareler
 import noktalar
 import programlar
+import sulama
 import turler
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -76,6 +77,7 @@ IZINLI_KOMUTLAR = {
     "uc_degistir",   # {"ad":"tool3"}
     "uc_onizle",     # {"islem":"al"|"birak","ad":"tool1"} — yolu koordinatla göster
     "uc_durum_temizle",  # {}                        — takılı uç kaydını sıfırla
+    "nokta_denetle", # {"noktalar":[{x,y,z}…]}      — yasak bölge + sınır ÖN kontrolü
     "dizi_baslat",   # {"ad":…,"adimlar":[…],"tekrar":1} — çözülmüş adımlarla
     "dizi_durdur",   # {}
     "kamera",        # {"acik": true|false, "aralik_sn": 3600}
@@ -617,37 +619,22 @@ async def api_toplu(govde: dict[str, Any], jeton: str = Query(default="")):
     # körlemesine güvenilmiyor.
     saniye = max(1.0, min(60.0, float(govde.get("saniye", 3) or 3)))
 
-    # TOPLU SULAMA yalnız dikim alanlarının içinde. Su, toprağın olmadığı
-    # yere dökülürse tezgâhın ve elektroniğin üstüne gidiyor; bu yüzden
-    # eksik nokta gibi bu da diziyi HİÇ başlatmıyor, kısmen değil.
-    # `gez` dokunulmadan geçiyor: gezinti noktası toprağın dışında olabilir.
     if islem == "sula":
-        alanlar = await asyncio.to_thread(dikim.listele)
-        if alanlar:
-            kayitli = await asyncio.to_thread(noktalar.oku)
-            indeks = {n.get("ad"): n for n in kayitli["noktalar"]}
-            disarida = []
-            for ad in adlar:
-                nk = indeks.get(ad)
-                if nk is None:
-                    continue          # eksik nokta hatasını `programlar.coz` veriyor
-                kabul, _, _ = dikim.nokta_kabul(
-                    float(nk.get("x", 0)), float(nk.get("y", 0)), alanlar)
-                if not kabul:
-                    disarida.append(f"{ad} (X{nk.get('x')} Y{nk.get('y')})")
-            if disarida:
-                raise HTTPException(
-                    status_code=422,
-                    detail="Şu noktalar dikim alanı dışında, sulama başlatılmadı: "
-                           + ", ".join(sorted(disarida)))
-
-    adimlar: list[dict[str, Any]] = []
-    for ad in adlar:
-        adimlar.append({"tip": "nokta", "ad": ad})
-        if islem == "sula":
-            adimlar.append({"tip": "role", "ad": "su_pompasi", "durum": True})
-            adimlar.append({"tip": "bekle", "saniye": saniye})
-            adimlar.append({"tip": "role", "ad": "su_pompasi", "durum": False})
+        cozum = await asyncio.to_thread(_sulama_coz, adlar, saniye)
+        if cozum["ret"]:
+            # Tek bir nokta bile kabul edilmiyorsa dizi HİÇ başlamıyor.
+            # Kısmi sulama, hangi bitkinin sulandığını bilinmez yapardı.
+            raise HTTPException(
+                status_code=422,
+                detail="Sulama başlatılmadı — " + " · ".join(cozum["ret"]))
+        # YASAK BÖLGE + YUMUŞAK SINIR ÖN KONTROLÜ. Kararı ajan veriyor;
+        # sunucu kuralları kopyalamıyor, yalnız soruyor. Amaç 40 bitkilik
+        # bir dizinin ortasında çarpıp durmasını önlemek — yarı sulanmış
+        # bir yatak, hiç sulanmamış bir yataktan daha kötü.
+        await _sulama_on_kontrol(cozum)
+        adimlar = cozum["adimlar"]
+    else:
+        adimlar = [{"tip": "nokta", "ad": ad} for ad in adlar]
 
     gecici = {"ad": "Seçim: " + ("sulama" if islem == "sula" else "gezinti"),
               "adimlar": adimlar, "tekrar": 1}
@@ -662,6 +649,135 @@ async def api_toplu(govde: dict[str, Any], jeton: str = Query(default="")):
         "ad": gecici["ad"], "adimlar": cozulmus, "tekrar": 1,
         "hiz": govde.get("hiz"),
     })
+
+
+# --------------------------------------------------------------------------- #
+# Sulama ofseti
+#
+# Suyun bitkinin NERESİNE bırakılacağı `sulama.py`de çözülüyor; burada
+# yalnız veriyi toplayıp adım listesine çeviriyoruz.
+#
+# Koordinatlar BURADA donuyor ve diziye mutlak olarak yazılıyor. Ajan
+# hiçbir şey türetmiyor: panelin önizlemede gösterdiği nokta ile robotun
+# gittiği nokta böylece aynı sayı oluyor. Ofset yaşa göre değiştiği için
+# bu şart — ajan kendi hesaplasaydı önizleme ile gerçek ayrışırdı.
+# --------------------------------------------------------------------------- #
+
+
+def _sulama_coz(adlar: list[str], saniye: float) -> dict[str, Any]:
+    """Seçili bitkiler için sulama noktalarını ve adım listesini üretir.
+
+    Eşzamanlı çağrılmıyor; `asyncio.to_thread` ile tek seferde koşuyor,
+    çünkü dört ayrı depoyu (nokta, tür, eğri, dikim) okuyor.
+    """
+    kayitli = {n.get("ad"): n for n in noktalar.hepsi()}
+    tur_indeks = {t.get("slug"): t for t in turler.hepsi()}
+    egri_listesi = egriler.hepsi()
+    alanlar = dikim.listele()
+    durum = merkez.son_durum or {}
+    # Güvenli Z ve toprak yüzeyi ajandan geliyor. Ajan kopukken ayarların
+    # varsayılanına düşüyoruz — sulama zaten ajansız başlamıyor, ama
+    # ÖNİZLEME ajan kapalıyken de anlamlı bir sayı göstermeli.
+    guvenli_z = float(durum.get("guvenli_z") or 340.0)
+    toprak_z = float(durum.get("toprak_z") or 0.0)
+    simdi = time.time()
+
+    adimlar: list[dict[str, Any]] = []
+    ozet: list[dict[str, Any]] = []
+    ret: list[str] = []
+    uyari: list[str] = []
+    for ad in adlar:
+        bitki = kayitli.get(ad)
+        if bitki is None:
+            # Eksik nokta hatasını `programlar.coz` tek elden veriyor.
+            adimlar.append({"tip": "nokta", "ad": ad})
+            continue
+        tur = tur_indeks.get(bitki.get("tur"))
+        c = sulama.noktalar(
+            bitki, tur, toplam_saniye=saniye, simdi=simdi, guvenli_z=guvenli_z,
+            genel_toprak_z=toprak_z, egri_listesi=egri_listesi,
+            dikim_alanlari=alanlar)
+        ret.extend(f"{ad}: {m}" for m in c["ret"])
+        uyari.extend(f"{ad}: {m}" for m in c["uyari"])
+        ozet.append({"ad": ad, "desen": c["desen"], "ofset_mm": c["ofset_mm"],
+                     "yuzey_z": c["yuzey_z"], "boy_mm": c.get("boy_mm"),
+                     "egriden": c["egriden"], "noktalar": c["noktalar"],
+                     "ret": c["ret"], "uyari": c["uyari"]})
+        for i, nk in enumerate(c["noktalar"], 1):
+            adimlar.append({"tip": "nokta",
+                            "ad": ad if len(c["noktalar"]) == 1 else f"{ad}#{i}",
+                            "x": nk["x"], "y": nk["y"], "z": nk["z"]})
+            adimlar.append({"tip": "role", "ad": "su_pompasi", "durum": True})
+            adimlar.append({"tip": "bekle", "saniye": nk["saniye"]})
+            adimlar.append({"tip": "role", "ad": "su_pompasi", "durum": False})
+
+    if len(adimlar) > programlar.AZAMI_ADIM:
+        ret.append(
+            f"{len(adlar)} bitki x desen = {len(adimlar)} adım, sınır "
+            f"{programlar.AZAMI_ADIM}. Daha az bitki seçin ya da çember "
+            f"nokta sayısını düşürün.")
+    return {"adimlar": adimlar, "ozet": ozet, "ret": ret, "uyari": uyari,
+            "toplam_nokta": sum(len(o["noktalar"]) for o in ozet),
+            "toplam_saniye": round(
+                sum(nk["saniye"] for o in ozet for nk in o["noktalar"]), 1)}
+
+
+async def _sulama_on_kontrol(cozum: dict[str, Any]) -> None:
+    """Ajana "bu koordinatlar geçer mi" diye sorar; geçmiyorsa 422.
+
+    Ajan bağlı değilse sessizce geçiyoruz: sulama zaten ajansız
+    başlamıyor ve `komut_gonder` birazdan kendi hatasını verecek.
+    Burada "bilinmiyor"u "engelli" saymak, ajan kopukken önizlemeyi de
+    kilitlerdi.
+    """
+    hedefler = [{"x": a["x"], "y": a["y"], "z": a["z"]}
+                for a in cozum["adimlar"] if a.get("tip") == "nokta"
+                and a.get("x") is not None]
+    if not hedefler:
+        return
+    try:
+        yanit = await merkez.komut_gonder("nokta_denetle", {"noktalar": hedefler})
+    except HTTPException:
+        return          # ajan yok — asıl hatayı dizi başlatma verecek
+    veri = (yanit or {}).get("veri") or {}
+    engelli = [s for s in (veri.get("noktalar") or []) if s.get("engel")]
+    if not engelli:
+        return
+    ayrinti = []
+    for s in engelli[:6]:
+        h = hedefler[s["sira"]] if s["sira"] < len(hedefler) else {}
+        ayrinti.append(f"X{h.get('x')} Y{h.get('y')} Z{h.get('z')}: {s['engel']}")
+    raise HTTPException(
+        status_code=422,
+        detail=(f"Sulama başlatılmadı — {len(engelli)} nokta ajanın "
+                f"denetiminden geçmedi: " + " · ".join(ayrinti)
+                + ("" if len(engelli) <= 6 else f" · … ve {len(engelli) - 6} tane daha")))
+
+
+@app.post("/api/sulama/onizle")
+async def api_sulama_onizle(govde: dict[str, Any], jeton: str = Query(default="")):
+    """Sulamayı BAŞLATMADAN nereye gidileceğini gösterir.
+
+    Geri alınamaz bir işlemi körlemesine yapmak yerine önce sonucu
+    göstermek, 40 bitkilik bir seçimde fark ediyor — ızgara önizlemesiyle
+    aynı gerekçe. Panel haritada bu noktaları çiziyor.
+    """
+    _parola_dogrula(jeton)
+    adlar = [str(a) for a in (govde.get("noktalar") or []) if str(a).strip()]
+    if not adlar:
+        raise HTTPException(status_code=400, detail="Seçim boş")
+    if len(adlar) > AZAMI_SECIM:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Tek seferde en fazla {AZAMI_SECIM} nokta işlenebilir "
+                   f"(seçili: {len(adlar)})")
+    saniye = max(1.0, min(60.0, float(govde.get("saniye", 3) or 3)))
+    cozum = await asyncio.to_thread(_sulama_coz, adlar, saniye)
+    return {"ozet": cozum["ozet"], "ret": cozum["ret"], "uyari": cozum["uyari"],
+            "adim": len(cozum["adimlar"]),
+            "toplam_nokta": cozum["toplam_nokta"],
+            "toplam_saniye": cozum["toplam_saniye"],
+            "azami_adim": programlar.AZAMI_ADIM}
 
 
 # --------------------------------------------------------------------------- #

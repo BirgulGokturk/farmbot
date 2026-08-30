@@ -254,6 +254,16 @@ def coz(program: dict[str, Any],
         if adim.get("tip") != "nokta":
             cozulmus.append(dict(adim))
             continue
+        # ÖNCEDEN ÇÖZÜLMÜŞ adım: x/y/z zaten dolu. Sulama ofseti böyle
+        # geliyor — koordinat bitkinin kendi konumu DEĞİL, ofsetli sulama
+        # noktası, ve depoya bakmak onu bitkinin üstüne geri çekerdi.
+        # Kayıtlı programların adımları koordinat taşımıyor, onlar eskisi
+        # gibi isimden çözülüyor.
+        if all(adim.get(k) is not None for k in ("x", "y", "z")):
+            cozulmus.append({"tip": "nokta", "ad": adim.get("ad", ""),
+                             "x": float(adim["x"]), "y": float(adim["y"]),
+                             "z": float(adim["z"])})
+            continue
         nokta = noktalar.bul(adim["ad"])
         if nokta is None:
             eksik.append(adim["ad"])

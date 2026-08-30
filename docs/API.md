@@ -152,6 +152,97 @@ aşımı.
 | `DELETE /api/turler?slug=…&alan=…` | `alan` verilirse o alanı, verilmezse türün bütün ezmelerini katalog değerine döndürür |
 | `GET /api/dikim` | `{alanlar, azami, en_kucuk_kenar, toprak_z}` — dikim alanları ve ajandan gelen genel toprak yüzeyi |
 | `PUT /api/dikim` | `{alanlar:[{ad,x1,y1,x2,y2,toprak_z?}…]}` — doğrulanmış hâli geri döner |
+| `POST /api/sulama/onizle` | `{noktalar:[ad…], saniye?}` — sulamayı BAŞLATMADAN nereye gidileceğini döndürür |
+
+### Sulama ofseti
+
+Bitkinin tam üstüne akıtmak her tür için doğru değil: besleyici kökler
+kanopinin kenarında. Ofset **tek bir formülden** çıkıyor —
+
+    ofset = sulama_oran × (bitkinin O ANKİ yarıçapı)
+
+— ve sorulan üç model bunun içinde birer özel hâl, ayrı bir kip anahtarı yok:
+
+| Durum | Ne oluyor |
+|---|---|
+| Bitkiye `egri_yayilim` bağlı | Yarıçap YAŞA göre; 0. günde gövde, olgunlukta damlama hattı |
+| Eğri yok | Yarıçap türün OLGUN `spread_mm`/2'si — oran bir yüzde gibi çalışır |
+| Tür düzeyinde ikisi de sabit | Sonuç sabit mm |
+
+Ayrı bir `sabit_mm` terimi **yok**: eğrisiz hâl zaten onu veriyor.
+
+**Eğrisiz hâlin tuzağı:** yayılım eğrisi bağlı değilse fideye ilk günden
+olgun bitki mesafesi verilir. Tür formunda alanın altında bu yazıyor ve
+önizleme her seferinde `uyari` olarak da bildiriyor.
+
+#### Alanlar (tür şeması, `ozel` ile bitki başına ezilebilir)
+
+| alan | değer | varsayılan |
+|---|---|---|
+| `sulama_deseni` | `ust` \| `yan` \| `iki` \| `cember` | `ust` |
+| `sulama_oran` | 0–1,5 (o anki yarıçapın katı) | 0 |
+| `sulama_aci` | 0–359° (makine çerçevesi, 0 = +X) | 0 |
+| `sulama_nokta` | 2–8 (yalnız `cember`) | 4 |
+| `sulama_aciklik_mm` | 0–300 (kanopinin üstünde) | 50 |
+
+`sulama_deseni` şemadaki ilk **seçenekli** alan: `turler.alan_dogrula`
+sayısal aralık yerine kapalı listeye bakıyor. Öncelik `spread_mm` ile aynı:
+`ozel` > tür ezmesi > varsayılan.
+
+**Varsayılan `ust` + oran 0**, yani güncelleme sonrası hiçbir kurulumun
+davranışı değişmiyor; sulama eskisi gibi bitkinin tam üstüne akıtıyor.
+
+#### Desen maliyeti
+
+Bitki başına adım: `ust`/`yan` 4, `iki` 8, `cember` 4N. Asıl bedel adım
+sayısı değil, **her fazladan noktanın bir Z çevrimi ödetmesi**. Sulama Z'si
+güvenli Z'nin altındaysa nokta başına `2 × (guvenli_z − sulama_z) / hız`
+saniye ekleniyor. `programlar.AZAMI_ADIM` aşılırsa dizi hiç başlamıyor.
+
+**Spiral bilerek yok:** değeri akarken hareket etmekte, oysa adım
+sözlüğünde (`nokta, bekle, role, uc`) "röle açıkken hareket et" diye bir
+şey yok — `nokta` bloke eden bir hareket. Ayrıklaştırılmış spiral, aynı
+adım sayısındaki çemberden kesinlikle daha kötü.
+
+#### Z ekseni
+
+    sulama_z = alanın toprak yüzeyi + o anki boy (egri_yukseklik) + açıklık
+
+`guvenli_z` tavanına kısılıyor ve kırpma **sessiz değil**: uç istenen
+yükseklikte duramadıysa `uyari` düşüyor. Bitkinin kayıtlı `z`si burada
+KULLANILMIYOR — o "bu noktaya gidilirken ucun bulunacağı yükseklik", ekim
+derinliği ise türde.
+
+#### Su BÖLÜNÜYOR
+
+Bitkinin ihtiyacı hacim, süre değil (`water_ml_per_day` zaten ml). N
+noktalı desende her noktaya `saniye/N` düşüyor, toplam korunuyor. Nokta
+başına süre **1 saniyenin** altına inecekse süre kısaltılmıyor, **nokta
+sayısı düşürülüyor** ve sebebi bildiriliyor: kısa bir vana darbesinin
+büyük kısmı geçici rejim olur ve giden gerçek hacim hesaptan sapar.
+
+#### Denetim sırası
+
+1. **Dikim alanı** — artık bitkinin kendi konumu değil, **ofsetli her
+   nokta** denetleniyor. Ret mesajı sebebi ve çözümü birlikte veriyor:
+   `X312.4 Y88.0 dikim alanı dışında (0° yönünde 150 mm ofset) — ofset
+   yönünü (sulama_aci) çevirin, ofseti (sulama_oran) küçültün ya da bu
+   bitkide deseni 'tam üst' yapın`.
+2. **Yasak bölge + yumuşak sınır** — `nokta_denetle` komutuyla **ajana
+   soruluyor**; sunucu kuralları kopyalamıyor. Karar ajanda kalıyor.
+   Amaç 40 bitkilik bir dizinin ortasında çarpıp durmasını önlemek.
+3. Biri bile geçmezse dizi **hiç başlamıyor** — kısmi sulama, hangi
+   bitkinin sulandığını bilinmez yapardı.
+
+Koordinatlar **sunucuda donuyor** ve diziye mutlak olarak yazılıyor; ajan
+hiçbir şey türetmiyor. Ofset yaşa göre değiştiği için bu şart: ajan kendi
+hesaplasaydı panelin önizlemede gösterdiği nokta ile robotun gittiği nokta
+ayrışabilirdi.
+
+`POST /api/sulama/onizle` → `{ozet:[{ad,desen,ofset_mm,yuzey_z,boy_mm,
+egriden,noktalar:[{x,y,z,saniye,aci}],ret,uyari}], ret, uyari, adim,
+toplam_nokta, toplam_saniye, azami_adim}`. Panelde "Sulama noktaları"
+katmanı (varsayılan kapalı) bu yanıtı çiziyor.
 
 ### Dikim alanları
 

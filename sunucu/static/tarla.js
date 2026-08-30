@@ -161,25 +161,73 @@
    * diye kendi hesabını yaparsa üç katmandan biri gözden kaçıyor ve halka
    * ile kart farklı sayı gösteriyor.
    */
+  /* Toplu sulamanın varsayılan toplam süresi. `main.py` de aynı sayıyı
+   * kullanıyor (`govde.get("saniye", 3)`); desenli sulamada bu süre
+   * noktalara bölündüğü için ikisinin ayrışması önizlemeyi yanıltır. */
+  const SULAMA_SANIYE = 3;
+
   const TUR_TABAN = { spread_mm: 200, sow_depth_mm: 10, days_to_harvest: 60,
                       water_ml_per_day: 100 };
+
+  /** Alan SEÇENEKLİ mi (sayı değil, kapalı listeden metin)?
+   *  Tanım sunucudan geliyor (`turler.alan_bilgisi`), burada tekrar
+   *  yazılmıyor — iki yerde iki liste tutmak ayrışmanın kısa yolu. */
+  const secenekliMi = (alan) =>
+    !!(VERI.turAlanlari[alan] && VERI.turAlanlari[alan].tip === "secenek");
 
   /** Bir alanın çözülmüş değeri + nereden geldiği.
    *  `ozelMi`: bitki türünden farklı. `turEzik`: tür katalogdan farklı. */
   function turAlani(nokta, alan) {
     const tur = (nokta && nokta.tur && VERI.turler[nokta.tur]) || null;
-    const sayi = (v) => (v == null || v === "" ? null : Number(v));
+    // Seçenekli alanda Number("cember") NaN veriyor; metin metin kalmalı.
+    const metinMi = secenekliMi(alan);
+    const sayi = (v) => (v == null || v === "" ? null : (metinMi ? String(v) : Number(v)));
     const turDeger = tur ? sayi(tur[alan]) : null;
     const katalog = tur && tur.ezili && tur.ezili[alan] != null
       ? sayi(tur.ezili[alan]) : turDeger;
     const ozel = nokta && nokta.ozel ? sayi(nokta.ozel[alan]) : null;
-    const taban = turDeger != null ? turDeger : TUR_TABAN[alan];
+    // Taban: türün değeri, yoksa sunucunun bildirdiği varsayılan.
+    // Sulama alanları katalogda hiç yok, onların tabanı buradan geliyor.
+    const varsayilan = VERI.turAlanlari[alan] && VERI.turAlanlari[alan].varsayilan;
+    const taban = turDeger != null ? turDeger
+      : (varsayilan != null ? varsayilan : TUR_TABAN[alan]);
     return {
       deger: ozel != null ? ozel : taban,
       tur: taban, katalog, ozel,
       ozelMi: ozel != null,
       turEzik: !!(tur && tur.ezili && tur.ezili[alan] != null),
     };
+  }
+
+  /** Tek bir düzenlenebilir alanın girdi HTML'i.
+   *
+   * Tür formu ve bitki kartı aynı alan kümesini çiziyor; ikisinde ayrı
+   * ayrı yazmak, seçenekli alan eklenince birinin sayı kutusu çizmesine
+   * yol açıyordu. Tek yerden.
+   *
+   * `sinif` hangi formda olduğumuzu söylüyor (`tur-alan` / `bitki-alan`),
+   * olay bağlama zaten ona bakıyor.
+   */
+  function alanGirdisi(alan, bilgi, deger, sinif) {
+    if (bilgi.tip === "secenek") {
+      const secili = String(deger == null ? "" : deger);
+      return `<select class="${sinif}" data-alan="${alan}">`
+        + (bilgi.secenekler || []).map((sc) =>
+            `<option value="${kacisli(sc.deger)}"${sc.deger === secili ? " selected" : ""}>`
+            + `${kacisli(sc.ad)}</option>`).join("")
+        + "</select>";
+    }
+    return `<input type="number" class="${sinif}" data-alan="${alan}"`
+      + ` value="${say(deger, 2)}" min="${bilgi.alt}" max="${bilgi.ust}" step="any">`;
+  }
+
+  /** Alan şu anki desende anlamlı mı? Anlamsızsa formda hiç görünmüyor —
+   *  "Çember noktası" alanını tam üst desende göstermek, kullanıcıya
+   *  hiçbir işe yaramayan bir sayı sordurmak olurdu. */
+  function alanGorunur(bilgi, cozulmus) {
+    if (!bilgi.kosul) return true;
+    const su_an = String(cozulmus(bilgi.kosul.alan));
+    return (bilgi.kosul.degerler || []).indexOf(su_an) >= 0;
   }
 
   /** Bitkinin TAM kaydını yazar. "Üstüne yaz" bütün kaydı değiştirdiği
@@ -204,8 +252,10 @@
     // değeri geri diriltirdi.
     const taze = VERI.noktalar.find((x) => x.ad === n.ad) || n;
     const ozel = { ...(taze.ozel || {}) };
+    // Seçenekli alan METİN kalıyor: Number("cember") NaN verir ve sunucu
+    // "sayı olmalı" diye reddeder.
     if (deger == null) delete ozel[alan];
-    else ozel[alan] = Number(deger);
+    else ozel[alan] = secenekliMi(alan) ? String(deger) : Number(deger);
     await bitkiYaz(taze, { ozel });
     await P().noktalariYukle();
   }
@@ -237,6 +287,7 @@
     get secim() { return T.secim; },
     get kip() { return T.kip; },
     sx, sz, sy, mmx, mmy, malzeme, kis, say, kacisli, gunluk,
+    alanGirdisi, alanGorunur,
     /** Toprak yüzeyinin makine Z'si (ajanın `plc.toprak_z` ayarı). */
     get toprakZ() { return T.toprakZ; },
     /** Dikim alanları — makine mm cinsinden, sunucudan geldiği gibi. */
@@ -288,6 +339,12 @@
     /** Silme yanıtındaki geri alma özetini şeride veriyor — 30 sn pencere. */
     geriAlGoster: (parti) => P().geriAlGoster && P().geriAlGoster(parti),
     tazele: () => { kirlet("tazele"); ciz2bTumu(); },
+    /** Bir katman kendi verisini asenkron çektiğinde yeniden çizdiriyor. */
+    katmanlariGuncelle: () => katmanlariGuncelle(),
+    /** Toplu sulama süresi (sn). Sunucudaki varsayılanla AYNI sayı olmalı:
+     *  önizleme başka, gerçek sulama başka süreyi bölerse haritada
+     *  gösterilen nokta başına süre yanlış olur. */
+    get sulamaSaniye() { return SULAMA_SANIYE; },
     /** Bir katmanın grubunu temizler — nesneler her güncellemede yeniden kurulur. */
     bosalt(grup) {
       while (grup.children.length) {
@@ -1303,6 +1360,33 @@
     // Onay penceresi yok: "12 nokta silinecek, emin misiniz?" sorusu hangi 12
     // olduğunu göstermiyor. Silme uygulanıyor, 30 saniye geri alınabiliyor.
     const govde = { islem, noktalar: adlar };
+    if (islem === "sula") {
+      govde.saniye = SULAMA_SANIYE;
+      /* ÖNİZLEME. Sulama geri alınamıyor: su döküldü mü döküldü. Desen
+       * açıkken bir bitki birden çok noktaya gidiyor, yani "12 bitki
+       * sulanacak" ile "12 bitki, 48 nokta, 3 tanesi reddedilecek"
+       * arasında büyük fark var. Izgara önizlemesiyle aynı gerekçe. */
+      try {
+        const o = await P().apiIste("/api/sulama/onizle", {
+          method: "POST", body: JSON.stringify(govde),
+        });
+        if (o.ret && o.ret.length) {
+          gunluk(`✕ Sulama başlatılmadı — ${o.ret.join(" · ")}`, "hata");
+          return;
+        }
+        (o.uyari || []).slice(0, 4).forEach((u) => gunluk(`⚠ ${u}`, "uyari"));
+        const desenli = (o.ozet || []).some((b2) => (b2.noktalar || []).length > 1);
+        if (desenli) {
+          gunluk(`${adlar.length} bitki · ${o.toplam_nokta} sulama noktası · `
+                 + `${o.toplam_saniye} sn su · ${o.adim} adım`, "iyi");
+        }
+      } catch (h) {
+        // Önizleme alınamadıysa sulamayı yine de deniyoruz: asıl denetim
+        // sunucuda ve orada da aynı kural işliyor. Önizleme bir kolaylık,
+        // güvenlik katmanı değil.
+        gunluk(`⚠ Sulama önizlemesi alınamadı: ${h.message}`, "uyari");
+      }
+    }
     if (islem === "dizi") {
       govde.dizi = ($("#toplu-dizi") || {}).value || "";
       if (!govde.dizi) { gunluk("Uygulanacak dizi seçilmedi", "uyari"); return; }
@@ -1621,15 +1705,16 @@
         ${ezik ? `<span class="rozet-fark">katalogdan farklı</span>
           <button class="dugme kucuk" id="d-tur-sifirla">↺ Türü sıfırla</button>` : ""}
       </div>
-      <table class="tarla-ozellik">${Object.entries(alanlar).map(([a, b]) => {
+      <table class="tarla-ozellik">${Object.entries(alanlar).filter(
+        ([, b]) => alanGorunur(b, (alan) => t[alan])).map(([a, b]) => {
         const farkli = t.ezili && t.ezili[a] != null;
         return `<tr><td>${kacisli(b.baslik)}</td><td>
-          <input type="number" class="tur-alan" data-alan="${a}" value="${say(t[a], 2)}"
-                 min="${b.alt}" max="${b.ust}" step="any">
+          ${alanGirdisi(a, b, t[a], "tur-alan")}
           <span class="alt-not">${kacisli(b.birim)}</span>
           ${farkli ? `<button class="rozet-fark rozet-dugme tur-alan-sifirla" data-alan="${a}"
-              title="Katalog değerine dön: ${say(t.ezili[a], 0)} ${kacisli(b.birim)}"
+              title="Katalog değerine dön: ${kacisli(String(t.ezili[a]))} ${kacisli(b.birim)}"
               >katalogdan farklı ↺</button>` : ""}
+          ${b.not ? `<div class="alt-not">${kacisli(b.not)}</div>` : ""}
         </td></tr>`;
       }).join("")}</table>
       <div class="alt-not">Katalog dosyası değişmiyor; bu değerler ayrı tutuluyor.</div>`;
@@ -1637,7 +1722,13 @@
     kutu.querySelectorAll(".tur-alan").forEach((g) => {
       g.onchange = async () => {
         g.blur();
-        try { await turKaydet(slug, { [g.dataset.alan]: g.value }); gunluk(`✓ ${t.name_tr} güncellendi`, "ok"); }
+        try {
+          await turKaydet(slug, { [g.dataset.alan]: g.value });
+          gunluk(`✓ ${t.name_tr} güncellendi`, "ok");
+          // Desen değişince hangi alanların anlamlı olduğu değişiyor;
+          // formu yeniden çiziyoruz ki gereksiz alan kaybolsun.
+          turFormuCiz();
+        }
         catch (h) { gunluk(`✕ Tür kaydedilemedi: ${h.message}`, "hata"); turFormuCiz(); }
       };
     });

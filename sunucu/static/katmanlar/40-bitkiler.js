@@ -655,18 +655,23 @@ Tarla.katman({
    * "bu sayıyı ben mi koydum, katalogdan mı geldi" sorusu kartta cevaplı. */
   ozellikSatirlari(o, b, ekstra) {
     const alanlar = o.turAlanlari || {};
-    return Object.entries(alanlar).map(([a, bilgi]) => {
-      const c = b.d(a);
-      return `<tr><td>${o.kacisli(bilgi.baslik)}</td><td>
-        <input type="number" class="bitki-alan" data-alan="${a}" value="${o.say(c.deger, 2)}"
-               min="${bilgi.alt}" max="${bilgi.ust}" step="any">
+    // Girdiyi çekirdek çiziyor (`o.alanGirdisi`): sayı kutusu mu açılır
+    // liste mi olacağına tek yer karar versin. `o.alanGorunur` da o anki
+    // desende anlamsız alanları gizliyor.
+    return Object.entries(alanlar)
+      .filter(([, bilgi]) => o.alanGorunur(bilgi, (alan) => b.d(alan).deger))
+      .map(([a, bilgi]) => {
+        const c = b.d(a);
+        return `<tr><td>${o.kacisli(bilgi.baslik)}</td><td>
+        ${o.alanGirdisi(a, bilgi, c.deger, "bitki-alan")}
         <span class="alt-not">${o.kacisli(bilgi.birim)}</span>
         ${(ekstra && ekstra[a]) ? `<span class="alt-not">${o.kacisli(ekstra[a])}</span>` : ""}
         ${c.ozelMi ? `<button class="rozet-fark rozet-dugme bitki-alan-sifirla" data-alan="${a}"
-            title="Türün değerine dön: ${o.say(c.tur, 0)} ${o.kacisli(bilgi.birim)}"
+            title="Türün değerine dön: ${o.kacisli(String(c.tur))} ${o.kacisli(bilgi.birim)}"
             >türden farklı ↺</button>` : ""}
+        ${bilgi.not ? `<div class="alt-not">${o.kacisli(bilgi.not)}</div>` : ""}
       </td></tr>`;
-    }).join("");
+      }).join("");
   },
 
   /** Bitkiye bağlanabilen eğriler ve bugünkü değerleri.

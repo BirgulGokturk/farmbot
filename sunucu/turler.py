@@ -32,7 +32,81 @@ _KILIT = threading.RLock()
 # Kullanıcının değiştirebileceği alanlar. Ad, renk ve simge listede YOK:
 # onlar kataloğun kimliği; değiştirilmesi gerekirse yeni bir tür eklemek
 # doğru yol olur.
-DUZENLENEBILIR = ("spread_mm", "sow_depth_mm", "days_to_harvest", "water_ml_per_day")
+DUZENLENEBILIR = ("spread_mm", "sow_depth_mm", "days_to_harvest", "water_ml_per_day",
+                  "sulama_deseni", "sulama_oran", "sulama_aci", "sulama_nokta",
+                  "sulama_aciklik_mm")
+
+# SULAMA OFSETİ — bitkinin tam üstüne akıtmak her tür için doğru değil.
+# Besleyici kökler kanopinin kenarında (damlama hattı); fideye 80 mm uzağa
+# su vermek boşa akıtmak, olgun bir domatese gövdeye akıtmak yaprağı
+# ıslatıp kökü kuru bırakmak.
+#
+# Ofset TEK bir formülden çıkıyor:
+#
+#     ofset = sulama_oran x (bitkinin O ANKİ yarıçapı)
+#
+# Sorulan üç model bunun içinde birer özel hâl:
+#   - `egri_yayilim` bağlıysa yarıçap yaşa göre değişiyor (asıl istenen),
+#   - eğri yoksa yarıçap türün OLGUN `spread_mm`/2 değeri, yani oran yüzde,
+#   - tür düzeyinde ikisi de sabitse sonuç sabit mm.
+# Ayrı bir `sabit_mm` terimi bilerek YOK: eğrisiz hâl zaten onu veriyor ve
+# altıncı bir alan panelde karşılığı olmayan karmaşıklık olurdu.
+SECENEK = {
+    "sulama_deseni": ("ust", "yan", "iki", "cember"),
+}
+
+# Seçeneklerin panelde görünen adı.
+SECENEK_ADI = {
+    "sulama_deseni": {
+        "ust": "Tam üst (ofset yok)",
+        "yan": "Tek yana kaydır",
+        "iki": "Karşılıklı iki nokta",
+        "cember": "Çember (N nokta)",
+    },
+}
+
+# Katalogda sulama alanları YOK — kurtarılmış veri onları taşımıyor.
+# Varsayılanlar burada, tek kaynakta. VARSAYILAN "ust" + oran 0: yani
+# güncelleme sonrası hiçbir kurulumun davranışı değişmiyor, sulama eskisi
+# gibi bitkinin tam üstüne akıtıyor. Ofset ancak kullanıcı açarsa başlıyor.
+VARSAYILAN = {
+    "sulama_deseni": "ust",
+    "sulama_oran": 0.0,
+    "sulama_aci": 0.0,
+    "sulama_nokta": 4.0,
+    "sulama_aciklik_mm": 50.0,
+}
+
+# Hangi alan hangi desende anlamlı — panel gereksiz alanı gizliyor.
+KOSUL = {
+    "sulama_oran": ("yan", "iki", "cember"),
+    "sulama_aci": ("yan", "iki", "cember"),
+    "sulama_nokta": ("cember",),
+}
+
+# Alanın altında görünen açıklama. `sulama_oran`daki not önemli: eğri
+# bağlı değilken yarıçap katalogdaki OLGUN çaptan geliyor, yani fideye ilk
+# günden olgun mesafe veriliyor. Bunu bilmeden oran açan kullanıcı,
+# fidenin suyunu 10 cm ötesine döktüğünü fark etmez.
+NOT = {
+    "sulama_oran": ("Bitkinin O ANKİ yarıçapının kaçta kaçı. 0 = tam üst. "
+                    "0,8 tipik: damlama hattının hemen içi. "
+                    "DİKKAT: bitkiye yayılım eğrisi (egri_yayilim) bağlı "
+                    "DEĞİLSE yarıçap katalogdaki OLGUN çaptan hesaplanır — "
+                    "yani fideye ilk günden olgun bitki mesafesi verilir. "
+                    "Yaşa göre ölçeklenmesi için bitkiye yayılım eğrisi bağlayın."),
+    "sulama_aci": ("Ofsetin yönü. 0° = +X. SABİT bir açı: yatağın kenarına "
+                   "yakın bitkide su alan dışına nişanlanabilir; öyle bir "
+                   "durumda sulama reddedilir ve açıyı çevirmeniz istenir."),
+    "sulama_nokta": ("Çemberdeki nokta sayısı. Her nokta ayrı bir hareket "
+                     "demek: 40 bitkilik bir koşuda 8 nokta, 4 noktanın iki "
+                     "katı süre eder. 2-4 arası tavsiye edilir."),
+    "sulama_aciklik_mm": ("Ucun bitkinin TEPESİNDEN ne kadar yukarıda "
+                          "duracağı. Boy `egri_yukseklik`ten okunuyor; eğri "
+                          "yoksa yüzeyden bu kadar yukarısı kullanılır."),
+    "sulama_deseni": ("Suyun bırakılacağı desen. Tam üst eski davranış ve "
+                      "varsayılan; fide, tohum ve kök sebzesi için doğrusu bu."),
+}
 
 # Makul aralıklar — panelden gelen sayıya körlemesine güvenmiyoruz. Sıfır
 # fazla yazmak kolay ve 4000 mm çaplı bir marul haritayı okunmaz yapıyor.
@@ -41,6 +115,15 @@ SINIR = {
     "sow_depth_mm": (0.0, 200.0),
     "days_to_harvest": (1.0, 400.0),
     "water_ml_per_day": (0.0, 20000.0),
+    # 1,5 tavanı: kanopinin bir parça dışına su vermek meşru (yayılan kök),
+    # daha fazlası komşu bitkinin dibine akıtmak olurdu.
+    "sulama_oran": (0.0, 1.5),
+    "sulama_aci": (0.0, 359.0),
+    # 8 tavan ölçüyle konuldu: her ek nokta bir Z çevrimi demek ve yazılım
+    # ölçümünde nokta başına saniyeler ediyor. 2 alt sınır, çünkü tek
+    # noktalı "çember" zaten `yan` deseni.
+    "sulama_nokta": (2.0, 8.0),
+    "sulama_aciklik_mm": (0.0, 300.0),
 }
 
 BIRIM = {
@@ -48,6 +131,11 @@ BIRIM = {
     "sow_depth_mm": "mm",
     "days_to_harvest": "gün",
     "water_ml_per_day": "ml/gün",
+    "sulama_deseni": "",
+    "sulama_oran": "× yarıçap",
+    "sulama_aci": "°",
+    "sulama_nokta": "nokta",
+    "sulama_aciklik_mm": "mm",
 }
 
 BASLIK = {
@@ -55,6 +143,11 @@ BASLIK = {
     "sow_depth_mm": "Ekim derinliği",
     "days_to_harvest": "Hasat süresi",
     "water_ml_per_day": "Günlük su",
+    "sulama_deseni": "Sulama deseni",
+    "sulama_oran": "Sulama ofseti",
+    "sulama_aci": "Ofset yönü",
+    "sulama_nokta": "Çember noktası",
+    "sulama_aciklik_mm": "Uç açıklığı",
 }
 
 
@@ -149,10 +242,19 @@ def _ezme_yaz(turler: dict[str, dict[str, float]]) -> None:
             raise
 
 
-def alan_dogrula(alan: str, deger: Any) -> float:
+def alan_dogrula(alan: str, deger: Any) -> float | str:
     if alan not in DUZENLENEBILIR:
         raise TurHatasi(f"'{alan}' düzenlenebilir bir alan değil "
                         f"(düzenlenebilenler: {', '.join(DUZENLENEBILIR)})")
+    # SEÇENEKLİ alan: sayı değil, kapalı bir listeden metin. Sayısal aralık
+    # makinesi bunu kapsamıyor, tek dal burada ayrılıyor.
+    if alan in SECENEK:
+        metin = str(deger or "").strip().lower()
+        if metin not in SECENEK[alan]:
+            raise TurHatasi(
+                f"{BASLIK[alan]} şunlardan biri olmalı: "
+                + ", ".join(SECENEK[alan]) + f" (verilen: {deger!r})")
+        return metin
     try:
         sayi = float(deger)
     except (TypeError, ValueError):
@@ -164,8 +266,22 @@ def alan_dogrula(alan: str, deger: Any) -> float:
     return sayi
 
 
-def ezme_dogrula(alanlar: dict[str, Any]) -> dict[str, float]:
+def ezme_dogrula(alanlar: dict[str, Any]) -> dict[str, float | str]:
     return {a: alan_dogrula(a, d) for a, d in (alanlar or {}).items() if d is not None}
+
+
+def varsayilanlari_uygula(tur: dict[str, Any]) -> dict[str, Any]:
+    """Katalogda olmayan sulama alanlarını varsayılanla doldurur.
+
+    Kurtarılmış katalog sulama alanlarını taşımıyor. Tüketicilerin her
+    yerde `t.get(alan) or VARSAYILAN[alan]` yazmasındansa değeri burada,
+    tek yerde tamamlıyoruz — yoksa sunucu ile panel farklı varsayılana
+    düşer ve önizleme gerçekle tutmaz.
+    """
+    for alan, deger in VARSAYILAN.items():
+        if tur.get(alan) in (None, ""):
+            tur[alan] = deger
+    return tur
 
 
 def kaydet(slug: str, alanlar: dict[str, Any]) -> dict[str, Any]:
@@ -181,8 +297,23 @@ def kaydet(slug: str, alanlar: dict[str, Any]) -> dict[str, Any]:
         # Katalogdakiyle aynı değer ezme sayılmıyor: "türden farklı" işareti
         # gerçekten farklı olanı göstersin.
         kaynak = next((t for t in katalog() if t.get("slug") == slug), {})
-        mevcut = {a: d for a, d in mevcut.items()
-                  if kaynak.get(a) is None or float(kaynak.get(a)) != d}
+        # Katalogdakiyle aynı değer ezme sayılmıyor. Sulama alanları
+        # katalogda hiç yok, onların ölçütü VARSAYILAN: varsayılana eşit
+        # bir değer de ezme değil, yoksa "katalogdan farklı" rozeti
+        # dokunulmamış türlerde de yanardı.
+        def _ezme_mi(alan: str, deger: Any) -> bool:
+            olcut = kaynak.get(alan)
+            if olcut is None:
+                olcut = VARSAYILAN.get(alan)
+            if olcut is None:
+                return True
+            if isinstance(deger, str):
+                return str(olcut) != deger
+            try:
+                return float(olcut) != float(deger)
+            except (TypeError, ValueError):
+                return True
+        mevcut = {a: d for a, d in mevcut.items() if _ezme_mi(a, d)}
         if mevcut:
             hepsi_ezme[slug] = mevcut
         else:
@@ -232,7 +363,7 @@ def hepsi() -> list[dict[str, Any]]:
             ezili[alan] = ham.get(alan)          # katalogdaki hâli
             tur[alan] = deger
         tur["ezili"] = ezili
-        cikti.append(tur)
+        cikti.append(varsayilanlari_uygula(tur))
     return cikti
 
 
@@ -242,7 +373,27 @@ def bul(slug: str) -> dict[str, Any] | None:
 
 
 def alan_bilgisi() -> dict[str, Any]:
-    """Panelin form kurarken kullandığı alan tanımları."""
-    return {a: {"baslik": BASLIK[a], "birim": BIRIM[a],
-                "alt": SINIR[a][0], "ust": SINIR[a][1]}
-            for a in DUZENLENEBILIR}
+    """Panelin form kurarken kullandığı alan tanımları.
+
+    `tip` alanı panelin sayı kutusu mu açılır liste mi çizeceğini söylüyor;
+    `kosul` hangi desende görüneceğini, `not` da altındaki açıklamayı.
+    """
+    cikti: dict[str, Any] = {}
+    for a in DUZENLENEBILIR:
+        bilgi: dict[str, Any] = {"baslik": BASLIK[a], "birim": BIRIM[a]}
+        if a in SECENEK:
+            bilgi["tip"] = "secenek"
+            bilgi["secenekler"] = [{"deger": d, "ad": SECENEK_ADI[a][d]}
+                                   for d in SECENEK[a]]
+        else:
+            bilgi["tip"] = "sayi"
+            bilgi["alt"] = SINIR[a][0]
+            bilgi["ust"] = SINIR[a][1]
+        if a in VARSAYILAN:
+            bilgi["varsayilan"] = VARSAYILAN[a]
+        if a in KOSUL:
+            bilgi["kosul"] = {"alan": "sulama_deseni", "degerler": list(KOSUL[a])}
+        if a in NOT:
+            bilgi["not"] = NOT[a]
+        cikti[a] = bilgi
+    return cikti

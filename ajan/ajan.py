@@ -337,6 +337,43 @@ class Ajan:
                         "veri": self.uclar.yol_onizleme(str(arg.get("islem", "al")),
                                                         str(arg.get("ad", "")))}
 
+            if ad == "nokta_denetle":
+                # ÖN KONTROL. Sunucu, bir diziyi başlatmadan önce
+                # "bu koordinatlar geçer mi" diye soruyor; asıl karar
+                # yine burada, ajanda veriliyor ve kurallar KOPYALANMIYOR
+                # — `bolgeler.ihlal` ve `plc.sinir_icinde` zaten hareket
+                # anında kullanılan işlevlerin ta kendisi.
+                #
+                # Neden gerekiyor: ofsetli sulamada 40 bitkilik bir dizi
+                # ortasında yasak bölgeye çarpıp durursa makine yarı
+                # sulanmış bir yatakta kalıyor. Önce sorup hiç
+                # başlatmamak, yarıda durdurmaktan iyi.
+                ham = arg.get("noktalar") or []
+                if not isinstance(ham, list):
+                    return {"ok": False, "mesaj": "noktalar bir liste olmalı"}
+                baglam = self.plc.baglam()
+                sonuc = []
+                for i, nk in enumerate(ham[:400]):
+                    try:
+                        x = float(nk.get("x")); y = float(nk.get("y")); z = float(nk.get("z"))
+                    except (TypeError, ValueError, AttributeError):
+                        sonuc.append({"sira": i, "engel": "koordinat sayı olmalı"})
+                        continue
+                    engel = None
+                    for eksen, deger in (("x", x), ("y", y), ("z", z)):
+                        j = plc_modulu.EKSEN_INDEKS[eksen]
+                        if not self.plc.sinir_icinde(j, deger):
+                            kalib = self.plc.kalib[j]
+                            engel = (f"{eksen.upper()} yumuşak sınır dışı: {deger:.1f} mm "
+                                     f"[{kalib.get('min', 0):.0f}, {kalib.get('max', 0):.0f}]")
+                            break
+                    if engel is None and self.bolgeler:
+                        engel = self.bolgeler.ihlal(x, y, z, baglam)
+                    sonuc.append({"sira": i, "engel": engel})
+                return {"ok": True, "mesaj": "", "sessiz": True,
+                        "veri": {"noktalar": sonuc,
+                                 "engelli": sum(1 for s in sonuc if s["engel"])}}
+
             if ad == "uc_durum_temizle":
                 return {"ok": True, "mesaj": await asyncio.to_thread(self.uclar.durumu_temizle)}
 
