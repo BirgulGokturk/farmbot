@@ -53,18 +53,21 @@
      * Gerçekte bunlar derin plastik saklama kutuları ve içleri toprak
      * dolu. -170'te kap tabanı zeminin 4 cm üstünde kalıyor — kutu asılı
      * duruyor ama yere değmiyor, fotoğraftaki gibi. */
-    tabla: -170,
+    /* -170 denendi ve kutular havada asili kaldi: zeminle aralarinda 4 cm
+     * bosluk vardi, makine "kutulari sarkan bir masa" gibi duruyordu.
+     * Taban artik ZEMINLE AYNI hizada — kutular yere basiyor. */
+    tabla: -210,
     /** Toprak kabı. */
     /* Kap yüksekliği 90 mm'ydi ve tabla −50'de olduğu için kabın ağzı
      * toprak yüzeyinin 40 mm ÜSTÜNE çıkıyordu: sahnede kap komple yukarıda
      * duran bir kutu gibi görünüyordu. Gerçekte kap aşağıda ve ağzı sigmayı
      * çok az geçiyor. 62 mm'de ağız yüzeyin 12 mm üstünde kalıyor — kenar
      * hâlâ görünüyor ama kutu öne çıkmıyor. */
-    /* Duvar TABANDAN ağza: 170 mm derinlik + ağız yüzeyin 12 mm üstünde.
-     * Duvar yüksekliği kabın derinliğiyle birlikte büyümeliydi; 62'de
+    /* Duvar TABANDAN ağza: 210 mm derinlik + ağız yüzeyin 12 mm üstünde.
+     * Duvar yüksekliği kabın derinliğiyle birlikte büyümeli; sabit
      * kalsaydı duvarlar tabandan başlayıp toprak yüzeyine varamadan
      * biterdi. */
-    kap: { yukseklik: 182, cidar: 6 },
+    kap: { yukseklik: 222, cidar: 6 },
     /** 2B haritada çizilen karık sayısı. */
     /* karik_sayisi: toprakta acilmis oluk sayisi.
      *
