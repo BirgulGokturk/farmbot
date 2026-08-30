@@ -113,8 +113,15 @@ Tarla.katman({
   suDurumu() {
     const p = this._p;
     if (!p || !p.su) return { kuruldu: false };
+    // Başlığın da yerini veriyoruz: "başlık nerede" sorusu ekran
+    // görüntüsünden cevaplanamıyor, sahnede küçük ve koyu.
+    const b = p.ucKafa && p.ucKafa.children.find(
+      (c) => c.type === "Group" && c.children.length > 5);
     return {
       kuruldu: true,
+      baslikVar: !!b,
+      baslikX: b ? +b.position.x.toFixed(4) : null,
+      baslikParca: b ? b.children.length : 0,
       gorunur: p.su.visible,
       boy: +p.su.scale.y.toFixed(4),
       y: +p.su.position.y.toFixed(4),

@@ -1555,7 +1555,25 @@
           hedef.style.cursor = T.kip === "sec" ? "crosshair"
             : T.ekleme ? "crosshair"
             : (mm && vurTara(mm)) ? "grab" : "default";
-          if (mm && !ucBoyutlu) ipucu(`X ${say(mm.x, 1)} · Y ${say(mm.y, 1)} mm`);
+          /* TOHUMLUK GÖZÜNÜN ÜSTÜNDE: içindeki türü söylüyoruz.
+           *
+           * Göz deliğine bakan biri hangi tohumun orada olduğunu bilmiyor;
+           * öğrenmek için kartı açmak ya da Ayarlar'a gitmek gerekiyordu.
+           * İmleci getirmek yetiyor artık. Emoji, adın önünde: dört göz
+           * yan yanayken hangisinin ne olduğu okumadan da seçilebiliyor. */
+          const gozVurus = (mm && !T.ekleme) ? vurTara(mm) : null;
+          const gz = gozVurus && gozVurus.kayit && gozVurus.kayit.goz
+                       ? gozVurus.kayit : null;
+          if (gz) {
+            const tur = gz.tohum ? VERI.turler[gz.tohum] : null;
+            const ad = tur ? `${tur.icon || "🌱"} ${tur.name_tr || gz.tohum}`
+                           : (gz.tohum ? gz.tohum : "boş");
+            ipucu(`${gz.name} · ${ad}${gz.dolu ? "" : " (göz boş)"}`);
+          } else if (mm && !ucBoyutlu) {
+            ipucu(`X ${say(mm.x, 1)} · Y ${say(mm.y, 1)} mm`);
+          } else {
+            ipucu("");
+          }
           hayaletTazele(mm);
           return;
         }

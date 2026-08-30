@@ -203,9 +203,22 @@ Tarla.katman({
       // Tepsinin üst yüzeyi en sığ gözün dibinden de yukarıda: yoksa o
       // göz kuyu değil tümsek olurdu.
       const AGIZ_MM = 12;
-      const ustY = o.sy(dipEnUst + AGIZ_MM);
       // Tepsi, en derin gözün dibini de içine alacak kadar kalın.
       const yuk = Math.max(0.02, (dipEnUst + AGIZ_MM - dipEnAlt) * o.MM + 0.006);
+      /* TEPSİ SİGMANIN ÜSTÜNE OTURUYOR.
+       *
+       * Önce üst yüzey doğrudan gözlerin Z'sinden türüyordu
+       * (`sy(dipEnUst + AGIZ)`) ve tepsi profilin 80 mm üstünde, havada
+       * duruyordu. Gerçek makinede blok uç profilinin ucunda, sigmanın
+       * ÜSTÜNE vidalı.
+       *
+       * Gözlerin `z` değeri robotun İNDİĞİ yeri söylüyor, tepsinin
+       * havadaki yüksekliğini değil — uç rafında da aynı ayrımı yaptık.
+       * Blok profile oturuyor, gözlerin BİRBİRİNE GÖRE derinlik farkı
+       * korunuyor: s4 hâlâ diğerlerinden sığ görünüyor. */
+      const tabanY = o.sy((Number(o.veri.durum.toprak_z) || 0)
+                          + o.makine.yan_ray + o.makine.profil / 2);
+      const ustY = tabanY + yuk;
 
       const g = new o.THREE.Group();
       const blok = new o.THREE.Mesh(
@@ -221,8 +234,12 @@ Tarla.katman({
        * `AZAMI_GOZ` = 48 ile sınırlı, yani en kötü durumda 96 çizim
        * çağrısı — tepsi tek katman ve bu sınırın altında kalıyor. */
       gozler.forEach((goz) => {
-        const dipY = o.sy(Number(goz.z) || 0);
-        const derinlik = Math.max(0.004, ustY - dipY);
+        // Derinlik GÖRECELİ: gözün dibi, en sığ gözün ağzından ne kadar
+        // aşağıda? Mutlak Z kullansaydık delikler tepsiden kopardı —
+        // tepsi artık profile oturuyor, gözlerin mutlak Z'sine değil.
+        const derinlik = Math.max(
+          0.004, (dipEnUst + AGIZ_MM - (Number(goz.z) || 0)) * o.MM);
+        const dipY = ustY - derinlik;
         const delik = new o.THREE.Mesh(
           new o.THREE.CylinderGeometry(0.0092, 0.0092, derinlik, 12),
           o.malzeme("#08090b", { metalness: 0.1, roughness: 1 }));
@@ -311,7 +328,14 @@ Tarla.katman({
   kart(o, t) {
     const yuzey = o.toprakZ;
     const aciklik = (Number(t.z) || 0) - yuzey;
-    const not = `${t.goz ? "tohumluk gözü" : "uç yuvası"} · `
+    // Gözün içindeki tür, emojisiyle. Kart açıldığında da aynı bilgi
+    // görünmeli: ipucu geçici, kart kalıcı.
+    const tur = (t.goz && t.tohum) ? (o.veri.turler || {})[t.tohum] : null;
+    const tohumYazi = t.goz
+      ? (tur ? ` · ${tur.icon || "🌱"} ${tur.name_tr || t.tohum}`
+             : (t.tohum ? ` · ${t.tohum}` : " · tür seçilmedi"))
+      : "";
+    const not = `${t.goz ? "tohumluk gözü" : "uç yuvası"}${tohumYazi} · `
       + `X${o.say(t.x, 1)} Y${o.say(t.y, 1)} Z${o.say(t.z, 1)}`;
     return `<div class="tarla-kart-bas"><div><b>${o.kacisli(t.name)}</b>
       <div class="alt-not">${not}</div></div></div>

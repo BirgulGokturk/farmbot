@@ -601,10 +601,19 @@
      * sulama hesabının kullandığı SAYININ AYNISI. Ayrı yazsaydık ikisi
      * ayrışır ve sahnede su bir yere, gerçekte başka yere düşerdi.
      */
-    const ofs = opt.sulamaOfset || { dx: 0, dy: 0 };
-    const basY = -P * 0.55;
+    /* Konum SABİT ve uç kafasının SOLUNDA.
+     *
+     * Önce `sulama_basligi.dx/dy` ayarından türetiliyordu. İki sorun çıktı:
+     * ayar +50/+50 olduğu için başlık sağa düşüyordu, ayrıca kullanıcı bu
+     * ayarın sulama HESABINA ait olduğunu, görselin ondan bağımsız durması
+     * gerektiğini söyledi — başlık makineye kalıcı olarak takılı ve
+     * yeri belli.
+     *
+     * Kafadan bir kafa boyu kadar sola: iki uç yan yana, birbirine
+     * girmeden okunuyor. */
+    const basY = -P * 0.45;
     const baslik = new THREE.Group();
-    baslik.position.set(P * 1.25 + M(ofs.dx), basY, M(ofs.dy));
+    baslik.position.set(-P * 1.5, basY, 0);
     /* Başlık gövdesi — KISA ve GENİŞ silindir, altı delikli.
      *
      * Önce ince bir silindirdi ve sahnede uç kafasının gölgesinde
@@ -647,6 +656,11 @@
       mal(THREE, { color: "#d9dde0", metalness: 0.05, roughness: 0.55 }));
     hortum.position.y = P * 2.4;
     baslik.add(hortum);
+    // Başlığı Z eksenine bağlayan kol — havada durmasın, bağlı görünsün.
+    const kol = kutu(THREE, [P * 1.6, P * 0.34, P * 0.5],
+                     [-P * 0.75, basY + P * 0.5, 0],
+                     { color: "#1a1d20", metalness: 0.06, roughness: 0.7 });
+    ucKafa.add(kol);
     ucKafa.add(baslik);
 
     /* SU HUZMESİ. Pompa açıkken görünüyor, kapalıyken değil — 90-robot.js
@@ -665,7 +679,7 @@
       new THREE.CylinderGeometry(P * 0.1, P * 0.3, 1, 12, 1, true), suMal);
     // Huzme deliklerin ALTINDAN başlıyor, gövdenin ortasından değil.
     su.position.copy(baslik.position);
-    su.position.y -= P * 0.34;
+    su.position.y -= P * 0.30;
     su.visible = false;
     su.raycast = () => {};
     su.userData.golgeAtma = true;
