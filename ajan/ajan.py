@@ -68,6 +68,12 @@ VARSAYILAN_AYAR = {
         "port": 502,
         "birim": 1,
         "guvenli_z": 340.0,
+        # Toprak YÜZEYİNİN makine Z'si. Sıfır değil: bu kurulumda kapların
+        # üstü 170 mm'de. Varsayılanı 0 bırakmak, yüzeyi bilmeyen her yerin
+        # (profil görüntüleyici, sulama Z'si, ekim derinliği) makine
+        # sıfırını toprak sanması demekti.
+        # Ölçmek için: python3 toprak-olc.py
+        "toprak_z": 170.0,
         "hiz": 20.0,
         "ivme": 100.0,
         "yavaslama": 100.0,
