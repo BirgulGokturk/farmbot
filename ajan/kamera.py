@@ -67,6 +67,7 @@ class Kamera:
         self._canli = False
         self._canli_fps = 5.0
         self._canli_surec = None
+        self._canli_ip: threading.Thread | None = None
         self._periyodik_geri = False
         # Bekleme time.sleep degil Event.wait ile: saatlik aralikta "kapat"
         # dendiginde is parcaciginin bir saat beklemesi kabul edilemez.
@@ -230,8 +231,11 @@ class Kamera:
             self.durdur()
         self._canli = True
         self._canli_fps = max(1.0, min(15.0, float(fps)))
-        threading.Thread(target=self._canli_dongu, name="kamera-canli",
-                         daemon=True).start()
+        # İş parçacığı SAKLANIYOR: kapatırken bitmesini beklememiz gerekiyor,
+        # yoksa "kapatıldı" dediğimiz anda cihaz hâlâ tutuluyor olabiliyor.
+        self._canli_ip = threading.Thread(target=self._canli_dongu,
+                                          name="kamera-canli", daemon=True)
+        self._canli_ip.start()
         return True, f"Canlı akış açıldı ({self._yontem})"
 
     def canli_kapat(self) -> tuple[bool, str]:
@@ -389,6 +393,26 @@ class Kamera:
             self._canli = False
             self._periyodik_geri = False     # geri getirilecek bir sey yok
             self._calisiyor = False
+            # CIHAZI BIRAKMAYI BEKLIYORUZ. Eskiden burada hemen donuluyordu:
+            # panel "kapandi" diyor, akis is parcacigi ise hala capture_file
+            # icinde ve kamerayi tutuyordu. Bir sonraki rpicam/picamera2
+            # kullanicisi "Pipeline handler in use by another process"
+            # aliyordu — kullanicinin gozunde kamera kapaliyken.
+            ip = self._canli_ip
+            if ip is not None and ip.is_alive():
+                ip.join(timeout=5.0)
+            # Is parcacigi takildiysa (surec okumada bloke) yine de birak.
+            surec = self._canli_surec
+            if surec is not None:
+                for adim in (surec.terminate, surec.kill):
+                    try:
+                        adim(); surec.wait(timeout=2); break
+                    except Exception:
+                        continue
+                self._canli_surec = None
+            self._picam_kapat()
+            self._yontem = None
+            self._canli_ip = None
             return True, "Kamera kapatildi (canli akis durduruldu)"
         if not self._calisiyor:
             return True, "Kamera zaten kapali"
