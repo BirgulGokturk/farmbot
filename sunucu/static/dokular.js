@@ -243,16 +243,29 @@
         // Ton keseğin yüksekliğini AZ izliyor: çok izlerse renk tamamen
         // kabartmanın kopyası oluyor ve toprak tek bir taşın fotoğrafı
         // gibi duruyor. Renk çeşidini asıl aşağıdaki iki leke veriyor.
-        const t = kis(0.16 + kesek[i] * 0.46 + (toz[i] - 0.5) * 0.34, 0, 1);
-        let r = 0x21 + t * (0x5e - 0x21);
-        let ye = 0x18 + t * (0x47 - 0x18);
-        let m = 0x10 + t * (0x2e - 0x10);
+        //
+        // PALET: nemli bahçe toprağı — koyu, kahverengi, kızıla kaçmayan.
+        // Önceki aralık (0x21-0x5e / 0x18-0x47 / 0x10-0x2e) kızıl lekeyle
+        // birlikte paslı turuncuya kaçıyordu: ekranda toprak değil kiremit
+        // tozu gibi duruyordu. Yeni aralık daha koyu başlıyor ve yeşil
+        // kanalı kırmızıya yaklaştırıyor — turuncuyu kahveye çeviren fark
+        // bu. Mavi de biraz yukarı: tamamen kuru bir kanal, toprağı cansız
+        // ve tozlu gösteriyordu.
+        // `t`nin yayilimi genisletildi (0.46 -> 0.62): dar aralikta butun
+        // yuzey ayni tonda kaliyor ve toprak "cansiz" gorunuyor. Asil
+        // canlilik topak tepesi ile arasindaki golge farkindan geliyor.
+        const t = kis(0.14 + kesek[i] * 0.62 + (toz[i] - 0.5) * 0.38, 0, 1);
+        // Ust uc yukseltildi: isik alan topak tepeleri okunur olmali.
+        // Alt uc yerinde kaldi, cukurlar koyu kalsin.
+        let r = 0x1c + t * (0x6e - 0x1c);
+        let ye = 0x14 + t * (0x50 - 0x14);
+        let m = 0x0e + t * (0x39 - 0x0e);
 
         // Kızıl leke: kırmızıyı yukarı, maviyi aşağı
-        // Kızıl payı ölçülü: 46'da lekeler paslı turuncuya kaçıp toprak
-        // değil kiremit gibi duruyordu.
+        // Pay 34'ten 14'e indi. 34'te lekeler bütün yüzeye hâkim oluyor ve
+        // toprak turuncuya dönüyordu; kızıl bir VURGU olmalı, ana renk değil.
         const k = kis((kizil[i] - 0.46) * 2.6, 0, 1);
-        r += 34 * k; ye += 5 * k; m -= 11 * k;
+        r += 14 * k; ye += 3 * k; m -= 4 * k;
         // Gri leke: kanalları ortalamaya çekiyor, hafif de açıyor
         const gr = kis((gri[i] - 0.52) * 2.9, 0, 1);
         const ort = (r + ye + m) / 3;
@@ -262,7 +275,9 @@
         // Çakıl: keseklerin tepesinde, seyrek açık gri benek
         if (cakil[i] > 0.86 && kesek[i] > 0.60) {
           const q = (cakil[i] - 0.86) / 0.14;
-          r += q * 30; ye += q * 29; m += q * 27;
+          // 30 çok parlaktı: benekler toprağın üstünde çimento zerresi gibi
+          // duruyordu. Gerçek çakıl da toprakla aynı ışığı alıyor.
+          r += q * 18; ye += q * 17; m += q * 15;
         }
 
         const p = i * 4;
@@ -286,7 +301,10 @@
     const im = g.createImageData(en, en);
     for (let i = 0; i < en * en; i++) {
       const h = veri.kesek[i] * 0.86 + veri.toz[i] * 0.14;
-      const v = kis(h * 255, 0, 255);
+      // Kontrast: 0.5 çevresinde gerilerek tepe ile çukur arası açılıyor.
+      // Düz haliyle kabartma yumuşak bir dalga gibiydi; istenen ise topak
+      // topak, pütürlü bir yüzey.
+      const v = kis((0.5 + (h - 0.5) * 1.45) * 255, 0, 255);
       const p = i * 4;
       im.data[p] = im.data[p + 1] = im.data[p + 2] = v;
       im.data[p + 3] = 255;
