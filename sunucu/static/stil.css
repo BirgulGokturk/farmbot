@@ -1901,3 +1901,18 @@ button.dugme.role.acik:hover:not(:disabled) { background: rgba(74, 168, 96, .24)
   font-variant-numeric: tabular-nums;
   padding: 0 var(--b1);
 }
+
+
+/* Çalışan sürüm damgası — günlük şeridinin sağ ucunda, sessiz. */
+.surum-damga {
+  margin-left: auto;
+  padding-right: var(--b2);
+  font-variant-numeric: tabular-nums;
+  opacity: .55;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 46ch;
+}
+.serit-ic { display: flex; align-items: center; }
+.serit-ic > #d-gunluk-ac { flex: 0 0 auto; }

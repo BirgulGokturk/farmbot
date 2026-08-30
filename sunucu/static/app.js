@@ -2901,9 +2901,24 @@ function kalibrasyonCiz(d) {
 window.Panel = { S, komutGonder, apiIste, gunluk, noktalariYukle, egrileriYukle,
                  geriAlGoster, tanilariCiz };
 
+/** Çalışan sürümü şeride yazar.
+ *
+ * Sunucudan geliyor, HTML'e gömülü değil: gömülü olsaydı tarayıcı eski
+ * index.html'i önbellekten verdiğinde damga da eskisini gösterir ve tam
+ * olarak çözmesi gereken soruyu yanıltırdı. */
+async function surumYaz() {
+  const el = $("#surum-damga");
+  if (!el) return;
+  try {
+    const y = await apiIste("/api/surum");
+    el.textContent = y.surum || "";
+  } catch { el.textContent = ""; }
+}
+
 /* -------------------------------------------------------------------- açılış */
 async function basla() {
   $("#uygulama").classList.remove("gizli");
+  surumYaz();
   // Grafik kurulumu patlarsa (kütüphane yüklenmediyse) kontrol sayfası yine
   // çalışsın: makineyi durdurabilmek, grafik görebilmekten önce gelir.
   try {

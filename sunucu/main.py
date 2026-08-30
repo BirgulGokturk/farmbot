@@ -17,6 +17,7 @@ import base64
 import json
 import logging
 import os
+import subprocess
 import time
 import uuid
 from contextlib import asynccontextmanager
@@ -1216,6 +1217,36 @@ class TazeStatik(StaticFiles):
         else:
             yanit.headers["Cache-Control"] = "no-store, must-revalidate"
         return yanit
+
+
+def _surum_oku() -> str:
+    """Çalışan kodun git commit'i — panelde göstermek için.
+
+    NEDEN VAR: "güncelledim ama değişmedi" üç kez yaşandı ve her seferinde
+    kodun mu yoksa tarayıcının mı geride kaldığını tahmin etmek zorunda
+    kaldık. Panelde yazan commit, terminaldeki `git log` ile aynıysa
+    tarayıcı günceldir — tahmin bitiyor.
+
+    Süreç başlarken bir kez okunuyor: her istekte git çağırmak, saniyede
+    birkaç durum isteği alan bir panelde gereksiz yük.
+    """
+    try:
+        depo = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        cikti = subprocess.run(
+            ["git", "-C", depo, "log", "--oneline", "-1"],
+            capture_output=True, text=True, timeout=5)
+        return (cikti.stdout or "").strip()[:80] or "bilinmiyor"
+    except Exception:
+        # Git yoksa ya da depo değilse panel yine çalışmalı.
+        return "bilinmiyor"
+
+
+SURUM = _surum_oku()
+
+
+@app.get("/api/surum")
+async def api_surum():
+    return {"surum": SURUM}
 
 
 app.mount("/statik", TazeStatik(directory=_STATIK), name="statik")
