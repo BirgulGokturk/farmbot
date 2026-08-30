@@ -42,6 +42,7 @@ import dizi as dizi_modulu
 #: Karttaki röleler. Tek yerde duruyor ki panel, ajan ve firmware üçü de
 #: aynı listeyi konuşsun; kart bunlardan başkasını tanımıyor.
 ROLELER = {"su_pompasi": "Su pompası", "hava_pompasi": "Hava pompası"}
+import hailo as hailo_modulu
 import kamera as kamera_modulu
 import uclar as uc_modulu
 
@@ -75,6 +76,8 @@ VARSAYILAN_AYAR = {
     # aralik_sn kamera.py'deki varsayilanla AYNI olmali: burasi 30 yazarken
     # oradaki ve belgelerdeki "bir saat" hicbir zaman gecerli olmuyordu.
     "kamera": {"aktif": False, "aralik_sn": 3600.0, "genislik": 640, "sahte": False},
+    # Hailo AI HAT — varsayılan KAPALI, HAT'i olmayan kurulum etkilenmesin.
+    "hailo": {"aktif": False, "sahte": False},
     "durum_araligi_sn": 0.5,
 }
 
@@ -156,8 +159,14 @@ class Ajan:
         self.dizi = dizi_modulu.Dizi(self.plc, self.uclar,
                                      lambda k: self.arduino.komut(k),
                                      gunluk_cb=self._gunluk_gonder)
+        # ÇIKARIM kameradan ÖNCE kuruluyor: kamera kancayı kurucuda
+        # istiyor. Hailo kapalıysa `kare_ver` hemen False dönüyor,
+        # kamera hiçbir şey fark etmiyor.
+        self.hailo = hailo_modulu.olustur(ayar.get("hailo", {}),
+                                          gunluk_cb=self._gunluk_gonder)
         self.kamera = kamera_modulu.Kamera(ayar.get("kamera", {}), self._kare_geldi,
-                                           gunluk_cb=self._gunluk_gonder)
+                                           gunluk_cb=self._gunluk_gonder,
+                                           cikarim=self.hailo.kare_ver)
         self._son_durum: dict[str, Any] = {}
 
     #: Kuru ve ıslak ucun arasında en az bu kadar sayım olmalı.
@@ -479,6 +488,9 @@ class Ajan:
             # gerekiyor. Ajan ham değeri bozmuyor.
             durum["toprak_kalib"] = self._toprak_kalib()
             durum["kamera"] = self.kamera.durum()
+            # `dusen` sayacı normal işleyişte SIFIR kalmalı; sıfırdan
+            # büyükse ya cihaz yavaşladı ya kilitlendi.
+            durum["hailo"] = self.hailo.durum()
             durum["dizi"] = dict(self.dizi.durum)
             durum["uc"] = {
                 **self.uclar.durum,
@@ -564,6 +576,7 @@ class Ajan:
         self.dongu = asyncio.get_running_loop()
         self.arduino.baslat()
         self.kamera.baslat()
+        self.hailo.baslat()
         # Çakılmadan kalan bir jog mandalını miras almayalım. AMA bunu
         # beklemeden: PLC erişilemezken (kablo çıkmış, PLC kapalı) altı Modbus
         # yazması tek tek zaman aşımına düşüyor ve ajan sunucuya bağlanmaya
@@ -614,6 +627,7 @@ def main() -> None:
     finally:
         ajan.arduino.durdur()
         ajan.kamera.durdur()
+        ajan.hailo.durdur()
         ajan.plc.kapat()
 
 

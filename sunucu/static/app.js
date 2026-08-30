@@ -1349,6 +1349,48 @@ function kameraDurumYaz(k) {
   }
 }
 
+/* AI HAT durumu. Kamera ile aynı bölümde ama AYRI okunuyor: çıkarım ayrı
+ * bir iş parçacığında ve tek elemanlı bir kuyrukla besleniyor, yani
+ * Hailo'nun hâli kameranın hâlini etkilemiyor.
+ *
+ * `dusen` sayacı burada bilerek görünür: normal işleyişte sıfır kalıyor,
+ * sıfırdan büyükse çıkarım kameraya yetişemiyor demek. */
+function hailoDurumYaz(h) {
+  const kutu = $("#hailo-kutu");
+  const not = $("#hailo-durum");
+  const uyari = $("#hailo-uyari");
+  if (!kutu || !not || !uyari) return;
+  // Hiç yapılandırılmamışsa bölümü hiç göstermiyoruz: AI HAT'i olmayan
+  // kurulumda anlamsız bir satır durmasın.
+  if (!h || (!h.aktif && !h.kilitli && !h.son_hata)) {
+    kutu.classList.add("gizli");
+    return;
+  }
+  kutu.classList.remove("gizli");
+  const model = String(h.model || "").split("/").pop();
+  const parca = [
+    h.kilitli ? "KİLİTLİ" : (h.aktif ? "açık" : "kapalı"),
+    h.sahte ? "sahte" : model,
+    `${h.islenen || 0} kare`,
+    `${h.dusen || 0} düşen`,
+  ];
+  if (h.son_sure_ms != null) parca.push(`${h.son_sure_ms} ms`);
+  if (h.tespit != null) parca.push(`${h.tespit} tespit`);
+  not.textContent = "AI HAT · " + parca.join(" · ");
+
+  if (h.kilitli) {
+    uyari.textContent = "AI HAT yanıt vermiyor — tespit durduruldu. Kamera ve "
+      + "robot etkilenmedi. Cihazı geri getirmek için Pi'yi yeniden başlatın; "
+      + "sürücüyü elle yeniden yüklemek cihaz düğümünü kaybettiriyor.";
+    uyari.classList.remove("gizli");
+  } else if (!h.aktif && h.son_hata) {
+    uyari.textContent = `AI HAT kapalı: ${h.son_hata}`;
+    uyari.classList.remove("gizli");
+  } else {
+    uyari.classList.add("gizli");
+  }
+}
+
 // Kare WebSocket'ten gelmiyor; sunucu haber veriyor, tarayıcı <img> ile
 // çekiyor. Böylece büyük base64 dizeleri panel soketini tıkamıyor.
 function kareyiTazele(ts, canli = false) {
@@ -1893,6 +1935,7 @@ function durumGuncelle(d) {
   rozetYaz("#rozet-plc", plcSinif, plcMetin);
 
   kameraDurumYaz(d.kamera);
+  hailoDurumYaz(d.hailo);
 
   S.ajanBagli = !!d.bagli;
   S.sonKonum = d.konum || null;

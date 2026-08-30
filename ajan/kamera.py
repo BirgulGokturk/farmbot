@@ -57,9 +57,15 @@ VARSAYILAN = {
 
 class Kamera:
     def __init__(self, ayar: dict[str, Any], gonder: Callable[[str, float], None],
-                 gunluk_cb: Callable[[str, str], None] | None = None) -> None:
+                 gunluk_cb: Callable[[str, str], None] | None = None,
+                 cikarim: Callable[[bytes, float], Any] | None = None) -> None:
         self.ayar = {**VARSAYILAN, **(ayar or {})}
         self.gonder = gonder
+        # ÇIKARIM KANCASI. Kare sunucuya GİTTİKTEN SONRA çağrılıyor ve
+        # yalnızca bir kuyruğa bırakıyor — bu döngüde hiçbir şey
+        # beklemiyor. Hailo kilitlenirse kamera etkilenmesin diye
+        # (bkz. hailo.py); o donanımın kilitlenebildiğini sahada gördük.
+        self.cikarim = cikarim
         self.gunluk_cb = gunluk_cb or (lambda m, s="bilgi": None)
         self._calisiyor = False
         # Canlı akış: periyodik kare döngüsünden AYRI bir yol. İkisi aynı
@@ -439,6 +445,15 @@ class Kamera:
                 self.gonder(base64.b64encode(ham).decode("ascii"), time.time())
                 self.son_hata = None
                 hata_sayaci = 0
+                # SIRA ÖNEMLİ: önce sunucuya, sonra çıkarıma. Panelin
+                # kare akışı hiçbir koşulda tespiti beklemiyor.
+                if self.cikarim is not None:
+                    try:
+                        self.cikarim(ham, time.time())
+                    except Exception:
+                        # Kanca hiçbir koşulda kamera döngüsünü
+                        # düşürmemeli; kendi hatasını kendi bildiriyor.
+                        pass
             except Exception as hata:
                 hata_sayaci += 1
                 self.son_hata = str(hata)

@@ -42,5 +42,17 @@
     "sahte": false,
     "cihaz": "/dev/video0"
   },
+  "hailo": {
+    "_not": "Raspberry Pi AI HAT+ (Hailo-8). Cikarim kamera dongusunun ICINDE degil, ayri bir is parcaciginda ve TEK elemanli bir kuyrukla calisir: kuyruk doluysa kare duser. Boylece Hailo yavaslarsa ya da kilitlenirse kamera etkilenmez. Bu donanimin 'device inaccessible' ile kilitlenebildigi sahada gorulmustur.",
+    "aktif": false,
+    "sahte": false,
+    "model": "/usr/share/hailo-models/yolov8s_h8.hef",
+    "_model": "Dosya adindaki son ek cipi soyluyor: _h8 = Hailo-8 (26 TOPS, AI HAT+), _h8l = Hailo-8L (13 TOPS), _h10 = Hailo-10H (AI HAT+ 2). Yanlis olanini vermek dusuk performans ya da hata demek.",
+    "esik": 0.4,
+    "kilit_sn": 30.0,
+    "_kilit_sn": "Ucustaki bir kare bu kadar saniyede donmezse cihaz kilitli sayilir, besleme durur ve durum panele cikar. HailoRT cagrilari C seviyesinde bloke oldugu icin takilan is parcacigi kesilemiyor; yapilabilecek tek sey beslemeyi kesip soylemek.",
+    "azami_hata": 5,
+    "_kurtarma": "Ajan surucuye ASLA dokunmaz. `modprobe -r hailo_pci` denenmis ve isi kotulestirmistir: cihaz dugumu kaybolmus, geri gelmesi icin guc cevrimi gerekmistir. Kilitlenirse Pi yeniden baslatilmalidir."
+  },
   "durum_araligi_sn": 0.5
 }

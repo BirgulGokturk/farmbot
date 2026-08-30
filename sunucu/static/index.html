@@ -339,6 +339,15 @@
             <img id="kamera-kare" class="gizli" alt="Kamera görüntüsü">
           </div>
           <div class="ikincil sayi" id="kamera-zaman"></div>
+
+          <!-- AI HAT (Hailo). Kamera bölümünün altında, çünkü aynı kareyi
+               tüketiyor — ama AYRI bir iş parçacığında: çıkarım yavaşlarsa
+               ya da kilitlenirse kamera etkilenmiyor. `düşen` sayacı
+               sorunu fark etmenin en hızlı yolu, normalde sıfır. -->
+          <div id="hailo-kutu" class="gizli">
+            <div class="ikincil" id="hailo-durum"></div>
+            <div class="rozet-uyari gizli" id="hailo-uyari"></div>
+          </div>
         </div>
       </section>
 

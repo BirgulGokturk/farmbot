@@ -154,6 +154,51 @@ aşımı.
 | `PUT /api/dikim` | `{alanlar:[{ad,x1,y1,x2,y2,toprak_z?}…]}` — doğrulanmış hâli geri döner |
 | `POST /api/sulama/onizle` | `{noktalar:[ad…], saniye?}` — sulamayı BAŞLATMADAN nereye gidileceğini döndürür |
 
+### AI HAT (Hailo) — kamera karelerinde tespit
+
+`durum.hailo` = `{aktif, kilitli, sahte, model, islenen, dusen, hatali,
+son_sure_ms, son_hata, tespit, tespitler, tespit_ts}`.
+
+**Çıkarım kamera döngüsünün İÇİNDE değil.** Gerekçe gecikme değil —
+çıkarım ~7 ms, kamera aralığı saniyeler. Gerekçe **arıza yalıtımı**: bu
+donanımın kilitlenebildiği sahada görüldü (`/dev/hailo0` "error 5" ile
+açılamaz oldu, sonra sürücü yüklüyken cihaz düğümü hiç oluşmadı). Çıkarım
+kamera döngüsünde olsaydı kilitlenen Hailo kamerayı da durdururdu.
+
+Akış: kare çekilir → **sunucuya gider** → sonra kuyruğa bırakılır. Panelin
+kare akışı hiçbir koşulda tespiti beklemiyor.
+
+**Kuyruk tek elemanlı** (`maxsize=1`). Normal işleyişte hiç dolmuyor;
+tek işi arıza anında tampon olmak ve o anda eski kare değersiz. Doluysa
+yeni kare düşüyor, `dusen` artıyor. **`dusen` normal işleyişte sıfır
+kalmalı** — sorunu fark etmenin en hızlı yolu bu sayaç. Kare kuyruğa
+kopyalanarak giriyor: kamera tamponu yeniden kullanılıyorsa referans
+bırakmak, işçinin üstüne yazılan bir kareyi okuması demek olurdu.
+
+**Ölü adam anahtarı.** HailoRT çağrıları C seviyesinde bloke, Python'dan
+kesilemiyor; iş parçacığı tek başına hiç dönmeyen bir çağrıyı
+kurtarmıyor. Uçuştaki kare `kilit_sn` (varsayılan 30 sn) süresini geçerse
+cihaz `kilitli` işaretleniyor, besleme duruyor ve durum panele çıkıyor.
+Takılı işçi orada kalıyor (daemon, süreci rehin almıyor), ajanın gerisi
+çalışmaya devam ediyor.
+
+**Ardışık hata.** `azami_hata` (varsayılan 5) kez üst üste başarısız
+olursa tespit kapanıyor; sıcak döngüde tekrar denemek günlüğü
+doldurmaktan başka işe yaramıyor.
+
+**Kendi kendine kurtarma YOK.** `modprobe -r hailo_pci` denendi ve işi
+kötüleştirdi: cihaz düğümü kayboldu, geri gelmesi için güç çevrimi
+gerekti. Ajan sürücüye asla dokunmuyor; kilitlenince tek söylediği
+"Pi'nin yeniden başlatılması gerekiyor".
+
+Model dosyasındaki son ek çipi söylüyor: `_h8` = Hailo-8 (26 TOPS, AI
+HAT+), `_h8l` = Hailo-8L (13 TOPS), `_h10` = Hailo-10H (AI HAT+ 2).
+Ölçülen: `yolov8s_h8.hef` ile 310 FPS, 6,66 ms gecikme.
+
+`aktif: false` varsayılan — AI HAT'i olmayan kurulumda hiçbir şey
+denenmiyor. Kütüphane, HEF ya da cihaz bulunamazsa Hailo kendini kapatıp
+sebebi günlüğe yazıyor; **ajan çalışmaya devam ediyor**.
+
 ### Sulama ofseti
 
 Bitkinin tam üstüne akıtmak her tür için doğru değil: besleyici kökler
