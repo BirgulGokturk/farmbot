@@ -308,8 +308,13 @@
      * tane biraz büyüyor ama tekrar aralığı kabın boyuna yaklaşıyor ve
      * ızgara etkisi kayboluyor. */
     const dokuOlcek = 3.6;
+    /* roughness 1.0 TAM MAT demek ve tam mat toprak KURU toprak: hiç ışık
+     * yansıtmıyor, tozlu duruyor. Saksı toprağı hiçbir zaman o kadar kuru
+     * değil — tanelerin arasında her zaman biraz nem var ve yüzey gökyüzünden
+     * az da olsa bir parıltı alıyor. 0.86 o taban nemi; sulama okuması
+     * geldiğinde aşağıdaki shader bunu daha da düşürüyor. */
     const yuzeyMal = mal(THREE, {
-      color: MAKINE.renk.toprak, roughness: 1, metalness: 0,
+      color: MAKINE.renk.toprak, roughness: 0.86, metalness: 0,
       vertexColors: true,      // nem koyulaştırması buradan geliyor
     });
     /* ISLAK TOPRAK PARLAR. Kuru toprak tamamen mat; ıslanınca tanelerin
@@ -543,20 +548,42 @@
     kizak.add(sutun);
 
     /* --- uç kafası: alet taşıyıcı + uç ----------------------------------- */
+    /* --- UÇ KAFASI ---------------------------------------------------------
+     * Fotoğraftaki parça: 3B baskı SİYAH bir gövde, altında vidalı bir
+     * bağlantı plakası, plakadan aşağı inen ince uç. Metal değil plastik —
+     * mat, koyu, keskin köşeli.
+     *
+     * Eski hâli bir kutu + turkuaz koniydi. Turkuaz sahnedeki tek doygun
+     * renkti ve gözü kendine çekiyordu; makinede öyle bir renk yok.
+     * Aynısını modellemiyoruz ama siluet andırsın diye üç parçaya
+     * bölündü: üst blok, alt bağlantı plakası, uç.
+     */
     const ucKafa = new THREE.Group();
-    ucKafa.add(kutu(THREE, [P * 2.4, P * 2, P * 1.8], [P * 1.1, P * 1.4, 0]));
-    const govde = new THREE.Mesh(
-      new THREE.CylinderGeometry(P * 0.85, P * 0.85, P * 0.5, 16),
-      mal(THREE, { color: "#5b6169", metalness: 0.8, roughness: 0.26 }));
-    govde.position.set(P * 1.1, 0, 0);
-    ucKafa.add(govde);
+    // Baskı plastiği: mat siyah, hafif gri. Metal DEĞİL — metalness 0.
+    const baski = { color: "#1e2124", metalness: 0.04, roughness: 0.72 };
+
+    // Üst blok — kızağa bakan gövde. Fotoğrafta üstünde iki kanal var.
+    ucKafa.add(kutu(THREE, [P * 2.2, P * 2.4, P * 1.9], [P * 1.1, P * 1.5, 0], baski));
+    [-0.45, 0.45].forEach((k) => {
+      ucKafa.add(kutu(THREE, [P * 0.5, P * 0.32, P * 1.5],
+                      [P * 1.1 + P * 0.55 * k, P * 2.66, 0],
+                      { color: "#15181a", metalness: 0.04, roughness: 0.8 }));
+    });
+    // Alt bağlantı plakası — fotoğrafta gövdeden öne taşıyor ve vidalı.
+    ucKafa.add(kutu(THREE, [P * 2.6, P * 0.34, P * 2.4], [P * 1.25, P * 0.12, 0], baski));
+    // Plakadaki vida başları: dört köşe, küçük ve parlak.
+    [[-1, -1], [1, -1], [-1, 1], [1, 1]].forEach(([ix, iz]) => {
+      const v = new THREE.Mesh(
+        new THREE.CylinderGeometry(P * 0.12, P * 0.12, P * 0.1, 8),
+        mal(THREE, { color: "#9aa1a8", metalness: 0.85, roughness: 0.3 }));
+      v.position.set(P * 1.25 + ix * P * 0.95, P * 0.3, iz * P * 0.85);
+      ucKafa.add(v);
+    });
+    // Uç: ince, koyu, hafif konik. Turkuaz gitti — fotoğrafta uç siyah.
     const uc = new THREE.Mesh(
-      new THREE.CylinderGeometry(P * 0.5, P * 0.28, P * 2.2, 16),
-      mal(THREE, {
-        color: "#0f6e72", metalness: 0.5, roughness: 0.4,
-        emissive: new THREE.Color("#0f6e72"), emissiveIntensity: 0.35,
-      }));
-    uc.position.set(P * 1.1, -P * 1.3, 0);
+      new THREE.CylinderGeometry(P * 0.16, P * 0.09, P * 1.5, 12),
+      mal(THREE, { color: "#2a2e31", metalness: 0.35, roughness: 0.5 }));
+    uc.position.set(P * 1.25, -P * 0.7, 0);
     ucKafa.add(uc);
     kizak.add(ucKafa);
 

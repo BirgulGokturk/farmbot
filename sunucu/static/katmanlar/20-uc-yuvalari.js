@@ -97,7 +97,16 @@ Tarla.katman({
      * geliyor. İkisi ayrı sorulara cevap veriyor: biri "uç nerede
      * kavranıyor", diğeri "raf hangi yükseklikte duruyor".
      */
-    const ustZ = Number(o.veri.durum.toprak_z) || 0;
+    /* Raf SİGMANIN ÜSTÜNE oturuyor, toprak hizasına değil.
+     *
+     * Önce toprak hizasındaydı ve uçlar yatağın yanında havada duruyor
+     * gibiydi. Gerçek makinede uçlar doğrudan yan profilin ÜSTÜNDE — bir
+     * plakayla profile vidalanmışlar. Yükseklik o yüzden profilden
+     * türüyor: yan ray yüksekliği + profilin yarısı = profilin üst yüzü.
+     *
+     * Sayılar makine.js'ten; burada elle yazılmış ölçü yok. */
+    const ustZ = (Number(o.veri.durum.toprak_z) || 0)
+      + o.makine.yan_ray + o.makine.profil / 2;
     const ustY = o.sy(ustZ);
     // Profil kalınlığı sigma profil kenarından — makine.js'teki tek kaynak.
     const kalinlik = o.makine.profil * o.MM;
@@ -122,18 +131,11 @@ Tarla.katman({
      *    profili tezgâhın üst çerçevesine bağlı; dikme yalnız o çerçeve
      *    ile profil arasını kapatıyor.
      */
-    const tablaY = o.makine.tabla * o.MM;
-    const dikmeBoy = Math.max(0.01, ustY - kalinlik - tablaY);
-    [-0.34, 0.34].forEach((k) => {
-      const b = new o.THREE.Mesh(
-        new o.THREE.BoxGeometry(kalinlik, dikmeBoy, kalinlik),
-        o.malzeme(R.aluminyum, { metalness: 0.84, roughness: 0.34 }));
-      b.position.set(
-        o.sx(mx + (uzunY ? 0 : enX * k)), tablaY + dikmeBoy / 2,
-        o.sz(my + (uzunY ? enY * k : 0)));
-      b.raycast = () => {};
-      o.grup.add(b);
-    });
+    /* DİKME YOK. Raf artık sigmanın üstünde oturduğu için altını kapatacak
+     * bir şey gerekmiyor; profil zaten taşıyıcı. Eskiden buradan iki dikme
+     * iniyordu ve makinenin yanında kendine ait bir ayak takımı varmış gibi
+     * duruyordu — gerçekte öyle bir şey yok, uç plakası doğrudan profile
+     * vidalı. */
 
     // Yuva DÖRT parçadan kuruluyor. Tek bir turkuaz koni olarak çizildiğinde
     // sahnede plastik bardak gibi duruyordu: gerçek yuva koyu metal bir

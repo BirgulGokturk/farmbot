@@ -255,11 +255,14 @@
         // yuzey ayni tonda kaliyor ve toprak "cansiz" gorunuyor. Asil
         // canlilik topak tepesi ile arasindaki golge farkindan geliyor.
         const t = kis(0.14 + kesek[i] * 0.62 + (toz[i] - 0.5) * 0.38, 0, 1);
-        // Ust uc yukseltildi: isik alan topak tepeleri okunur olmali.
-        // Alt uc yerinde kaldi, cukurlar koyu kalsin.
-        let r = 0x1c + t * (0x6e - 0x1c);
-        let ye = 0x14 + t * (0x50 - 0x14);
-        let m = 0x0e + t * (0x39 - 0x0e);
+        /* NEMLİ toprak paleti. Bir önceki aralık (üst uç 0x6e) kuru saksı
+         * toprağı gibi duruyordu: açık uç fazla parlaktı ve toprak tozlu
+         * görünüyordu. Islak toprak KOYULAŞIR — su taneleri kaplayınca
+         * yüzey daha az ışık geri veriyor. Üst uç 0x6e -> 0x52, alt uç da
+         * biraz indi. Doygunluk korunuyor: koyu ama gri değil, kahve. */
+        let r = 0x17 + t * (0x52 - 0x17);
+        let ye = 0x10 + t * (0x39 - 0x10);
+        let m = 0x0b + t * (0x27 - 0x0b);
 
         // Kızıl leke: kırmızıyı yukarı, maviyi aşağı
         // Pay 34'ten 14'e indi. 34'te lekeler bütün yüzeye hâkim oluyor ve
