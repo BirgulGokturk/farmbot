@@ -61,6 +61,24 @@ fi
 
 geri_koy
 
+# BAGIMLILIKLAR. Bir guncelleme yeni bir paket getirdiginde (ornegin
+# goruntu isleme icin numpy ve Pillow) servis sessizce eksik calisiyordu:
+# sunucu aciliyor ama o ozellik "hazir degil" diyor ve sebebi panelde
+# gorunmuyor. requirements.txt degistiyse kuruyoruz.
+#
+# `pip install -r` zaten kurulu paketleri atliyor, yani her guncellemede
+# calistirmanin maliyeti birkac saniye. Ag yoksa ya da kurulum basarisiz
+# olursa guncellemeyi DURDURMUYORUZ: kodun geri kalani yine gecerli ve
+# servisin hic baslamamasi, bir ozelligin eksik olmasindan kotu.
+for d in sunucu ajan; do
+    if [ -x "$d/.venv/bin/pip" ] && [ -f "$d/requirements.txt" ]; then
+        if ! "$d/.venv/bin/pip" install --quiet -r "$d/requirements.txt"; then
+            echo "  UYARI: $d bagimliliklari kurulamadi — o bolumun yeni"
+            echo "  ozellikleri calismayabilir. Ag baglantisini kontrol edin."
+        fi
+    fi
+done
+
 echo "[2/3] Servisler yenileniyor"
 # SIRA ONEMLI: ikisini ayni anda yeniden baslatmak, ajanin kapanmakta olan
 # eski sunucu surecine baglanip orada takili kalmasina yol aciyor — ajan
