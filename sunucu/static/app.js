@@ -3817,10 +3817,18 @@ function olaylariBagla() {
   // Klavye: ok tuşları X/Y, PageUp/Down Z — düğmelerle aynı, tıkla-çalış.
   // Aynı tuşa tekrar basmak durdurur; Esc her hâlükârda durdurur.
   // Boşluk acil durdurma.
+  /* MEDYA TUŞLARI. Raspberry'ye bağlı küçük klavyede PageUp/PageDown yok
+   * ama ses ve parça tuşları var; Z ile pompaları oradan sürüyoruz.
+   *
+   * UYARI: bu tuşlar tarayıcıya ULAŞMAYABİLİR. Masaüstü ortamı çoğu
+   * sistemde onları kendi yakalıyor ve sayfaya hiç geçmiyor. O yüzden
+   * eski bağlamalar (PageUp/PageDown) DURUYOR — medya tuşu geçmezse
+   * makine yine sürülebilsin. Hangisinin çalıştığı denenerek görülür. */
   const TUS = {
     ArrowRight: ["x", 1], ArrowLeft: ["x", -1],
     ArrowUp: ["y", 1], ArrowDown: ["y", -1],
     PageUp: ["z", 1], PageDown: ["z", -1],
+    AudioVolumeUp: ["z", 1], AudioVolumeDown: ["z", -1],
   };
   const jogDugmesi = (eksen, yon) =>
     document.querySelector(`.jog[data-eksen="${eksen}"][data-yon="${yon}"]`);
@@ -3884,6 +3892,49 @@ function olaylariBagla() {
         || !$("#sayfa-sur").classList.contains("etkin")) return;
     if (olay.code === "Space") { olay.preventDefault(); $("#d-acil").click(); return; }
     if (olay.key === "Escape") { olay.preventDefault(); jogDurdur(); return; }
+    /* Pompalar ve panel kısayolları.
+     *
+     * Pompa AÇIP KAPATIYOR, yani tek tuşla su akıtabiliyor. Bilerek
+     * böyle: kullanıcı makinenin başında ve elini klavyeden kaldırmadan
+     * pompayı kesebilmek istiyor. Ne olduğu günlüğe yazılıyor — sessizce
+     * açılan bir pompa fark edilmezse taşma demek. */
+    const ROLE_TUS = {
+      MediaTrackNext: "su_pompasi",
+      MediaTrackPrevious: "hava_pompasi",
+    };
+    const role = ROLE_TUS[olay.key];
+    if (role) {
+      olay.preventDefault();
+      if (olay.repeat) return;
+      const d = $(`.dugme.role[data-role="${role}"]`);
+      if (d) { d.click(); gunluk(`⌨ ${role} tuşla değiştirildi`, "bilgi"); }
+      return;
+    }
+
+    /* İşlev tuşları — makineyi HAREKET ETTİRMEYEN işler.
+     *
+     * F1, F5, F11 ve F12 tarayıcının kendi işleri (yardım, yenile, tam
+     * ekran, geliştirici araçları) ve engellenmeleri güvenilir değil;
+     * onlara dokunmuyoruz. Kalanlar boş.
+     *
+     * Hiçbiri makineyi sürmüyor: tek tuşla ekseni yürütmek ok tuşlarında
+     * bilinçli bir tercih ama işlev tuşlarında kaza olur. */
+    const ISLEV = {
+      F2: ["#a-kamera", "Kamera"],
+      F3: ["#d-kamera-coz", "Kare çözümleme"],
+      F4: ["#d-gorunum-2b", "2B görünüm"],
+      F6: ["#d-gorunum-3b", "3B görünüm"],
+    };
+    const islev = ISLEV[olay.key];
+    if (islev) {
+      olay.preventDefault();
+      if (olay.repeat) return;
+      const e = $(islev[0]);
+      if (e) { e.click(); gunluk(`⌨ ${islev[1]}`, "bilgi"); }
+      else gunluk(`⌨ ${islev[1]} bu sayfada yok`, "uyari");
+      return;
+    }
+
     const eslesme = TUS[olay.key];
     if (!eslesme) return;
     olay.preventDefault();
