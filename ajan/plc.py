@@ -73,7 +73,7 @@ JOG_TICK = 0.1
 VARSAYILAN_KALIB = [
     {"cpm": 17.1782, "dir": 1, "home": 0.0, "min": 0.0, "max": 535.0},    # X
     {"cpm": 4.2686, "dir": 1, "home": 0.0, "min": 0.0, "max": 630.0},     # Y
-    {"cpm": 37.074, "dir": -1, "home": 414.23, "min": 120.0, "max": 414.23},  # Z
+    {"cpm": 37.074, "dir": -1, "home": 426.1, "min": 120.0, "max": 414.23},  # Z
 ]
 
 
@@ -1033,6 +1033,30 @@ class Gantry:
                 f"{EKSENLER[i]['ad']} ekseni {mm:.1f} mm'ye ulaşamadı "
                 f"(şu an {self.eksen_konum_mm(i):.1f} mm) — dizi durduruldu")
 
+    def home_hedefi(self, i: int) -> float:
+        """⌂ düğmesinin bu ekseni götüreceği yer.
+
+        `home` ile AYNI ŞEY DEĞİL ve bunları karıştırmak sahada makineyi
+        anahtara sürdü. İkisi ayrı sorulara cevap veriyor:
+
+          home — sayaç SIFIRKEN konumun kaç mm olduğu. Bir ölçek
+                 kaydırması; makinenin gidebileceği bir yer olmak zorunda
+                 değil.
+          ⌂    — referans anahtarının FİZİKSEL olarak bulunduğu uç.
+
+        Bu makinede Z'nin sayacı anahtarda sıfırlanmıyor, orada 440 adımda
+        kalıyor. Dolayısıyla anahtardaki konum home'un 11.87 mm ALTINDA
+        okunuyor ve home değerine gitmek, makineyi anahtardan yukarı
+        sürmek demek — kullanıcı tam bunu yaşadı, Z eziliyordu.
+
+        Anahtar hangi uçta: yön NEGATİFSE konum home'un üstüne çıkamıyor,
+        yani anahtar üst uçta ve orası `max`. Yön POZİTİFSE altına
+        inemiyor, anahtar alt uçta ve orası `min`.
+        """
+        k = self.kalib[i]
+        ust_uc = float(k.get("dir", 1)) < 0
+        return float(k.get("max" if ust_uc else "min", 0.0))
+
     def home(self, eksen: str | None = None) -> str:
         """HOME KONUMUNA GİDER — PLC'nin referans arama darbesi DEĞİL.
 
@@ -1089,7 +1113,7 @@ class Gantry:
                 if self._iptal.is_set() or self.acil_mandal["acik"]:
                     self.gunluk_cb("Home hareketi iptal edildi", "uyari")
                     return
-                hedef = float(self.kalib[i].get("home", 0.0))
+                hedef = self.home_hedefi(i)
                 ad = EKSENLER[i]["ad"]
                 self.gunluk_cb(f"{ad} → home {hedef:.2f} mm", "bilgi")
                 try:

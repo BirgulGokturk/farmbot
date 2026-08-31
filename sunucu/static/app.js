@@ -3423,7 +3423,17 @@ function olaylariBagla() {
         };
         return { home: al("home"), min: al("min"), max: al("max") };
       });
+      const uyariKutu = $("#kalib-hata");
+      if (uyariKutu) { uyariKutu.textContent = ""; uyariKutu.classList.add("gizli"); }
       const sonuc = await komutGonder("kalibrasyon_kaydet", { eksenler });
+      /* RET SEBEBİ TABLONUN YANINDA. Ajan geçersiz bir değeri reddedince
+       * mesaj yalnızca alttaki KAPALI olay günlüğüne düşüyordu; kullanıcı
+       * hiçbir şey görmüyor, yazdığı değerin "silindiğini" sanıyordu.
+       * Sebep, hatayı yapan kutunun yanında yazmalı. */
+      if (sonuc && sonuc.ok === false && uyariKutu) {
+        uyariKutu.textContent = sonuc.mesaj || "Kaydedilemedi";
+        uyariKutu.classList.remove("gizli");
+      }
       // Kaydedilen değerler ajandan geri gelsin diye imzayı sıfırlıyoruz;
       // yoksa tablo eski imzayla aynı kalıp tazelenmiyor.
       // Kayıt başarılıysa elle girilenler artık ajanın değeri; tabloyu
