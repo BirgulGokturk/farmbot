@@ -75,11 +75,17 @@ VARSAYILAN_AYAR = {
         # Ölçmek için: python3 toprak-olc.py
         "toprak_z": 170.0,
         "hiz": 20.0,
-        # Eksen başına hız — boş bırakılan eksen genel `hiz`e düşüyor.
-        # Z dikey ve yük altında; X/Y ile aynı hızda sürülmesi için sebep yok.
-        "hiz_x": None,
-        "hiz_y": None,
-        "hiz_z": None,
+        # Eksen başına hız. Sahada seçilen değerler VARSAYILAN oldu:
+        # X ve Y 20, Z 10.
+        # Kullanıcı her açılışta panelden girmek zorunda kalmasın diye
+        # burada duruyorlar; panelden değiştirmek yine mümkün ve o
+        # değişiklik o oturum için geçerli.
+        #
+        # Z'nin yarı hızda olması bilinçli: dikey eksen yük altında ve
+        # toprağa iniyor, X/Y ile aynı hızda sürülmesi için sebep yok.
+        "hiz_x": 20.0,
+        "hiz_y": 20.0,
+        "hiz_z": 10.0,
         "ivme": 100.0,
         "yavaslama": 100.0,
         "kalibrasyon_dosyasi": "gantry_calib.json",
