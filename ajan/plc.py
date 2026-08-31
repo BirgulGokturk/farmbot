@@ -338,6 +338,9 @@ class Gantry:
         # beklememek için konmuş emniyet freni.
         self.home_azami = float(ayar.get("home_azami_sn", 90.0))
         self.home_tolerans = float(ayar.get("home_tolerans_mm", 2.0))
+        # Darbeden sonra hareketin başlaması için tanınan süre. Bu kadar
+        # beklendiği hâlde eksen kımıldamadıysa "zaten referansta" deniyor.
+        self.home_kimilda_sn = float(ayar.get("home_kimilda_sn", 3.0))
         self.hiz = float(ayar.get("hiz", 20.0))
         # EKSEN BAŞINA HIZ. Z dikey ve yük altında; X/Y ile aynı hızda
         # sürülmesi için bir sebep yok. Girilmemiş eksen genel `hiz`e
@@ -1127,6 +1130,22 @@ class Gantry:
         kararli = 0
         onceki = None
         okunamadi = 0
+# BAŞLANGIÇ KONUMU. Eksen zaten `home` değerinde okunuyorsa varış
+        # denetimi ilk turda "vardı" der ve makine hiç kımıldamadan
+        # "referans tamam" yazılır. X ve Y'de bu KURAL, istisna değil:
+        # sayaç sıfırdan başlıyor ve home da 0, yani hiç referans
+        # aranmamış bir makinede ikisi eşit.
+        #
+        # Sonuç kullanıcı için "düğmeye bastım, tamam dedi, makine
+        # kıpırdamadı" oluyor — yani düğme bozuk sanılıyor. Aşağıda
+        # hareketin BAŞLADIĞINI ayrıca arıyoruz ve başlamadıysa bunu
+        # açıkça söylüyoruz.
+        try:
+            baslangic = self.eksen_konum_mm(i)
+        except Exception:
+            baslangic = None
+        kimildadi = False
+        bas_ts = time.time()
         while time.time() < bitis:
             if self._iptal.is_set() or self.acil_mandal["acik"]:
                 self.mb.yaz(reg, 0)
@@ -1149,13 +1168,33 @@ class Gantry:
                 time.sleep(0.2)
                 continue
 
+            if baslangic is not None and abs(simdi - baslangic) > 0.3:
+                kimildadi = True
+
             yakin = abs(simdi - hedef) <= self.home_tolerans
             durgun = onceki is not None and abs(simdi - onceki) < 0.05
             onceki = simdi
             kararli = kararli + 1 if (yakin and durgun) else 0
             if kararli >= 3:                    # ~0.6 sn boyunca yerinde
-                self.gunluk_cb(
-                    f"{EKSENLER[i]['ad']} referans tamam ({simdi:.2f} mm)", "bilgi")
+                # Hareketin başlaması için makul bir süre tanıyoruz. Yoksa
+                # zaten home'da duran bir eksen daha PLC darbeyi işlemeden
+                # "tamam" ilan edilirdi.
+                if not kimildadi and time.time() - bas_ts < self.home_kimilda_sn:
+                    kararli = 0
+                    time.sleep(0.2)
+                    continue
+                if kimildadi:
+                    self.gunluk_cb(
+                        f"{EKSENLER[i]['ad']} referans tamam ({simdi:.2f} mm)", "bilgi")
+                else:
+                    # DÜRÜST MESAJ: eksen hiç kımıldamadı. Ya gerçekten
+                    # referanstaydı ya da PLC darbeyi işlemedi. İkisini
+                    # buradan ayıramayız; ayıramadığımızı söylüyoruz.
+                    self.gunluk_cb(
+                        f"{EKSENLER[i]['ad']} kımıldamadı — zaten referansta "
+                        f"görünüyor ({simdi:.2f} mm). Makine hareket etmediyse "
+                        f"PLC'nin referans biti ({reg}) bağlı olmayabilir.",
+                        "uyari")
                 return True
             time.sleep(0.2)
 

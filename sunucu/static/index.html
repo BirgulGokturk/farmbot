@@ -424,6 +424,15 @@
             Z güvenli yükseklikte değil — X/Y hareketi kilitli.
           </div>
 
+          <!-- Tuş adımı: ok tuşlarının her basışta gideceği mesafe. Ekrandaki
+               jog düğmelerini etkilemiyor, onlar sürekli hareket ediyor. -->
+          <div class="alan">
+            <label for="tus-adimi">Tuş adımı <span class="ikincil">mm</span></label>
+            <input type="number" id="tus-adimi" min="1" max="200" step="1" value="10">
+            <span class="alt-not">Ok tuşları ve PageUp/Down her basışta bu kadar
+              ilerletir. Ekrandaki oklar sürekli hareket eder.</span>
+          </div>
+
           <div class="alan">
             <label for="hiz-kaydirac">Hız</label>
             <div class="kaydirac-satir">

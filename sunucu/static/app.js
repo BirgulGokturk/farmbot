@@ -3297,6 +3297,58 @@ function olaylariBagla() {
   const jogDugmesi = (eksen, yon) =>
     document.querySelector(`.jog[data-eksen="${eksen}"][data-yon="${yon}"]`);
 
+  /** KLAVYE ADIMLI SÜRÜYOR, düğmeler eskisi gibi sürekli.
+   *
+   * Ok tuşu `jogAcKapa` çağırıyordu: bir basış hareketi BAŞLATIYOR, ikinci
+   * basış durduruyordu. Fare ile bu iyi çalışıyor — düğme basılı görünüyor
+   * ve durdurmak için aynı yere basılıyor. Klavyede ise geri bildirim yok:
+   * kullanıcı bir kez basıyor ve makine sınıra kadar gidiyor.
+   *
+   * Artık her basış SABİT BİR ADIM: konum + yön × adım. Hedef yumuşak
+   * sınırın dışına düşerse sınıra kırpılıyor, yani son adım kısalıyor ama
+   * komut reddedilmiyor.
+   *
+   * Adım yalnız KLAVYE için; ekrandaki jog düğmeleri sürekli hareket
+   * davranışını koruyor. İkisi farklı işler: düğme "gözümle takip ederek
+   * götür", tuş "ölçülü bir miktar ilerlet".
+   */
+  const adimAt = (eksen, yon) => {
+    // Konumun tutulduğu yer `S.sonKonum` — durum paketinden yazılıyor.
+    const k = S.sonKonum || {};
+    const simdi = Number(k[eksen]);
+    if (!Number.isFinite(simdi)) {
+      gunluk("Konum bilinmiyor — önce referans arayın", "uyari");
+      return;
+    }
+    const adim = tusAdimi();
+    const s = (S.sinirlar && S.sinirlar[eksen]) || {};
+    let hedef = simdi + yon * adim;
+    if (s.min != null) hedef = Math.max(Number(s.min), hedef);
+    if (s.max != null) hedef = Math.min(Number(s.max), hedef);
+    if (Math.abs(hedef - simdi) < 0.05) {
+      gunluk(`${eksen.toUpperCase()} zaten sınırda`, "uyari");
+      return;
+    }
+    komutGonder("git", { [eksen]: Number(hedef.toFixed(2)) });
+  };
+
+  /** Tuş adımı (mm) — kutudan, tarayıcıda saklanıyor. */
+  const tusAdimi = () => {
+    const el = $("#tus-adimi");
+    const v = el ? Number(String(el.value).replace(",", ".")) : NaN;
+    return Number.isFinite(v) && v > 0 ? Math.min(200, v) : 10;
+  };
+  const adimKutu = $("#tus-adimi");
+  if (adimKutu) {
+    try {
+      const kayit = localStorage.getItem("farmbot_tus_adimi");
+      if (kayit) adimKutu.value = kayit;
+    } catch { /* boş */ }
+    adimKutu.addEventListener("change", () => {
+      try { localStorage.setItem("farmbot_tus_adimi", adimKutu.value); } catch { /* boş */ }
+    });
+  }
+
   document.addEventListener("keydown", (olay) => {
     // Kısayollar yalnızca Sür sekmesinde: başka sekmede yazı yazarken ok
     // tuşunun makineyi hareket ettirmesi kabul edilemez.
@@ -3308,7 +3360,7 @@ function olaylariBagla() {
     if (!eslesme) return;
     olay.preventDefault();
     if (olay.repeat) return;
-    jogAcKapa(eslesme[0], eslesme[1], jogDugmesi(eslesme[0], eslesme[1]));
+    adimAt(eslesme[0], eslesme[1]);
   });
 }
 
