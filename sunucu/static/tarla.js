@@ -708,10 +708,23 @@
         zeminGeo,
         new THREE.MeshLambertMaterial({ map: cim.harita, vertexColors: true }));
       zemin.rotation.x = -Math.PI / 2;
-      // Ayak pabuçlarının tam altı: tabla toprak yüzeyinin 50 mm altında,
-      // ayak ondan 160 mm daha aşağıda. Yalnız `ayak` kadar inersek zemin
-      // ayakları 50 mm kesiyor ve makine çime gömülmüş görünüyor.
-      zemin.position.y = (BAGLAM.makine.tabla - BAGLAM.makine.ayak) * MM - 0.002;
+      /* Çim, MAKİNENİN ZEMİN ÖLÇÜSÜNE oturuyor — ayak pabuçlarının tam altı.
+       *
+       * Önce `(tabla - ayak)` ile hesaplanıyordu ve bu, kap tabanı ile
+       * ayak dibinin AYNI sayıdan türediği varsayımına dayanıyordu. O
+       * varsayım kaplar derinleştirilince bozuldu: `tabla` 160 mm aşağı
+       * indi, çim onunla birlikte indi, ayaklar ise kendi `zemin`
+       * ölçüsünde kaldı. Sonuç, bütün makinenin çimin 16 cm üstünde
+       * asılı durmasıydı — üstten bakınca fark edilmiyor, yandan
+       * bakınca apaçık.
+       *
+       * Artık tek kaynak: `makine.zemin`. Kap ne kadar derinleşirse
+       * derinleşsin çim ayakların dibinde kalıyor. Eski bir makine
+       * tablosunda `zemin` yoksa eski formüle düşüyor. */
+      const zeminMM = BAGLAM.makine.zemin != null
+        ? BAGLAM.makine.zemin
+        : (BAGLAM.makine.tabla - BAGLAM.makine.ayak);
+      zemin.position.y = zeminMM * MM - 0.002;
       zemin.receiveShadow = true;
       zemin.name = "cim-zemin";
       sahne.add(zemin);
