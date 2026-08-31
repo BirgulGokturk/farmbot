@@ -2035,6 +2035,27 @@
       const imza = JSON.stringify(VERI.noktalar.map(
         (n) => [n.ad, n.x, n.y, n.z, n.tur, n.ekim, n.ozel || null,
                 n.egri_su, n.egri_yayilim, n.egri_yukseklik]));
+      /* ARTIK OLMAYAN NOKTALAR SEÇİMDEN DÜŞÜYOR.
+       *
+       * Seçim yalnız AD tutuyor. Bir nokta silinince ya da adı değişince
+       * o ad seçimde kalıyordu ve toplu işlem onu sunucuda arayıp
+       * bulamıyordu: "Şu noktalar bulunamadı: cilek-1#1, cilek-1#2".
+       * Kullanıcı ekranda hiçbir şey seçili görmüyor ama Sula ve Ek
+       * çalışmıyordu — sebebi görünmeyen bir seçimdi.
+       *
+       * Izgarayla üretilip sonra silinen `ad#1`, `ad#2` gibi noktalarda
+       * bu çok kolay oluyor: bir seferde onlarca ad seçime giriyor. */
+      if (T.secim.size) {
+        const varOlan = new Set(VERI.noktalar.map((n) => n.ad));
+        let dusen = 0;
+        [...T.secim].forEach((ad) => {
+          if (!varOlan.has(ad)) { T.secim.delete(ad); dusen++; }
+        });
+        if (dusen) {
+          gunluk(`${dusen} silinmiş nokta seçimden çıkarıldı`, "bilgi");
+          secimiCiz();
+        }
+      }
       // `zorla`: veri aynı ama ÇİZİM kuralı değişti (simge anahtarı gibi).
       zTaramasi();          // nokta kümesi değişti, yeniden bak
       if (imza === T.sonNoktaImzasi && !zorla) return;
