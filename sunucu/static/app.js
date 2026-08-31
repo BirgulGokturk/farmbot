@@ -2095,7 +2095,18 @@ async function ekimOnayGonder(yol, govde) {
 function ekimOnayBagla() {
   const d = (kimlik, is) => { const e = $(kimlik); if (e) e.onclick = is; };
   d("#d-ekim-onayla", () => ekimOnayGonder("/api/ekim/onayla"));
+  /* Onay beklenmiyorken İptal doğrudan yarıda kesiyor: seçenek sormanın
+   * anlamı yok, çünkü "tohumu gözüne geri koy" makineyi hareket ettirir
+   * ve tıkanmanın sebebi çoğu zaman makinenin zaten cevap vermemesi. */
   d("#d-ekim-iptal", () => {
+    const e = S.ekimOnay;
+    if (e && e.durum !== "onay1" && e.durum !== "onay2") {
+      ekimOnayGonder("/api/ekim/iptal");
+      return;
+    }
+    return ekimIptalSecim();
+  });
+  const ekimIptalSecim = () => {
     // İlk onayda iptal tek anlamlı: pompa hiç açılmadı, hiçbir şey
     // olmadı. İkincisinde seçim gerekiyor.
     if ((S.ekimOnay || {}).durum === "onay1") {
@@ -2104,7 +2115,7 @@ function ekimOnayBagla() {
     }
     $("#ekim-onay-iptal-secim").classList.remove("gizli");
     $("#ekim-onay-dugmeler").classList.add("gizli");
-  });
+  };
   d("#d-ekim-iptal-geri", () => ekimOnayGonder("/api/ekim/iptal", { kip: "geri_koy" }));
   d("#d-ekim-iptal-birak", () => ekimOnayGonder("/api/ekim/iptal", { kip: "birak" }));
   d("#d-ekim-iptal-vazgec", () => {

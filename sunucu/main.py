@@ -1201,10 +1201,38 @@ async def api_ekim_onayla(govde: dict[str, Any] | None = None,
     söyleyecek başka bir şeyi yok ve boş gövdeye 422 vermek, makine
     beklerken basılan düğmenin çalışmaması demek olurdu."""
     _parola_dogrula(jeton)
-    if not _ekim.aktif or _ekim.durum not in ("onay1", "onay2"):
-        raise HTTPException(
-            status_code=409,
-            detail=f"Onay beklenmiyor (durum: {_ekim.durum}).")
+    if not _ekim.aktif:
+        raise HTTPException(status_code=409, detail="Süren bir ekim yok.")
+
+# ONAY BEKLENMEYEN DURUMDA DA IPTAL EDILEBILIR.
+    #
+    # Önce yalnız `onay1`/`onay2` kabul ediliyordu ve dizi "calisiyor"da
+    # takıldığında iptal 409 dönüyordu: kullanıcı kutuyu görüyor, İptal'e
+    # basıyor, hiçbir şey olmuyor ve panelden çıkış kalmıyordu. Sahada tam
+    # bu yaşandı.
+    #
+    # Bu dal MAKİNEYİ HAREKET ETTİRMİYOR. Takılmanın sebebi çoğu zaman
+    # makinenin zaten cevap vermemesi; kurtarmayı yeni bir harekete
+    # bağlamak, aynı duvara ikinci kez toslamak olurdu. Sürmekte olan iş
+    # kesiliyor, pompa kapatılıyor, durum temizleniyor.
+    if _ekim.durum not in ("onay1", "onay2"):
+        try:
+            await merkez.komut_gonder("dur", {})
+        except Exception:
+            pass                       # makine cevap vermiyorsa da devam
+        await _ekim_pompa_kapat("iptal — işlem yarıda kesildi")
+        eski_durum = _ekim.durum
+        _ekim.durum = "iptal"
+        _ekim.aktif = False
+        _ekim.mesaj = (
+            f"Ekim yarıda kesildi (durum: {eski_durum}). Hareket durduruldu "
+            f"ve pompa kapatıldı. {len(_ekim.ekilen)} tohum ekilmişti. "
+            "Makinenin nerede kaldığını ve tohumun ucta olup olmadığını "
+            "gözle kontrol edin; göz durumları değiştirilmedi.")
+        await _ekim_gunluk(_ekim.mesaj, "uyari")
+        await _ekim_yayinla()
+        return _ekim.goruntu()
+
     o = _ekim.ozet[_ekim.sira]
     if _ekim.durum == "onay1":
         await _ekim_gunluk(
