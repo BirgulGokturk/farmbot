@@ -386,6 +386,22 @@ Tarla.katman({
     };
   },
 
+  /** Kart düğmeleri. Yalnız tohumluk gözünde var; uç yuvasında yok. */
+  baglan(o, kok, t) {
+    const d = kok.querySelector("#d-goz-git");
+    if (!d) return;
+    d.onclick = () => {
+      /* GÜVENLİ YÜKSEKLİKTE duruyoruz, gözün DİBİNE inmiyoruz.
+       *
+       * Gözün `z`si vakum ucunun ineceği yer. Oraya doğrudan gitmek, uç
+       * takılı değilken kafayı gözün içine sokmak demek — ekim dizisinin
+       * onay adımı tam bunu önlemek için var. Bu düğme konumlandırma
+       * içindir, tohum alma için değil. */
+      const z = Number(o.veri.durum.guvenli_z) || 390;
+      o.komut("git", { x: t.x, y: t.y, z });
+    };
+  },
+
   vur(o, mm) {
     const uc = o.veri.durum.uc || {};
     const goz = (uc.tohumluk_gozleri || []).find((g) =>
@@ -418,7 +434,14 @@ Tarla.katman({
         : "<b>Boş</b> — ekim dizisi bu gözü atlar."}</p>
       <p class="alt-not">Gözün Z'si gözün DİBİ: vakum ucu buraya iner.
       Koordinat ve dolu/boş durumu Ayarlar → Uç değiştirme → Tohumluk
-      gözleri bölümünden düzenlenir.</p>`
+      gözleri bölümünden düzenlenir.</p>
+      <div class="satir-8">
+        <button class="dugme kucuk" id="d-goz-git">Gözün üstüne git</button>
+      </div>
+      <p class="alt-not">Bu düğme yalnız KAFAYI götürür, tohum almaz —
+      güvenli yükseklikte gözün üstünde durur. Ekim, hedef bitki seçilip
+      <b>Ek</b> denerek başlatılıyor; makine o bitkinin türüne uyan dolu
+      gözü kendisi buluyor.</p>`
       : `<p class="alt-not">Takmak ve bırakmak Ayarlar sekmesindeki uç değiştirme
       bölümünden yapılır — dizi güvenlik denetimleriyle birlikte orada.</p>`}`;
   },
