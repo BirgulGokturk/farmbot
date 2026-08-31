@@ -2507,11 +2507,26 @@ function durumGuncelle(d) {
   // Birim ayrı bir eleman: satır içi stil yerine sınıf kullanıyoruz ki dar
   // ekranda ölçüsünü CSS ayarlayabilsin.
   const birimli = (deger) =>
-    deger == null ? "—" : `${sayi(deger, 1)}<span class="birim"> mm</span>`;
+    deger == null ? "—" : `${sayi(deger, 2)}<span class="birim"> mm</span>`;
+  /* Ondalık varsa GÖSTERİLİYOR, yoksa gösterilmiyor.
+   *
+   * Sınırlar 0 basamağa, konum 1 basamağa yuvarlanıyordu. Z'nin referansı
+   * 414.23 ve ekranda "414" ile "414.2" görünüyordu: kullanıcı kalibrasyona
+   * 414,23 yazıyor, kaydediliyor, ama panel hiçbir zaman o sayıyı
+   * göstermiyor — "yazdım ama düzelmedi" tam olarak bu.
+   *
+   * Tam sayılara gereksiz ".00" eklemiyoruz: X'in sınırı "0 – 535 mm"
+   * olarak kalıyor, yalnız ondalıklı olan açılıyor. */
+  const kisaSayi = (v) => {
+    const n = Number(v);
+    if (!Number.isFinite(n)) return "—";
+    return Number.isInteger(n) ? sayi(n, 0) : sayi(n, 2);
+  };
   ["x", "y", "z"].forEach((eksen) => {
     $(`#k-${eksen}`).innerHTML = birimli(k[eksen]);
     const sinir = (d.sinirlar || {})[eksen];
-    $(`#s-${eksen}`).textContent = sinir ? `${sayi(sinir.min, 0)} – ${sayi(sinir.max, 0)} mm` : "";
+    $(`#s-${eksen}`).textContent = sinir
+      ? `${kisaSayi(sinir.min)} – ${kisaSayi(sinir.max)} mm` : "";
     const kutu = $(`#k-${eksen}`).parentElement;
     kutu.classList.toggle("jogluyor", (d.jog || []).some((j) => j[0].toLowerCase() === eksen));
   });
