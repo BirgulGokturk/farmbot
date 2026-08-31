@@ -2011,13 +2011,42 @@ function ekimOnayYaz(e) {
   if (!kutu) return;
   S.ekimOnay = e || null;
   const onay = e && (e.durum === "onay1" || e.durum === "onay2");
+  const aktif = !!(e && e.aktif);
 
-  // Onay dışındaki durumlar günlüğe düşüyor; kutu kapanıyor.
-  if (!onay) {
+  /* EKİM AÇIKKEN KUTU HEP GÖRÜNÜR — yalnız onay anlarında değil.
+   *
+   * Kutu önce sadece onay1/onay2'de çıkıyordu. Dizi "çalışıyor"da
+   * takılırsa (ya da sekme onay anını kaçırdıysa) kutu gizleniyor ve
+   * panelde iptal etmenin HİÇBİR yolu kalmıyordu. Kullanıcı yeni bir ekim
+   * denediğinde "onaylı bir ekim zaten sürüyor" reddini alıyor ve
+   * çıkamıyordu — sahada tam bu yaşandı.
+   *
+   * Süren bir işlemi arayüzden durduramamak kabul edilemez. Ekim aktifse
+   * kutu duruyor; onay beklenmiyorsa yalnız İptal gösteriliyor, çünkü
+   * onaylanacak bir soru yok. */
+  if (!aktif) {
     kutu.classList.add("gizli");
     $("#ekim-onay-iptal-secim").classList.add("gizli");
     return;
   }
+
+  if (!onay) {
+    $("#ekim-onay-adim").textContent = "ekim sürüyor";
+    $("#ekim-onay-ilerleme").textContent =
+      `tohum ${e.sira}/${e.toplam}` + (e.tohum ? ` · ${e.tohum}` : "");
+    $("#ekim-onay-soru").textContent = e.mesaj || "Makine ilerliyor…";
+    $("#ekim-onay-gerekce").textContent =
+      "Onay beklenmiyor. Durdurmak isterseniz İptal'e basın.";
+    $("#ekim-onay-yer").innerHTML =
+      e.pompa_acik ? "<b>Vakum pompası AÇIK.</b>" : "";
+    // Onaylanacak bir soru yok; yalnız çıkış yolu gösteriliyor.
+    $("#d-ekim-onayla").classList.add("gizli");
+    $("#ekim-onay-iptal-secim").classList.add("gizli");
+    $("#ekim-onay-dugmeler").classList.remove("gizli");
+    kutu.classList.remove("gizli");
+    return;
+  }
+  $("#d-ekim-onayla").classList.remove("gizli");
 
   $("#ekim-onay-adim").textContent =
     e.durum === "onay1" ? "1. onay · uç" : "2. onay · tohum";

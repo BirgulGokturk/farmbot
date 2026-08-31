@@ -2195,3 +2195,19 @@ table.veri.kalib th:nth-child(n+4), table.veri.kalib td:nth-child(n+4) { width: 
 table.veri.kisayol td { padding: 2px var(--b2); text-align: left; white-space: normal; }
 table.veri.kisayol td:first-child { white-space: nowrap; color: var(--metin); }
 #tus-sinama { width: 100%; box-sizing: border-box; margin-top: var(--b2); }
+
+
+/* KAPALI ŞERİTTEKİ SON MESAJ KESİLMESİN.
+   Şerit tek satır ve uzun mesajlar ortasından kesiliyordu: "Ekim
+   başlatılmadı — brokoli-1: türü Brokoli ama kalan 3 dolu gözde b" gibi.
+   Sebebi söyleyen kısım tam da kesilen yerde kalıyor ve kullanıcı iki kez
+   yanlış yöne baktı. Artık iki satıra kadar taşıyor; daha uzunsa şeridi
+   açmak gerekiyor ama ilk iki satır çoğu mesajın tamamını taşıyor. */
+#gunluk-serit button { align-items: flex-start; }
+#gunluk-serit #gunluk-son {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  line-height: 1.35;
+}
