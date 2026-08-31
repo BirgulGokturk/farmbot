@@ -1284,6 +1284,33 @@
     return { x: mmx(p.x), y: mmy(p.z) };
   }
 
+  /** Hem TOPRAK hem TEPSİ düzleminde arar — TEK GİRİŞ NOKTASI.
+   *
+   * Tohumluk tepsisi sigmanın üstünde, toprağın ~45 mm yukarısında. Işını
+   * toprakta kesince eğik kameradan bakarken hesaplanan X/Y tepsinin
+   * gerçek yerinden onlarca mm sapıyor ve göz ıskalanıyor.
+   *
+   * Bu daha önce ipucu için düzeltildi ama TIKLAMA yolu eski projeksiyonda
+   * kaldı: imleç gözün üstündeyken emoji çıkıyor, tıklayınca kart
+   * açılmıyordu. İki yolun ayrı hesap yapması hatanın kendisiydi; ikisi de
+   * artık buradan geçiyor.
+   */
+  function vurTaraOlay(olay) {
+    const toprakMm = zemindeMM(olay);
+    // Tepsi düzlemi: profil ölçülerinden. Sahne yüksekliği sy(z) =
+    // (z - toprakZ)·MM olduğu için toprak üstündeki payı doğrudan veriyor.
+    const MK = window.MAKINE || { yan_ray: 35, profil: 20 };
+    const tepsiMm = yukseklikteMM(olay, (MK.yan_ray + MK.profil / 2) * MM);
+    const uc = (VERI.durum && VERI.durum.uc) || {};
+    if (tepsiMm && (uc.tohumluk_gozleri || []).length) {
+      const t = vurTara(tepsiMm);
+      // Yalnız tepsideki öğeyi kabul ediyoruz: toprak düzlemindeki bir
+      // bitkiyi tepsi koordinatıyla seçmek yanlış olurdu.
+      if (t && t.kayit && t.kayit.goz) return t;
+    }
+    return toprakMm ? vurTara(toprakMm) : null;
+  }
+
   /** Katmanlara "bu mm'de senin bir öğen var mı" diye sorar; ilk bulan alır. */
   function vurTara(mm) {
     for (const k of T.katmanlar) {
@@ -1582,7 +1609,8 @@
           return;
         }
 
-        const vurus = (!T.ekleme && mm) ? vurTara(mm) : null;
+        const vurus = (!T.ekleme && mm)
+          ? (ucBoyutlu ? vurTaraOlay(o) : vurTara(mm)) : null;
         bas = { x: o.clientX, y: o.clientY, mm, vurus, tasindi: false,
                 kaydir: o.button === 1 || o.shiftKey,
                 theta: kam.theta, phi: kam.phi, hedefKopya: kam.hedef.clone() };
@@ -1594,9 +1622,13 @@
       hedef.addEventListener("pointermove", (o) => {
         const mm = ucBoyutlu ? zemindeMM(o) : olay2bMM(o);
         if (!bas) {
+          // İmleç biçimi de AYNI aramadan: gözün üstünde "tıklanabilir"
+          // görünmezse kullanıcı tıklamayı denemiyor bile.
+          const altindaki = (ucBoyutlu && !T.ekleme) ? vurTaraOlay(o)
+                          : (mm ? vurTara(mm) : null);
           hedef.style.cursor = T.kip === "sec" ? "crosshair"
             : T.ekleme ? "crosshair"
-            : (mm && vurTara(mm)) ? "grab" : "default";
+            : altindaki ? "grab" : "default";
           /* TOHUMLUK GÖZÜNÜN ÜSTÜNDE: içindeki türü söylüyoruz.
            *
            * Göz deliğine bakan biri hangi tohumun orada olduğunu bilmiyor;
@@ -1606,17 +1638,8 @@
           /* Göz araması AYRI bir düzlemde: tepsi sigmanın üstünde.
            * Aynı imleç iki farklı yükseklikte iki farklı mm veriyor;
            * toprak için `mm`, tepsi için `tepsiMm`. */
-          const uc0 = (VERI.durum && VERI.durum.uc) || {};
-          const gozVar = ucBoyutlu && !T.ekleme
-                         && (uc0.tohumluk_gozleri || []).length;
-          // Sahne yüksekliği: sy(z) = (z - toprakZ)·MM olduğu için tepsinin
-          // toprak üstündeki payı doğrudan profil ölçülerinden geliyor.
-          const MK = window.MAKINE || { yan_ray: 35, profil: 20 };
-          const tepsiY = (MK.yan_ray + MK.profil / 2) * MM;
-          const tepsiMm = gozVar ? yukseklikteMM(o, tepsiY) : null;
-          const gozVurus = tepsiMm ? vurTara(tepsiMm) : null;
-          const gz = gozVurus && gozVurus.kayit && gozVurus.kayit.goz
-                       ? gozVurus.kayit : null;
+          const gz = altindaki && altindaki.kayit && altindaki.kayit.goz
+                       ? altindaki.kayit : null;
           // Simgeyi göster/gizle — sahne yeniden kurulmuyor, yalnız
           // görünürlük değişiyor.
           const ucKatman = BAGLAM.katmanTanimi("uclar");
