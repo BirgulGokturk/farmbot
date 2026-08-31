@@ -73,7 +73,7 @@ JOG_TICK = 0.1
 VARSAYILAN_KALIB = [
     {"cpm": 17.1782, "dir": 1, "home": 0.0, "min": 0.0, "max": 535.0},    # X
     {"cpm": 4.2686, "dir": 1, "home": 0.0, "min": 0.0, "max": 630.0},     # Y
-    {"cpm": 37.074, "dir": -1, "home": 414.23, "min": 0.0, "max": 414.23},  # Z
+    {"cpm": 37.074, "dir": -1, "home": 414.23, "min": 120.0, "max": 414.23},  # Z
 ]
 
 
