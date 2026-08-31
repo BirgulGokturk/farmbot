@@ -794,15 +794,35 @@ input:disabled, select:disabled { opacity: .45; }
 /* ------------------------------------------------------------- eksen ve jog */
 .eksen-kutu { display: flex; gap: var(--b2); flex-wrap: wrap; }
 .eksen {
-  flex: 1 1 96px;
+  /* 96 -> 108: "120 - 414 mm" sığsın. Dar kart, sığmayan yazıyı
+     kırpmıyor; taşırıyor ve kutunun boyunu bozuyordu. */
+  flex: 1 1 108px;
+  min-width: 0;
   background: var(--yuzey-2);
   border-radius: var(--yaricap-2);
   padding: var(--b2) var(--b3);
 }
 .eksen b { font-size: var(--yazi-kucuk); color: var(--metin-3); font-weight: 500; }
-.eksen .konum { font-size: 22px; font-variant-numeric: tabular-nums; font-weight: 600; line-height: 1.2; }
+/* Sayı ve birimi ASLA ayrı satıra düşmüyor, sınır yazısı da bölünmüyor.
+ *
+ * Z'nin sınırı "120 - 414 mm" olunca X ve Y'ninkinden uzun oluyor ve kart
+ * kırılıyordu: "414.2" bir satır, "mm" alt satır, sınır iki satır. Üç
+ * kart yan yana dururken yalnız birinin dört satıra çıkması, kutuların
+ * boyunu da bozuyordu. */
+.eksen .konum {
+  font-size: 22px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  line-height: 1.2;
+  white-space: nowrap;
+}
 .eksen .konum .birim { font-size: var(--yazi-kucuk); color: var(--metin-3); font-weight: 400; }
-.eksen .sinir { font-size: var(--yazi-kucuk); color: var(--metin-3); font-variant-numeric: tabular-nums; }
+.eksen .sinir {
+  font-size: var(--yazi-kucuk);
+  color: var(--metin-3);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
 .eksen.jogluyor { border-color: var(--vurgu); }
 
 .jog-alan { display: flex; gap: var(--b3); justify-content: center; align-items: center; }
