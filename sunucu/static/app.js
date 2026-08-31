@@ -3824,12 +3824,41 @@ function olaylariBagla() {
    * sistemde onları kendi yakalıyor ve sayfaya hiç geçmiyor. O yüzden
    * eski bağlamalar (PageUp/PageDown) DURUYOR — medya tuşu geçmezse
    * makine yine sürülebilsin. Hangisinin çalıştığı denenerek görülür. */
+  /* TUŞ SEÇİMİ, sahadaki klavyeye göre.
+   *
+   * Makinede Rii tipi kablosuz mini klavye var: sağda ok takımı, solda
+   * medya tuşları. Medya tuşları DENENDİ VE ULAŞMADI — o tuşlar HID
+   * "consumer control" kodu gönderiyor ve masaüstü ortamı onları kendi
+   * yakalayıp tarayıcıya hiç vermiyor. Bağlamaları duruyor ama onlara
+   * güvenmiyoruz.
+   *
+   * Z için `+` ve `-` seçildi: klavyenin sol alt köşesinde, sağ başparmak
+   * ok takımındayken sol başparmakla basılıyor. Bunlar sıradan tuşlar,
+   * her sistemde sayfaya ulaşıyor.
+   *
+   * Aynı tuşun iki yazılışı da bağlı: `=` ve `+` fiziksel olarak aynı tuş
+   * (Shift'li/Shift'siz), kullanıcı hangisine basarsa bassın çalışsın. */
   const TUS = {
     ArrowRight: ["x", 1], ArrowLeft: ["x", -1],
     ArrowUp: ["y", 1], ArrowDown: ["y", -1],
+    "+": ["z", 1], "=": ["z", 1],
+    "-": ["z", -1], _: ["z", -1],
     PageUp: ["z", 1], PageDown: ["z", -1],
     AudioVolumeUp: ["z", 1], AudioVolumeDown: ["z", -1],
   };
+  /* TUŞ SINAYICI. Hangi tuşun tarayıcıya ULAŞTIĞI cihazdan cihaza
+   * değişiyor: medya tuşları sahadaki klavyede hiç gelmedi. Tahmin
+   * etmek yerine ölçmek için, kutuya odaklanıp bir tuşa basınca o tuşun
+   * tarayıcıdaki ADI yazılıyor. Bize o adı söyleyen kullanıcı, istediği
+   * tuşu bağlatabiliyor. */
+  const sinaKutu = $("#tus-sinama");
+  if (sinaKutu) {
+    sinaKutu.addEventListener("keydown", (o) => {
+      o.preventDefault();
+      sinaKutu.value = `${o.key}   (code: ${o.code})`;
+    });
+  }
+
   const jogDugmesi = (eksen, yon) =>
     document.querySelector(`.jog[data-eksen="${eksen}"][data-yon="${yon}"]`);
 
@@ -3888,9 +3917,19 @@ function olaylariBagla() {
   document.addEventListener("keydown", (olay) => {
     // Kısayollar yalnızca Sür sekmesinde: başka sekmede yazı yazarken ok
     // tuşunun makineyi hareket ettirmesi kabul edilemez.
+    // Yazı yazarken hiçbir kısayol çalışmıyor — bu her şeyden önce gelir.
     if (olay.target.tagName === "INPUT" || olay.target.tagName === "SELECT"
-        || !$("#sayfa-sur").classList.contains("etkin")) return;
+        || olay.target.isContentEditable) return;
+
+    /* ACİL DURDURMA HER SAYFADA. Önce sayfa denetiminin ARDINDA duruyordu,
+     * yani Tarla ya da Ayarlar'dayken boşluk hiçbir şey yapmıyordu. Acil
+     * durdurmanın "yanlış sekmedesiniz" diye çalışmaması kabul edilemez;
+     * makine sürerken kullanıcının hangi sekmede olduğu tesadüf. */
     if (olay.code === "Space") { olay.preventDefault(); $("#d-acil").click(); return; }
+
+    // Kalan kısayollar yalnız Sür sekmesinde: başka sekmede ok tuşu
+    // sayfayı kaydırmak için kullanılıyor olabilir.
+    if (!$("#sayfa-sur").classList.contains("etkin")) return;
     if (olay.key === "Escape") { olay.preventDefault(); jogDurdur(); return; }
     /* Pompalar ve panel kısayolları.
      *
@@ -3899,6 +3938,10 @@ function olaylariBagla() {
      * pompayı kesebilmek istiyor. Ne olduğu günlüğe yazılıyor — sessizce
      * açılan bir pompa fark edilmezse taşma demek. */
     const ROLE_TUS = {
+      // HARFLER: medya tuşları ulaşmadığı için asıl bağlama bunlar.
+      // S = su, H = hava. Büyük/küçük ikisi de kabul: Caps açık kalabilir.
+      s: "su_pompasi", S: "su_pompasi",
+      h: "hava_pompasi", H: "hava_pompasi",
       MediaTrackNext: "su_pompasi",
       MediaTrackPrevious: "hava_pompasi",
     };

@@ -463,6 +463,27 @@
 
           <!-- Tuş adımı: ok tuşlarının her basışta gideceği mesafe. Ekrandaki
                jog düğmelerini etkilemiyor, onlar sürekli hareket ediyor. -->
+          <!-- Kısayol listesi ve tuş sınayıcı. Liste görünür yerde:
+               yardım metnine gömülü bir kısayol, olmayan kısayoldur. -->
+          <details class="kisayol-kutu">
+            <summary>Klavye kısayolları</summary>
+            <table class="veri kisayol">
+              <tr><td>← → ↑ ↓</td><td>X ve Y — her basış tuş adımı kadar</td></tr>
+              <tr><td><b>+</b> / <b>−</b></td><td>Z yukarı / aşağı</td></tr>
+              <tr><td><b>S</b></td><td>Su pompası aç-kapa</td></tr>
+              <tr><td><b>H</b></td><td>Hava pompası aç-kapa</td></tr>
+              <tr><td><b>Boşluk</b></td><td>ACİL DURDURMA — her sayfada</td></tr>
+              <tr><td><b>Esc</b></td><td>Hareketi durdur</td></tr>
+              <tr><td>F2 · F3 · F4 · F6</td><td>Kamera · Çözümle · 2B · 3B</td></tr>
+            </table>
+            <label for="tus-sinama">Tuş sınayıcı — kutuya tıklayıp bir tuşa basın</label>
+            <input type="text" id="tus-sinama" readonly
+                   placeholder="basılan tuşun adı burada görünür">
+            <span class="alt-not">Bir tuş burada görünmüyorsa tarayıcıya hiç
+              ulaşmıyor demektir ve bağlanamaz. Görünen adı bize söyleyin,
+              istediğiniz işe bağlayalım.</span>
+          </details>
+
           <div class="alan">
             <label for="tus-adimi">Tuş adımı <span class="ikincil">mm</span></label>
             <input type="number" id="tus-adimi" min="1" max="200" step="1" value="10">

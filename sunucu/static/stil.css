@@ -2186,3 +2186,12 @@ table.veri.kalib th:nth-child(n+4), table.veri.kalib td:nth-child(n+4) { width: 
 }
 .ekim-onay-iptal .alt-not { margin: 0 0 var(--b2); }
 .ekim-onay-iptal .dugme { width: 100%; }
+
+
+/* Klavye kısayolları kutusu. Kapalı başlıyor: her gün bakılacak bir şey
+   değil, ama arandığında bulunabilir bir yerde durmalı. */
+.kisayol-kutu { margin: var(--b2) 0; }
+.kisayol-kutu summary { cursor: pointer; color: var(--metin-2); font-size: var(--yazi-kucuk); }
+table.veri.kisayol td { padding: 2px var(--b2); text-align: left; white-space: normal; }
+table.veri.kisayol td:first-child { white-space: nowrap; color: var(--metin); }
+#tus-sinama { width: 100%; box-sizing: border-box; margin-top: var(--b2); }
