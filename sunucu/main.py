@@ -65,7 +65,7 @@ IZINLI_KOMUTLAR = {
     "jog",           # {"eksen":"x","yon":1,"basili":true} — basılı tut hareketi
     "jog_dur",       # {}                            — tüm jog bitlerini bırak
     "git",           # {"x":100,"y":50,"z":400}      — mutlak konuma git (Z→Y→X)
-    "home",          # {"eksen":"z"} ya da {}        — referans arama
+    "home",          # {"eksen":"z"} ya da {}        — home KOORDINATINA git
     "dur",           # {}                            — hareketi durdur
     "acil",          # {}                            — ACİL DURDURMA (mandallı)
     "acil_temizle",  # {}                            — mandalı temizle

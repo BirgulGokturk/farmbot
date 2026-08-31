@@ -3332,7 +3332,7 @@ function olaylariBagla() {
     const k = S.sonKonum || {};
     const simdi = Number(k[eksen]);
     if (!Number.isFinite(simdi)) {
-      gunluk("Konum bilinmiyor — önce referans arayın", "uyari");
+      gunluk("Konum bilinmiyor — makine bağlı mı?", "uyari");
       return;
     }
     const adim = tusAdimi();

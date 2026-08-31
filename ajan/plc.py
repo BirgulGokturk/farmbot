@@ -331,16 +331,11 @@ class Gantry:
         # ve yüzey sıfırdan epey yukarıda. Ekim derinliği, uç açıklığı
         # ve 3B sahnedeki toprak düzlemi bu değere göre yerleşiyor.
         self.toprak_z = float(ayar.get("toprak_z", 0.0))
-        # PLC'de "referans tamam" biti yok; her eksene bu kadar süre tanınıyor.
-        self.home_bekleme = float(ayar.get("home_bekleme_sn", 8.0))
-        # Varış doğrulamasının üst sınırı ve toleransı. Azami süre cömert:
-        # bu bir bekleme değil, takılmış bir eksende sonsuza kadar
-        # beklememek için konmuş emniyet freni.
-        self.home_azami = float(ayar.get("home_azami_sn", 90.0))
-        self.home_tolerans = float(ayar.get("home_tolerans_mm", 2.0))
-        # Darbeden sonra hareketin başlaması için tanınan süre. Bu kadar
-        # beklendiği hâlde eksen kımıldamadıysa "zaten referansta" deniyor.
-        self.home_kimilda_sn = float(ayar.get("home_kimilda_sn", 3.0))
+        # NOT: `home_bekleme_sn`, `home_azami_sn`, `home_tolerans_mm` ve
+        # `home_kimilda_sn` ayarları ARTIK KULLANILMIYOR. Home, PLC'nin
+        # referans arama darbesi değil sıradan bir koordinat hareketi;
+        # varışı `eksen_git_dogrula` doğruluyor. Eski ayar dosyalarında
+        # duruyor olabilirler, sessizce yok sayılıyorlar.
         self.hiz = float(ayar.get("hiz", 20.0))
         # EKSEN BAŞINA HIZ. Z dikey ve yük altında; X/Y ile aynı hızda
         # sürülmesi için bir sebep yok. Girilmemiş eksen genel `hiz`e
@@ -1039,22 +1034,34 @@ class Gantry:
                 f"(şu an {self.eksen_konum_mm(i):.1f} mm) — dizi durduruldu")
 
     def home(self, eksen: str | None = None) -> str:
-        """Referans arama — eksenler SIRAYLA, aralarında bekleyerek.
+        """HOME KONUMUNA GİDER — PLC'nin referans arama darbesi DEĞİL.
 
-        Buradaki bekleme neden zorunlu: PLC'de "referans tamam" biti eşlenmiş
-        değil, yani eksenin switch'e vardığını okuyamıyoruz. Darbeyi atıp
-        hemen sıradaki eksene geçmek, Z hâlâ inip çıkarken X ve Y'yi hareket
-        ettirmek demek — uç aşağıdayken yatay hareket, tam olarak Z kilidinin
-        önlemeye çalıştığı şey.
+        NEDEN DARBE DEĞİL DE HAREKET
+        ----------------------------
+        Eskiden PLC'nin referans arama bitine darbe atılıyordu. Sahada iki
+        şey oldu. Birincisi X ve Y'de hiçbir şey kımıldamadı — o eksenlerin
+        referans rutini PLC'de kurulu değil. İkincisi Z'de darbe işe
+        yaradı ama PLC sayacı sıfırlanmadı: uç anahtardayken konum 402.4
+        okunuyordu, oysa `home` 414.23. Yani "referans arandı" ama makine
+        nerede olduğunu hâlâ yanlış biliyordu.
 
-        Bu yüzden sıra Z → X → Y ve her eksen için `home_bekleme` saniye
-        bekleniyor. Bu bir doğrulama değil, süreli bekleme: değeri en yavaş
-        ekseninizin referans süresinden uzun tutun.
+        Artık `home`, eksenleri kalibrasyondaki `home` KOORDİNATINA
+        götürüyor — sıradan bir hareket. Sayaç ne durumdaysa o kalıyor;
+        eksen hedefe varınca panelde tam o değer yazıyor. PLC'nin referans
+        rutinine bağımlılık ortadan kalkıyor.
+
+        Bunun bir sınırı var ve bilerek kabul ediliyor: bu gerçek bir
+        referanslama DEĞİL. Sayaç bir yerde kaydıysa hareket o kaymayı
+        düzeltmiyor, yalnız kayıtlı koordinata gidiyor. Gerçek referans
+        için PLC tarafındaki rutin kurulmalı.
+
+        Sıra yine Z → X → Y: Z yukarı çıkmadan yatay hareket, uç aşağıdayken
+        sürmek demek.
         """
         if self.acil_mandal["acik"]:
             raise PLCHatasi("ACİL DURDURMA mandallı — önce temizleyin")
         self._surucu_dogrula()
-        self._onceki_isi_kes("referans arama")
+        self._onceki_isi_kes("home hareketi")
 
         sira = [EKSEN_INDEKS[eksen]] if eksen else [2, 0, 1]   # Z, X, Y
 
@@ -1067,141 +1074,45 @@ class Gantry:
             raise PLCHatasi(
                 f"Z güvenli yükseklikte değil "
                 f"(≥ {self.guvenli_z:.0f} mm gerekiyor). Önce Z'yi kaldırın "
-                f"ya da 'Tümü' ile referans arayın.")
+                f"ya da 'Tümü' ile gönderin.")
         self._iptal.clear()
-        self._islem_ad = "referans arama"
+        self._islem_ad = "home hareketi"
         self._hareket_ip = threading.Thread(target=self._home_isci, args=(sira,), daemon=True)
         self._hareket_ip.start()
         adlar = " → ".join(EKSENLER[i]["ad"] for i in sira)
-        return f"Referans arama başlatıldı: {adlar}"
+        return f"Home konumuna gidiliyor: {adlar}"
 
     def _home_isci(self, sira: list[int]) -> None:
         self.hareket_ediyor = True
         try:
             for i in sira:
                 if self._iptal.is_set() or self.acil_mandal["acik"]:
-                    self.gunluk_cb("Referans arama iptal edildi", "uyari")
+                    self.gunluk_cb("Home hareketi iptal edildi", "uyari")
                     return
-                reg = EKSENLER[i].get("home") or EKSENLER[i]["go"]
-                self.gunluk_cb(f"{EKSENLER[i]['ad']} referans aranıyor...", "bilgi")
-                self.mb.yaz(reg, 1)
-                time.sleep(0.2)
-                self.mb.yaz(reg, 0)
-                if not self._home_varisi_bekle(i, reg):
-                    # SIRAYI KESİYORUZ. Z'nin referansa vardığı
-                    # doğrulanamadıysa X ve Y'yi sürmek, uç aşağıdayken
-                    # yatay hareket demek — Z kilidinin önlemeye çalıştığı
-                    # şeyin ta kendisi. Yarım kalan referans, hiç
-                    # başlamamış olandan tehlikeli.
-                    self.gunluk_cb(
-                        f"{EKSENLER[i]['ad']} referansa varmadı — sıra kesildi",
-                        "hata")
+                hedef = float(self.kalib[i].get("home", 0.0))
+                ad = EKSENLER[i]["ad"]
+                self.gunluk_cb(f"{ad} → home {hedef:.2f} mm", "bilgi")
+                try:
+                    # Doğrulamalı gidiş: varmadıysa istisna atıyor, yani
+                    # "gitti" denip geçilmiyor. Bölge denetimi de burada.
+                    self.eksen_git_dogrula(i, hedef)
+                except PLCHatasi as hata:
+                    # SIRAYI KESİYORUZ. Z home'a çıkmadıysa X ve Y'yi
+                    # sürmek, uç aşağıdayken yatay hareket demek.
+                    self.gunluk_cb(f"{ad} home'a gidemedi: {hata}", "hata")
                     return
+                # Kısa bir oturma payı: `eksen_git_dogrula` toleransla
+                # (0.6 mm) "vardı" diyor ve eksen o anda hâlâ yavaşlıyor
+                # olabiliyor. Hemen okunan değer hedeften birkaç yüzde bir
+                # sapık çıkıyor ve günlükte "hâlâ yanlış" gibi duruyor.
+                time.sleep(0.3)
+                self.gunluk_cb(
+                    f"{ad} home'da ({self.eksen_konum_mm(i):.2f} mm)", "bilgi")
         except Exception as hata:
             self.gunluk_cb(f"Referans arama hatası: {hata}", "hata")
         finally:
             self.hareket_ediyor = False
             self._iptal_sahipligi_birak()
-
-    def _home_varisi_bekle(self, i: int, reg: int) -> bool:
-        """Eksenin referans anahtarına VARDIĞINI doğrular.
-
-        Eskiden burada sabit bir süre uyunuyordu (`home_bekleme_sn`, 8 sn).
-        Sorun şu: bu bir doğrulama değil tahmindi. Referansı 8 saniyeden
-        uzun süren bir eksende sıra, o eksen hâlâ hareket hâlindeyken
-        sonrakine geçiyordu — kullanıcı açısından "bir kez bastım, hepsi
-        gitmedi" diye görünüyor, tehlike açısından Z inip çıkarken X'in
-        sürülmesi demek.
-
-        PLC'de "referans tamam" biti eşlenmiş değil, ama KONUM okunabiliyor:
-        eksen anahtara varınca PLC sayacı sıfırlanıyor ve konum tam olarak
-        `home` değerine oturuyor. Beklediğimiz işaret bu.
-
-        İki koşul birden aranıyor: konum home'a yeterince yakın VE arka
-        arkaya birkaç okumada değişmiyor. Yalnız yakınlık yetmez — eksen
-        home'un yanından geçerken de bir an yakın görünür.
-
-        Konum hiç okunamıyorsa eski davranışa dönülüyor (süreli bekleme):
-        okuma yoksa doğrulama da yok, ama makineyi büsbütün kullanılamaz
-        hâle getirmek doğru olmaz.
-        """
-        hedef = float(self.kalib[i].get("home", 0.0))
-        bitis = time.time() + self.home_azami
-        kararli = 0
-        onceki = None
-        okunamadi = 0
-# BAŞLANGIÇ KONUMU. Eksen zaten `home` değerinde okunuyorsa varış
-        # denetimi ilk turda "vardı" der ve makine hiç kımıldamadan
-        # "referans tamam" yazılır. X ve Y'de bu KURAL, istisna değil:
-        # sayaç sıfırdan başlıyor ve home da 0, yani hiç referans
-        # aranmamış bir makinede ikisi eşit.
-        #
-        # Sonuç kullanıcı için "düğmeye bastım, tamam dedi, makine
-        # kıpırdamadı" oluyor — yani düğme bozuk sanılıyor. Aşağıda
-        # hareketin BAŞLADIĞINI ayrıca arıyoruz ve başlamadıysa bunu
-        # açıkça söylüyoruz.
-        try:
-            baslangic = self.eksen_konum_mm(i)
-        except Exception:
-            baslangic = None
-        kimildadi = False
-        bas_ts = time.time()
-        while time.time() < bitis:
-            if self._iptal.is_set() or self.acil_mandal["acik"]:
-                self.mb.yaz(reg, 0)
-                self.gunluk_cb("Referans arama iptal edildi", "uyari")
-                return False
-            try:
-                simdi = self.eksen_konum_mm(i)
-                okunamadi = 0
-            except Exception:
-                okunamadi += 1
-                # Üst üste okunamıyorsa doğrulama yapamıyoruz; eski
-                # süreli beklemeye düşüyoruz.
-                if okunamadi >= 5:
-                    self.gunluk_cb(
-                        f"{EKSENLER[i]['ad']} konumu okunamıyor — "
-                        f"{self.home_bekleme:.0f} sn süreli beklemeye dönüldü",
-                        "uyari")
-                    time.sleep(self.home_bekleme)
-                    return True
-                time.sleep(0.2)
-                continue
-
-            if baslangic is not None and abs(simdi - baslangic) > 0.3:
-                kimildadi = True
-
-            yakin = abs(simdi - hedef) <= self.home_tolerans
-            durgun = onceki is not None and abs(simdi - onceki) < 0.05
-            onceki = simdi
-            kararli = kararli + 1 if (yakin and durgun) else 0
-            if kararli >= 3:                    # ~0.6 sn boyunca yerinde
-                # Hareketin başlaması için makul bir süre tanıyoruz. Yoksa
-                # zaten home'da duran bir eksen daha PLC darbeyi işlemeden
-                # "tamam" ilan edilirdi.
-                if not kimildadi and time.time() - bas_ts < self.home_kimilda_sn:
-                    kararli = 0
-                    time.sleep(0.2)
-                    continue
-                if kimildadi:
-                    self.gunluk_cb(
-                        f"{EKSENLER[i]['ad']} referans tamam ({simdi:.2f} mm)", "bilgi")
-                else:
-                    # DÜRÜST MESAJ: eksen hiç kımıldamadı. Ya gerçekten
-                    # referanstaydı ya da PLC darbeyi işlemedi. İkisini
-                    # buradan ayıramayız; ayıramadığımızı söylüyoruz.
-                    self.gunluk_cb(
-                        f"{EKSENLER[i]['ad']} kımıldamadı — zaten referansta "
-                        f"görünüyor ({simdi:.2f} mm). Makine hareket etmediyse "
-                        f"PLC'nin referans biti ({reg}) bağlı olmayabilir.",
-                        "uyari")
-                return True
-            time.sleep(0.2)
-
-        self.gunluk_cb(
-            f"{EKSENLER[i]['ad']} {self.home_azami:.0f} sn içinde referansa "
-            f"varmadı (hedef {hedef:.2f} mm)", "hata")
-        return False
 
     def dur(self) -> str:
         """Süren hareketi kes ve jog bitlerini bırak. Mandal bırakmaz."""

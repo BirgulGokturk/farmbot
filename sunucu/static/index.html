@@ -447,7 +447,7 @@
               <button class="dugme jog" data-eksen="y" data-yon="1" title="Y+">▲</button>
               <div></div>
               <button class="dugme jog" data-eksen="x" data-yon="-1" title="X−">◀</button>
-              <button class="dugme" id="d-home" title="Referans arama — sırayla Z, X, Y">⌂</button>
+              <button class="dugme" id="d-home" title="Home konumuna git — sırayla Z, X, Y">⌂</button>
               <button class="dugme jog" data-eksen="x" data-yon="1" title="X+">▶</button>
               <div></div>
               <button class="dugme jog" data-eksen="y" data-yon="-1" title="Y−">▼</button>
@@ -461,7 +461,7 @@
           </div>
 
           <div class="satir-8">
-            <span class="alt-not">Referans arama</span>
+            <span class="alt-not">Home konumu</span>
             <button class="dugme" data-home="x" title="Yalnız X">⌂ X</button>
             <button class="dugme" data-home="y" title="Yalnız Y">⌂ Y</button>
             <button class="dugme" data-home="z" title="Yalnız Z">⌂ Z</button>
@@ -1226,8 +1226,9 @@
             MESAFE gitmek demek. Onlar Gantry Studio ölçümünden geliyor ve
             Pi'de <code>ajan/gantry_calib.json</code> düzenlenerek
             değiştirilir.<br><br>
-            <b>home değiştirdikten sonra o eksene referans arattırın</b> —
-            ekrandaki konum ancak sayaç sıfırlanınca yeni değere oturur.
+            <b>home</b> aynı zamanda ⌂ düğmesinin gittiği KOORDİNAT.
+            Değiştirdikten sonra ⌂ ile gidin; eksen o değere gidip orada
+            durur ve panelde tam o sayı yazar.
           </p>
           <div class="tablo-kutu">
             <table class="veri kalib">
