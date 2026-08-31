@@ -1915,9 +1915,28 @@ button.dugme.role.acik:hover:not(:disabled) { background: rgba(74, 168, 96, .24)
 
 /* Kalibrasyon tablosundaki duzenlenebilir hucreler. Dar tutuluyor: tablo
    alti sutun ve panel zaten dar; genis kutular satiri tasiriyordu. */
+/* Kalibrasyon tablosu.
+ *
+ * Kutular 78 px sabitti ve altı sütun panele sığmıyordu: tablo yatay
+ * kayıyor, girilen sayı "414.23" yerine "41" görünüyordu — kullanıcı ne
+ * yazdığını göremiyordu.
+ *
+ * Çözüm sütun genişliklerini SABİTLEMEK: cpm ve dir salt okunur ve dar
+ * olabilir, düzenlenen üç sütun geniş kalıyor. Kutular hücrenin tamamını
+ * kaplıyor, yani panel daraldıkça onlar da daralıyor ama oran korunuyor. */
+
+table.veri.kalib { table-layout: fixed; }
+table.veri.kalib th, table.veri.kalib td { padding: var(--b1) 4px; }
+table.veri.kalib th:nth-child(1), table.veri.kalib td:nth-child(1) { width: 8%; }
+table.veri.kalib th:nth-child(2), table.veri.kalib td:nth-child(2) { width: 20%; }
+table.veri.kalib th:nth-child(3), table.veri.kalib td:nth-child(3) { width: 10%; }
+table.veri.kalib th:nth-child(n+4), table.veri.kalib td:nth-child(n+4) { width: 20.6%; }
 .kalib-girdi {
-  width: 78px;
-  padding: 2px 6px;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  padding: 3px 5px;
+  text-align: right;
   font-variant-numeric: tabular-nums;
 }
 
