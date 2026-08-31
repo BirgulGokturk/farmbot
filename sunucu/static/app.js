@@ -3838,12 +3838,28 @@ function olaylariBagla() {
    *
    * Aynı tuşun iki yazılışı da bağlı: `=` ve `+` fiziksel olarak aynı tuş
    * (Shift'li/Shift'siz), kullanıcı hangisine basarsa bassın çalışsın. */
-  const TUS = {
+  /* FİZİKSEL TUŞA bağlıyoruz (`event.code`), ürettiği harfe değil.
+   *
+   * İlk sürüm `key` ile bağlanmıştı ve sahada çalışmadı: klavyenin
+   * üstünde `-` ve `=+` yazıyor ama Türkçe Q düzeninde o tuşlar `*` ve
+   * `-` üretiyor. `key` düzenle birlikte değişiyor, `code` değişmiyor —
+   * `Minus` her düzende aynı fiziksel tuş.
+   *
+   * Ok tuşlarında ikisi de aynı olduğu için orada fark yoktu; sorun
+   * yalnız harf/işaret tuşlarında çıkıyor. */
+  const KOD_TUS = {
     ArrowRight: ["x", 1], ArrowLeft: ["x", -1],
     ArrowUp: ["y", 1], ArrowDown: ["y", -1],
-    "+": ["z", 1], "=": ["z", 1],
-    "-": ["z", -1], _: ["z", -1],
+    // Klavyede `-` ve `=+` yazan tuşlar. Etiketiyle uyumlu: eksi aşağı.
+    Equal: ["z", 1], Minus: ["z", -1],
+    NumpadAdd: ["z", 1], NumpadSubtract: ["z", -1],
     PageUp: ["z", 1], PageDown: ["z", -1],
+  };
+  /* Harfe göre yedek: bazı tarayıcılar/uzaktan masaüstü katmanları `code`
+   * doldurmuyor. İkisi birden bakılıyor, hangisi tutarsa. */
+  const TUS = {
+    "+": ["z", 1], "=": ["z", 1], "*": ["z", 1],
+    "-": ["z", -1], _: ["z", -1],
     AudioVolumeUp: ["z", 1], AudioVolumeDown: ["z", -1],
   };
   /* TUŞ SINAYICI. Hangi tuşun tarayıcıya ULAŞTIĞI cihazdan cihaza
@@ -3937,15 +3953,16 @@ function olaylariBagla() {
      * böyle: kullanıcı makinenin başında ve elini klavyeden kaldırmadan
      * pompayı kesebilmek istiyor. Ne olduğu günlüğe yazılıyor — sessizce
      * açılan bir pompa fark edilmezse taşma demek. */
+    // Harf tuşları da FİZİKSEL koddan: `KeyS` her düzende aynı tuş.
+    // Türkçe Q'da S ve H yerinde duruyor ama kural aynı kalsın.
+    const ROLE_KOD = { KeyS: "su_pompasi", KeyH: "hava_pompasi" };
     const ROLE_TUS = {
-      // HARFLER: medya tuşları ulaşmadığı için asıl bağlama bunlar.
-      // S = su, H = hava. Büyük/küçük ikisi de kabul: Caps açık kalabilir.
       s: "su_pompasi", S: "su_pompasi",
       h: "hava_pompasi", H: "hava_pompasi",
       MediaTrackNext: "su_pompasi",
       MediaTrackPrevious: "hava_pompasi",
     };
-    const role = ROLE_TUS[olay.key];
+    const role = ROLE_KOD[olay.code] || ROLE_TUS[olay.key];
     if (role) {
       olay.preventDefault();
       if (olay.repeat) return;
@@ -3978,7 +3995,7 @@ function olaylariBagla() {
       return;
     }
 
-    const eslesme = TUS[olay.key];
+    const eslesme = KOD_TUS[olay.code] || TUS[olay.key];
     if (!eslesme) return;
     olay.preventDefault();
     if (olay.repeat) return;
