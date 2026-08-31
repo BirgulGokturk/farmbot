@@ -1082,6 +1082,227 @@ function kalibDurumYaz(k) {
     : "kalibre edilmedi";
 }
 
+/* ------------------------------------------------ görüntü çözümleme
+ *
+ * `goruntu.py` (piksel) + `tespit.py` (milimetre) sunucuda çalışıyor;
+ * burası yalnız sonucu gösteriyor. Hesabın panelde İKİNCİ bir kopyası
+ * YOK — olsaydı ekranda okunan ölçü ile haritaya çizilen ölçü sessizce
+ * ayrışabilirdi.
+ *
+ * Harita katmanı (`katmanlar/65-tespitler.js`) veriyi `Tarla._tespitVeri`
+ * üzerinden alıyor. Ortak veri havuzuna koymuyoruz: çözümleme kullanıcı
+ * istediğinde çalışan bir işlem, her durum paketinde değil.
+ */
+function goruntuDurumYaz(d) {
+  const not = $("#goruntu-durum");
+  const uyari = $("#goruntu-uyari");
+  if (!not || !uyari) return;
+  S.goruntuDurum = d;
+
+  if (!d.hazir) {
+    not.textContent = "kapalı";
+    uyari.textContent = d.hata || "Görüntü işleme kullanılamıyor.";
+    uyari.classList.remove("gizli");
+    return;
+  }
+  not.textContent = d.kalibre
+    ? `${d.konumlu_kare}/${d.kare_sayisi} konumlu kare · ${Number(d.mm_px).toFixed(3)} mm/px`
+    : `${d.kare_sayisi} kare · kalibre edilmedi`;
+
+  if (!d.kalibre) {
+    uyari.textContent = "Kamera kalibre edilmemiş (mm_px = 0). Lekeler "
+      + "bulunuyor ama milimetreye çevrilemiyor ve haritaya konamıyor — "
+      + "yukarıdaki kalibrasyon bölümünden iki kare yöntemiyle ölçün.";
+    uyari.classList.remove("gizli");
+  } else if (!d.konumlu_kare) {
+    uyari.textContent = "Hiçbir karenin makine konumu yok. Konum kareye "
+      + "çekildiği anda ekleniyor; PLC kopukken çekilen kareler haritaya "
+      + "konamıyor.";
+    uyari.classList.remove("gizli");
+  } else {
+    uyari.classList.add("gizli");
+  }
+
+  // Kare listesi: en yeni başta. Kullanıcı seçimini koruyoruz.
+  const sec = $("#gr-kare");
+  if (sec) {
+    const onceki = sec.value;
+    sec.innerHTML = (d.kareler || []).map((k) => {
+      const saat = new Date(k.ts * 1000).toLocaleTimeString("tr-TR");
+      const yer = k.x == null ? "konumsuz" : `X${Math.round(k.x)} Y${Math.round(k.y)}`;
+      return `<option value="${kacisli(k.damga)}">${saat} · ${yer}</option>`;
+    }).join("");
+    if (onceki && [...sec.options].some((o) => o.value === onceki)) sec.value = onceki;
+  }
+}
+
+async function goruntuDurumYukle() {
+  try { goruntuDurumYaz(await apiIste("/api/goruntu/durum")); }
+  catch (h) { /* bölüm açılmamışsa sorun değil */ }
+}
+
+/** Kareyi ve maskesini üst üste gösterir. */
+function goruntuOnizle(damga, esik) {
+  const kutu = $("#gr-onizleme");
+  if (!kutu) return;
+  const jeton = encodeURIComponent(S.jeton || "");
+  $("#gr-kare-im").src = `/api/kare/${encodeURIComponent(damga)}?jeton=${jeton}`;
+  const m = $("#gr-maske-im");
+  m.src = `/api/goruntu/maske?damga=${encodeURIComponent(damga)}`
+    + `&esik=${esik == null ? -9 : esik}&jeton=${jeton}&t=${Date.now()}`;
+  m.classList.toggle("gizli", !$("#gr-maske").checked);
+  kutu.classList.remove("gizli");
+}
+
+function goruntuSonucYaz(y) {
+  const ozet = $("#gr-ozet");
+  const liste = $("#gr-liste");
+  if (!ozet || !liste) return;
+
+  const parca = [
+    `eşik ${Number(y.esik).toFixed(2)}`,
+    `%${(100 * y.oran).toFixed(1)} yeşil`,
+    `${y.ham_leke} ham leke → ${y.lekeler_px.length} kalan`,
+  ];
+  // Otsu ayrımı: 0.75 altındaysa otomatik eşik bu sahnede güvenilmez.
+  if (y.otsu_ayrim != null) {
+    parca.push(`ayrım ${y.otsu_ayrim}${y.otsu_ayrim < 0.75 ? " (sabit eşik doğru)" : ""}`);
+  }
+  ozet.innerHTML = `<div class="alt-not">${parca.join(" · ")}</div>`
+    + (y.ret && y.ret.length
+      ? `<div class="rozet-uyari" style="display:block;margin-top:6px">${
+        y.ret.map(kacisli).join("<br>")}</div>`
+      : `<div class="alt-not" style="margin-top:4px">
+          <b>${y.eslesen.length}</b> eşleşen ·
+          <b>${y.yabani_aday.length}</b> yabani aday ·
+          <b>${y.gorunmeyen.length}</b> bulunamayan</div>`);
+  ozet.classList.remove("gizli");
+
+  /* İKİ SATIR. Beş sütun 380 piksellik yan panele sığmıyor; ekran
+   * görüntüsünde etiketler soldan kırpılıyordu ve kırpılmış bir ölçü
+   * yanlış okunan bir ölçüdür. Üstte kim, altta ne kadar. */
+  const satir = (etiket, sinif, ad, l) => `
+    <div class="gr-satir ${sinif}">
+      <div class="gr-bas">
+        <span class="gr-etiket">${etiket}</span>
+        <span class="gr-ad">${kacisli(ad || "—")}</span>
+      </div>
+      <div class="gr-alt">
+        <span>X${Math.round(l.x)} Y${Math.round(l.y)}</span>
+        <span>⌀${Number(l.cap_mm).toFixed(0)} mm</span>
+        <span>${Number(l.alan_mm2).toFixed(0)} mm²</span>
+      </div>
+    </div>`;
+
+  liste.innerHTML =
+    y.eslesen.map((e) => satir("eşleşen", "gr-yesil", e.ad, e.leke)).join("")
+    + y.yabani_aday.map((b) => satir("yabani aday", "gr-turuncu", "", b)).join("")
+    + y.gorunmeyen.map((b) => `
+      <div class="gr-satir gr-kirmizi">
+        <div class="gr-bas">
+          <span class="gr-etiket">bulunamadı</span>
+          <span class="gr-ad">${kacisli(b.ad)}</span>
+        </div>
+        <div class="gr-alt" title="Ölmüş demek değil — çimlenmemiş ya da kare kaçırmış olabilir">
+          <span>X${Math.round(b.x)} Y${Math.round(b.y)}</span>
+          <span>leke yok</span>
+        </div>
+      </div>`).join("");
+
+  // Haritaya ver. `noktalarDegisti(true)` katmanları yeniden çizdiriyor.
+  if (window.Tarla) {
+    Tarla._tespitVeri = y;
+    if (Tarla.noktalarDegisti) Tarla.noktalarDegisti(true);
+  }
+}
+
+async function goruntuCoz() {
+  const damga = ($("#gr-kare") || {}).value || "";
+  const esik = $("#gr-esik").value === "" ? null : Number($("#gr-esik").value);
+  const enAz = $("#gr-enaz").value === "" ? null : Number($("#gr-enaz").value);
+  try {
+    const y = await apiIste("/api/goruntu/coz", {
+      method: "POST",
+      body: JSON.stringify({ damga, esik, en_az_piksel: enAz }),
+    });
+    goruntuOnizle(y.damga, esik);
+    goruntuSonucYaz(y);
+    gunluk(`✓ ${y.damga}: ${y.lekeler_px.length} leke, ${y.eslesen.length} eşleşme`, "ok");
+  } catch (h) {
+    gunluk(`✕ Çözümleme: ${h.message}`, "hata");
+  }
+}
+
+/** Seçili kare ile ondan bir öncekinin farkı — aynı noktada çekilmişlerse. */
+async function goruntuFark() {
+  const sec = $("#gr-kare");
+  const i = sec.selectedIndex;
+  if (i < 0 || i + 1 >= sec.options.length) {
+    gunluk("Karşılaştırılacak daha eski bir kare yok", "uyari");
+    return;
+  }
+  try {
+    const y = await apiIste("/api/goruntu/fark", {
+      method: "POST",
+      body: JSON.stringify({ a: sec.options[i + 1].value, b: sec.options[i].value }),
+    });
+    const yon = (ad, etiket) => {
+      const k = y[ad];
+      if (!k) return `${etiket}: yok`;
+      return `${etiket}: X${Math.round(k.x)} Y${Math.round(k.y)}, `
+        + `${Number(k.en_mm).toFixed(0)}×${Number(k.boy_mm).toFixed(0)} mm`;
+    };
+    $("#gr-ozet").innerHTML = `<div class="alt-not">
+      gürültü σ ${y.sigma} → eşik ${y.esik} · konum kayması ${y.kayma_mm} mm<br>
+      <b>koyulaşan</b> %${(100 * y.koyulasan_oran).toFixed(1)} — ${yon("koyulasan", "yer")}<br>
+      <b>açılan</b> %${(100 * y.acilan_oran).toFixed(1)} — ${yon("acilan", "yer")}
+      </div>
+      <div class="alt-not" style="margin-top:4px">Koyulaşma ıslanma ya da
+      yeni gölge; açılma kuruma ya da yeni açık renkli bir nesne.</div>`;
+    $("#gr-ozet").classList.remove("gizli");
+    gunluk(`✓ Fark: %${(100 * y.koyulasan_oran).toFixed(1)} koyulaşma`, "ok");
+  } catch (h) {
+    gunluk(`✕ Fark: ${h.message}`, "hata");
+  }
+}
+
+async function goruntuCimlenme() {
+  const secim = (window.Tarla && Tarla.secimDurumu && Tarla.secimDurumu()) || [];
+  if (!secim.length) {
+    gunluk("Önce Tarla sayfasından nokta seçin", "uyari");
+    return;
+  }
+  const damga = ($("#gr-kare") || {}).value || "";
+  const esik = $("#gr-esik").value === "" ? null : Number($("#gr-esik").value);
+  try {
+    const y = await apiIste("/api/goruntu/cimlenme", {
+      method: "POST",
+      body: JSON.stringify({ damga, noktalar: secim, esik }),
+    });
+    const kutu = $("#gr-cimlenme");
+    kutu.innerHTML = `<div class="alt-not">eşik ${Number(y.esik).toFixed(2)} ·
+      pencere yarıçapı ${y.yaricap_mm} mm</div>`
+      + y.noktalar.map((n) => {
+        if (n.durum !== "ölçüldü") {
+          return `<div class="gr-satir">
+            <div class="gr-bas"><span class="gr-ad">${kacisli(n.ad)}</span></div>
+            <div class="gr-alt"><span>${kacisli(n.durum)}</span></div></div>`;
+        }
+        const yuzde = 100 * n.yesil_oran;
+        // Sınıf değil, SAYI gösteriyoruz: tek ölçüm "çimlendi" demez.
+        return `<div class="gr-satir ${yuzde > 2 ? "gr-yesil" : ""}">
+          <div class="gr-bas"><span class="gr-ad">${kacisli(n.ad)}</span>
+            <span class="gr-etiket">%${yuzde.toFixed(1)} yeşil</span></div>
+          <div class="gr-alt"><span>${n.yesil_px}/${n.pencere_px} px</span>
+            <span>${n.tam ? "" : "pencere kırpıldı"}</span></div>
+        </div>`;
+      }).join("");
+    kutu.classList.remove("gizli");
+  } catch (h) {
+    gunluk(`✕ Çimlenme: ${h.message}`, "hata");
+  }
+}
+
 async function kalibrasyonYukle() {
   try {
     const y = await apiIste("/api/kamera/kalibrasyon");
@@ -1195,6 +1416,27 @@ function kalibBagla() {
   $("#d-kalib-kare1").onclick = () => kalibIsaretle(1);
   $("#d-kalib-kare2").onclick = () => kalibIsaretle(2);
   $("#d-kalib-temizle").onclick = kalibSifirla;
+  // Görüntü çözümleme. Bölüm ilk açıldığında durumu çekiyoruz: kapalıyken
+  // istek atmanın anlamı yok, Pi'de numpy yoksa zaten kullanılamıyor.
+  const grBolum = $("#bolum-goruntu");
+  if (grBolum) {
+    const bas = grBolum.querySelector(".bolum-bas");
+    if (bas) bas.addEventListener("click", () => {
+      if (!grBolum.classList.contains("kapali")) goruntuDurumYukle();
+    });
+  }
+  const grCoz = $("#d-gr-coz");
+  if (grCoz) grCoz.onclick = goruntuCoz;
+  const grFark = $("#d-gr-fark");
+  if (grFark) grFark.onclick = goruntuFark;
+  const grCim = $("#d-gr-cimlenme");
+  if (grCim) grCim.onclick = goruntuCimlenme;
+  const grMaske = $("#gr-maske");
+  if (grMaske) grMaske.onchange = () => {
+    const m = $("#gr-maske-im");
+    if (m) m.classList.toggle("gizli", !grMaske.checked);
+  };
+
   $("#d-kalib-kaydet").onclick = async () => {
     try {
       const y = await apiIste("/api/kamera/kalibrasyon", {

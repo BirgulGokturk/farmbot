@@ -16,6 +16,7 @@ import asyncio
 import base64
 import json
 import logging
+import math
 import os
 import subprocess
 import time
@@ -1115,6 +1116,344 @@ async def api_egri_deger(ad: str = Query(...), gun: float = Query(default=0),
         raise HTTPException(status_code=404, detail=f"'{ad}' adında eğri yok")
     return {"ad": egri["ad"], "tip": egri["tip"], "birim": egri["birim"],
             "gun": gun, "deger": egriler.deger(egri, gun)}
+
+
+# --------------------------------------------------------------------------- #
+# Görüntü çözümleme — karede ne var, yatağın neresinde
+#
+# `goruntu.py` piksel dünyasında (ExG, eşik, leke), `tespit.py` milimetre
+# dünyasında (kalibrasyon + karenin konumu). Burası ikisini birleştirip
+# panele veriyor.
+#
+# NUMPY İSTEĞE BAĞLI. Pi'de `numpy` kurulu olmayabilir ve sunucunun
+# YALNIZ bu yüzden açılmaması kabul edilemez: sulama, ekim, hareket
+# görüntü işlemeye ihtiyaç duymuyor. İçe aktarma tembel; yoksa uç nokta
+# ne yapılması gerektiğini söyleyen bir hata dönüyor, sunucu çalışmaya
+# devam ediyor.
+# --------------------------------------------------------------------------- #
+
+_GORUNTU: dict[str, Any] = {"hazir": None, "hata": ""}
+
+
+def _goruntu_yukle():
+    """(goruntu, tespit, numpy, Image) ya da None — eksikse sebebi `_GORUNTU`da."""
+    if _GORUNTU["hazir"] is not None:
+        return _GORUNTU["hazir"] or None
+    try:
+        import numpy as _np
+        from PIL import Image as _Image
+        import goruntu as _goruntu
+        import tespit as _tespit
+        _GORUNTU["hazir"] = (_goruntu, _tespit, _np, _Image)
+    except Exception as hata:                       # ImportError ve türevleri
+        _GORUNTU["hazir"] = False
+        _GORUNTU["hata"] = (
+            f"Görüntü işleme için numpy ve Pillow gerekiyor ({hata}). "
+            "Pi'de: sunucu/.venv/bin/pip install numpy Pillow")
+        logger.warning("Görüntü işleme kapalı: %s", _GORUNTU["hata"])
+    return _GORUNTU["hazir"] or None
+
+
+def _kare_dizi(ham: bytes, azami_en: int = 640):
+    """JPEG baytlarını (rgb dizisi, en, boy) yapar.
+
+    Kare `azami_en`den genişse küçültülüyor. Görüş alanı değişmediği
+    için `tespit.piksel_mm` küçültülmüş piksel uzayını kabul ediyor —
+    ölçeği kendisi düzeltiyor.
+    """
+    _, _, np, Image = _goruntu_yukle()
+    import io as _io
+    im = Image.open(_io.BytesIO(ham)).convert("RGB")
+    if im.width > azami_en:
+        im = im.resize((azami_en, max(1, round(im.height * azami_en / im.width))))
+    return np.asarray(im), im.width, im.height
+
+
+def _yaricaplar(bitkiler: list[dict[str, Any]]) -> dict[str, float]:
+    """Bitki başına O ANKİ yarıçap — sulamanın kullandığı zincirin AYNISI.
+
+    Kopyalamıyoruz: `sulama.guncel_yaricap_mm` neyse o. İkisi ayrışırsa
+    haritada eşleşen bir leke sulamada eşleşmeyebilirdi.
+    """
+    tur_indeks = {t.get("slug"): t for t in turler.hepsi()}
+    egri_listesi = egriler.hepsi()
+    simdi = time.time()
+    cikti: dict[str, float] = {}
+    for b in bitkiler:
+        gun = sulama.yas_gun(b, simdi)
+        yaricap, _ = sulama.guncel_yaricap_mm(
+            b, tur_indeks.get(b.get("tur")), gun, egri_listesi)
+        cikti[b.get("ad")] = float(yaricap)
+    return cikti
+
+
+def _kare_bul(damga: str) -> dict[str, Any] | None:
+    return next((k for k in kareler.liste() if k["damga"] == damga), None)
+
+
+def _goruntu_coz(damga: str, esik: float | None, en_az_piksel: int
+                 ) -> dict[str, Any]:
+    """Bir kareyi çözümler: lekeler + milimetre + kayıtlı bitki eşlemesi."""
+    goruntu, tespit, _, _ = _goruntu_yukle()
+    kayit = _kare_bul(damga)
+    if kayit is None:
+        raise HTTPException(status_code=404, detail=f"'{damga}' damgalı kare yok")
+    ham = kareler.getir(damga)
+    if not ham:
+        raise HTTPException(status_code=404, detail="Kare dosyası okunamadı")
+
+    rgb, en, boy = _kare_dizi(ham)
+    sonuc = goruntu.bul(rgb, esik=(goruntu.ESIK if esik is None else esik),
+                        en_az_piksel=en_az_piksel)
+    kalib = kalibrasyon.oku()
+    cozum = tespit.cozumle(sonuc["lekeler"], kayit, kalib,
+                           genislik_px=en, yukseklik_px=boy)
+
+    # Eşleme yalnız milimetre varken anlamlı.
+    eslesme: dict[str, Any] = {"eslesen": [], "yabani_aday": [], "gorunmeyen": []}
+    if not cozum["ret"]:
+        hepsi = [n for n in noktalar.hepsi() if n.get("tur")]
+        icerdeki = tespit.kare_icinde(hepsi, cozum["kare_mm"])
+        eslesme = tespit.eslestir(cozum["lekeler"], icerdeki,
+                                  yaricap_mm=_yaricaplar(icerdeki))
+    return {
+        "damga": damga, "ts": kayit.get("ts"),
+        "kare": {"x": kayit.get("x"), "y": kayit.get("y"),
+                 "en_px": en, "boy_px": boy},
+        "esik": sonuc["esik"], "oran": round(sonuc["oran"], 4),
+        "ham_leke": sonuc["ham_leke"],
+        "lekeler_px": sonuc["lekeler"],
+        "lekeler": cozum["lekeler"],
+        "kare_mm": cozum["kare_mm"],
+        "ret": cozum["ret"],
+        "eslesen": eslesme["eslesen"],
+        "yabani_aday": eslesme["yabani_aday"],
+        "gorunmeyen": [{"ad": b.get("ad"), "x": b.get("x"), "y": b.get("y"),
+                        "tur": b.get("tur")} for b in eslesme["gorunmeyen"]],
+        # Otsu bu sahnede güvenilir mi — panelde not olarak görünüyor.
+        "otsu_ayrim": round(goruntu.otsu_ayrim(goruntu.exg(rgb)), 3),
+    }
+
+
+@app.get("/api/goruntu/durum")
+async def api_goruntu_durum(jeton: str = Query(default="")):
+    """Görüntü işleme kullanılabilir mi, kalibrasyon var mı, kaç kare var."""
+    _parola_dogrula(jeton)
+    hazir = await asyncio.to_thread(_goruntu_yukle)
+    kalib = await asyncio.to_thread(kalibrasyon.oku)
+    liste = await asyncio.to_thread(kareler.liste)
+    return {
+        "hazir": bool(hazir),
+        "hata": _GORUNTU["hata"],
+        "kalibre": float(kalib.get("mm_px") or 0) > 0,
+        "mm_px": kalib.get("mm_px"),
+        "kare_sayisi": len(liste),
+        "konumlu_kare": sum(1 for k in liste if k.get("x") is not None),
+        "kareler": sorted(liste, key=lambda k: -k["ts"])[:12],
+    }
+
+
+@app.post("/api/goruntu/coz")
+async def api_goruntu_coz(govde: dict[str, Any], jeton: str = Query(default="")):
+    """Bir kareyi çözümle: bitki lekeleri, milimetre ölçüleri, eşleşmeler."""
+    _parola_dogrula(jeton)
+    if not await asyncio.to_thread(_goruntu_yukle):
+        raise HTTPException(status_code=503, detail=_GORUNTU["hata"])
+    damga = str(govde.get("damga") or "").strip()
+    if not damga:
+        liste = await asyncio.to_thread(kareler.liste)
+        if not liste:
+            raise HTTPException(status_code=404, detail="Hiç kare yok")
+        damga = max(liste, key=lambda k: k["ts"])["damga"]
+    esik = govde.get("esik")
+    esik = None if esik in (None, "") else float(esik)
+    en_az = int(govde.get("en_az_piksel") or 0) or None
+    goruntu, _, _, _ = _goruntu_yukle()
+    return await asyncio.to_thread(
+        _goruntu_coz, damga, esik, en_az or goruntu.EN_AZ_PIKSEL)
+
+
+def _goruntu_fark(damga_a: str, damga_b: str) -> dict[str, Any]:
+    """İki karenin farkı. Kareler AYNI konumda çekilmiş olmalı."""
+    goruntu, tespit, _, _ = _goruntu_yukle()
+    ka, kb = _kare_bul(damga_a), _kare_bul(damga_b)
+    if ka is None or kb is None:
+        raise HTTPException(status_code=404, detail="Karelerden biri bulunamadı")
+    if ka.get("x") is None or kb.get("x") is None:
+        raise HTTPException(
+            status_code=422,
+            detail="Karelerden birinin makine konumu yok — fark alınamaz.")
+    # Konum farkı: fark almanın ÖN ŞARTI aynı yerde çekilmiş olmaları.
+    # 2 mm eşiği ölçüm gürültüsü payı; ötesi hizasız kare demek ve
+    # hizasız iki karenin farkı baştan sona "değişim" gösterir.
+    kayma = math.hypot(float(ka["x"]) - float(kb["x"]), float(ka["y"]) - float(kb["y"]))
+    if kayma > 2.0:
+        raise HTTPException(
+            status_code=422,
+            detail=(f"Kareler farklı konumda çekilmiş ({kayma:.1f} mm kayma). "
+                    "Fark almak için makinenin aynı noktaya dönmesi gerekiyor — "
+                    "hizasız iki karenin farkı baştan sona 'değişim' gösterir."))
+
+    ra, ena, boya = _kare_dizi(kareler.getir(damga_a) or b"")
+    rb, enb, boyb = _kare_dizi(kareler.getir(damga_b) or b"")
+    if (ena, boya) != (enb, boyb):
+        raise HTTPException(status_code=422, detail="Kareler farklı çözünürlükte")
+
+    f = goruntu.fark(ra, rb)
+    kalib = kalibrasyon.oku()
+    cikti = {
+        "a": damga_a, "b": damga_b, "kayma_mm": round(kayma, 2),
+        "sigma": f["sigma"], "esik": f["esik"],
+        "koyulasan_oran": round(f["koyulasan_oran"], 4),
+        "acilan_oran": round(f["acilan_oran"], 4),
+        "koyulasan": None, "acilan": None,
+    }
+    for ad in ("koyulasan", "acilan"):
+        kutu = goruntu.kutu(f[ad])
+        if kutu is None:
+            continue
+        sahte = {"no": None, "cx": kutu["cx"], "cy": kutu["cy"],
+                 "x1": kutu["x1"], "y1": kutu["y1"],
+                 "x2": kutu["x2"], "y2": kutu["y2"],
+                 "en_px": kutu["x2"] - kutu["x1"] + 1,
+                 "boy_px": kutu["y2"] - kutu["y1"] + 1,
+                 "alan_px": kutu["alan_px"], "dolgu": 1.0}
+        cozum = tespit.cozumle([sahte], kb, kalib, genislik_px=enb, yukseklik_px=boyb)
+        cikti[ad] = (cozum["lekeler"][0] if cozum["lekeler"] else None)
+        cikti[f"{ad}_px"] = kutu
+    return cikti
+
+
+@app.post("/api/goruntu/fark")
+async def api_goruntu_fark(govde: dict[str, Any], jeton: str = Query(default="")):
+    """Aynı noktada çekilmiş iki kare arasındaki değişim.
+
+    Sulamanın gerçekten toprağa düştüğünü, bir şeyin çimlendiğini ya da
+    büyüdüğünü GÖREREK doğrulamanın yolu bu. Makine aynı koordinata
+    dönebildiği için kareler piksel piksel hizalı; hizalama adımına
+    gerek yok.
+    """
+    _parola_dogrula(jeton)
+    if not await asyncio.to_thread(_goruntu_yukle):
+        raise HTTPException(status_code=503, detail=_GORUNTU["hata"])
+    a = str(govde.get("a") or "").strip()
+    b = str(govde.get("b") or "").strip()
+    if not a or not b:
+        raise HTTPException(status_code=400, detail="İki kare damgası gerekiyor")
+    return await asyncio.to_thread(_goruntu_fark, a, b)
+
+
+def _cimlenme(damga: str, adlar: list[str], esik: float | None,
+              yaricap: float) -> dict[str, Any]:
+    """Ekilen noktaların üstünde bir şey çıkmış mı.
+
+    Bütün yatağa değil, her noktanın çevresindeki KÜÇÜK pencereye
+    bakıyoruz. Nerede ekildiğini bildiğimiz için yanlış pozitiflerin
+    çoğu daha bakmadan eleniyor — ve fide birkaç milimetre olduğu için
+    leke ayırmaya değil, pencerede yeşil ORANINA bakmak yeterli.
+    """
+    goruntu, tespit, _, _ = _goruntu_yukle()
+    kayit = _kare_bul(damga)
+    if kayit is None:
+        raise HTTPException(status_code=404, detail=f"'{damga}' damgalı kare yok")
+    ham = kareler.getir(damga)
+    if not ham:
+        raise HTTPException(status_code=404, detail="Kare dosyası okunamadı")
+    rgb, en, boy = _kare_dizi(ham)
+    kalib = kalibrasyon.oku()
+    if not tespit.kalibre_mi(kalib):
+        raise HTTPException(status_code=422, detail=tespit.YOK_KALIBRASYON)
+    if kayit.get("x") is None:
+        raise HTTPException(status_code=422, detail=tespit.YOK_KONUM)
+
+    kayitli = {n.get("ad"): n for n in noktalar.hepsi()}
+    e = (goruntu.ESIK if esik is None else esik)
+    cikti = []
+    for ad in adlar:
+        n = kayitli.get(ad)
+        if n is None:
+            cikti.append({"ad": ad, "durum": "nokta yok"})
+            continue
+        p = tespit.pencere_px(n.get("x"), n.get("y"), kayit, kalib,
+                              yaricap_mm=yaricap, genislik_px=en, yukseklik_px=boy)
+        if p is None:
+            cikti.append({"ad": ad, "durum": "kare bu noktayı görmüyor"})
+            continue
+        kirp = rgb[p["y1"]:p["y2"], p["x1"]:p["x2"]]
+        oran = goruntu.bitki_orani(kirp, e)
+        cikti.append({
+            "ad": ad, "x": n.get("x"), "y": n.get("y"), "tur": n.get("tur") or "",
+            "durum": "ölçüldü", "yesil_oran": round(oran, 4),
+            "pencere": p, "tam": p["tam"],
+            # Piksel sayısı da lazım: %2 yeşil, 100 piksellik bir
+            # pencerede 2 piksel demek ve o gürültü olabilir.
+            "pencere_px": int((p["x2"] - p["x1"]) * (p["y2"] - p["y1"])),
+            "yesil_px": int(round(oran * (p["x2"] - p["x1"]) * (p["y2"] - p["y1"]))),
+        })
+    return {"damga": damga, "esik": e, "yaricap_mm": yaricap, "noktalar": cikti}
+
+
+@app.post("/api/goruntu/cimlenme")
+async def api_goruntu_cimlenme(govde: dict[str, Any], jeton: str = Query(default="")):
+    """Ekilen noktaların üstündeki yeşil oranı — çimlenme göstergesi.
+
+    Tek ölçüm "çimlendi" demiyor: oran ZAMANLA yükseliyorsa çimlenme.
+    Karar panelde, sayıya bakan kişide.
+    """
+    _parola_dogrula(jeton)
+    if not await asyncio.to_thread(_goruntu_yukle):
+        raise HTTPException(status_code=503, detail=_GORUNTU["hata"])
+    damga = str(govde.get("damga") or "").strip()
+    if not damga:
+        liste = await asyncio.to_thread(kareler.liste)
+        if not liste:
+            raise HTTPException(status_code=404, detail="Hiç kare yok")
+        damga = max(liste, key=lambda k: k["ts"])["damga"]
+    adlar = [str(a) for a in (govde.get("noktalar") or []) if str(a).strip()]
+    if not adlar:
+        raise HTTPException(status_code=400, detail="Nokta seçilmedi")
+    if len(adlar) > AZAMI_SECIM:
+        raise HTTPException(status_code=400,
+                            detail=f"Tek seferde en fazla {AZAMI_SECIM} nokta")
+    esik = govde.get("esik")
+    esik = None if esik in (None, "") else float(esik)
+    _, tespit, _, _ = _goruntu_yukle()
+    yaricap = max(5.0, min(200.0, float(govde.get("yaricap_mm")
+                                        or tespit.CIMLENME_PENCERE_MM)))
+    return await asyncio.to_thread(_cimlenme, damga, adlar, esik, yaricap)
+
+
+@app.get("/api/goruntu/maske")
+async def api_goruntu_maske(damga: str = Query(...), esik: float = Query(default=-9.0),
+                            jeton: str = Query(default="")):
+    """Karenin maskesini PNG olarak döner — panel fotoğrafın üstüne koyuyor.
+
+    Yeşil bulunan yer opak, gerisi saydam. Böylece "makine ne gördü"
+    sorusu ekranda gözle karşılaştırılabiliyor; sayılara güvenmeden
+    önce bakılacak ilk şey bu.
+    """
+    _parola_dogrula(jeton)
+    if not await asyncio.to_thread(_goruntu_yukle):
+        raise HTTPException(status_code=503, detail=_GORUNTU["hata"])
+    goruntu, _, np, Image = _goruntu_yukle()
+
+    def uret() -> bytes:
+        ham = kareler.getir(damga)
+        if not ham:
+            raise HTTPException(status_code=404, detail="Kare bulunamadı")
+        rgb, _, _ = _kare_dizi(ham)
+        e = goruntu.ESIK if esik < -1.0 else esik
+        maske = goruntu.ac_kapa(goruntu.exg(rgb) > e)
+        h, w = maske.shape
+        rgba = np.zeros((h, w, 4), np.uint8)
+        rgba[maske] = (90, 255, 130, 150)
+        import io as _io
+        tampon = _io.BytesIO()
+        Image.fromarray(rgba, "RGBA").save(tampon, format="PNG")
+        return tampon.getvalue()
+
+    return Response(content=await asyncio.to_thread(uret), media_type="image/png",
+                    headers={"Cache-Control": "no-store"})
 
 
 # --------------------------------------------------------------------------- #

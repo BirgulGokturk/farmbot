@@ -1977,3 +1977,47 @@ table.veri.kalib th:nth-child(n+4), table.veri.kalib td:nth-child(n+4) { width: 
 }
 .serit-ic { display: flex; align-items: center; }
 .serit-ic > #d-gunluk-ac { flex: 0 0 auto; }
+
+/* ------------------------------------------------- görüntü çözümleme
+   Kare ve maske ÜST ÜSTE: maskeyi ayrı göstermek "makine ne gördü"
+   sorusunu cevaplamıyor — asıl bilgi ikisinin hizası. */
+.gr-onizleme {
+  position: relative;
+  margin-top: var(--b2);
+  border: 1px solid var(--cizgi);
+  border-radius: var(--b1);
+  overflow: hidden;
+  line-height: 0;
+}
+.gr-onizleme img { width: 100%; display: block; }
+.gr-onizleme #gr-maske-im {
+  position: absolute;
+  inset: 0;
+  /* Maske PNG'si zaten yarı saydam; karışım modu yeşili fotoğrafın
+     üstüne oturtuyor, altındaki dokuyu tamamen boğmadan. */
+  mix-blend-mode: screen;
+}
+/* İKİ SATIR: üstte kim, altta ne kadar. Beş sütun 380 piksellik yan
+   panele sığmıyordu ve etiketler soldan kırpılıyordu. */
+.gr-satir {
+  padding: 4px 0;
+  font-size: var(--yazi-kucuk);
+  border-bottom: 1px solid var(--cizgi);
+  font-variant-numeric: tabular-nums;
+}
+.gr-satir:last-child { border-bottom: none; }
+.gr-bas { display: flex; gap: 6px; align-items: baseline; }
+.gr-alt {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  color: var(--metin-2);
+  margin-top: 1px;
+}
+.gr-etiket { color: var(--metin-2); white-space: nowrap; }
+.gr-ad { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Renkler harita katmanıyla AYNI: yeşil eşleşen, turuncu yabani aday,
+   kırmızı bulunamayan. Listedeki satırla haritadaki halka aynı şey. */
+.gr-yesil .gr-etiket, .gr-yesil .gr-ad { color: #5ad07a; }
+.gr-turuncu .gr-etiket, .gr-turuncu .gr-ad { color: #e8a33d; }
+.gr-kirmizi .gr-etiket, .gr-kirmizi .gr-ad { color: #e2564a; }
