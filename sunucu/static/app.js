@@ -38,6 +38,8 @@ const S = {
   gozDuzenleniyor: false,
   kamCoz: null,         // kamera kutusundaki son çözümleme (null = kutu boş)
   kamMaske: false,      // maske katmanı açık mı
+  ekimOnay: null,       // onay bekleyen ekim oturumu (sunucudan)
+  ekimAyar: {},         // onay anahtarı ve süreler
   programlar: [],
   adimlar: [],
   bolgeDuzenleniyor: false,   // kullanıcı yazarken durum akışı üzerine yazmasın
@@ -1441,6 +1443,21 @@ function kalibBagla() {
   // Kamera kutusundaki tek tuşluk çözümleme — aynı uç noktalar, ayrı sunum.
   kameraCozumBagla();
 
+  // Ekim onayı ve ayarları.
+  ekimOnayBagla();
+  const ekimKaydet = $("#d-ekim-ayar-kaydet");
+  if (ekimKaydet) ekimKaydet.onclick = ekimAyarKaydet;
+  const ekimBolum = $("#bolum-ekim");
+  if (ekimBolum) {
+    const bas = ekimBolum.querySelector(".bolum-bas");
+    if (bas) bas.addEventListener("click", () => {
+      if (!ekimBolum.classList.contains("kapali")) ekimAyarYukle();
+    });
+  }
+  // Bölüm kapalıyken de bir kez okuyoruz: başlıktaki "onaylı/onaysız"
+  // notu, bölümü hiç açmayan kullanıcının da göreceği tek işaret.
+  ekimAyarYukle();
+
   $("#d-kalib-kaydet").onclick = async () => {
     try {
       const y = await apiIste("/api/kamera/kalibrasyon", {
@@ -1970,6 +1987,148 @@ function kareyiTazele(ts, canli = false) {
   // Yeni kare geldi: eski tespitler artık BU görüntüye ait değil.
   // Üstlerinde bırakmak, bakan kişiye yeni karede bulunmuş gibi görünürdü.
   kamOrtuTemizle();
+}
+
+/* --------------------------------------------------------- ekim onayı
+ *
+ * Makine ekim dizisinin ortasında DURUYOR ve kullanıcıya soruyor. İki
+ * yerde: gözün üstünde ("uç takılı mı?") ve tohumla kalkınca ("tohum
+ * ucta mı?"). İkisi de makinenin bilemediği bir şeyi soruyor — kilit
+ * servosu ve tohum sensörü bağlı değil.
+ *
+ * Karar sunucuda, burada değil: bu kutu yalnız soruyu, makinenin nerede
+ * durduğunu ve iptalin ne yapacağını gösteriyor. Onay/iptal uca gidiyor
+ * ve bir sonraki parçayı sunucu başlatıyor.
+ *
+ * İPTALİN İKİ ANLAMI. İkinci onayda "iptal" tek bir şey demiyor:
+ * tohum ucta görünüyorsa gözüne geri konabilir, görünmüyorsa yapılacak
+ * tek şey pompayı kapatmak ve gözü BOŞ bırakmak. İkisi farklı sonuç
+ * doğuruyor (göz dolu mu boş mu) ve tek bir "İptal" düğmesi hangisinin
+ * olduğunu söylemezdi.
+ */
+function ekimOnayYaz(e) {
+  const kutu = $("#ekim-onay");
+  if (!kutu) return;
+  S.ekimOnay = e || null;
+  const onay = e && (e.durum === "onay1" || e.durum === "onay2");
+
+  // Onay dışındaki durumlar günlüğe düşüyor; kutu kapanıyor.
+  if (!onay) {
+    kutu.classList.add("gizli");
+    $("#ekim-onay-iptal-secim").classList.add("gizli");
+    return;
+  }
+
+  $("#ekim-onay-adim").textContent =
+    e.durum === "onay1" ? "1. onay · uç" : "2. onay · tohum";
+  $("#ekim-onay-ilerleme").textContent =
+    `tohum ${e.sira}/${e.toplam}` + (e.tohum ? ` · ${e.tohum}` : "");
+  $("#ekim-onay-soru").textContent = e.soru || "";
+  $("#ekim-onay-gerekce").textContent = e.gerekce || "";
+
+  const k = e.konum || {};
+  const say = (d) => (d == null ? "?" : Math.round(Number(d)));
+  $("#ekim-onay-yer").innerHTML = k.ad
+    ? `Kafa <b>${kacisli(k.ad)}</b> gözünün üstünde —
+       X${say(k.x)} Y${say(k.y)} Z${say(k.z)}`
+      + (e.goz && e.tohum
+        ? `<br>'${kacisli(e.goz)}' gözünden <b>${kacisli(e.tohum)}</b> hedefine`
+        : "")
+      + (e.pompa_acik ? "<br><b>Vakum pompası AÇIK.</b>" : "")
+    : "";
+
+  $("#ekim-onay-iptal-secim").classList.add("gizli");
+  $("#ekim-onay-dugmeler").classList.remove("gizli");
+  kutu.classList.remove("gizli");
+}
+
+async function ekimOnayYukle() {
+  try { ekimOnayYaz(await apiIste("/api/ekim/onay")); }
+  catch (h) { /* parola yoksa ya da uç yoksa sorun değil */ }
+}
+
+async function ekimOnayGonder(yol, govde) {
+  const dugmeler = $$("#ekim-onay .dugme");
+  dugmeler.forEach((d) => { d.disabled = true; });
+  try {
+    ekimOnayYaz(await apiIste(yol, {
+      method: "POST", body: JSON.stringify(govde || {}),
+    }));
+  } catch (h) {
+    gunluk(`✕ Ekim onayı: ${h.message}`, "hata");
+    // Uç reddettiyse ekrandaki hâl artık güvenilmez: gerçeği geri okuyoruz.
+    ekimOnayYukle();
+  } finally {
+    dugmeler.forEach((d) => { d.disabled = false; });
+  }
+}
+
+function ekimOnayBagla() {
+  const d = (kimlik, is) => { const e = $(kimlik); if (e) e.onclick = is; };
+  d("#d-ekim-onayla", () => ekimOnayGonder("/api/ekim/onayla"));
+  d("#d-ekim-iptal", () => {
+    // İlk onayda iptal tek anlamlı: pompa hiç açılmadı, hiçbir şey
+    // olmadı. İkincisinde seçim gerekiyor.
+    if ((S.ekimOnay || {}).durum === "onay1") {
+      ekimOnayGonder("/api/ekim/iptal");
+      return;
+    }
+    $("#ekim-onay-iptal-secim").classList.remove("gizli");
+    $("#ekim-onay-dugmeler").classList.add("gizli");
+  });
+  d("#d-ekim-iptal-geri", () => ekimOnayGonder("/api/ekim/iptal", { kip: "geri_koy" }));
+  d("#d-ekim-iptal-birak", () => ekimOnayGonder("/api/ekim/iptal", { kip: "birak" }));
+  d("#d-ekim-iptal-vazgec", () => {
+    $("#ekim-onay-iptal-secim").classList.add("gizli");
+    $("#ekim-onay-dugmeler").classList.remove("gizli");
+  });
+}
+
+/* Ekim ayarları: onay anahtarı ve iki süre. Süreler zaten koddaydı ama
+ * kutusu yoktu — sahada vakumun tutmadığı görülünce değiştirilecek ilk
+ * şey onlar. */
+function ekimAyarYaz(a) {
+  S.ekimAyar = a || {};
+  const anahtar = $("#a-ekim-onay");
+  const not = $("#ekim-ayar-durum");
+  const uyari = $("#ekim-onay-uyari");
+  if (!anahtar || !not) return;
+  if (document.activeElement !== anahtar) anahtar.checked = !!a.onay_iste;
+  const v = $("#ekim-vakum"), ds = $("#ekim-dusme");
+  if (v && document.activeElement !== v) v.value = a.vakum_sn;
+  if (ds && document.activeElement !== ds) ds.value = a.dusme_sn;
+  not.textContent = (a.onay_iste ? "onaylı" : "onaysız")
+    + ` · vakum ${a.vakum_sn} sn · düşme ${a.dusme_sn} sn`;
+  if (uyari) {
+    // Kapalıyken ne olacağını AÇIKÇA söylüyoruz: kullanıcı anahtarı
+    // "ekim hızlansın" diye kapatıp neden hiç başlamadığını aramasın.
+    uyari.textContent = a.onay_iste
+      ? ""
+      : "Onay kapalı: kilit şartı geri geldi. Uç kilit servosu bağlı "
+        + "değilse (lock_reg = 0) ekim dizisi hiç başlamayacak.";
+    uyari.classList.toggle("gizli", !!a.onay_iste);
+  }
+}
+
+async function ekimAyarYukle() {
+  try { ekimAyarYaz(await apiIste("/api/ekim/ayar")); }
+  catch (h) { /* bölüm açılmamışsa sorun değil */ }
+}
+
+async function ekimAyarKaydet() {
+  try {
+    ekimAyarYaz(await apiIste("/api/ekim/ayar", {
+      method: "POST",
+      body: JSON.stringify({
+        onay_iste: $("#a-ekim-onay").checked,
+        vakum_sn: Number($("#ekim-vakum").value),
+        dusme_sn: Number($("#ekim-dusme").value),
+      }),
+    }));
+    gunluk("✓ Ekim ayarları kaydedildi", "ok");
+  } catch (h) {
+    gunluk(`✕ Ekim ayarları: ${h.message}`, "hata");
+  }
 }
 
 /* -------------------------------------- kamera kutusunda tek tuşla çözümleme
@@ -2922,7 +3081,14 @@ function wsBagla() {
   const ws = new WebSocket(`${protokol}://${location.host}/ws/panel?jeton=${encodeURIComponent(S.jeton)}`);
   S.ws = ws;
 
-  ws.onopen = () => { rozetYaz("#rozet-sunucu", "canli", "Sunucu bağlı"); gunluk("Sunucuya bağlanıldı"); };
+  ws.onopen = () => {
+    rozetYaz("#rozet-sunucu", "canli", "Sunucu bağlı");
+    gunluk("Sunucuya bağlanıldı");
+    // Onay bekleyen bir ekim varken panel yenilenmiş ya da kopmuş
+    // olabilir. Soket paketleri yalnız DEĞİŞİMİ taşıyor; o anki hâli
+    // uçtan okuyoruz, yoksa makine sizi beklerken ekran boş kalırdı.
+    ekimOnayYukle();
+  };
 
   ws.onmessage = (olay) => {
     const m = JSON.parse(olay.data);
@@ -2931,6 +3097,7 @@ function wsBagla() {
     else if (m.tip === "durum") durumGuncelle(m.durum);
     else if (m.tip === "kare") kareyiTazele(m.ts);
     else if (m.tip === "canli") kareyiTazele(m.ts, true);
+    else if (m.tip === "ekim") ekimOnayYaz(m.ekim);
     else if (m.tip === "gunluk") gunluk(m.metin, m.seviye === "hata" ? "hata" : "");
   };
 

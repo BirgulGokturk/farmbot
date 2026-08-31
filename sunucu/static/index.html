@@ -1052,6 +1052,69 @@
         </div>
       </section>
 
+      <!-- EKİM — onay adımı ve süreler. Uç değiştirmenin altında, çünkü
+           tohumluk gözleri orada tanımlanıyor. -->
+      <section class="bolum kapali" id="bolum-ekim">
+        <div class="bolum-ust">
+          <button class="bolum-bas" aria-expanded="false">
+            <svg class="ikon ok"><use href="#i-ok"/></svg>
+            <span class="bolum-ad">Ekim</span>
+            <span class="bolum-not" id="ekim-ayar-durum">—</span>
+          </button>
+          <button class="yardim" type="button" aria-expanded="false"
+                  aria-controls="yardim-ekim" aria-label="Açıklama">?</button>
+        </div>
+        <div class="bolum-govde">
+          <p class="yardim-metin gizli" id="yardim-ekim">
+            Ekim dizisi tohumluk gözünden vakumla tohum alıp hedefe
+            bırakıyor. Makinede <b>iki sensör eksik</b> ve onay adımı tam
+            olarak o ikisinin yerini dolduruyor:<br><br>
+            <b>Uç kilidi (lock_reg).</b> Bağlı olmadığı için yazılım vakum
+            ucunun takılı olduğunu doğrulayamıyor — servo komutu sessiz
+            geçiyor ve uç takılı sanılıyor. Uç yokken kafa gözün içine
+            iner.<br><br>
+            <b>Tohum sensörü (presence_reg).</b> Bağlı olmadığı için
+            vakumun tohumu tuttuğunu makine bilemiyor. Tohum yolda
+            düşerse yazılım fark etmez; hedefe varır, pompayı kapatır ve
+            "ekildi" der. Geriye boş bir çukur kalır ve bunu haftalar
+            sonra, hiçbir şey çıkmayınca anlarsınız.<br><br>
+            Onay açıkken kafa iki kez durup size soruyor ve <b>kilit
+            şartı kalkıyor</b> — doğrulamayı siz yapıyorsunuz. Onayı
+            kapatırsanız şart geri gelir: <code>lock_reg = 0</code> olan
+            bir kurulumda ekim hiç başlamaz. Yani bu anahtar ekimi
+            kolaylaştırmıyor, doğrulamayı kimin yapacağını seçiyor.
+          </p>
+
+          <label class="anahtar">
+            <input type="checkbox" id="a-ekim-onay" checked>
+            <span class="yuva"></span>
+            <span class="ikincil">Onay iste — kafa durup sorsun</span>
+          </label>
+          <div class="rozet-uyari gizli" id="ekim-onay-uyari"></div>
+
+          <div class="alan-izgara">
+            <div class="alan">
+              <label for="ekim-vakum">Vakum tutma (sn)</label>
+              <input type="number" id="ekim-vakum" step="0.1" min="0.1" max="10">
+            </div>
+            <div class="alan">
+              <label for="ekim-dusme">Düşme bekleme (sn)</label>
+              <input type="number" id="ekim-dusme" step="0.1" min="0.1" max="10">
+            </div>
+          </div>
+          <p class="alt-not"><b>Vakum tutma:</b> gözün dibinde, pompa
+            açıldıktan sonra beklenen süre. Hava pompasının hattı
+            boşaltması anlık değil; kısa olursa tohum gözde kalır.
+            <b>Düşme bekleme:</b> hedefte pompa kapandıktan sonra
+            beklenen süre. Vakum kesilince tohum serbest kalıyor ama
+            birkaç milimetre düşüyor; kafa hemen kalkarsa tohum uçla
+            birlikte geri gidebiliyor.</p>
+          <div class="satir-8">
+            <button class="dugme birincil" id="d-ekim-ayar-kaydet">Kaydet</button>
+          </div>
+        </div>
+      </section>
+
       <section class="bolum kapali" id="bolum-kamera-kalib">
         <div class="bolum-ust">
           <button class="bolum-bas" aria-expanded="false">
@@ -1386,6 +1449,43 @@
 
     <!-- Seçilen öğenin kartı — sahnenin sağında yüzüyor. -->
     <div id="tarla-kart" class="tarla-kart gizli"></div>
+
+    <!-- EKİM ONAYI — sahnenin ORTASINDA, üstte. Yan panelde bir yere
+         koymadık bilerek: kullanıcı makinenin başında duruyor ve
+         ekrana şöyle bir bakıp onaylayacak; kaydırıp aramak zorunda
+         kalmamalı. Makine bu sırada DURUYOR, yani araya girmiyor.
+         Onay beklenmiyorken tamamen gizli. -->
+    <div id="ekim-onay" class="ekim-onay gizli" role="alertdialog"
+         aria-labelledby="ekim-onay-soru" aria-describedby="ekim-onay-gerekce">
+      <div class="ekim-onay-bas">
+        <span class="ekim-onay-rozet" id="ekim-onay-adim">Onay</span>
+        <span class="ikincil" id="ekim-onay-ilerleme"></span>
+      </div>
+      <div class="ekim-onay-soru" id="ekim-onay-soru"></div>
+      <!-- NEREDE DURUYOR. Kullanıcı makineye bakarak onaylayacak ama dört
+           göz yan yana: hangisinin başında olduğunu bilmeli. -->
+      <div class="ekim-onay-yer" id="ekim-onay-yer"></div>
+      <p class="ekim-onay-gerekce" id="ekim-onay-gerekce"></p>
+      <div class="ekim-onay-dugmeler" id="ekim-onay-dugmeler">
+        <button class="dugme birincil" id="d-ekim-onayla">Onayla, devam et</button>
+        <button class="dugme tehlike" id="d-ekim-iptal">İptal</button>
+      </div>
+      <!-- İkinci onayda iptalin İKİ ayrı anlamı var ve ikisi farklı şey
+           yapıyor; tek "İptal" düğmesi hangisi olduğunu söylemezdi. -->
+      <div class="ekim-onay-iptal gizli" id="ekim-onay-iptal-secim">
+        <p class="alt-not"><b>Pompa açık ve tohum ucta olabilir.</b>
+          Sessizce bırakmıyoruz — ne yapılacağını seçin:</p>
+        <button class="dugme" id="d-ekim-iptal-geri">Tohumu gözüne geri koy</button>
+        <p class="alt-not">Kafa gözüne iner, pompa kapanır, tohum kendi
+          gözüne düşer ve göz yeniden <b>dolu</b> işaretlenir. Tohum ucta
+          <b>görünüyorsa</b> bu.</p>
+        <button class="dugme" id="d-ekim-iptal-birak">Pompayı kapat, tohum düşsün</button>
+        <p class="alt-not">Pompa olduğu yerde kapanır. Göz <b>boş</b> kalır —
+          tohum ya yolda düşmüştü ya şimdi tepsinin üstüne düşecek. Tohum
+          ucta <b>görünmüyorsa</b> bu.</p>
+        <button class="dugme" id="d-ekim-iptal-vazgec">Vazgeç, geri dön</button>
+      </div>
+    </div>
 
     <!-- KAMERA — sahnenin sağ ALTINDA yüzüyor. Panel bölümündeki kopyası
          duruyor ama oraya ulaşmak için sayfayı kaydırmak gerekiyordu;

@@ -34,10 +34,48 @@ kopukken de işlemeli.
    geçiyor (bkz. `uclar._servo`); yani uç takılı SANILIP dizi
    yürüyebilir. Vakum ucunu taşımayan bir kafa, gözün içine iner ve
    tepsiyi kırar.
+
+   TEK İSTİSNASI İNSAN. Onay adımı açıkken kullanıcı makinenin başında
+   duruyor ve "uç takılı" diye gözüyle doğruluyor; eksik sensörün yerini
+   insan alıyor ve kilit şartı kalkıyor (bkz. `coz(onay=...)`). Onay
+   kapatılırsa şart geri geliyor: ya sensör doğrular ya insan, ikisi de
+   yoksa ekim başlamaz.
+
+Onay adımları — dizi neden PARÇALARA bölünüyor
+----------------------------------------------
+
+Kullanıcı iki yerde gözüyle doğruluyor: gözün üstünde ("uç takılı mı?")
+ve tohumla kalkınca ("tohum ucta görünüyor mu?"). İkincisi asıl önemli
+olan, çünkü `presence_reg` bağlı değil: vakumun tohumu gerçekten
+tuttuğunu makine BİLEMİYOR. Taşırken düşerse yazılım fark etmez, hedefe
+varır, pompayı kapatır ve "ekildi" der — geriye boş bir çukur kalır.
+
+Bunu yapmanın yolu diziye yeni bir adım tipi eklemek DEĞİL: `dizi.py`
+makinenin çalışan yürütücüsü. Onun yerine aynı 11 adım parçalara
+bölünüyor ve her parça MEVCUT yürütücüyle koşuyor; arada sunucu
+bekliyor. Yürütücü hiç değişmiyor.
+
+POMPAYI SUNUCU AÇIYOR, DİZİ DEĞİL. Bunu ölçtükten sonra öğrendik:
+`dizi._roleleri_kapat` bir dizinin AÇTIĞI röleleri dizi biterken
+kapatıyor (yarıda kesilen sulamanın hortumu açık bırakmaması için, ve
+orada doğru olan da bu). Ama pompayı açan parça bittiğinde onay
+beklerken pompa kapanırdı ve tohum daha ikinci onay sorulmadan düşerdi.
+Dizinin DIŞINDAN, `role` komutuyla açılan röle bu listeye girmiyor ve
+parçalar arasında açık kalıyor. Kapatma adımı dizinin içinde kalabiliyor:
+`role ... durum: false` her hâlükârda Arduino'ya gidiyor.
+
+Bunun bedeli var ve saklamıyoruz: dizinin açtığı röleyi kapatan güvenlik
+ağı artık bu pompayı kapsamıyor. Yerini sunucu alıyor — oturum hatayla
+biterse ya da iptal edilirse pompayı açıkça kapatıyor (`main.py`,
+`_ekim_pompa_kapat`).
 """
 
 from __future__ import annotations
 
+import json
+import os
+import tempfile
+import threading
 from typing import Any
 
 import dikim
@@ -63,6 +101,97 @@ ADIM_BASINA_TOHUM = 11
 
 class EkimHatasi(Exception):
     """Ekim dizisi kurulamadı."""
+
+
+# --------------------------------------------------------------------------- #
+# Ekim ayarları — küçük bir JSON dosyası
+#
+# `kalibrasyon.py` ile aynı kalıp: atomik yazma, bozuk dosyada varsayılana
+# dönme. Ayrı bir modül açmadık; bunlar ekimin ayarları ve ekimin yanında
+# duruyorlar.
+#
+# `onay_iste` VARSAYILAN OLARAK AÇIK. Kapalıyken kilit şartı geri geliyor
+# ve `lock_reg = 0` olan bir kurulumda ekim hiç başlamıyor — yani kapatmak
+# ekimi kolaylaştırmıyor, zorlaştırıyor. Doğru olan da bu: doğrulamayı ya
+# sensör yapar ya insan.
+# --------------------------------------------------------------------------- #
+
+AYAR_VARSAYILAN: dict[str, Any] = {
+    "onay_iste": True,
+    "vakum_sn": VAKUM_SANIYE,
+    "dusme_sn": DUSME_SANIYE,
+}
+
+# Süre sınırları `coz`dakiyle aynı: panelden gelen sayıya körlemesine
+# güvenilmiyor. 0.1 sn altı pompanın hattı boşaltmasına yetmiyor, 10 sn
+# üstü kullanıcının unuttuğu bir sayı.
+AYAR_SINIR: dict[str, tuple[float, float]] = {
+    "vakum_sn": (0.1, 10.0),
+    "dusme_sn": (0.1, 10.0),
+}
+
+_AYAR_KILIT = threading.Lock()
+
+
+def _ayar_yolu() -> str:
+    ozel = os.environ.get("EKIM_AYAR_YOLU")
+    if ozel:
+        return ozel
+    veri = os.environ.get("VERI_YOLU")
+    if veri:
+        return os.path.join(os.path.dirname(veri) or ".", "ekim_ayarlari.json")
+    return os.path.join(os.path.dirname(__file__), "ekim_ayarlari.json")
+
+
+def ayar_oku() -> dict[str, Any]:
+    yol = _ayar_yolu()
+    with _AYAR_KILIT:
+        if not os.path.exists(yol):
+            return dict(AYAR_VARSAYILAN)
+        try:
+            with open(yol, encoding="utf-8") as dosya:
+                veri = json.load(dosya)
+        except (json.JSONDecodeError, OSError):
+            # Bozuk dosya yüzünden ekim çalışmaz olmasın: varsayılana
+            # dönüyoruz ve varsayılan zaten GÜVENLİ taraf (onay açık).
+            return dict(AYAR_VARSAYILAN)
+    if not isinstance(veri, dict):
+        return dict(AYAR_VARSAYILAN)
+    return ayar_duzelt({**AYAR_VARSAYILAN, **veri})
+
+
+def ayar_duzelt(veri: dict[str, Any]) -> dict[str, Any]:
+    """Değerleri sınırlara çeker. Kırpma SESSİZ değil: `ayar_yaz` kırpılmış
+    hâli geri döndürüyor ve panel ekranda o değeri gösteriyor."""
+    cikti = dict(AYAR_VARSAYILAN)
+    cikti["onay_iste"] = bool(veri.get("onay_iste", True))
+    for ad, (alt, ust) in AYAR_SINIR.items():
+        cikti[ad] = max(alt, min(ust, _sayi(veri.get(ad), AYAR_VARSAYILAN[ad])))
+    return cikti
+
+
+def ayar_yaz(veri: dict[str, Any]) -> dict[str, Any]:
+    temiz = ayar_duzelt(veri)
+    yol = _ayar_yolu()
+    klasor = os.path.dirname(yol) or "."
+    os.makedirs(klasor, exist_ok=True)
+    with _AYAR_KILIT:
+        gecici = tempfile.NamedTemporaryFile("w", encoding="utf-8", dir=klasor,
+                                             prefix=".ekim-", suffix=".tmp",
+                                             delete=False)
+        try:
+            json.dump(temiz, gecici, ensure_ascii=False, indent=1)
+            gecici.flush()
+            os.fsync(gecici.fileno())
+            gecici.close()
+            os.replace(gecici.name, yol)
+        except Exception:
+            try:
+                os.unlink(gecici.name)
+            except OSError:
+                pass
+            raise
+    return temiz
 
 
 def _sayi(deger: Any, varsayilan: float = 0.0) -> float:
@@ -186,12 +315,116 @@ def _adimlar_bir_tohum(hedef: dict[str, Any], goz: dict[str, Any], *,
     ]
 
 
+# --------------------------------------------------------------------------- #
+# Onay noktalarına göre parçalama
+#
+# 11 adım DEĞİŞMİYOR; olduğu gibi bölünüyor. Kesme yerleri:
+#
+#   0        göz↑            parça A   → [ONAY 1: uç takılı mı?]
+#   1        göz (in)        parça B1
+#   2        pompa AÇ        ── diziden çıkarılıyor, sunucu gönderiyor ──
+#   3,4,5    bekle/göz/kalk  parça B2  → [ONAY 2: tohum ucta mı?]
+#   6..10    taşı/in/kapat   parça C
+#
+# B1 ile B2'nin arasında kullanıcı YOK: sunucu pompayı açıp hemen devam
+# ediyor. Bölünmesinin tek sebebi pompanın diziden değil sunucudan
+# açılması gerekmesi (bkz. modül başlığı). Adımların SIRASI korunuyor:
+# önce iniliyor, sonra pompa açılıyor — özgün dizideki gibi.
+# --------------------------------------------------------------------------- #
+
+#: `_adimlar_bir_tohum` çıktısındaki pompa-aç adımının indeksi.
+POMPA_AC_INDEKS = 2
+
+#: Parça adı -> (başlangıç, bitiş) dilimi. Bitiş dışlamalı.
+PARCA_DILIM: dict[str, tuple[int, int]] = {
+    "a": (0, 1),
+    "b1": (1, 2),
+    "b2": (3, 6),
+    "c": (6, ADIM_BASINA_TOHUM),
+}
+
+#: Onay beklenen parçalar: parça bitince kullanıcıya sorulacak.
+PARCA_SIRASI = ("a", "b1", "b2", "c")
+ONAY_SONRASI = {"a": "onay1", "b2": "onay2"}
+
+SORU = {
+    "onay1": "Vakum ucu takılı mı? Tohum alınsın mı?",
+    "onay2": "Tohum ucun ucunda görünüyor mu? Hedefe taşınıp ekilsin mi?",
+}
+
+GEREKCE = {
+    "onay1": ("Kafa gözün üstünde duruyor, henüz inmedi. Uç kilit servosu "
+              "bağlı olmadığı için yazılım ucun takılı olduğunu "
+              "doğrulayamıyor — bunu siz doğruluyorsunuz. Uç yoksa kafa "
+              "gözün içine iner ve tepsiyi kırar."),
+    "onay2": ("Vakum açık ve tohum ucta olmalı. Tohum sensörü (presence_reg) "
+              "bağlı değil: vakumun tohumu gerçekten tuttuğunu makine "
+              "BİLEMİYOR. Tohum yoksa makine yine de hedefe gider, pompayı "
+              "kapatır ve 'ekildi' der — geriye boş bir çukur kalır."),
+}
+
+
+def parcala(adimlar: list[dict[str, Any]]) -> dict[str, Any]:
+    """Tek tohumun 11 adımını onay noktalarından böler.
+
+    -> {"a": [...], "b1": [...], "b2": [...], "c": [...], "pompa_ac": {...}}
+
+    ŞEKLİ DOĞRULUYOR, varsaymıyor. Bir gün `_adimlar_bir_tohum` değişirse
+    bu fonksiyon sessizce yanlış yerden bölüp pompayı yanlış anda açardı;
+    o hata makinede tohum düşerek görünürdü, burada `EkimHatasi` olarak
+    görünüyor.
+    """
+    if len(adimlar) != ADIM_BASINA_TOHUM:
+        raise EkimHatasi(
+            f"Ekim adımları {len(adimlar)} tane, beklenen {ADIM_BASINA_TOHUM}. "
+            "Adım listesi değişmiş; onay parçalaması güncellenmeli "
+            "(ekim.parcala).")
+    pompa = adimlar[POMPA_AC_INDEKS]
+    if not (pompa.get("tip") == "role" and pompa.get("ad") == "hava_pompasi"
+            and pompa.get("durum") is True):
+        raise EkimHatasi(
+            f"{POMPA_AC_INDEKS}. adımda 'hava_pompasi aç' bekleniyordu, "
+            f"{pompa!r} bulundu. Adım sırası değişmiş; onay parçalaması "
+            "güncellenmeli (ekim.parcala).")
+    cikti: dict[str, Any] = {"pompa_ac": pompa}
+    for ad, (bas, son) in PARCA_DILIM.items():
+        cikti[ad] = [dict(a) for a in adimlar[bas:son]]
+    return cikti
+
+
+def iptal_parcasi(goz: dict[str, Any], *, guvenli_z: float,
+                  dusme_sn: float = DUSME_SANIYE) -> list[dict[str, Any]]:
+    """İkinci onayda "tohumu gözüne geri koy" denirse çalışacak adımlar.
+
+    Kafa ikinci onayda gözün ÜSTÜNDE ve pompa açık duruyor. Geri koymak
+    inip pompayı kapatmak demek: tohum kendi gözüne düşüyor ve göz
+    yeniden DOLU işaretleniyor.
+
+    `role ... durum: false` dizinin içinde kalabiliyor — kapatma her
+    hâlükârda Arduino'ya gidiyor; diziden çıkarılması gereken yalnız
+    AÇMA adımıydı.
+    """
+    gx, gy, gz = _sayi(goz.get("x")), _sayi(goz.get("y")), _sayi(goz.get("z"))
+    ad = str(goz.get("ad") or "göz")
+    return [
+        {"tip": "nokta", "ad": f"{ad}↑", "x": gx, "y": gy, "z": float(guvenli_z)},
+        {"tip": "nokta", "ad": ad, "x": gx, "y": gy, "z": gz},
+        {"tip": "role", "ad": "hava_pompasi", "durum": False},
+        {"tip": "bekle", "saniye": float(dusme_sn)},
+        # Göz yeniden DOLU: tohum içine geri düştü. B2'de boş
+        # işaretlenmişti; öyle bırakmak tepsiyi olduğundan boş gösterirdi.
+        {"tip": "goz", "ad": ad, "dolu": True, "tohum": goz.get("tohum")},
+        {"tip": "nokta", "ad": f"{ad}↑", "x": gx, "y": gy, "z": float(guvenli_z)},
+    ]
+
+
 def coz(hedefler: list[dict[str, Any]], gozler: list[dict[str, Any]] | None, *,
         guvenli_z: float, genel_toprak_z: float = 0.0,
         dikim_alanlari: list[dict[str, Any]] | None = None,
         lock_reg: int = 0, uc_takili: str | None = None,
         vakum_sn: float = VAKUM_SANIYE, dusme_sn: float = DUSME_SANIYE,
         tur_adlari: dict[str, str] | None = None,
+        onay: bool = False,
         ) -> dict[str, Any]:
     """Ekim dizisini çözer: mutlak koordinatlı adımlar + özet + ret sebepleri.
 
@@ -213,11 +446,23 @@ def coz(hedefler: list[dict[str, Any]], gozler: list[dict[str, Any]] | None, *,
     # KİLİT SERVOSU. `lock_reg` 0 iken servo komutu sessizce geçiyor;
     # kafa ucu gerçekten kilitlemiyor. Vakum ucu takılı sanılıp dizi
     # yürürse kafa gözün içine dalıyor.
-    if int(lock_reg or 0) <= 0:
+    kilit_yok = int(lock_reg or 0) <= 0
+    if kilit_yok and not onay:
         ret.append(
             "Uç kilit servosu bağlı değil (uclar.json → lock_reg = 0). Kilit "
             "bağlanmadan ekim dizisi başlatılamaz: servo komutu sessiz geçtiği "
-            "için uç takılı sanılır ve kafa vakum ucu olmadan gözün içine iner.")
+            "için uç takılı sanılır ve kafa vakum ucu olmadan gözün içine iner. "
+            "Kilidi bağlayın ya da Ayarlar → Ekim'den 'Onay iste'yi açın; onay "
+            "açıkken kafa gözün üstünde durup size soruyor.")
+    elif kilit_yok:
+        # ŞART KALKTI, SESSİZCE DEĞİL. Bu bir güvenlik denetiminin insan
+        # onayıyla değiştirilmesi; uyarı listesinde duruyor ve sunucu
+        # ayrıca olay günlüğüne yazıyor.
+        uyari.append(
+            "Uç kilit servosu bağlı değil (lock_reg = 0) — kilit şartı SİZİN "
+            "onayınızla kaldırıldı. Yazılım ucun takılı olduğunu "
+            "doğrulayamıyor; kafa gözün üstünde duracak ve size soracak. "
+            "Uç takılı değilken onaylarsanız kafa gözün içine iner.")
 
     havuz = dolu_gozler(gozler)
     if not (gozler or []):
@@ -238,6 +483,7 @@ def coz(hedefler: list[dict[str, Any]], gozler: list[dict[str, Any]] | None, *,
 
     # --- adımlar ----------------------------------------------------------
     adimlar: list[dict[str, Any]] = []
+    parca: list[dict[str, Any]] = []
     ozet: list[dict[str, Any]] = []
     for hedef, goz in eslesme:
         hx, hy = _sayi(hedef.get("x")), _sayi(hedef.get("y"))
@@ -272,9 +518,13 @@ def coz(hedefler: list[dict[str, Any]], gozler: list[dict[str, Any]] | None, *,
                 "güvenli Z'yi düzeltin — makine göze inemez.")
             continue
 
-        adimlar.extend(_adimlar_bir_tohum(
+        bir_tohum = _adimlar_bir_tohum(
             hedef, goz, guvenli_z=guvenli_z, ekim_z=ekim_z,
-            vakum_sn=vakum_sn, dusme_sn=dusme_sn))
+            vakum_sn=vakum_sn, dusme_sn=dusme_sn)
+        adimlar.extend(bir_tohum)
+        # Parçalar AYNI listeden türüyor: onaylı ve onaysız yol aynı
+        # adımları çalıştırıyor, biri diğerinden ayrışamıyor.
+        parca.append(parcala(bir_tohum))
         ozet.append({
             "ad": ad, "x": hx, "y": hy, "z": ekim_z,
             "tur": hedef.get("tur") or "",
@@ -287,9 +537,17 @@ def coz(hedefler: list[dict[str, Any]], gozler: list[dict[str, Any]] | None, *,
 
     return {
         "adimlar": adimlar, "ozet": ozet, "ret": ret, "uyari": uyari,
+        # Tohum başına parçalar. `adimlar` ile AYNI kaynaktan: onaysız yol
+        # `adimlar`ı tek seferde çalıştırıyor, onaylı yol aynı adımları
+        # parça parça. Ön kontrol ikisinde de `adimlar` üzerinden.
+        "parca": parca,
+        "onay": bool(onay),
+        "kilit_yok": kilit_yok,
         "tohum_sayisi": len(ozet),
         "adim_basina": ADIM_BASINA_TOHUM,
         "bos_kalacak_gozler": [o["goz"] for o in ozet],
         "kalan_dolu_goz": max(0, len(havuz) - len(ozet)),
         "uc": uc_takili or "",
+        "guvenli_z": guvenli_z,
+        "dusme_sn": dusme_sn,
     }
