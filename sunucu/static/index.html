@@ -332,12 +332,40 @@
             <button class="ikon-dugme" id="d-kamera-canli">Canlı</button>
           </div>
           <button class="dugme kucuk" id="d-kamera-yuzen-ac">Sahnede göster</button>
+
+          <!-- TEK TUŞLA ÇÖZÜMLEME. Görüntü bölümündeki tam donanımlı
+               çözümleyicinin AYNI uç noktasını (`/api/goruntu/coz`)
+               kullanıyor — ikinci bir hat yok. Buradaki fark yalnız
+               sunum: sonuç listesi yerine karenin ÜSTÜNE kutu.
+               Eşik burada da var, çünkü maskeye bakıp eşiği ayarlamak
+               tek bir işin iki yarısı; ayrı bölüme gidip gelmek o
+               döngüyü kırıyordu. -->
+          <div class="araclar" role="group" aria-label="Karede çözümleme">
+            <button class="ikon-dugme" id="d-kamera-coz"
+                    title="Karedeki yeşili bul ve görüntünün üstüne çiz">Çözümle</button>
+            <button class="ikon-dugme" id="d-kamera-maske" aria-pressed="false"
+                    title="Neyin bitki sayıldığını göster">Maske</button>
+            <span class="esnek"></span>
+            <label class="kam-esik" title="Yeşillik eşiği — boş bırakılırsa varsayılan">
+              eşik
+              <input type="number" id="kamera-esik" step="0.01" min="0" max="1"
+                     placeholder="0.12" inputmode="decimal">
+            </label>
+          </div>
+
+          <!-- Görüntü ve ÜSTÜNDEKİ katman. Kutular resmin kendisine
+               değil bu katmana çiziliyor: kare yenilendiğinde katman
+               boşaltılıyor ve eski kutular yeni görüntünün üstünde
+               asılı kalmıyor. -->
           <div id="kamera-kutu">
             <p class="bos-durum" id="kamera-yok">Henüz kare gelmedi.<br>
               Kamerayı yukarıdaki anahtarla açın; ilk kare birkaç saniye
               içinde düşer.</p>
             <img id="kamera-kare" class="gizli" alt="Kamera görüntüsü">
+            <img id="kamera-maske-im" class="kam-maske gizli" alt="">
+            <div id="kamera-ortu" class="kam-ortu" aria-hidden="true"></div>
           </div>
+          <div class="kam-not gizli" id="kamera-coz-not"></div>
           <div class="ikincil sayi" id="kamera-zaman"></div>
 
           <!-- AI HAT (Hailo). Kamera bölümünün altında, çünkü aynı kareyi
@@ -1368,6 +1396,14 @@
       <div class="kamera-yuzen-bas">
         <span class="ad">Kamera</span>
         <span class="ikincil" id="kamera-yuzen-zaman"></span>
+        <!-- Ayarlar'daki "Çözümle" ile AYNI iş: ikisi aynı kareyi
+             gösteriyor, tek çözümleme ikisini birden boyuyor. Başlık dar
+             olduğu için simge; adı `title` ve `aria-label`de. -->
+        <button class="kapat" id="d-kamera-yuzen-coz" type="button"
+                title="Çözümle — karedeki yeşili bul" aria-label="Çözümle">⌖</button>
+        <button class="kapat" id="d-kamera-yuzen-maske" type="button"
+                aria-pressed="false" title="Maske — neyin bitki sayıldığı"
+                aria-label="Maske">◍</button>
         <button class="kapat olcek" id="d-kamera-yuzen-olcek" type="button"
                 title="Boyut — %100 / %150 / %160">%100</button>
         <button class="kapat" id="d-kamera-yuzen-buyut" type="button"
@@ -1377,6 +1413,15 @@
                 title="Gizle — panelden geri açılır" aria-label="Gizle">×</button>
       </div>
       <img id="kamera-yuzen-kare" alt="Kamera görüntüsü">
+      <!-- Maske ve kutu katmanı: ikisi de KARDEŞ, sarmalayıcı YOK.
+           `.kamera-yuzen.buyuk img` kuralı görüntüyü esnek bir kutuya
+           oturtuyor; araya bir div koymak o esnemeyi div'e verip
+           görüntüyü büzerdi. İkisinin yeri JS'te görüntünün gerçek
+           çizim dikdörtgeninden hesaplanıyor (object-fit: contain
+           harfleme payı dahil). -->
+      <img id="kamera-yuzen-maske" class="kam-maske gizli" alt="">
+      <div id="kamera-yuzen-ortu" class="kam-ortu" aria-hidden="true"></div>
+      <div class="kam-not gizli" id="kamera-yuzen-not"></div>
     </div>
 
     <!-- PROFİL GÖRÜNTÜLEYİCİ — Z'yi üstten görünümde anlamanın tek yolu.

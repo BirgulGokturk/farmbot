@@ -36,6 +36,8 @@ const S = {
   ucAyarDuzenleniyor: false,
   sonGozler: null,      // tohumluk gözleri imzası
   gozDuzenleniyor: false,
+  kamCoz: null,         // kamera kutusundaki son çözümleme (null = kutu boş)
+  kamMaske: false,      // maske katmanı açık mı
   programlar: [],
   adimlar: [],
   bolgeDuzenleniyor: false,   // kullanıcı yazarken durum akışı üzerine yazmasın
@@ -1436,6 +1438,8 @@ function kalibBagla() {
     const m = $("#gr-maske-im");
     if (m) m.classList.toggle("gizli", !grMaske.checked);
   };
+  // Kamera kutusundaki tek tuşluk çözümleme — aynı uç noktalar, ayrı sunum.
+  kameraCozumBagla();
 
   $("#d-kalib-kaydet").onclick = async () => {
     try {
@@ -1824,6 +1828,9 @@ function kameraGoruntuTemizle() {
   // kapalı bir kamerayı açık sanırsınız.
   const yuzen = $("#kamera-yuzen");
   if (yuzen) yuzen.classList.add("gizli");
+  // Görüntü gitti, tespit kutuları da gitmeli: boş bir kutuda asılı
+  // kalan kutular neyin üstünde olduğu bilinmeyen kutulardır.
+  kamOrtuTemizle();
 }
 
 function kameraDurumYaz(k) {
@@ -1960,6 +1967,329 @@ function kareyiTazele(ts, canli = false) {
     kalibKare.src = adres;
     kalibKare.onload = kalibIsaretCiz;
   }
+  // Yeni kare geldi: eski tespitler artık BU görüntüye ait değil.
+  // Üstlerinde bırakmak, bakan kişiye yeni karede bulunmuş gibi görünürdü.
+  kamOrtuTemizle();
+}
+
+/* -------------------------------------- kamera kutusunda tek tuşla çözümleme
+ *
+ * YENİ BİR HAT YOK. Aynı `/api/goruntu/coz` ve `/api/goruntu/maske`;
+ * `goruntu.py` yeşili topraktan ayırıyor, `tespit.py` pikseli milimetreye
+ * çevirip kayıtlı bitkilerle eşliyor. Burada değişen tek şey SUNUM:
+ * Görüntü bölümündeki satır listesi yerine karenin üstünde kutu.
+ *
+ * TAHMİN KONUSUNDA DÜRÜSTLÜK, bu bölümün asıl kuralı:
+ *
+ *   ExG segmentasyonu TÜR TANIMIYOR. Yeşili topraktan ayırıyor, o kadar.
+ *   Bir lekeye bakıp "bu marul" diyemeyiz — elimizdeki tek çıkarım,
+ *   lekenin konumu kayıtlı bir bitkinin yayılım çemberine düşüyorsa o
+ *   bitki olma ihtimalinin yüksek olduğu. Düşmüyorsa BİLİNMİYOR: yabani
+ *   ot da olabilir, kaydetmediğimiz bir fide de. Etiketler bunu bu
+ *   şekilde söylüyor, uydurma tür adı yazmıyor.
+ *
+ *   Kalibrasyon yokken (mm_px = 0) MİLİMETRE YAZILMIYOR. Piksel yazıp
+ *   uyarı gösteriyoruz. Yanlış milimetre, hiç milimetre olmamasından
+ *   kötüdür: yanlış olduğu belli olmayan bir sayıdır.
+ */
+
+/** Çözümlemenin iki kopyası: Ayarlar'daki kutu ve sahnedeki yüzen kutu.
+ *  İkisi AYNI kareyi gösteriyor, o yüzden tek çözümleme ikisini boyuyor. */
+const KAM_HEDEF = [
+  { im: "#kamera-kare", ortu: "#kamera-ortu",
+    maske: "#kamera-maske-im", not: "#kamera-coz-not" },
+  { im: "#kamera-yuzen-kare", ortu: "#kamera-yuzen-ortu",
+    maske: "#kamera-yuzen-maske", not: "#kamera-yuzen-not" },
+];
+
+/** Görüntünün GERÇEKTEN çizildiği dikdörtgen, kapsayıcıya göre piksel.
+ *
+ *  `inset: 0` yetmiyor: yüzen kutu "büyük" hâlde `object-fit: contain`
+ *  kullanıyor ve orada görüntü kutunun tamamını değil, oranı korunmuş
+ *  bir iç dikdörtgeni kaplıyor. Harfleme payını hesaba katmasaydık
+ *  kutular o pay kadar kayardı — ve kayan bir kutu, yanlış yeri işaret
+ *  eden bir kutudur. */
+function kamCizimAlani(im) {
+  const kap = im && im.offsetParent;
+  if (!kap) return null;
+  const ir = im.getBoundingClientRect();
+  const kr = kap.getBoundingClientRect();
+  if (!ir.width || !ir.height) return null;
+  let en = ir.width, boy = ir.height, sol = 0, ust = 0;
+  const dw = im.naturalWidth, dh = im.naturalHeight;
+  if (dw > 0 && dh > 0 && getComputedStyle(im).objectFit === "contain") {
+    const o = Math.min(en / dw, boy / dh);
+    const cw = dw * o, ch = dh * o;
+    sol = (en - cw) / 2; ust = (boy - ch) / 2;
+    en = cw; boy = ch;
+  }
+  // Mutlak konumlu çocuk kapsayıcının DOLGU kutusuna göre yerleşiyor;
+  // getBoundingClientRect ise kenarlık kutusunu veriyor.
+  return {
+    sol: ir.left - kr.left - kap.clientLeft + sol,
+    ust: ir.top - kr.top - kap.clientTop + ust,
+    en, boy,
+  };
+}
+
+/** Katmanları görüntünün üstüne oturtur. Kutu boyu değiştikçe (ölçek
+ *  düğmesi, ekrana sığdır, pencere) yeniden çağrılıyor. */
+function kamKatmanHizala() {
+  KAM_HEDEF.forEach((h) => {
+    const im = $(h.im);
+    const alan = kamCizimAlani(im);
+    [$(h.ortu), $(h.maske)].forEach((k) => {
+      if (!k) return;
+      if (!alan) { k.style.width = "0"; k.style.height = "0"; return; }
+      k.style.left = `${alan.sol}px`;
+      k.style.top = `${alan.ust}px`;
+      k.style.width = `${alan.en}px`;
+      k.style.height = `${alan.boy}px`;
+    });
+  });
+}
+
+function kamOrtuTemizle() {
+  S.kamCoz = null;
+  KAM_HEDEF.forEach((h) => {
+    const o = $(h.ortu); if (o) o.innerHTML = "";
+    const m = $(h.maske); if (m) { m.classList.add("gizli"); m.removeAttribute("src"); }
+    const n = $(h.not); if (n) { n.classList.add("gizli"); n.innerHTML = ""; }
+  });
+}
+
+/* Ölçülen çapın beklenene oranı hangi aralıkta "aynı" sayılsın.
+ *
+ * Bu bir ÖLÇÜM DEĞİL, seçim — ve geniş seçildi. Ölçülen çap üstten
+ * görünen izdüşüm: yaprak yatık duruyorsa büyük, dik duruyorsa küçük
+ * çıkıyor. Beklenen çap da kaba: yayılım eğrisi bağlı değilse
+ * katalogdaki olgun değer kullanılıyor (bkz. `sulama.guncel_yaricap_mm`).
+ * Dar bir bant, her fideye sırayla "geride" ve "önde" dedirtirdi. */
+const KAM_ALT_ORAN = 0.7;
+const KAM_UST_ORAN = 1.3;
+
+/** Ölçülen çap ile beklenen çapın kıyası — TEK KELİME.
+ *
+ * `yasaGore` bayrağı önemli. Bitkiye yayılım eğrisi bağlıysa beklenen
+ * çap O YAŞA ait ve "beklenenin altında" gerçekten "geride kalmış"
+ * demek. Bağlı değilse beklenen, katalogdaki OLGUN çap: dün ekilmiş bir
+ * marul ister istemez altında çıkar ve buna "geride" demek yanlış olur.
+ * O yüzden kelime de değişiyor — kıyasın neye göre yapıldığını etiketin
+ * kendisi söylüyor. */
+function kamKiyas(cap, beklenen, yasaGore) {
+  if (!(beklenen > 0) || !(cap > 0)) return "";      // bilmiyorsak susuyoruz
+  const o = cap / beklenen;
+  if (yasaGore) {
+    if (o < KAM_ALT_ORAN) return "beklenenin altında";
+    if (o > KAM_UST_ORAN) return "beklenenin üstünde";
+    return "beklendik";
+  }
+  if (o < KAM_ALT_ORAN) return "olgunun altında";
+  if (o > KAM_UST_ORAN) return "olgunun üstünde";
+  return "olgun ölçüde";
+}
+
+/** Tür kataloğundan simge — YALNIZ kayıtlı bitkinin kendi türü için.
+ *  Lekeye bakıp tür seçmiyoruz; simge eşleşen KAYITTAN geliyor. */
+function kamSimge(slug) {
+  const t = ((window.Tarla && Tarla.turler && Tarla.turler()) || {})[slug];
+  return (t && t.icon) || "🌱";
+}
+
+/** Bir lekenin kutusunu ve etiketini kurar. */
+function kamKutuHtml(px, kare, sinif, etiket, baslik) {
+  const en = Math.max(1, Number(kare.en_px) || 1);
+  const boy = Math.max(1, Number(kare.boy_px) || 1);
+  const x = (100 * Number(px.x1)) / en;
+  const y = (100 * Number(px.y1)) / boy;
+  const yer = `left:${x}%;top:${y}%;`
+    + `width:${(100 * (px.x2 - px.x1 + 1)) / en}%;`
+    + `height:${(100 * (px.y2 - px.y1 + 1)) / boy}%`;
+  // İki taşma da etiketi okunmaz yapıyor, ikisi de kenara yakın lekelerde
+  // oluyor: üstte etiket görüntünün dışına çıkıyor, sağda kutunun dışına.
+  // Kenara göre yön değiştiriyor — küçültmek yerine, çünkü küçültülmüş
+  // bir ölçü yanlış okunan bir ölçüdür.
+  const sinif2 = `${sinif}${y < 12 ? " alta" : ""}${x > 45 ? " saga" : ""}`;
+  return `<div class="kam-kutu ${sinif2}" style="${yer}"
+    title="${kacisli(baslik)}"><span class="kam-etiket">${kacisli(etiket)}</span></div>`;
+}
+
+function kamCozumYaz(y) {
+  S.kamCoz = y;
+  const kare = y.kare || {};
+  const kalibre = !(y.ret && y.ret.length);
+
+  // Leke no -> eşleşme bilgisi. `no` hem piksel hem milimetre lekesinde
+  // aynı: kutuyu piksel uzayından, etiketi milimetre uzayından alıyoruz.
+  const eslesme = {};
+  (y.eslesen || []).forEach((e) => { eslesme[(e.leke || {}).no] = e; });
+  const yabani = {};
+  (y.yabani_aday || []).forEach((b) => { yabani[b.no] = b; });
+  const mm = {};
+  (y.lekeler || []).forEach((l) => { mm[l.no] = l; });
+
+  const kutular = (y.lekeler_px || []).map((px) => {
+    const enPx = Math.round(px.x2 - px.x1 + 1);
+    if (!kalibre) {
+      // Kalibrasyon yok: ölçü PİKSEL ve eşleşme HİÇ denenmedi. "eşleşmedi"
+      // yazmak yalan olurdu — denenmiş de tutmamış gibi okunur.
+      return kamKutuHtml(px, kare, "kam-gri", `${enPx} px`,
+        "Kamera kalibre edilmemiş: ölçü piksel, milimetre değil. "
+        + "Lekenin makine koordinatı bilinmediği için kayıtlı bitkilerle "
+        + "eşleştirme yapılmadı.");
+    }
+    const e = eslesme[px.no];
+    const l = mm[px.no] || {};
+    const olcu = `${Math.round(Number(l.en_mm) || 0)} mm`;
+    if (e) {
+      const yasa = !!e.beklenen_yasa_gore;
+      const bek = Number(e.beklenen_cap_mm);
+      const kiyas = kamKiyas(Number(l.cap_mm), bek, yasa);
+      return kamKutuHtml(px, kare, "kam-yesil",
+        `${kamSimge(e.tur)} ${e.ad} · ${olcu}${kiyas ? ` · ${kiyas}` : ""}`,
+        `Bu leke "${e.ad}" kaydının yayılım çemberine düşüyor `
+        + `(${e.uzaklik_mm} mm uzakta), o yüzden büyük ihtimalle o bitki. `
+        + "Görüntü türü TANIMIYOR — yeşili topraktan ayırıyor; ad kayıttan "
+        + "geliyor, tahminden değil.\n"
+        + `Ölçülen çap ${Number(l.cap_mm).toFixed(0)} mm`
+        + (bek > 0
+          ? (yasa
+            ? `, bu yaşta beklenen ${bek.toFixed(0)} mm — ${kiyas}.`
+            : `, katalogdaki OLGUN çap ${bek.toFixed(0)} mm — ${kiyas}.\n`
+              + "Bu bitkiye yayılım eğrisi bağlı değil, o yüzden kıyas yaşa "
+              + "göre değil olgun ölçüye göre: yeni bir fide doğal olarak "
+              + "altında çıkar, geride kaldığı anlamına gelmez. Yaşa göre "
+              + "kıyas için bitkiye bir yayılım eğrisi bağlayın.")
+          : "; beklenen çap bilinmiyor (tür ya da yayılım kayıtlı değil).")
+        + `\nKutu ${Number(l.en_mm).toFixed(0)}×${Number(l.boy_mm).toFixed(0)} mm · `
+        + `alan ${Number(l.alan_mm2).toFixed(0)} mm².`);
+    }
+    return kamKutuHtml(px, kare, "kam-turuncu", `eşleşmedi · ${olcu}`,
+      "Yakınında kayıtlı bitki yok, yani bunun NE olduğunu bilmiyoruz: "
+      + "yabani ot da olabilir, kaydetmediğiniz bir fide de, yosun ya da "
+      + "düşmüş bir yaprak da. Hiçbir işlem yapılmıyor.\n"
+      + `Konum X${Math.round(l.x)} Y${Math.round(l.y)} · `
+      + `çap ${Number(l.cap_mm).toFixed(0)} mm.`);
+  }).join("");
+
+  const say = (y.lekeler_px || []).length;
+  const not = kalibre
+    ? `<b>${say}</b> leke · <b>${(y.eslesen || []).length}</b> kayıtlı bitkiye
+       denk geliyor · <b>${(y.yabani_aday || []).length}</b> bilinmiyor
+       ${(y.gorunmeyen || []).length
+        ? `· <b>${y.gorunmeyen.length}</b> kayıtlı bitkinin lekesi bulunamadı`
+        : ""}
+       <br>Yeşili topraktan ayırıyoruz, <b>tür tanımıyoruz</b>. "Denk geliyor"
+       demek: leke o bitkinin yayılım çemberine düşüyor.`
+    : `<b>${say}</b> leke bulundu.
+       <br><span class="uyari">⚠ Kamera kalibre edilmedi (mm_px = 0) —
+       ölçüler <b>piksel</b>, milimetre değil.</span>
+       Kayıtlı bitkilerle eşleştirme de yapılamadı: lekenin makine
+       koordinatı bilinmeden hangi bitkiye ait olduğu söylenemez.
+       ${(y.ret || []).slice(1).map(kacisli).join(" ")}`;
+
+  KAM_HEDEF.forEach((h) => {
+    const o = $(h.ortu); if (o) o.innerHTML = kutular;
+    const n = $(h.not);
+    if (n) { n.innerHTML = not; n.classList.remove("gizli"); }
+  });
+  kamMaskeUygula();
+  kamKatmanHizala();
+}
+
+/** Maske katmanı: eşiğin neyi bitki saydığını GÖRMEDEN eşik ayarlanamaz. */
+function kamMaskeUygula() {
+  const acik = !!S.kamMaske && !!S.kamCoz;
+  $$("#d-kamera-maske, #d-kamera-yuzen-maske").forEach((d) => {
+    d.setAttribute("aria-pressed", String(!!S.kamMaske));
+    d.classList.toggle("secili", !!S.kamMaske);
+  });
+  KAM_HEDEF.forEach((h) => {
+    const m = $(h.maske);
+    if (!m) return;
+    if (!acik) { m.classList.add("gizli"); return; }
+    const jeton = encodeURIComponent(S.jeton || "");
+    const e = S.kamCoz.esik;
+    m.src = `/api/goruntu/maske?damga=${encodeURIComponent(S.kamCoz.damga)}`
+      + `&esik=${e == null ? -9 : e}&jeton=${jeton}`;
+    m.classList.remove("gizli");
+  });
+}
+
+async function kameraCozumle() {
+  const alan = $("#kamera-esik");
+  const esik = !alan || alan.value === "" ? null : Number(alan.value);
+  $$("#d-kamera-coz, #d-kamera-yuzen-coz").forEach((d) => { d.disabled = true; });
+  try {
+    // Damga BOŞ: sunucu en yeni KAYITLI kareyi seçiyor. Sonra iki
+    // görüntüyü de o kareye sabitliyoruz — canlı akışta ekrandaki kare
+    // çözümlenenden yeni olabilirdi ve kutular yanlış yeri gösterirdi.
+    const y = await apiIste("/api/goruntu/coz", {
+      method: "POST",
+      body: JSON.stringify({ damga: "", esik }),
+    });
+    // Ekrandaki görüntüyü çözümlenen kareye sabitliyoruz. Canlı akışta
+    // ekrandaki kare çözümlenenden yeni olabilir ve kutular o zaman
+    // yanlış yeri gösterirdi. Kutu ile altındaki görüntü AYNI kare olmalı.
+    const adres = `/api/kare/${encodeURIComponent(y.damga)}`
+      + `?jeton=${encodeURIComponent(S.jeton || "")}`;
+    const panel = $("#kamera-kare");
+    if (panel) {
+      panel.src = adres;
+      panel.classList.remove("gizli");
+      const yok = $("#kamera-yok");
+      if (yok) yok.classList.add("gizli");
+    }
+    // Yüzen kutu kullanıcı küçülttüyse kapalı kalıyor: çözümleme onu
+    // geri açacak bir sebep değil.
+    const yuzenIm = $("#kamera-yuzen-kare");
+    if (yuzenIm && !S.kameraYuzenKapali) {
+      yuzenIm.src = adres;
+      const yuzen = $("#kamera-yuzen");
+      if (yuzen) yuzen.classList.remove("gizli");
+      kameraYuzenSinirla();
+    }
+    kamCozumYaz(y);
+    gunluk(`✓ Karede ${y.lekeler_px.length} leke`
+      + (y.ret && y.ret.length ? " (kalibre değil — ölçüler piksel)"
+        : `, ${y.eslesen.length} kayıtlı bitkiye denk geliyor`), "ok");
+  } catch (h) {
+    gunluk(`✕ Çözümleme: ${h.message}`, "hata");
+  } finally {
+    $$("#d-kamera-coz, #d-kamera-yuzen-coz").forEach((d) => { d.disabled = false; });
+  }
+}
+
+function kameraCozumBagla() {
+  $$("#d-kamera-coz, #d-kamera-yuzen-coz").forEach((d) => {
+    d.onclick = kameraCozumle;
+  });
+  $$("#d-kamera-maske, #d-kamera-yuzen-maske").forEach((d) => {
+    d.onclick = () => {
+      S.kamMaske = !S.kamMaske;
+      // Maskeyi görmek için çözümleme şart (maske uç noktası damga
+      // istiyor). Kullanıcıyı "önce şuna bas" diye geri göndermiyoruz.
+      if (S.kamMaske && !S.kamCoz) { kameraCozumle(); return; }
+      kamMaskeUygula();
+    };
+  });
+  // Eşik değişti: eski kutular eski eşiğe ait, ekranda bırakmak yanlış
+  // olurdu. Zaten bir sonuç varsa kendiliğinden yenileniyor — eşik
+  // ayarlamak "değiştir, bak, değiştir" döngüsü.
+  const alan = $("#kamera-esik");
+  if (alan) alan.onchange = () => { if (S.kamCoz) kameraCozumle(); };
+
+  // Kutu boyu değişince katman kaymasın: ölçek düğmesi, ekrana sığdır,
+  // sürükleme ve pencere yeniden boyutlama hepsi buradan geçiyor.
+  if (window.ResizeObserver) {
+    const gozcu = new ResizeObserver(kamKatmanHizala);
+    KAM_HEDEF.forEach((h) => { const im = $(h.im); if (im) gozcu.observe(im); });
+  }
+  window.addEventListener("resize", kamKatmanHizala);
+  KAM_HEDEF.forEach((h) => {
+    const im = $(h.im);
+    if (im) im.addEventListener("load", kamKatmanHizala);
+  });
 }
 
 /* ------------------------------------------- yalnızca var olan sensörler */
@@ -3043,7 +3373,13 @@ function olaylariBagla() {
       // kapalıysa ya da aralık uzunsa düğme hiçbir şey yapmamış gibi
       // görünüyordu. Elimizde kare varsa hemen gösteriyoruz.
       if (S.sonKareAdres) {
-        $("#kamera-yuzen-kare").src = S.sonKareAdres;
+        // Ekranda çözümleme duruyorsa, kutular ÇÖZÜMLENEN karenin üstüne
+        // ait. Son kareyi koysaydık kutular başka bir görüntünün üstünde
+        // durur, yanlış yeri işaret ederdi.
+        $("#kamera-yuzen-kare").src = S.kamCoz
+          ? `/api/kare/${encodeURIComponent(S.kamCoz.damga)}`
+            + `?jeton=${encodeURIComponent(S.jeton || "")}`
+          : S.sonKareAdres;
         $("#kamera-yuzen-zaman").textContent =
           (S.sonKareCanli ? "canlı " : "")
           + new Date(S.sonKareTs * 1000).toLocaleTimeString("tr-TR");

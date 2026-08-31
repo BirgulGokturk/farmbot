@@ -1169,22 +1169,30 @@ def _kare_dizi(ham: bytes, azami_en: int = 640):
     return np.asarray(im), im.width, im.height
 
 
-def _yaricaplar(bitkiler: list[dict[str, Any]]) -> dict[str, float]:
-    """Bitki başına O ANKİ yarıçap — sulamanın kullandığı zincirin AYNISI.
+def _yaricaplar(bitkiler: list[dict[str, Any]]
+                ) -> tuple[dict[str, float], dict[str, bool]]:
+    """(yarıçap, yaşa_göre_mi) — sulamanın kullandığı zincirin AYNISI.
 
     Kopyalamıyoruz: `sulama.guncel_yaricap_mm` neyse o. İkisi ayrışırsa
     haritada eşleşen bir leke sulamada eşleşmeyebilirdi.
+
+    İkinci sözlük, yarıçabın BİR YAYILIM EĞRİSİNDEN gelip gelmediğini
+    söylüyor. Gelmiyorsa değer katalogdaki olgun çap ve "beklenen"
+    kelimesi orada yaşa göre bir beklenti anlamına GELMİYOR — panelin
+    bunu ayırt etmesi gerekiyor, yoksa her fideye "geride kalmış" der.
     """
     tur_indeks = {t.get("slug"): t for t in turler.hepsi()}
     egri_listesi = egriler.hepsi()
     simdi = time.time()
     cikti: dict[str, float] = {}
+    yasa: dict[str, bool] = {}
     for b in bitkiler:
         gun = sulama.yas_gun(b, simdi)
-        yaricap, _ = sulama.guncel_yaricap_mm(
+        yaricap, egriden = sulama.guncel_yaricap_mm(
             b, tur_indeks.get(b.get("tur")), gun, egri_listesi)
         cikti[b.get("ad")] = float(yaricap)
-    return cikti
+        yasa[b.get("ad")] = bool(egriden)
+    return cikti, yasa
 
 
 def _kare_bul(damga: str) -> dict[str, Any] | None:
@@ -1214,8 +1222,9 @@ def _goruntu_coz(damga: str, esik: float | None, en_az_piksel: int
     if not cozum["ret"]:
         hepsi = [n for n in noktalar.hepsi() if n.get("tur")]
         icerdeki = tespit.kare_icinde(hepsi, cozum["kare_mm"])
+        caplar, yasa = _yaricaplar(icerdeki)
         eslesme = tespit.eslestir(cozum["lekeler"], icerdeki,
-                                  yaricap_mm=_yaricaplar(icerdeki))
+                                  yaricap_mm=caplar, yasa_gore=yasa)
     return {
         "damga": damga, "ts": kayit.get("ts"),
         "kare": {"x": kayit.get("x"), "y": kayit.get("y"),

@@ -2041,3 +2041,80 @@ table.veri.kalib th:nth-child(n+4), table.veri.kalib td:nth-child(n+4) { width: 
 .gr-yesil .gr-etiket, .gr-yesil .gr-ad { color: #5ad07a; }
 .gr-turuncu .gr-etiket, .gr-turuncu .gr-ad { color: #e8a33d; }
 .gr-kirmizi .gr-etiket, .gr-kirmizi .gr-ad { color: #e2564a; }
+
+/* ------------------------------------------- kamera kutusunda çözümleme
+   Kutular görüntünün KENDİSİNE değil üstündeki katmana çiziliyor. Sebebi
+   pratik: kare yenilendiğinde katmanı boşaltmak tek satır, oysa kutuları
+   görüntüye gömseydik eski tespitler yeni karenin üstünde asılı kalırdı
+   ve bakan kişi bunun eski olduğunu anlamazdı.
+
+   Katmanın YERİ JS'te hesaplanıyor, `inset: 0` DEĞİL. Yüzen kamera
+   "büyük" hâlde `object-fit: contain` kullanıyor; orada görüntünün
+   çizildiği alan kutunun tamamı değil, harfleme paylarıyla daralmış bir
+   dikdörtgen. `inset: 0` verseydik kutular o payın kadar kayardı. */
+.kam-ortu {
+  position: absolute;
+  pointer-events: none;      /* altındaki görüntü tıklanabilir kalsın */
+  z-index: 3;
+  line-height: 1.15;
+}
+.kam-maske {
+  position: absolute;
+  z-index: 2;
+  pointer-events: none;
+  /* Maske PNG'si yarı saydam; `screen` yeşili fotoğrafın üstüne
+     oturtuyor, altındaki toprağı tamamen boğmadan. Görüntü bölümündeki
+     önizlemeyle AYNI karışım — iki yerde farklı görünmesin. */
+  mix-blend-mode: screen;
+  border-radius: 0;
+}
+#kamera-kutu { position: relative; }
+/* Yüzen kutu bir ızgara öğesi; `relative` yerleşimini değiştirmiyor ama
+   içindeki mutlak katmanlara bağlanacak bir çerçeve veriyor. */
+.kamera-yuzen { position: relative; }
+
+/* Tek bir lekenin kutusu. Yüzde ile konumlanıyor: kutu ölçüsü
+   değiştiğinde (%100/%150/büyük) yeniden hesap gerekmiyor. */
+.kam-kutu {
+  position: absolute;
+  border: 1.5px solid var(--kam-renk, #5ad07a);
+  border-radius: 2px;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, .45);   /* açık zeminde de görünsün */
+}
+/* Etiket kutunun ÜSTÜNDE. `bottom: 100%` ile: kutunun içine yazsaydık
+   küçük lekelerde yazı kutudan taşıp lekeyi örterdi. */
+.kam-etiket {
+  position: absolute;
+  bottom: 100%;
+  left: -1.5px;
+  margin-bottom: 2px;
+  padding: 1px 4px;
+  border-radius: 3px;
+  background: rgba(0, 0, 0, .72);
+  color: var(--kam-renk, #5ad07a);
+  font-size: 10px;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+/* Üst kenara yapışık lekelerde etiket kutunun dışına, görüntünün
+   üstüne taşıyordu ve okunmuyordu; o zaman aşağı alıyoruz. */
+.kam-kutu.alta .kam-etiket { bottom: auto; top: 100%; margin: 2px 0 0; }
+/* Sağ yarıdaki leke: etiket sola doğru büyüsün, yoksa dar yüzen kutuda
+   görüntünün sağından taşıp kesiliyor. */
+.kam-kutu.saga .kam-etiket { left: auto; right: -1.5px; }
+.kam-yesil { --kam-renk: #5ad07a; }
+.kam-turuncu { --kam-renk: #e8a33d; }
+.kam-gri { --kam-renk: #b9c0c8; }
+
+/* Çözümleme notu: kaç leke, ve KALİBRE DEĞİLSE uyarı. Uyarı süs değil —
+   kalibrasyonsuzken ekranda görünen sayılar piksel, milimetre değil. */
+.kam-not {
+  margin-top: 4px;
+  font-size: var(--yazi-kucuk);
+  color: var(--metin-2);
+  line-height: 1.35;
+}
+.kam-not b { color: var(--metin); }
+.kam-not .uyari { color: #e8a33d; }
+.kam-esik { display: flex; align-items: center; gap: 4px; font-size: var(--yazi-kucuk); color: var(--metin-2); }
+.kam-esik input { width: 52px; }

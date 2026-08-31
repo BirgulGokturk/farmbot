@@ -270,6 +270,7 @@ def _eslesme_siniri(bitki_yaricap: float, leke_yaricap: float,
 
 def eslestir(lekeler: list[dict[str, Any]], bitkiler: list[dict[str, Any]], *,
              yaricap_mm: dict[str, float] | None = None,
+             yasa_gore: dict[str, bool] | None = None,
              en_az_yaricap: float = EN_AZ_YARICAP_MM,
              kat: float = YARICAP_KATI) -> dict[str, Any]:
     """Lekeleri kayıtlı bitkilerle eşler.
@@ -290,6 +291,7 @@ def eslestir(lekeler: list[dict[str, Any]], bitkiler: list[dict[str, Any]], *,
     olmalı; kopyalamak ikisinin ayrışması demek.
     """
     yr = yaricap_mm or {}
+    yg = yasa_gore or {}
     kalan = list(bitkiler)
     eslesen: list[dict[str, Any]] = []
     yabani: list[dict[str, Any]] = []
@@ -313,10 +315,25 @@ def eslestir(lekeler: list[dict[str, Any]], bitkiler: list[dict[str, Any]], *,
             yabani.append(leke)
             continue
         kalan.remove(en_iyi)
+        # O YAŞTA beklenen çap. Katalogdaki OLGUN yayılım değil: yarıçap
+        # zinciri (tür → eğri → ezme) sulamayla aynı kaynaktan geliyor ve
+        # bugünkü değeri veriyor. Yeni ekilmiş bir marulu olgun çapla
+        # kıyaslamak her fideyi "geride kalmış" gösterirdi.
+        # 0 = yarıçap bilinmiyor; panel o zaman kıyas yazmıyor.
+        beklenen = _sayi(yr.get(en_iyi.get("ad")), 0.0) * 2.0
+        # BU BAYRAK OLMADAN KIYAS YANILTICI. Bitkiye yayılım eğrisi
+        # bağlı değilse zincir katalogdaki OLGUN çapa düşüyor
+        # (`sulama.guncel_yaricap_mm`, son satır) — ve dün ekilmiş bir
+        # marul olgun çapla kıyaslanınca ister istemez "geride" çıkıyor.
+        # Geride olduğu için değil, kıyas yanlış olduğu için. Panel bunu
+        # ayırıp farklı yazıyor.
+        yasa = bool(yg.get(en_iyi.get("ad")))
         eslesen.append({
             "ad": en_iyi.get("ad"), "tur": en_iyi.get("tur") or "",
             "bitki_x": _sayi(en_iyi.get("x")), "bitki_y": _sayi(en_iyi.get("y")),
             "uzaklik_mm": round(en_iyi_uzaklik, 1),
+            "beklenen_cap_mm": round(beklenen, 1),
+            "beklenen_yasa_gore": yasa,
             "leke": leke,
             # Kayıtlı konum ile görülen konum arasındaki kayma. Sürekli
             # aynı yönde çıkıyorsa kalibrasyon ofseti şüphelidir.
