@@ -70,7 +70,18 @@ VARSAYILAN = {
     "aktif": False,
     "aralik_sn": 3600.0,   # saatte bir kare
     "genislik": 640,
+    # AÇIK ÇÖZÜNÜRLÜK. `genislik` tek başına 4:3 varsayıyordu; USB
+    # kameraların çoğu 16:9 kipte (1280x720) çalışıyor ve olmayan bir kip
+    # istendiğinde sürücü ya en yakınını veriyor ya da hiç vermiyor.
+    # Doluysa ("1280x720") bu geçerli, boşsa eski 4:3 türetmesi sürüyor.
+    "cozunurluk": "",
     "kalite": 75,
+    # KAMERANIN KENDİ DENETİMLERİ (UVC). {"brightness": 40,
+    # "auto_exposure": 1, "exposure_time_absolute": 250} gibi. Kare
+    # geldikten SONRA parlaklık düzeltmek gürültüyü de büyütüyor; doğrusu
+    # sensöre söylemek. `v4l2-ctl --list-ctrls` neyin ayarlanabildiğini
+    # yazıyor ve kameradan kameraya değişiyor, o yüzden serbest sözlük.
+    "denetimler": {},
     "sahte": False,
     # CİHAZ YOLU SABİT YAZILMIYOR. USB kamera bugün /dev/video8'de ama
     # çıkarılıp takılınca numara değişiyor. `cihaz_adi` doluysa her açılışta
@@ -267,6 +278,8 @@ class Kamera:
         # "video8'de sanıyordum, video6'ya taşınmış" demeyi mümkün kılıyor.
         self._cihaz: str = ""
         self.cihaz_not: str = ""
+        self._denetim_uyarisi = False
+        self._son_denetim = ""
 
     # --- kimlik ---
     @property
@@ -280,6 +293,62 @@ class Kamera:
     @property
     def hareketli(self) -> bool:
         return bool(self.ayar.get("hareketli", True))
+
+    def _boyut(self) -> tuple[int, int]:
+        """Kare ölçüsü — açık `cozunurluk` varsa o, yoksa `genislik`ten 4:3.
+
+        4:3 TÜRETMESİ HER KAMERADA DOĞRU DEĞİL. USB kameraların çoğu
+        1280x720 veriyor; 1280x960 isteyince sürücü ya reddediyor ya da
+        sessizce başka bir kipe düşüyor ve görüntü bozuluyor.
+        """
+        ham = str(self.ayar.get("cozunurluk") or "").strip().lower().replace(" ", "")
+        if "x" in ham:
+            g, _, y = ham.partition("x")
+            try:
+                return (max(160, min(3840, int(g))), max(120, min(2160, int(y))))
+            except ValueError:
+                pass
+        g = int(self.ayar["genislik"])
+        return g, int(g * 3 / 4)
+
+    def _denetimleri_uygula(self, cihaz: str) -> None:
+        """UVC denetimlerini kameraya yazar (parlaklık, pozlama, beyaz ayarı).
+
+        SIRALAMA ÖNEMLİ: `auto_exposure` elle kipe alınmadan
+        `exposure_time_absolute` yazmak sessizce yok sayılıyor; aynısı beyaz
+        ayarı için de geçerli. O yüzden adında "auto" geçenler önce
+        gönderiliyor.
+
+        Başarısızlık kamerayı DURDURMUYOR: denetim yazılamazsa kare yine
+        gelsin, yalnız günlüğe düşsün.
+        """
+        denet = self.ayar.get("denetimler")
+        if not isinstance(denet, dict) or not denet or not cihaz:
+            return
+        if not shutil.which("v4l2-ctl"):
+            if not self._denetim_uyarisi:
+                self._denetim_uyarisi = True
+                self.gunluk_cb(f"[{self.etiket}] v4l2-ctl yok, kamera denetimleri "
+                               "uygulanamıyor (sudo apt install v4l-utils)", "uyari")
+            return
+        siralı = sorted(denet.items(), key=lambda ç: "auto" not in ç[0].lower())
+        ciftler = ",".join(f"{ad}={deger}" for ad, deger in siralı
+                           if str(ad).replace("_", "").isalnum())
+        if not ciftler:
+            return
+        try:
+            sonuc = subprocess.run(["v4l2-ctl", "-d", cihaz, "--set-ctrl", ciftler],
+                                   capture_output=True, timeout=6)
+        except (OSError, subprocess.SubprocessError) as hata:
+            self.gunluk_cb(f"[{self.etiket}] denetimler yazılamadı: {hata}", "uyari")
+            return
+        if sonuc.returncode != 0:
+            ayrinti = (sonuc.stderr or b"").decode("utf-8", "replace").strip()
+            self.gunluk_cb(f"[{self.etiket}] denetimler yazılamadı: "
+                           f"{ayrinti[-200:] or 'bilinmeyen hata'}", "uyari")
+        elif ciftler != self._son_denetim:
+            self._son_denetim = ciftler
+            self.gunluk_cb(f"[{self.etiket}] kamera denetimleri uygulandı: {ciftler}")
 
     def cihaz_coz(self, zorla: bool = False) -> str:
         """USB kamerayı adından bulur; sonucu saklar.
@@ -307,9 +376,9 @@ class Kamera:
             return False
         try:
             self._picam = Picamera2()
-            genislik = int(self.ayar["genislik"])
+            genislik, yukseklik = self._boyut()
             yapilandirma = self._picam.create_still_configuration(
-                main={"size": (genislik, int(genislik * 3 / 4))})
+                main={"size": (genislik, yukseklik)})
             self._picam.configure(yapilandirma)
             self._picam.start()
             time.sleep(2)   # otomatik pozlama otursun
@@ -387,13 +456,13 @@ class Kamera:
     def _canli_picamera2(self):
         """picamera2 ile sürekli kare üretir."""
         from picamera2 import Picamera2  # type: ignore
-        genislik = int(self.ayar["genislik"])
+        genislik, yukseklik = self._boyut()
         # Video yapılandırması still'den belirgin hızlı: still her karede
         # tam çözünürlük hazırlığı yapıyor.
         self._picam_kapat()
         picam = Picamera2()
         picam.configure(picam.create_video_configuration(
-            main={"size": (genislik, int(genislik * 3 / 4))}))
+            main={"size": (genislik, yukseklik)}))
         picam.start()
         self._picam = picam
         time.sleep(1)                       # pozlama otursun
@@ -434,8 +503,7 @@ class Kamera:
         return "mjpeg" in cikti
 
     def _canli_komutu(self) -> list[str]:
-        genislik = int(self.ayar["genislik"])
-        yukseklik = int(genislik * 3 / 4)
+        genislik, yukseklik = self._boyut()
         if self._yontem in ("fswebcam", "ffmpeg"):
             # USB kamera: ffmpeg v4l2'den okuyup stdout'a MJPEG basıyor.
             cihaz = self.cihaz_coz(zorla=True)
@@ -462,6 +530,10 @@ class Kamera:
 
     def _canli_rpicam(self):
         """rpicam-vid / libcamera-vid / ffmpeg ile sürekli MJPEG."""
+        # Denetimler AKIŞ BAŞLAMADAN yazılıyor: ffmpeg cihazı açtıktan
+        # sonra v4l2-ctl aynı düğüme yazamayabiliyor.
+        if self._yontem in ("ffmpeg", "fswebcam"):
+            self._denetimleri_uygula(self.cihaz_coz())
         komut = self._canli_komutu()
         surec = subprocess.Popen(komut, stdout=subprocess.PIPE,
                                  stderr=subprocess.DEVNULL, bufsize=0)
@@ -575,8 +647,7 @@ class Kamera:
 
     def _komut_kare(self) -> bytes:
         """libcamera-still, fswebcam ya da ffmpeg ile tek kare."""
-        genislik = int(self.ayar["genislik"])
-        yukseklik = int(genislik * 3 / 4)
+        genislik, yukseklik = self._boyut()
         gecici = tempfile.NamedTemporaryFile(suffix=".jpg", delete=False)
         gecici.close()
         try:
@@ -589,14 +660,17 @@ class Kamera:
                 cihaz = self.cihaz_coz()
                 if not cihaz:
                     raise RuntimeError(self.cihaz_not or "USB kamera bulunamadı")
+                self._denetimleri_uygula(cihaz)
                 komut = ["ffmpeg", "-hide_banner", "-loglevel", "error",
-                         "-f", "v4l2", "-video_size", f"{genislik}x{yukseklik}",
+                         "-f", "v4l2", "-input_format", "mjpeg",
+                         "-video_size", f"{genislik}x{yukseklik}",
                          "-i", cihaz, "-frames:v", "1", "-q:v", "3",
                          "-y", gecici.name]
             else:
                 cihaz = self.cihaz_coz()
                 if not cihaz:
                     raise RuntimeError(self.cihaz_not or "USB kamera bulunamadı")
+                self._denetimleri_uygula(cihaz)
                 komut = ["fswebcam", "-d", cihaz, "-r",
                          f"{genislik}x{yukseklik}", "--no-banner",
                          "-q", gecici.name]
@@ -619,8 +693,7 @@ class Kamera:
         """Donanım olmadan panelin kare akışını denemek için üretilen kare."""
         from PIL import Image, ImageDraw
 
-        genislik = int(self.ayar["genislik"])
-        yukseklik = int(genislik * 3 / 4)
+        genislik, yukseklik = self._boyut()
         gorsel = Image.new("RGB", (genislik, yukseklik), (26, 40, 26))
         cizim = ImageDraw.Draw(gorsel)
         # Yatak ızgarası + saat: kareyi gerçekten yenilendiğini görebilmek için.
@@ -718,6 +791,8 @@ class Kamera:
             "cihaz_adi": str(self.ayar.get("cihaz_adi") or ""),
             "cihaz_not": self.cihaz_not,
             "genislik": int(self.ayar.get("genislik", 640)),
+            "cozunurluk": str(self.ayar.get("cozunurluk") or ""),
+            "denetimler": dict(self.ayar.get("denetimler") or {}),
             "yol": str(self.ayar.get("yol") or "oto"),
             "sahte": bool(self.ayar.get("sahte")),
             # AÇILIŞTA kendiliğinden çalışsın mı — `acik` ile karıştırılmasın:
@@ -903,7 +978,14 @@ VARSAYILAN_KAMERALAR: list[dict[str, Any]] = [
 #: Panelden gelen tanımda kabul edilen alanlar. Beyaz liste: bilinmeyen bir
 #: anahtar sessizce saklanıp sonra "neden çalışmıyor" sorusuna dönüşmesin.
 DUZENLENEBILIR = ("etiket", "hareketli", "aralik_sn", "genislik", "kalite",
-                  "cihaz", "cihaz_adi", "yol", "sahte", "aktif")
+                  "cihaz", "cihaz_adi", "yol", "sahte", "aktif",
+                  "cozunurluk", "denetimler")
+
+#: Kamera denetimlerinde kabul edilen ad biçimi — `v4l2-ctl --list-ctrls`
+#: adları harf, rakam ve alt çizgiden ibaret. Kabuk enjeksiyonuna kapı
+#: bırakmamak için beyaz liste; değerler de yalnız sayı.
+import re as _re
+DENETIM_ADI = _re.compile(r"^[a-z][a-z0-9_]{1,40}$")
 
 
 class KameraAyarHatasi(Exception):
@@ -958,6 +1040,46 @@ def tanim_dogrula(ham: dict[str, Any], sira: int = 0) -> dict[str, Any]:
     except (TypeError, ValueError):
         raise KameraAyarHatasi(f"'{temiz['etiket']}' JPEG kalitesi sayı olmalı") from None
     temiz["kalite"] = max(30, min(95, kalite))
+
+    # ÇÖZÜNÜRLÜK: "1280x720" gibi ya da boş. Boşsa `genislik`ten 4:3.
+    ham_coz = str(ham.get("cozunurluk") or "").strip().lower().replace(" ", "")
+    if ham_coz:
+        g, _, y = ham_coz.partition("x")
+        if not (g.isdigit() and y.isdigit()):
+            raise KameraAyarHatasi(
+                f"'{temiz['etiket']}' çözünürlüğü 'GENİŞLİKxYÜKSEKLİK' olmalı "
+                f"(verilen: {ham_coz}). Kameranın desteklediklerini "
+                "`v4l2-ctl --list-formats-ext` yazıyor.")
+        if not (160 <= int(g) <= 1920 and 120 <= int(y) <= 1440):
+            raise KameraAyarHatasi(
+                f"'{temiz['etiket']}' çözünürlüğü 160x120 ile 1920x1440 arasında "
+                f"olmalı (verilen: {ham_coz}).")
+        ham_coz = f"{int(g)}x{int(y)}"
+    temiz["cozunurluk"] = ham_coz
+
+    # DENETİMLER: {ad: sayı}. Adı ve değeri denetliyoruz, çünkü bunlar
+    # doğrudan `v4l2-ctl --set-ctrl`e gidiyor.
+    ham_den = ham.get("denetimler")
+    denet: dict[str, int] = {}
+    if isinstance(ham_den, dict):
+        for anahtar, deger in ham_den.items():
+            ad_d = str(anahtar).strip().lower()
+            if not DENETIM_ADI.match(ad_d):
+                raise KameraAyarHatasi(
+                    f"'{temiz['etiket']}' denetim adı geçersiz: {anahtar!r}. "
+                    "Adlar `v4l2-ctl --list-ctrls` çıktısındaki gibi olmalı "
+                    "(brightness, gamma, backlight_compensation…).")
+            if deger in (None, ""):
+                continue
+            try:
+                denet[ad_d] = int(float(deger))
+            except (TypeError, ValueError):
+                raise KameraAyarHatasi(
+                    f"'{temiz['etiket']}' için {ad_d} değeri sayı olmalı "
+                    f"(verilen: {deger!r})") from None
+    elif ham_den not in (None, ""):
+        raise KameraAyarHatasi(f"'{temiz['etiket']}' denetimleri bir nesne olmalı")
+    temiz["denetimler"] = denet
 
     cihaz = str(ham.get("cihaz") or "").strip()
     if cihaz and not cihaz.startswith("/dev/"):
