@@ -683,18 +683,38 @@
           <button class="bolum-bas" aria-expanded="false">
             <svg class="ikon ok"><use href="#i-ok"/></svg>
             <span class="bolum-ad">Gelişmiş</span>
-            <span class="bolum-not">Tohum ızgarası</span>
+            <span class="bolum-not">Ekim noktaları</span>
           </button>
         </div>
         <div class="bolum-govde">
-          <h4 class="alt-baslik">Tohum ızgarası
+          <h4 class="alt-baslik">Ekim noktaları
             <button class="yardim" type="button" aria-expanded="false" aria-label="Açıklama">?</button></h4>
           <p class="yardim-metin gizli">
-            1 numaralı nokta başlangıçta. Sütunlar X'te, satırlar Y'de ilerler;
-            numaralandırma satır-öncelikli: <code>s1, s2, s3…</code>
-            Z, güvenli taşıma yüksekliği olarak yazılır.
+            İki yol var. <b>Izgara</b> düzenli bir dizilim üretir: 1 numaralı
+            nokta başlangıçta, sütunlar X'te, satırlar Y'de ilerler;
+            numaralandırma satır-öncelikli (<code>s1, s2, s3…</code>).
+            <b>Koordinat listesi</b> ise tek tek yazdığınız noktaları üretir —
+            her ekim düzenli bir ızgaraya oturmuyor.<br><br>
+            <b>Tür seçin.</b> Türü yazılı olmayan bir noktayı ekim
+            reddediyor ("türü yazılı değil"), çünkü hangi hazneden tohum
+            alacağını bilemiyor. Burada seçtiğiniz tür noktalara yazılır ve
+            nokta bir <b>bitki</b> olur.<br><br>
+            Z, güvenli taşıma yüksekliği olarak yazılır; ekim derinliği ayrı
+            bir bilgi ve türde duruyor.
           </p>
-          <div class="izgara-form">
+
+          <div class="araclar" role="group" aria-label="Üretim biçimi">
+            <button class="ikon-dugme secili iz-kip" data-kip="izgara">Izgara</button>
+            <button class="ikon-dugme iz-kip" data-kip="liste">Koordinat listesi</button>
+          </div>
+
+          <div class="alan" style="margin:8px 0">
+            <label for="iz-tur">Tür — noktalara yazılacak</label>
+            <select id="iz-tur"></select>
+          </div>
+          <div class="rozet-uyari gizli" id="iz-tur-uyari"></div>
+
+          <div class="izgara-form" id="iz-izgara">
             <div class="grup">
               <span class="grup-ad">Başlangıç</span>
               <div class="alan"><label for="iz-x0">X</label><input type="number" id="iz-x0" step="0.1" value="60"></div>
@@ -710,6 +730,22 @@
               <div class="alan"><label for="iz-satir">Satır</label><input type="number" id="iz-satir" min="1" value="3"></div>
               <div class="alan"><label for="iz-sutun">Sütun</label><input type="number" id="iz-sutun" min="1" value="4"></div>
             </div>
+          </div>
+
+          <!-- Serbest liste. Her satır bir nokta; ayraç virgül ya da boşluk
+               olabilir çünkü kullanıcı ikisini de yazıyor. Okunamayan satır
+               ATLANMIYOR, sebebiyle reddediliyor — sessizce atlanan bir
+               satır, ekilmediği fark edilmeyen bir bitki demek. -->
+          <div class="gizli" id="iz-liste-kutu">
+            <label for="iz-liste">Koordinatlar — her satıra <b>X, Y</b></label>
+            <textarea id="iz-liste" rows="5" spellcheck="false"
+                      placeholder="300, 150&#10;340, 150&#10;380, 190"></textarea>
+          </div>
+
+          <!-- Önek İKİ KİPTE DE gerekli: nokta adları buradan türüyor
+               (s1, s2…). Izgara formunun içinde kalsaydı liste kipinde
+               kaybolurdu. -->
+          <div class="izgara-form">
             <div class="grup">
               <span class="grup-ad">Ad</span>
               <div class="alan"><label for="iz-onek">Önek</label><input type="text" id="iz-onek" maxlength="12" value="s"></div>
@@ -983,19 +1019,25 @@
           </details>
 
           <details class="uc-ayar">
-            <summary>Tohumluk gözleri</summary>
+            <summary>Tohum hazneleri</summary>
             <p class="alt-not">Tohumluk — uç profilinin ucundaki delikli blok.
-              Her <b>gözün</b> kendi X/Y/Z'si var. <b>Z, gözün DİBİ</b> —
+              Her <b>haznenin</b> kendi X/Y/Z'si var. <b>Z, haznenin DİBİ</b> —
               vakum ucunun ineceği yer, tepsinin yüzeyi değil. Bu makinede
-              büyük Z yukarısı olduğu için Z'si daha büyük olan göz daha
-              SIĞ demek. Sahada ölçülen değerlerde gözlerin derinliği aynı
-              değil, tek bir "tohumluk konumu" bunu
-              taşıyamıyor. <b>Tohum</b> gözde ne durduğunu, <b>dolu</b>
-              içinde tohum kalıp kalmadığını söylüyor. Dolu/boş durumu
-              kalıcı: ekim dizisi bir gözden tohum alınca o gözü aynı anda
-              boş yazıyor, makine kapansa da unutulmuyor. Tohumluğu elle
-              doldurduğunuzda kutuyu geri işaretleyin.<br>
-              3B sahnedeki uç profili uçların ve gözlerin konumundan
+              büyük Z yukarısı olduğu için Z'si daha büyük olan hazne daha
+              SIĞ demek. Sahada ölçülen değerlerde haznelerin derinliği aynı
+              değil, tek bir "tohumluk konumu" bunu taşıyamıyor.<br><br>
+              <b>Tohum</b> haznede hangi türün durduğunu söylüyor ve ekim
+              hazneyi <b>buradan</b> buluyor: seçtiğiniz bitkinin türüne
+              uyan hazneye gidiyor. Bir türe hazne ayrılmamışsa ekim
+              başlamıyor ve sebebini önceden söylüyor.<br><br>
+              <b>dolu</b> haznede tohum kalıp kalmadığını söylüyor.
+              <b>Ekim bunu DEĞİŞTİRMİYOR:</b> haznede yüzlerce tohum var,
+              bir tane almakla bitmiyor. Yalnız siz "bu hazne bitti"
+              dediğinizde kapanıyor; doldurunca geri işaretleyin.<br><br>
+              Koordinat makine sınırlarının dışındaysa satırın altında
+              uyarı çıkıyor — makinenin ulaşamayacağı bir hazne ekimi
+              başlatmıyor.<br>
+              3B sahnedeki uç profili uçların ve haznelerin konumundan
               türetiliyor; elle girilen bir profil ölçüsü yok. Liste boşsa
               tohumluk tanımsız sayılır ve çizilmez.</p>
             <div id="goz-tablo"></div>
@@ -1052,16 +1094,27 @@
               <div class="alan"><label for="ua-rel-dy">ayrılma dy</label><input type="number" id="ua-rel-dy" step="1" placeholder="0"></div>
             </div>
 
-            <p class="alt-not">Sulama başlığı — Z eksenine ayrı takılı ve ucun
-              merkezinden kaymış. Makine <b>hedef + (dx, dy)</b> noktasına gidince
-              su hedefe düşüyor; haritada iki nokta ayrı çiziliyor (halka = su,
-              ince daire = uç). <b>Z tabanı</b> mutlak alt sınır: yüzey + açıklık
-              bunun altında kalırsa başlık kaba ya da bitkiye sürtüyor.</p>
+            <p class="alt-not"><b>Sulama kayması.</b> Sulama başlığı Z eksenine
+              ayrı takılı ve ucun merkezinden kaymış — makine bitkinin tam
+              üstüne gidince su bitkinin YANINA düşüyor. Buradaki iki sayı
+              makinenin ne kadar kayarak gideceğini söylüyor:
+              makine <b>bitki + (X kayması, Y kayması)</b> noktasına gidiyor,
+              su bitkinin üstüne düşüyor. Başlık ucun <b>solunda</b> ise X
+              kayması <b>artı</b>; makine sağa kayar, başlık bitkinin üstüne
+              gelir.<br>
+              Haritada iki nokta ayrı çiziliyor: halka = suyun düştüğü yer,
+              ince daire = ucun gittiği yer. <b>Z tabanı</b> mutlak alt sınır:
+              yüzey + açıklık bunun altında kalırsa başlık kaba ya da bitkiye
+              sürtüyor.</p>
             <div class="alan-izgara">
-              <div class="alan"><label for="ua-sb-dx">başlık dx</label><input type="number" id="ua-sb-dx" step="0.1"></div>
-              <div class="alan"><label for="ua-sb-dy">başlık dy</label><input type="number" id="ua-sb-dy" step="0.1"></div>
+              <div class="alan"><label for="ua-sb-dx">sulama X kayması (mm)</label><input type="number" id="ua-sb-dx" step="0.1"></div>
+              <div class="alan"><label for="ua-sb-dy">sulama Y kayması (mm)</label><input type="number" id="ua-sb-dy" step="0.1"></div>
               <div class="alan"><label for="ua-sb-zmin">sulama Z tabanı</label><input type="number" id="ua-sb-zmin" step="1"></div>
             </div>
+            <!-- SAYININ NE YAPTIĞI, YAZILDIĞI ANDA. İşaretin yönünü
+                 anlatan bir cümle okumak yerine örneği görmek daha hızlı:
+                 kullanıcı 50 yazınca makinenin nereye gideceğini görüyor. -->
+            <p class="alt-not" id="ua-sb-ornek"></p>
 
             <label class="onay"><input type="checkbox" id="ua-alan-acik"> Uç değiştirme alanını aç</label>
             <div class="alan-izgara">
@@ -1096,23 +1149,32 @@
         </div>
         <div class="bolum-govde">
           <p class="yardim-metin gizli" id="yardim-ekim">
-            Ekim dizisi tohumluk gözünden vakumla tohum alıp hedefe
-            bırakıyor. Makinede <b>iki sensör eksik</b> ve onay adımı tam
-            olarak o ikisinin yerini dolduruyor:<br><br>
-            <b>Uç kilidi (lock_reg).</b> Bağlı olmadığı için yazılım vakum
-            ucunun takılı olduğunu doğrulayamıyor — servo komutu sessiz
-            geçiyor ve uç takılı sanılıyor. Uç yokken kafa gözün içine
-            iner.<br><br>
-            <b>Tohum sensörü (presence_reg).</b> Bağlı olmadığı için
-            vakumun tohumu tuttuğunu makine bilemiyor. Tohum yolda
-            düşerse yazılım fark etmez; hedefe varır, pompayı kapatır ve
-            "ekildi" der. Geriye boş bir çukur kalır ve bunu haftalar
-            sonra, hiçbir şey çıkmayınca anlarsınız.<br><br>
-            Onay açıkken kafa iki kez durup size soruyor ve <b>kilit
-            şartı kalkıyor</b> — doğrulamayı siz yapıyorsunuz. Onayı
-            kapatırsanız şart geri gelir: <code>lock_reg = 0</code> olan
-            bir kurulumda ekim hiç başlamaz. Yani bu anahtar ekimi
-            kolaylaştırmıyor, doğrulamayı kimin yapacağını seçiyor.
+            <b>Akış.</b> Ekim başlayınca makine önce tohum alma ucunu
+            takıyor. Sonra her bitki için: türüne uyan haznenin üstüne
+            gidip <b>duruyor ve soruyor</b> → onaylayınca iniyor, hava
+            pompasını açıp tohumu vakumla alıyor → ekilecek koordinatın
+            üstüne gidip <b>yine duruyor ve soruyor</b> → onaylayınca
+            inip tohumu bırakıyor → <b>home'a dönüyor</b>. Döngü sıradaki
+            bitkiyle baştan işliyor; bütün bitkiler bitince uç yuvasına
+            bırakılıyor.<br><br>
+            <b>Hazne tükenmiyor.</b> Haznede yüzlerce tohum var; ekim
+            hazneyi "boş" işaretlemiyor ve aynı hazne seçimdeki bütün
+            marullara hizmet ediyor. Hazne ancak siz "bitti" dediğinizde
+            kapanıyor.<br><br>
+            <b>İki onay, iki eksik sensör.</b><br>
+            <b>Uç kilidi (lock_reg)</b> bağlı değil: servo komutu sessiz
+            geçiyor, yazılım ucun takılı olduğunu doğrulayamıyor. Uç
+            yokken kafa haznenin içine iner — birinci onay bunu soruyor.<br>
+            <b>Tohum sensörü (presence_reg)</b> bağlı değil: vakumun
+            tohumu tuttuğunu makine bilemiyor. Tohum yolda düşerse
+            yazılım fark etmez, iner, pompayı kapatır ve "ekildi" der;
+            geriye boş bir çukur kalır ve bunu haftalar sonra, hiçbir şey
+            çıkmayınca anlarsınız — ikinci onay bunu soruyor.<br><br>
+            Onay açıkken <b>kilit şartı kalkıyor</b> — doğrulamayı siz
+            yapıyorsunuz. Kapatırsanız şart geri gelir:
+            <code>lock_reg = 0</code> olan bir kurulumda ekim hiç
+            başlamaz. Yani bu anahtar ekimi kolaylaştırmıyor,
+            doğrulamayı kimin yapacağını seçiyor.
           </p>
 
           <label class="anahtar">
@@ -1122,7 +1184,17 @@
           </label>
           <div class="rozet-uyari gizli" id="ekim-onay-uyari"></div>
 
+          <label class="anahtar">
+            <input type="checkbox" id="a-ekim-birak" checked>
+            <span class="yuva"></span>
+            <span class="ikincil">Bitince ucu yuvasına bırak</span>
+          </label>
+
           <div class="alan-izgara">
+            <div class="alan">
+              <label for="ekim-uc">Tohum alma ucu</label>
+              <input type="text" id="ekim-uc" maxlength="40" placeholder="tool3">
+            </div>
             <div class="alan">
               <label for="ekim-vakum">Vakum tutma (sn)</label>
               <input type="number" id="ekim-vakum" step="0.1" min="0.1" max="10">
@@ -1132,9 +1204,13 @@
               <input type="number" id="ekim-dusme" step="0.1" min="0.1" max="10">
             </div>
           </div>
-          <p class="alt-not"><b>Vakum tutma:</b> gözün dibinde, pompa
-            açıldıktan sonra beklenen süre. Hava pompasının hattı
-            boşaltması anlık değil; kısa olursa tohum gözde kalır.
+          <p class="alt-not"><b>Tohum alma ucu:</b> ekim başlarken takılacak
+            ucun adı — Uç değiştirme bölümündeki yuva adlarından biri.
+            Kodda sabit değil: başka bir uca geçerseniz burayı
+            değiştirmeniz yeterli.<br>
+            <b>Vakum tutma:</b> haznenin dibinde, pompa açıldıktan sonra
+            beklenen süre. Hava pompasının hattı boşaltması anlık değil;
+            kısa olursa tohum haznede kalır.
             <b>Düşme bekleme:</b> hedefte pompa kapandıktan sonra
             beklenen süre. Vakum kesilince tohum serbest kalıyor ama
             birkaç milimetre düşüyor; kafa hemen kalkarsa tohum uçla
@@ -1508,14 +1584,13 @@
       <div class="ekim-onay-iptal gizli" id="ekim-onay-iptal-secim">
         <p class="alt-not"><b>Pompa açık ve tohum ucta olabilir.</b>
           Sessizce bırakmıyoruz — ne yapılacağını seçin:</p>
-        <button class="dugme" id="d-ekim-iptal-geri">Tohumu gözüne geri koy</button>
-        <p class="alt-not">Kafa gözüne iner, pompa kapanır, tohum kendi
-          gözüne düşer ve göz yeniden <b>dolu</b> işaretlenir. Tohum ucta
-          <b>görünüyorsa</b> bu.</p>
+        <button class="dugme" id="d-ekim-iptal-geri">Tohumu hazneye geri koy</button>
+        <p class="alt-not">Kafa hazneye döner, iner, pompa kapanır ve tohum
+          geldiği yere düşer. Tohum ucta <b>görünüyorsa</b> bu.</p>
         <button class="dugme" id="d-ekim-iptal-birak">Pompayı kapat, tohum düşsün</button>
-        <p class="alt-not">Pompa olduğu yerde kapanır. Göz <b>boş</b> kalır —
-          tohum ya yolda düşmüştü ya şimdi tepsinin üstüne düşecek. Tohum
-          ucta <b>görünmüyorsa</b> bu.</p>
+        <p class="alt-not">Pompa olduğu yerde kapanır; tohum hedefin üstüne
+          düşer — <b>toprağa girmez</b>, yüzeyde kalır. Tohum ucta
+          <b>görünmüyorsa</b> bu.</p>
         <button class="dugme" id="d-ekim-iptal-vazgec">Vazgeç, geri dön</button>
       </div>
     </div>

@@ -2211,3 +2211,38 @@ table.veri.kisayol td:first-child { white-space: nowrap; color: var(--metin); }
   overflow: hidden;
   line-height: 1.35;
 }
+
+/* ------------------------------------------------ hazne uyarısı / ekim
+   Sınır dışı bir hazne koordinatı satırın ALTINDA yazıyor, kutunun
+   içinde değil: dar panelde kutuya sığmıyor ve kırpılmış bir uyarı,
+   okunmamış bir uyarıdır. Kullanıcı bugün Y645'e tanımlı bir hazneyi
+   ancak ekim başlamayınca fark etti. */
+.goz-uyari {
+  grid-column: 1 / -1;
+  margin-top: 2px;
+  font-size: var(--yazi-kucuk);
+  color: #e8a33d;
+  line-height: 1.3;
+}
+/* Sınır dışı sayı kutunun kendisinde de belli olsun — uyarıyı okumadan
+   hangi alanın sorunlu olduğu görünsün. */
+input.hatali {
+  border-color: #e8a33d !important;
+  background: rgba(232, 163, 61, .08);
+}
+/* Koordinat listesi: tek tek nokta yazmak için. Tabular rakam, çünkü
+   alt alta yazılan koordinatlar hizalı okununca yanlış satır fark
+   ediliyor. */
+#iz-liste {
+  width: 100%;
+  margin-top: 4px;
+  font-family: ui-monospace, monospace;
+  font-variant-numeric: tabular-nums;
+  font-size: var(--yazi-kucuk);
+  padding: 6px 8px;
+  border-radius: var(--b1);
+  border: 1px solid var(--cizgi);
+  background: var(--girdi-zemin, rgba(255, 255, 255, .04));
+  color: var(--metin);
+  resize: vertical;
+}

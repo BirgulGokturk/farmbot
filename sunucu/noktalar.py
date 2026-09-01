@@ -262,6 +262,57 @@ def geri_koy(kayitlar: list[dict[str, Any]]) -> list[str]:
     return konan
 
 
+def nokta_listesi_uret(ciftler: list[Any], z: float,
+                       onek: str = "s") -> list[dict[str, Any]]:
+    """Tek tek yazılmış X/Y çiftlerinden nokta üretir.
+
+    Her ekim düzenli bir ızgaraya oturmuyor: kullanıcı "şuraya ve
+    şuraya" diyebilmeli. Izgarayı zorlayıp sonra fazla noktaları elle
+    silmek, istenen üç noktayı yazmaktan zor.
+
+    Kabul edilen biçimler — panel serbest metin gönderiyor ve kullanıcı
+    üçünü de yazar:
+        [[300, 150], [340, 150]]
+        [{"x": 300, "y": 150}, …]
+        ["300,150", "340 150"]
+
+    HATA SESSİZ DEĞİL: okunamayan satır atlanmıyor, sebebiyle birlikte
+    reddediliyor. Sessizce atlanan bir satır, ekilmediği fark edilmeyen
+    bir bitki demek.
+    """
+    onek = _ad_dogrula(onek or "s")
+    if not isinstance(ciftler, list) or not ciftler:
+        raise NoktaHatasi("Koordinat listesi boş — her satıra 'X, Y' yazın.")
+    if len(ciftler) > AZAMI_NOKTA:
+        raise NoktaHatasi(f"Çok fazla nokta: {len(ciftler)}")
+
+    cikti: list[dict[str, Any]] = []
+    for sira, ham in enumerate(ciftler, start=1):
+        if isinstance(ham, dict):
+            x, y = ham.get("x"), ham.get("y")
+        elif isinstance(ham, str):
+            parca = [p for p in ham.replace(";", ",").replace("\t", ",")
+                     .replace(" ", ",").split(",") if p]
+            if len(parca) != 2:
+                raise NoktaHatasi(
+                    f"{sira}. satır okunamadı ({ham!r}) — 'X, Y' bekleniyor.")
+            x, y = parca
+        elif isinstance(ham, (list, tuple)) and len(ham) == 2:
+            x, y = ham
+        else:
+            raise NoktaHatasi(f"{sira}. satır okunamadı — 'X, Y' bekleniyor.")
+        try:
+            fx, fy = float(x), float(y)
+        except (TypeError, ValueError):
+            raise NoktaHatasi(f"{sira}. satırda sayı olmayan değer: {x!r}, {y!r}")
+        cikti.append({
+            "ad": f"{onek}{sira}",
+            "x": round(fx, 1), "y": round(fy, 1), "z": round(float(z), 1),
+            "etiket": "ızgara",
+        })
+    return cikti
+
+
 def toplu_ekle(yeni: list[dict[str, Any]]) -> dict[str, int]:
     """Izgara üretimi için: aynı isimdekilerin üzerine yazar, yenileri ekler.
 

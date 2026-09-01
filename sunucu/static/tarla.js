@@ -1544,7 +1544,7 @@
     }
     if (islem === "ek") {
       /* ÖNİZLEME, sulamadakinden daha da gerekli: toprağa giren tohum
-       * geri alınamıyor ve hangi gözün boşalacağını önceden görmek
+       * geri alınamıyor ve hangi hazneden alınacağını önceden görmek
        * gerekiyor. Ret varsa hiç denemiyoruz — sunucu zaten 422 verir
        * ama kullanıcı sebebi burada, tek satırda okusun. */
       try {
@@ -1556,9 +1556,11 @@
           return;
         }
         (o.uyari || []).slice(0, 4).forEach((u) => gunluk(`⚠ ${u}`, "uyari"));
-        gunluk(`${o.tohum_sayisi} tohum · gözler: ${
-          (o.bos_kalacak_gozler || []).join(", ")} boşalacak · ${
-          o.kalan_dolu_goz} dolu göz kalacak · ${o.adim} adım`, "iyi");
+        // "Boşalacak göz" yazmıyoruz artık: hazne tükenmiyor, aynı hazne
+        // seçimdeki bütün bitkilere hizmet ediyor.
+        gunluk(`${o.tohum_sayisi} tohum · hazne: ${
+          (o.kullanilan_hazneler || []).join(", ") || "?"} · uç ${
+          o.uc_adi || "?"}${o.onay ? " · onaylı" : ""}`, "iyi");
       } catch (h) {
         gunluk(`⚠ Ekim önizlemesi alınamadı: ${h.message}`, "uyari");
       }

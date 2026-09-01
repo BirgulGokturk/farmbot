@@ -280,18 +280,71 @@ async function noktaKaydet() {
   await noktalariYukle();
 }
 
-/* --------------------------------------------------------- tohum ızgarası */
+/* ------------------------------------------------------ ekim noktaları
+ *
+ * İki kip, tek uç nokta. Izgara düzenli dizilim üretiyor; koordinat
+ * listesi kullanıcının tek tek yazdığı noktaları. İkincisi çünkü her
+ * ekim düzenli bir ızgaraya oturmuyor ve fazla noktaları sonradan
+ * silmek, istenen üçünü yazmaktan zor.
+ *
+ * TÜR BURADA SORULUYOR. Türsüz üretilen noktalar ekimde "türü yazılı
+ * değil" diye reddediliyordu; kullanıcı 12 noktayı tek tek düzenlemek
+ * zorunda kalıyordu. Üretirken sormak tek bir alan.
+ */
 function izgaraGirdisi() {
-  // Z artık formda yok: tarla tasarımcısındaki bitkilerle aynı kural geçerli —
+  // Z formda yok: tarla tasarımcısındaki bitkilerle aynı kural geçerli —
   // nokta güvenli taşıma yüksekliğine yazılıyor ki "git" dendiğinde uç toprağa
   // dalmasın. Ekim derinliği ayrı bir bilgi ve türde duruyor.
-  return {
-    x0: Number($("#iz-x0").value), y0: Number($("#iz-y0").value),
+  const ortak = {
+    kip: S.izgaraKip || "izgara",
+    tur: ($("#iz-tur") || {}).value || "",
     z: S.guvenliZ == null ? 340 : S.guvenliZ,
-    dx: Number($("#iz-dx").value), dy: Number($("#iz-dy").value),
-    satir: Number($("#iz-satir").value), sutun: Number($("#iz-sutun").value),
     onek: $("#iz-onek").value.trim() || "s",
   };
+  if (ortak.kip === "liste") {
+    // Satırları OLDUĞU GİBİ gönderiyoruz; ayrıştırma sunucuda, tek
+    // yerde. Panelde ikinci bir ayrıştırıcı olsaydı ikisi ayrışabilirdi.
+    ortak.noktalar = ($("#iz-liste").value || "")
+      .split("\n").map((s) => s.trim()).filter(Boolean);
+    return ortak;
+  }
+  return {
+    ...ortak,
+    x0: Number($("#iz-x0").value), y0: Number($("#iz-y0").value),
+    dx: Number($("#iz-dx").value), dy: Number($("#iz-dy").value),
+    satir: Number($("#iz-satir").value), sutun: Number($("#iz-sutun").value),
+  };
+}
+
+/** Tür listesi + "tür seçilmedi" uyarısı. */
+function izgaraTurYaz() {
+  const sec = $("#iz-tur");
+  if (!sec) return;
+  const onceki = sec.value;
+  sec.innerHTML = tohumSecenekleri(onceki);
+  const uyari = $("#iz-tur-uyari");
+  if (uyari) {
+    // Sebebi ekimden ÖNCE söylüyoruz: kullanıcı 12 nokta üretip ekime
+    // basınca "türü yazılı değil" ile karşılaşmasın.
+    uyari.textContent = sec.value
+      ? "" : "Tür seçilmedi — bu noktalar ekilemez, ekim \"türü yazılı "
+             + "değil\" diyerek reddeder. Sonradan da verebilirsiniz.";
+    uyari.classList.toggle("gizli", !!sec.value);
+  }
+}
+
+function izgaraKipSec(kip) {
+  S.izgaraKip = kip === "liste" ? "liste" : "izgara";
+  $$(".iz-kip").forEach((d) =>
+    d.classList.toggle("secili", d.dataset.kip === S.izgaraKip));
+  const izg = $("#iz-izgara"), lst = $("#iz-liste-kutu");
+  if (izg) izg.classList.toggle("gizli", S.izgaraKip !== "izgara");
+  if (lst) lst.classList.toggle("gizli", S.izgaraKip !== "liste");
+  // Kip değişti: eski önizleme artık başka bir şeyi anlatıyor.
+  const kutu = $("#izgara-onizleme");
+  if (kutu) kutu.classList.add("gizli");
+  const uygula = $("#d-izgara-uygula");
+  if (uygula) uygula.classList.add("gizli");
 }
 
 async function izgaraOnizle() {
@@ -341,7 +394,10 @@ async function izgaraUygula() {
     const o = await apiIste("/api/izgara/uygula", {
       method: "POST", body: JSON.stringify(izgaraGirdisi()),
     });
-    gunluk(`✓ Izgara: ${o.eklendi} yeni, ${o.guncellendi} güncellendi (toplam ${o.toplam})`, "ok");
+    const tur = ($("#iz-tur") || {}).value || "";
+    gunluk(`✓ ${o.eklendi} yeni, ${o.guncellendi} güncellendi (toplam ${o.toplam})`
+      + (tur ? ` · tür yazıldı` : " · TÜRSÜZ — ekim reddeder"),
+      tur ? "ok" : "uyari");
     $("#izgara-onizleme").classList.add("gizli");
     $("#d-izgara-uygula").classList.add("gizli");
     await noktalariYukle();
@@ -551,6 +607,10 @@ function ucGuncelle(u) {
   if (!S.gozDuzenleniyor && gozImza !== S.sonGozler) {
     S.sonGozler = gozImza;
     gozTablosuCiz(gozler);
+    // Ekim noktaları formundaki tür listesi de aynı katalogdan doluyor
+    // ve aynı sebeple gecikiyor: türler durum paketlerinden sonra
+    // yükleniyor, ilk çizimde liste boş kalırdı.
+    izgaraTurYaz();
   }
 
   // Ayar alanları: kullanıcı düzenlerken üzerine yazmıyoruz.
@@ -602,6 +662,7 @@ function ucGuncelle(u) {
         el.value = sb[alan] == null ? "" : sb[alan];
       }
     });
+    sulamaOfsetOrnek();
   }
 
   // Uç listesi ajandan geliyor; seçim kutusunu yalnız değiştiğinde yeniden
@@ -789,7 +850,7 @@ function gozTablosuCiz(gozler) {
   if (!kutu) return;
   const liste = gozler || [];
   if (!liste.length) {
-    kutu.innerHTML = '<p class="alt-not">Tanımlı tohumluk gözü yok.</p>';
+    kutu.innerHTML = '<p class="alt-not">Tanımlı tohum haznesi yok.</p>';
     return;
   }
   /* SATIR BAŞINA İKİ SIRA. Tek sıraya sığdırmayı denedim: yan panel 380
@@ -801,7 +862,7 @@ function gozTablosuCiz(gozler) {
    * sıranın başlığı yok çünkü kendini anlatıyor: listede türün adı
    * yazılı, kutunun yanında "dolu" etiketi duruyor. */
   kutu.innerHTML = `<div class="goz-baslik">
-      <span>Göz</span><span>X mm</span><span>Y mm</span><span>Z mm</span>
+      <span>Hazne</span><span>X mm</span><span>Y mm</span><span>Z mm</span>
     </div>` + liste.map((g, i) => `
     <div class="goz-satir${g.dolu ? "" : " goz-bos"}" data-i="${i}" data-ad="${kacisli(g.ad || "")}">
       <div class="goz-hucreler">
@@ -818,12 +879,19 @@ function gozTablosuCiz(gozler) {
           ${tohumSecenekleri(g.tohum)}
         </select>
         <label class="goz-dolu-etiket"
-               title="İşareti kaldırmak gözü ANINDA boş yazar">
+               title="Haznede tohum kaldı mı. Ekim bunu DEĞİŞTİRMİYOR — bir tohum almakla hazne bitmiyor. Yalnız siz 'bitti' dediğinizde kapanıyor.">
           <input type="checkbox" class="gz-dolu" ${g.dolu ? "checked" : ""}> dolu
         </label>
-        <button class="ut-sil gz-sil" title="Bu gözü sil">✕</button>
+        <button class="ut-sil gz-sil" title="Bu hazneyi sil">✕</button>
       </div>
+      <div class="goz-uyari gizli"></div>
     </div>`).join("");
+
+  // ULAŞILABİLİR Mİ — KOORDİNAT GİRİLİRKEN. Bunu ekim başlarken söylemek
+  // geç: Y645'e tanımlanmış bir hazne günlerce fark edilmiyor, sonra
+  // ekim başlamayınca sebebi aranıyor. Sınırlar ajandan geliyor; ajan
+  // yoksa denetim YAPILMIYOR ve bu "sorun yok" demek değil.
+  gozSinirDenetle();
 
   $$("#goz-tablo .gz-sil").forEach((d) => {
     d.onclick = () => {
@@ -846,7 +914,49 @@ function gozTablosuCiz(gozler) {
     };
   });
   kutu.querySelectorAll("input:not(.gz-dolu), select").forEach((g) => {
-    g.oninput = () => { S.gozDuzenleniyor = true; };
+    g.oninput = () => { S.gozDuzenleniyor = true; gozSinirDenetle(); };
+  });
+}
+
+/** Hazne koordinatlarını makine sınırlarına göre denetler — YAZILIRKEN.
+ *
+ * Aynı denetim sunucuda da var (`ekim.hazne_denetle`) ve ekimi
+ * durduruyor. Buradaki kopya onu gereksiz yapmıyor: asıl derdi
+ * kullanıcının sınır dışı bir sayıyı yazdığı ANDA görmesi. Kullanıcı
+ * bugün Y645'e bir hazne tanımladı ve bunu ancak ekim başlamayınca,
+ * günlüğü okuyarak öğrendi.
+ *
+ * Sınırlar ajandan (`durum.sinirlar`). Ajan yoksa denetim yok ve bunu
+ * "sorun yok" diye göstermiyoruz — hiç göstermiyoruz.
+ */
+function gozSinirDenetle() {
+  const sinir = S.sinirlar || {};
+  $$("#goz-tablo .goz-satir").forEach((satir) => {
+    const kutu = satir.querySelector(".goz-uyari");
+    if (!kutu) return;
+    const sorun = [];
+    [["x", "X"], ["y", "Y"], ["z", "Z"]].forEach(([eksen, ad]) => {
+      const girdi = satir.querySelector(".gz-" + eksen);
+      const deger = Number(girdi.value);
+      const s = sinir[eksen] || {};
+      const disarida = girdi.value !== "" && s.min != null && s.max != null
+        && (deger < Number(s.min) - 0.5 || deger > Number(s.max) + 0.5);
+      girdi.classList.toggle("hatali", !!disarida);
+      if (disarida) {
+        sorun.push(`${ad}${Math.round(deger)} makine sınırının dışında `
+          + `(${Math.round(Number(s.min))}–${Math.round(Number(s.max))})`);
+      }
+    });
+    // Güvenli yükseklik ayrı bir şart: hazneye inebilmek için Z'sinin
+    // güvenli Z'nin ALTINDA olması gerekiyor (büyük Z = yukarısı).
+    const gz = satir.querySelector(".gz-z");
+    if (gz.value !== "" && S.guvenliZ != null && Number(gz.value) >= S.guvenliZ) {
+      sorun.push(`Z${Math.round(Number(gz.value))} güvenli yükseklikten `
+        + `(${Math.round(S.guvenliZ)}) aşağıda değil — makine hazneye inemez`);
+      gz.classList.add("hatali");
+    }
+    kutu.textContent = sorun.length ? "⚠ " + sorun.join(" · ") : "";
+    kutu.classList.toggle("gizli", !sorun.length);
   });
 }
 
@@ -867,7 +977,7 @@ async function gozTablosuKaydet() {
   if (sonuc && sonuc.ok) {
     S.gozDuzenleniyor = false;
     S.sonGozler = null;          // bir sonraki durumda ajanın hâli çizilsin
-    gunluk(`✓ ${gozler.length} tohumluk gözü kaydedildi`, "ok");
+    gunluk(`✓ ${gozler.length} tohum haznesi kaydedildi`, "ok");
   }
 }
 
@@ -2006,6 +2116,34 @@ function kareyiTazele(ts, canli = false) {
  * doğuruyor (göz dolu mu boş mu) ve tek bir "İptal" düğmesi hangisinin
  * olduğunu söylemezdi.
  */
+/** Sulama kaymasının ne yaptığını ÖRNEKLE gösterir.
+ *
+ * Hesap panelde YAPILMIYOR — bu bir örnek cümlesi, sulamanın kendisi
+ * `sulama.py`de ve makine oraya gidiyor. Buradaki iki toplama yalnız
+ * işaretin yönünü göstermek için: "dx artı mı eksi mi olmalı" sorusunu
+ * bir cümle okuyarak değil, sayıyı yazıp sonucu görerek cevaplamak
+ * daha hızlı.
+ */
+function sulamaOfsetOrnek() {
+  const kutu = $("#ua-sb-ornek");
+  if (!kutu) return;
+  const dx = Number(($("#ua-sb-dx") || {}).value || 0);
+  const dy = Number(($("#ua-sb-dy") || {}).value || 0);
+  if (!dx && !dy) {
+    kutu.innerHTML = "<b>Kayma yok:</b> makine bitkinin tam üstüne gidiyor. "
+      + "Başlık ucun yanındaysa su bitkinin yanına düşer.";
+    return;
+  }
+  kutu.innerHTML = `Örnek: <b>X300 Y150</b>'deki bir bitki için makine `
+    + `<b>X${Math.round(300 + dx)} Y${Math.round(150 + dy)}</b>'ye gidiyor, `
+    + "su X300 Y150'ye düşüyor.";
+}
+
+/** "bitki 2/5 · m2" — hangi bitkide olduğumuz her hâlde görünsün. */
+function ekimIlerleme(e) {
+  return `bitki ${e.sira}/${e.toplam}` + (e.tohum ? ` · ${e.tohum}` : "");
+}
+
 function ekimOnayYaz(e) {
   const kutu = $("#ekim-onay");
   if (!kutu) return;
@@ -2032,9 +2170,12 @@ function ekimOnayYaz(e) {
 
   if (!onay) {
     $("#ekim-onay-adim").textContent = "ekim sürüyor";
-    $("#ekim-onay-ilerleme").textContent =
-      `tohum ${e.sira}/${e.toplam}` + (e.tohum ? ` · ${e.tohum}` : "");
-    $("#ekim-onay-soru").textContent = e.mesaj || "Makine ilerliyor…";
+    $("#ekim-onay-ilerleme").textContent = ekimIlerleme(e);
+    // NE YAPTIĞINI YAZ. "Makine ilerliyor" hiçbir şey söylemiyordu;
+    // kullanıcı ekrana bakıp makinenin hangi adımda olduğunu görebilmeli.
+    $("#ekim-onay-soru").textContent = e.asama
+      ? e.asama.charAt(0).toLocaleUpperCase("tr") + e.asama.slice(1) + "…"
+      : (e.mesaj || "Makine ilerliyor…");
     $("#ekim-onay-gerekce").textContent =
       "Onay beklenmiyor. Durdurmak isterseniz İptal'e basın.";
     $("#ekim-onay-yer").innerHTML =
@@ -2050,18 +2191,22 @@ function ekimOnayYaz(e) {
 
   $("#ekim-onay-adim").textContent =
     e.durum === "onay1" ? "1. onay · uç" : "2. onay · tohum";
-  $("#ekim-onay-ilerleme").textContent =
-    `tohum ${e.sira}/${e.toplam}` + (e.tohum ? ` · ${e.tohum}` : "");
+  $("#ekim-onay-ilerleme").textContent = ekimIlerleme(e);
   $("#ekim-onay-soru").textContent = e.soru || "";
   $("#ekim-onay-gerekce").textContent = e.gerekce || "";
 
+  /* NEREDE DURDUĞU. Kullanıcı makineye bakarak onaylayacak ama hangi
+   * haznenin ya da hangi bitkinin başında olduğunu bilmeli — hazneler
+   * yan yana ve dışarıdan hangisinin s1 olduğu anlaşılmıyor.
+   * Birinci onayda kafa HAZNENİN, ikincisinde HEDEFİN üstünde. */
   const k = e.konum || {};
   const say = (d) => (d == null ? "?" : Math.round(Number(d)));
   $("#ekim-onay-yer").innerHTML = k.ad
-    ? `Kafa <b>${kacisli(k.ad)}</b> gözünün üstünde —
-       X${say(k.x)} Y${say(k.y)} Z${say(k.z)}`
-      + (e.goz && e.tohum
-        ? `<br>'${kacisli(e.goz)}' gözünden <b>${kacisli(e.tohum)}</b> hedefine`
+    ? `Kafa <b>${kacisli(k.ad)}</b> ${k.nerede === "hedef" ? "noktasının" : "haznesinin"}
+       üstünde — X${say(k.x)} Y${say(k.y)} Z${say(k.z)}`
+      + (e.hazne && e.tohum
+        ? `<br>'${kacisli(e.hazne)}' haznesinden <b>${kacisli(e.tohum)}</b>`
+          + (e.tur_ad ? ` (${kacisli(e.tur_ad)})` : "") + " noktasına"
         : "")
       + (e.pompa_acik ? "<br><b>Vakum pompası AÇIK.</b>" : "")
     : "";
@@ -2134,11 +2279,14 @@ function ekimAyarYaz(a) {
   const uyari = $("#ekim-onay-uyari");
   if (!anahtar || !not) return;
   if (document.activeElement !== anahtar) anahtar.checked = !!a.onay_iste;
-  const v = $("#ekim-vakum"), ds = $("#ekim-dusme");
+  const birak = $("#a-ekim-birak");
+  if (birak && document.activeElement !== birak) birak.checked = !!a.bitince_birak;
+  const v = $("#ekim-vakum"), ds = $("#ekim-dusme"), uc = $("#ekim-uc");
   if (v && document.activeElement !== v) v.value = a.vakum_sn;
   if (ds && document.activeElement !== ds) ds.value = a.dusme_sn;
+  if (uc && document.activeElement !== uc) uc.value = a.uc_adi || "";
   not.textContent = (a.onay_iste ? "onaylı" : "onaysız")
-    + ` · vakum ${a.vakum_sn} sn · düşme ${a.dusme_sn} sn`;
+    + ` · ${a.uc_adi || "?"} · vakum ${a.vakum_sn} sn · düşme ${a.dusme_sn} sn`;
   if (uyari) {
     // Kapalıyken ne olacağını AÇIKÇA söylüyoruz: kullanıcı anahtarı
     // "ekim hızlansın" diye kapatıp neden hiç başlamadığını aramasın.
@@ -2161,6 +2309,8 @@ async function ekimAyarKaydet() {
       method: "POST",
       body: JSON.stringify({
         onay_iste: $("#a-ekim-onay").checked,
+        bitince_birak: $("#a-ekim-birak").checked,
+        uc_adi: $("#ekim-uc").value.trim(),
         vakum_sn: Number($("#ekim-vakum").value),
         dusme_sn: Number($("#ekim-dusme").value),
       }),
@@ -3030,6 +3180,9 @@ function durumGuncelle(d) {
   if (yeniSinir !== JSON.stringify(S.sinirlar || null)) {
     S.sinirlar = d.sinirlar || null;
     if (S.noktalar.length) noktalariCiz();
+    // Hazne tablosundaki "ulaşılamaz" uyarıları da sınırlara bağlı:
+    // ajan yeni bağlandıysa denetim ancak şimdi yapılabiliyor.
+    gozSinirDenetle();
   }
 
   const k = d.konum || {};
@@ -3808,6 +3961,25 @@ function olaylariBagla() {
 
   $("#d-izgara-onizle").onclick = izgaraOnizle;
   $("#d-izgara-uygula").onclick = izgaraUygula;
+  $$(".iz-kip").forEach((d) => { d.onclick = () => izgaraKipSec(d.dataset.kip); });
+  // `addEventListener`, `oninput =` DEĞİL. Bu iki kutuya aşağıda
+  // (`details.uc-ayar input`) zaten bir işleyici bağlanıyor ve o işleyici
+  // "kullanıcı düzenliyor" bayrağını kaldırıyor — atama yapsaydık onu
+  // ezerdik ve kutuya yazılan sayı, sonraki durum paketinde ajanın eski
+  // değeriyle geri silinirdi. (Ölçüldü: dx'e 50 yazıp dy'ye geçince dx
+  // sıfıra dönüyordu.)
+  $$("#ua-sb-dx, #ua-sb-dy").forEach((g) => {
+    g.addEventListener("input", sulamaOfsetOrnek);
+  });
+  const izTur = $("#iz-tur");
+  if (izTur) izTur.onchange = izgaraTurYaz;
+  const izListe = $("#iz-liste");
+  if (izListe) izListe.oninput = () => {
+    // Liste değişti: eski önizleme başka bir şeyi anlatıyor.
+    $("#izgara-onizleme").classList.add("gizli");
+    $("#d-izgara-uygula").classList.add("gizli");
+  };
+  izgaraKipSec("izgara");
   // Form değişince eski önizleme yanıltıcı olur; "Uygula" o değerlerle
   // çalışmıyor artık.
   $$(".izgara-form input").forEach((g) => {
