@@ -90,7 +90,9 @@ IZINLI_KOMUTLAR = {
     "nokta_denetle", # {"noktalar":[{x,y,z}…]}      — yasak bölge + sınır ÖN kontrolü
     "dizi_baslat",   # {"ad":…,"adimlar":[…],"tekrar":1} — çözülmüş adımlarla
     "dizi_durdur",   # {}
-    "kamera",        # {"acik": true|false, "aralik_sn": 3600}
+    "kamera",        # {"kamera":"uc","acik": true|false, "aralik_sn": 3600}
+    "kamera_kaydet", # {"kameralar":[{ad,etiket,hareketli,cihaz_adi,genislik,…}]}
+    "kamera_cihazlar",  # {} — sistemdeki /dev/video* düğümleri ve adları
     "role",          # {"ad": "su_pompasi"|"hava_pompasi", "durum": true}
 }
 
@@ -115,10 +117,11 @@ class Merkez:
         self.paneller: set[WebSocket] = set()
         # Ajandan gelen son değerler — panel açıldığında ekran boş kalmasın.
         self.son_olcum: dict[str, Any] = {}
-        # Canlı akışın son karesi — BELLEKTE, diskte değil. Tek kare tutuluyor:
-        # canlı akışın geçmişi yok, "şu an ne görünüyor" sorusunun cevabı var.
-        self.canli_kare: bytes = b""
-        self.canli_ts: float = 0.0
+        # Canlı akışın son karesi — BELLEKTE, diskte değil. KAMERA BAŞINA tek
+        # kare: canlı akışın geçmişi yok, "şu an ne görünüyor" sorusunun
+        # cevabı var. İki kamera aynı anda akabildiği için tek bir alan
+        # yetmiyordu; biri ötekinin karesini eziyordu.
+        self.canli_kareler: dict[str, dict[str, Any]] = {}
         self.son_durum: dict[str, Any] = {
             "bagli": False,
             "konum": {"x": None, "y": None, "z": None},
@@ -197,7 +200,8 @@ class Merkez:
         finally:
             self._bekleyen.pop(komut_id, None)
 
-    def canli_kare_yaz(self, b64: str, ts: float) -> None:
+    def canli_kare_yaz(self, b64: str, ts: float,
+                       kamera: str = kareler.VARSAYILAN_KAMERA) -> None:
         """Canlı kareyi belleğe alır. Bozuk ya da aşırı büyük kare atılıyor:
         `kareler.ekle` diskte aynı korumayı yapıyor, bellekte de gerekiyor."""
         try:
@@ -206,8 +210,10 @@ class Merkez:
             return
         if not ham or len(ham) > kareler.AZAMI_BAYT:
             return
-        self.canli_kare = ham
-        self.canli_ts = ts
+        self.canli_kareler[kareler.ad_temizle(kamera)] = {"kare": ham, "ts": ts}
+
+    def canli_kare_al(self, kamera: str = kareler.VARSAYILAN_KAMERA) -> bytes:
+        return (self.canli_kareler.get(kareler.ad_temizle(kamera)) or {}).get("kare", b"")
 
     def sonuc_isle(self, mesaj: dict[str, Any]) -> None:
         beklenen = self._bekleyen.get(str(mesaj.get("id")))
@@ -333,10 +339,14 @@ async def ws_ajan(ws: WebSocket, jeton: str = Query(default="")):
                 # base64 her panele ayrı ayrı gitmek zorunda kalırdı. Sunucu
                 # saklıyor, panele yalnızca "yeni kare var" haberi gidiyor ve
                 # tarayıcı <img> ile çekiyor.
+                #
+                # KARE KİMİN: ajan her karede kamera adını yazıyor. Adsız
+                # gelen kare (eski ajan) uç kamerasının sayılıyor.
                 ts = float(mesaj.get("ts", time.time()))
+                kam = kareler.ad_temizle(mesaj.get("kamera"))
                 await asyncio.to_thread(kareler.ekle, mesaj.get("veri", ""), ts,
-                                        mesaj.get("konum"))
-                await merkez.yayinla({"tip": "kare", "ts": ts})
+                                        mesaj.get("konum"), kam)
+                await merkez.yayinla({"tip": "kare", "ts": ts, "kamera": kam})
 
             elif tip == "canli":
                 # Canlı akış karesi. Diske YAZILMIYOR: saniyede beş kare SD
@@ -348,8 +358,9 @@ async def ws_ajan(ws: WebSocket, jeton: str = Query(default="")):
                 # çekiyor. Beş panel açıksa 40 KB'ı beş kez yollamak yerine
                 # her biri kendi isteğini yapıyor.
                 ts = float(mesaj.get("ts", time.time()))
-                merkez.canli_kare_yaz(mesaj.get("veri", ""), ts)
-                await merkez.yayinla({"tip": "canli", "ts": ts})
+                kam = kareler.ad_temizle(mesaj.get("kamera"))
+                merkez.canli_kare_yaz(mesaj.get("veri", ""), ts, kam)
+                await merkez.yayinla({"tip": "canli", "ts": ts, "kamera": kam})
 
             elif tip == "gunluk":
                 await merkez.yayinla(
@@ -2210,31 +2221,71 @@ def _yaricaplar(bitkiler: list[dict[str, Any]]
     return cikti, yasa
 
 
-def _kare_bul(damga: str) -> dict[str, Any] | None:
-    return next((k for k in kareler.liste() if k["damga"] == damga), None)
+def _kare_bul(damga: str, kamera: str = kareler.VARSAYILAN_KAMERA
+              ) -> dict[str, Any] | None:
+    kam = kareler.ad_temizle(kamera)
+    return next((k for k in kareler.liste(kam) if k["damga"] == damga), None)
 
 
-def _goruntu_coz(damga: str, esik: float | None, en_az_piksel: int
-                 ) -> dict[str, Any]:
-    """Bir kareyi çözümler: lekeler + milimetre + kayıtlı bitki eşlemesi."""
+def _kamera_bilgi(ad: str) -> dict[str, Any]:
+    """Ajanın bildirdiği kamera künyesi — etiket, hareketli mi.
+
+    Ajan kopukken boş dönüyor; çağıranlar "bilmiyorum"u karenin konumunun
+    olup olmamasından ayırt edebilsin diye sözlük boş kalıyor, uydurma bir
+    varsayılan konmuyor.
+    """
+    kam = kareler.ad_temizle(ad)
+    for k in (merkez.son_durum.get("kameralar") or []):
+        if kareler.ad_temizle(k.get("ad")) == kam:
+            return k
+    return {}
+
+
+def _kamera_etiket(ad: str) -> str:
+    return str(_kamera_bilgi(ad).get("etiket") or ad)
+
+
+def _goruntu_coz(damga: str, esik: float | None, en_az_piksel: int,
+                 kamera: str = kareler.VARSAYILAN_KAMERA) -> dict[str, Any]:
+    """Bir kareyi çözümler: lekeler + milimetre + kayıtlı bitki eşlemesi.
+
+    KALİBRASYON KARENİN KAMERASINDAN geliyor. Uç kamerasının mm/px'ini sabit
+    kameranın karesine uygulamak (ya da tersi) ölçüleri kat kat yanlış yapar
+    ve yanlışlık görünmez — sonuç yine "milimetre" diye yazılır.
+
+    SABİT KAMERADA KONUM YOK. O kareden çıkan şey ölçüler (çap, alan, en/boy);
+    yatak koordinatı ve kayıtlı bitkilerle eşleme çıkmıyor, uydurulmuyor.
+    """
     goruntu, tespit, _, _ = _goruntu_yukle()
-    kayit = _kare_bul(damga)
+    kam = kareler.ad_temizle(kamera)
+    kayit = _kare_bul(damga, kam)
     if kayit is None:
-        raise HTTPException(status_code=404, detail=f"'{damga}' damgalı kare yok")
-    ham = kareler.getir(damga)
+        raise HTTPException(status_code=404,
+                            detail=f"'{kam}' kamerasında '{damga}' damgalı kare yok")
+    ham = kareler.getir(damga, kam)
     if not ham:
         raise HTTPException(status_code=404, detail="Kare dosyası okunamadı")
 
     rgb, en, boy = _kare_dizi(ham)
     sonuc = goruntu.bul(rgb, esik=(goruntu.ESIK if esik is None else esik),
                         en_az_piksel=en_az_piksel)
-    kalib = kalibrasyon.oku()
-    cozum = tespit.cozumle(sonuc["lekeler"], kayit, kalib,
-                           genislik_px=en, yukseklik_px=boy)
+    kalib = kalibrasyon.oku(kam)
+    bilgi = _kamera_bilgi(kam)
+    # Hareketli mi: ajan söylüyorsa ondan. Ajan kopuksa karenin konumu olup
+    # olmamasına bakıyoruz — sabit kameranın karesinde konum hiç olmuyor.
+    hareketli = bool(bilgi.get("hareketli", kayit.get("x") is not None))
 
-    # Eşleme yalnız milimetre varken anlamlı.
+    if hareketli:
+        cozum = tespit.cozumle(sonuc["lekeler"], kayit, kalib,
+                               genislik_px=en, yukseklik_px=boy)
+    else:
+        boyut = tespit.boyutlar_mm(sonuc["lekeler"], kalib, genislik_px=en)
+        cozum = {"lekeler": boyut["lekeler"], "kare_mm": None,
+                 "ret": boyut["ret"] + [tespit.SABIT_KAMERA]}
+
+    # Eşleme yalnız milimetre VE konum varken anlamlı.
     eslesme: dict[str, Any] = {"eslesen": [], "yabani_aday": [], "gorunmeyen": []}
-    if not cozum["ret"]:
+    if hareketli and not cozum["ret"]:
         hepsi = [n for n in noktalar.hepsi() if n.get("tur")]
         icerdeki = tespit.kare_icinde(hepsi, cozum["kare_mm"])
         caplar, yasa = _yaricaplar(icerdeki)
@@ -2242,6 +2293,11 @@ def _goruntu_coz(damga: str, esik: float | None, en_az_piksel: int
                                   yaricap_mm=caplar, yasa_gore=yasa)
     return {
         "damga": damga, "ts": kayit.get("ts"),
+        "kamera": kam, "kamera_etiket": str(bilgi.get("etiket") or kam),
+        "hareketli": hareketli,
+        # Ölçüler var ama koordinat yok — panelin ikisini karıştırmaması için
+        # ayrı bir bayrak. `ret` doluyken bile `lekeler` dolu olabiliyor.
+        "yalniz_olcu": bool(not hareketli and cozum["lekeler"]),
         "kare": {"x": kayit.get("x"), "y": kayit.get("y"),
                  "en_px": en, "boy_px": boy},
         "esik": sonuc["esik"], "oran": round(sonuc["oran"], 4),
@@ -2260,17 +2316,28 @@ def _goruntu_coz(damga: str, esik: float | None, en_az_piksel: int
 
 
 @app.get("/api/goruntu/durum")
-async def api_goruntu_durum(jeton: str = Query(default="")):
-    """Görüntü işleme kullanılabilir mi, kalibrasyon var mı, kaç kare var."""
+async def api_goruntu_durum(jeton: str = Query(default=""),
+                            kamera: str = Query(default=kareler.VARSAYILAN_KAMERA)):
+    """Görüntü işleme kullanılabilir mi, kalibrasyon var mı, kaç kare var.
+
+    `kalibre` ve `mm_px` SEÇİLİ KAMERANIN sayıları — "kalibre edildi" tek bir
+    olgu değil, kamera başına ayrı bir olgu.
+    """
     _parola_dogrula(jeton)
+    kam = kareler.ad_temizle(kamera)
     hazir = await asyncio.to_thread(_goruntu_yukle)
-    kalib = await asyncio.to_thread(kalibrasyon.oku)
-    liste = await asyncio.to_thread(kareler.liste)
+    kalib = await asyncio.to_thread(kalibrasyon.oku, kam)
+    liste = await asyncio.to_thread(kareler.liste, kam)
+    bilgi = _kamera_bilgi(kam)
     return {
         "hazir": bool(hazir),
         "hata": _GORUNTU["hata"],
+        "kamera": kam,
+        "kamera_etiket": str(bilgi.get("etiket") or kam),
+        "hareketli": bool(bilgi.get("hareketli", True)),
         "kalibre": float(kalib.get("mm_px") or 0) > 0,
         "mm_px": kalib.get("mm_px"),
+        "kalibrasyonlar": await asyncio.to_thread(kalibrasyon.hepsi),
         "kare_sayisi": len(liste),
         "konumlu_kare": sum(1 for k in liste if k.get("x") is not None),
         "kareler": sorted(liste, key=lambda k: -k["ts"])[:12],
@@ -2283,26 +2350,39 @@ async def api_goruntu_coz(govde: dict[str, Any], jeton: str = Query(default=""))
     _parola_dogrula(jeton)
     if not await asyncio.to_thread(_goruntu_yukle):
         raise HTTPException(status_code=503, detail=_GORUNTU["hata"])
+    kam = kareler.ad_temizle(govde.get("kamera"))
     damga = str(govde.get("damga") or "").strip()
     if not damga:
-        liste = await asyncio.to_thread(kareler.liste)
+        liste = await asyncio.to_thread(kareler.liste, kam)
         if not liste:
-            raise HTTPException(status_code=404, detail="Hiç kare yok")
+            raise HTTPException(status_code=404,
+                                detail=f"'{_kamera_etiket(kam)}' kamerasından hiç kare yok")
         damga = max(liste, key=lambda k: k["ts"])["damga"]
     esik = govde.get("esik")
     esik = None if esik in (None, "") else float(esik)
     en_az = int(govde.get("en_az_piksel") or 0) or None
     goruntu, _, _, _ = _goruntu_yukle()
     return await asyncio.to_thread(
-        _goruntu_coz, damga, esik, en_az or goruntu.EN_AZ_PIKSEL)
+        _goruntu_coz, damga, esik, en_az or goruntu.EN_AZ_PIKSEL, kam)
 
 
-def _goruntu_fark(damga_a: str, damga_b: str) -> dict[str, Any]:
-    """İki karenin farkı. Kareler AYNI konumda çekilmiş olmalı."""
+def _goruntu_fark(damga_a: str, damga_b: str,
+                  kamera: str = kareler.VARSAYILAN_KAMERA) -> dict[str, Any]:
+    """İki karenin farkı. AYNI kameranın, AYNI konumda çekilmiş kareleri.
+
+    Sabit kamerada "aynı konum" şartı kendiliğinden sağlanıyor (kamera hiç
+    oynamıyor) ama konum alanı boş olduğu için kayma ölçülemiyor; orada
+    şartı kameranın sabitliği karşılıyor.
+    """
     goruntu, tespit, _, _ = _goruntu_yukle()
-    ka, kb = _kare_bul(damga_a), _kare_bul(damga_b)
+    kam = kareler.ad_temizle(kamera)
+    ka, kb = _kare_bul(damga_a, kam), _kare_bul(damga_b, kam)
     if ka is None or kb is None:
         raise HTTPException(status_code=404, detail="Karelerden biri bulunamadı")
+    kalib = kalibrasyon.oku(kam)
+    hareketli = bool(_kamera_bilgi(kam).get("hareketli", ka.get("x") is not None))
+    if not hareketli:
+        return _fark_sabit(damga_a, damga_b, kam, kalib)
     if ka.get("x") is None or kb.get("x") is None:
         raise HTTPException(
             status_code=422,
@@ -2318,15 +2398,14 @@ def _goruntu_fark(damga_a: str, damga_b: str) -> dict[str, Any]:
                     "Fark almak için makinenin aynı noktaya dönmesi gerekiyor — "
                     "hizasız iki karenin farkı baştan sona 'değişim' gösterir."))
 
-    ra, ena, boya = _kare_dizi(kareler.getir(damga_a) or b"")
-    rb, enb, boyb = _kare_dizi(kareler.getir(damga_b) or b"")
+    ra, ena, boya = _kare_dizi(kareler.getir(damga_a, kam) or b"")
+    rb, enb, boyb = _kare_dizi(kareler.getir(damga_b, kam) or b"")
     if (ena, boya) != (enb, boyb):
         raise HTTPException(status_code=422, detail="Kareler farklı çözünürlükte")
 
     f = goruntu.fark(ra, rb)
-    kalib = kalibrasyon.oku()
     cikti = {
-        "a": damga_a, "b": damga_b, "kayma_mm": round(kayma, 2),
+        "a": damga_a, "b": damga_b, "kamera": kam, "kayma_mm": round(kayma, 2),
         "sigma": f["sigma"], "esik": f["esik"],
         "koyulasan_oran": round(f["koyulasan_oran"], 4),
         "acilan_oran": round(f["acilan_oran"], 4),
@@ -2348,6 +2427,42 @@ def _goruntu_fark(damga_a: str, damga_b: str) -> dict[str, Any]:
     return cikti
 
 
+def _fark_sabit(damga_a: str, damga_b: str, kam: str,
+                kalib: dict[str, Any]) -> dict[str, Any]:
+    """Sabit kameranın iki karesi arasındaki değişim.
+
+    Konum şartı yok — kamera oynamıyor, iki kare zaten aynı sahneyi
+    gösteriyor. Çıkan değişim kutusunun YATAK KOORDİNATI verilmiyor
+    (kameranın nereye baktığı bilinmiyor); yalnız piksel kutusu ve
+    kalibreyse ölçüsü veriliyor.
+    """
+    goruntu, tespit, _, _ = _goruntu_yukle()
+    ra, ena, boya = _kare_dizi(kareler.getir(damga_a, kam) or b"")
+    rb, enb, boyb = _kare_dizi(kareler.getir(damga_b, kam) or b"")
+    if (ena, boya) != (enb, boyb):
+        raise HTTPException(status_code=422, detail="Kareler farklı çözünürlükte")
+    f = goruntu.fark(ra, rb)
+    cikti: dict[str, Any] = {
+        "a": damga_a, "b": damga_b, "kamera": kam, "kayma_mm": None,
+        "hareketli": False, "not": tespit.SABIT_KAMERA,
+        "sigma": f["sigma"], "esik": f["esik"],
+        "koyulasan_oran": round(f["koyulasan_oran"], 4),
+        "acilan_oran": round(f["acilan_oran"], 4),
+        "koyulasan": None, "acilan": None,
+    }
+    for ad in ("koyulasan", "acilan"):
+        kutu = goruntu.kutu(f[ad])
+        if kutu is None:
+            continue
+        sahte = {"no": None, "en_px": kutu["x2"] - kutu["x1"] + 1,
+                 "boy_px": kutu["y2"] - kutu["y1"] + 1,
+                 "alan_px": kutu["alan_px"], "dolgu": 1.0}
+        olcu = tespit.boyutlar_mm([sahte], kalib, genislik_px=enb)
+        cikti[ad] = (olcu["lekeler"][0] if olcu["lekeler"] else None)
+        cikti[f"{ad}_px"] = kutu
+    return cikti
+
+
 @app.post("/api/goruntu/fark")
 async def api_goruntu_fark(govde: dict[str, Any], jeton: str = Query(default="")):
     """Aynı noktada çekilmiş iki kare arasındaki değişim.
@@ -2364,11 +2479,13 @@ async def api_goruntu_fark(govde: dict[str, Any], jeton: str = Query(default="")
     b = str(govde.get("b") or "").strip()
     if not a or not b:
         raise HTTPException(status_code=400, detail="İki kare damgası gerekiyor")
-    return await asyncio.to_thread(_goruntu_fark, a, b)
+    return await asyncio.to_thread(_goruntu_fark, a, b,
+                                   kareler.ad_temizle(govde.get("kamera")))
 
 
 def _cimlenme(damga: str, adlar: list[str], esik: float | None,
-              yaricap: float) -> dict[str, Any]:
+              yaricap: float, kamera: str = kareler.VARSAYILAN_KAMERA
+              ) -> dict[str, Any]:
     """Ekilen noktaların üstünde bir şey çıkmış mı.
 
     Bütün yatağa değil, her noktanın çevresindeki KÜÇÜK pencereye
@@ -2377,16 +2494,22 @@ def _cimlenme(damga: str, adlar: list[str], esik: float | None,
     leke ayırmaya değil, pencerede yeşil ORANINA bakmak yeterli.
     """
     goruntu, tespit, _, _ = _goruntu_yukle()
-    kayit = _kare_bul(damga)
+    kam = kareler.ad_temizle(kamera)
+    kayit = _kare_bul(damga, kam)
     if kayit is None:
         raise HTTPException(status_code=404, detail=f"'{damga}' damgalı kare yok")
-    ham = kareler.getir(damga)
+    ham = kareler.getir(damga, kam)
     if not ham:
         raise HTTPException(status_code=404, detail="Kare dosyası okunamadı")
     rgb, en, boy = _kare_dizi(ham)
-    kalib = kalibrasyon.oku()
+    kalib = kalibrasyon.oku(kam)
     if not tespit.kalibre_mi(kalib):
         raise HTTPException(status_code=422, detail=tespit.YOK_KALIBRASYON)
+    # Çimlenme, NOKTANIN koordinatından karede bir pencere açmaya dayanıyor;
+    # sabit kamerada o dönüşüm yok. Sessizce yanlış bir pencereye bakıp
+    # "çimlenmedi" demektense söylüyoruz.
+    if not _kamera_bilgi(kam).get("hareketli", kayit.get("x") is not None):
+        raise HTTPException(status_code=422, detail=tespit.SABIT_KAMERA)
     if kayit.get("x") is None:
         raise HTTPException(status_code=422, detail=tespit.YOK_KONUM)
 
@@ -2414,7 +2537,8 @@ def _cimlenme(damga: str, adlar: list[str], esik: float | None,
             "pencere_px": int((p["x2"] - p["x1"]) * (p["y2"] - p["y1"])),
             "yesil_px": int(round(oran * (p["x2"] - p["x1"]) * (p["y2"] - p["y1"]))),
         })
-    return {"damga": damga, "esik": e, "yaricap_mm": yaricap, "noktalar": cikti}
+    return {"damga": damga, "kamera": kam, "esik": e, "yaricap_mm": yaricap,
+            "noktalar": cikti}
 
 
 @app.post("/api/goruntu/cimlenme")
@@ -2427,9 +2551,10 @@ async def api_goruntu_cimlenme(govde: dict[str, Any], jeton: str = Query(default
     _parola_dogrula(jeton)
     if not await asyncio.to_thread(_goruntu_yukle):
         raise HTTPException(status_code=503, detail=_GORUNTU["hata"])
+    kam = kareler.ad_temizle(govde.get("kamera"))
     damga = str(govde.get("damga") or "").strip()
     if not damga:
-        liste = await asyncio.to_thread(kareler.liste)
+        liste = await asyncio.to_thread(kareler.liste, kam)
         if not liste:
             raise HTTPException(status_code=404, detail="Hiç kare yok")
         damga = max(liste, key=lambda k: k["ts"])["damga"]
@@ -2444,12 +2569,13 @@ async def api_goruntu_cimlenme(govde: dict[str, Any], jeton: str = Query(default
     _, tespit, _, _ = _goruntu_yukle()
     yaricap = max(5.0, min(200.0, float(govde.get("yaricap_mm")
                                         or tespit.CIMLENME_PENCERE_MM)))
-    return await asyncio.to_thread(_cimlenme, damga, adlar, esik, yaricap)
+    return await asyncio.to_thread(_cimlenme, damga, adlar, esik, yaricap, kam)
 
 
 @app.get("/api/goruntu/maske")
 async def api_goruntu_maske(damga: str = Query(...), esik: float = Query(default=-9.0),
-                            jeton: str = Query(default="")):
+                            jeton: str = Query(default=""),
+                            kamera: str = Query(default=kareler.VARSAYILAN_KAMERA)):
     """Karenin maskesini PNG olarak döner — panel fotoğrafın üstüne koyuyor.
 
     Yeşil bulunan yer opak, gerisi saydam. Böylece "makine ne gördü"
@@ -2462,7 +2588,7 @@ async def api_goruntu_maske(damga: str = Query(...), esik: float = Query(default
     goruntu, _, np, Image = _goruntu_yukle()
 
     def uret() -> bytes:
-        ham = kareler.getir(damga)
+        ham = kareler.getir(damga, kareler.ad_temizle(kamera))
         if not ham:
             raise HTTPException(status_code=404, detail="Kare bulunamadı")
         rgb, _, _ = _kare_dizi(ham)
@@ -2489,16 +2615,27 @@ async def api_goruntu_maske(damga: str = Query(...), esik: float = Query(default
 # gönderiyor.
 # --------------------------------------------------------------------------- #
 @app.get("/api/kamera/kalibrasyon")
-async def api_kalibrasyon(jeton: str = Query(default="")):
+async def api_kalibrasyon(jeton: str = Query(default=""),
+                          kamera: str = Query(default=kalibrasyon.VARSAYILAN_KAMERA)):
+    """Seçili kameranın kalibrasyonu + hepsi.
+
+    `kalibrasyon` tekili duruyor: haritanın kare katmanı ve eski panel
+    doğrudan onu okuyor ve o her zaman UÇ kamerasının sayısı olmalı — harita
+    yalnızca konumu bilinen kareleri çiziyor, onlar da uç kamerasından.
+    """
     _parola_dogrula(jeton)
-    return {"kalibrasyon": await asyncio.to_thread(kalibrasyon.oku)}
+    kam = kalibrasyon.ad_temizle(kamera)
+    return {"kalibrasyon": await asyncio.to_thread(kalibrasyon.oku, kam),
+            "kamera": kam,
+            "kalibrasyonlar": await asyncio.to_thread(kalibrasyon.hepsi)}
 
 
 @app.post("/api/kamera/kalibrasyon")
 async def api_kalibrasyon_kaydet(govde: dict[str, Any], jeton: str = Query(default="")):
     _parola_dogrula(jeton)
     try:
-        veri = await asyncio.to_thread(kalibrasyon.kaydet, govde)
+        veri = await asyncio.to_thread(kalibrasyon.kaydet, govde,
+                                       kalibrasyon.ad_temizle(govde.get("kamera")))
     except kalibrasyon.KalibrasyonHatasi as hata:
         raise HTTPException(status_code=400, detail=str(hata))
     except (TypeError, ValueError) as hata:
@@ -2510,9 +2647,25 @@ async def api_kalibrasyon_kaydet(govde: dict[str, Any], jeton: str = Query(defau
 async def api_kalibrasyon_coz(govde: dict[str, Any], jeton: str = Query(default="")):
     """İki kareden ölçek ve açıyı hesaplar; istenirse doğrudan kaydeder.
 
-    Gövde: {"kare1": {"x","y","u","v"}, "kare2": {…}, "kaydet": true}
+    Gövde: {"kare1": {"x","y","u","v"}, "kare2": {…}, "kamera": "uc",
+            "kaydet": true}
+
+    YALNIZ HAREKETLİ KAMERADA. Sabit kamerada makine oynadığında sahne
+    değişmiyor; iki kare arasındaki piksel farkı sıfır çıkar ve yöntem
+    hiçbir şey ölçmez. Bunu hesaba sokup saçma bir sayı üretmektense
+    baştan reddediyoruz — sabit kamera için `/olcek` var.
     """
     _parola_dogrula(jeton)
+    kam = kalibrasyon.ad_temizle(govde.get("kamera"))
+    bilgi = _kamera_bilgi(kam)
+    if bilgi and not bilgi.get("hareketli", True):
+        raise HTTPException(
+            status_code=422,
+            detail=(f"'{bilgi.get('etiket') or kam}' sabit bir kamera; makine "
+                    "oynadığında gördüğü sahne değişmiyor, iki kare yöntemi "
+                    "orada hiçbir şey ölçemez. Bunun yerine karede uzunluğu "
+                    "bilinen bir şeyin iki ucunu işaretleyen ölçek yöntemini "
+                    "kullanın."))
     try:
         sonuc = await asyncio.to_thread(
             kalibrasyon.coz, govde.get("kare1") or {}, govde.get("kare2") or {})
@@ -2528,48 +2681,89 @@ async def api_kalibrasyon_coz(govde: dict[str, Any], jeton: str = Query(default=
             "genislik_px": govde.get("genislik_px"),
             "yukseklik_px": govde.get("yukseklik_px"),
             "yontem": "iki-kare", "guncelleme": time.time(),
-        })
-    return {"ok": True, "sonuc": sonuc, "kalibrasyon": veri}
+        }, kam)
+    return {"ok": True, "sonuc": sonuc, "kalibrasyon": veri, "kamera": kam}
+
+
+@app.post("/api/kamera/kalibrasyon/olcek")
+async def api_kalibrasyon_olcek(govde: dict[str, Any], jeton: str = Query(default="")):
+    """Tek kareden ölçek — SABİT kameranın kalibrasyon yolu.
+
+    Gövde: {"u1","v1","u2","v2","mm", "kamera": "ust", "kaydet": true}
+
+    Karede uzunluğu bilinen bir şeyin iki ucu işaretleniyor (cetvel, yatak
+    kenarı, iki tepsi gözü arası) ve gerçek mesafesi yazılıyor. Yalnız
+    `mm_px` çıkıyor: açı ve konum çıkmıyor, çünkü sabit kameranın karesinin
+    makine koordinatı yok. Uydurmuyoruz — kalibre edilmemiş kamerada panel
+    milimetre değil piksel yazmaya devam ediyor.
+    """
+    _parola_dogrula(jeton)
+    kam = kalibrasyon.ad_temizle(govde.get("kamera"))
+    try:
+        sonuc = await asyncio.to_thread(
+            kalibrasyon.coz_olcek, float(govde.get("u1")), float(govde.get("v1")),
+            float(govde.get("u2")), float(govde.get("v2")), float(govde.get("mm")))
+    except kalibrasyon.KalibrasyonHatasi as hata:
+        raise HTTPException(status_code=400, detail=str(hata))
+    except (KeyError, TypeError, ValueError) as hata:
+        raise HTTPException(status_code=400,
+                            detail=f"Eksik ya da geçersiz işaret verisi: {hata}")
+    veri = None
+    if govde.get("kaydet"):
+        veri = await asyncio.to_thread(kalibrasyon.kaydet, {
+            "mm_px": sonuc["mm_px"],
+            "genislik_px": govde.get("genislik_px"),
+            "yukseklik_px": govde.get("yukseklik_px"),
+            "yontem": "olcek", "guncelleme": time.time(),
+        }, kam)
+    return {"ok": True, "sonuc": sonuc, "kalibrasyon": veri, "kamera": kam}
 
 
 # --------------------------------------------------------------------------- #
 # Kamera kareleri
 # --------------------------------------------------------------------------- #
 @app.get("/api/kare/son")
-async def api_kare_son(jeton: str = Query(default=""), t: float = Query(default=0)):
-    """En son kareyi JPEG olarak döndürür. `t` yalnızca önbellek kırıcı."""
+async def api_kare_son(jeton: str = Query(default=""), t: float = Query(default=0),
+                       kamera: str = Query(default=kareler.VARSAYILAN_KAMERA)):
+    """Bir kameranın en son karesi (JPEG). `t` yalnızca önbellek kırıcı."""
     _parola_dogrula(jeton)
-    kare = await asyncio.to_thread(kareler.son)
+    kam = kareler.ad_temizle(kamera)
+    kare = await asyncio.to_thread(kareler.son, kam)
     if kare is None:
-        raise HTTPException(status_code=404, detail="Henüz kare yok")
+        raise HTTPException(status_code=404, detail=f"'{kam}' kamerasından henüz kare yok")
     return Response(content=kare, media_type="image/jpeg",
                     headers={"Cache-Control": "no-store"})
 
 
 @app.get("/api/kare/canli")
-async def api_kare_canli(jeton: str = Query(default=""), t: float = Query(default=0)):
-    """Canlı akışın SON karesi. `t` yalnızca önbellek kırıcı.
+async def api_kare_canli(jeton: str = Query(default=""), t: float = Query(default=0),
+                         kamera: str = Query(default=kareler.VARSAYILAN_KAMERA)):
+    """Bir kameranın canlı akışındaki SON kare. `t` yalnızca önbellek kırıcı.
 
     Diskten değil bellekten okunuyor; canlı kareler saklanmıyor.
     """
     _parola_dogrula(jeton)
-    kare = merkez.canli_kare
+    kam = kareler.ad_temizle(kamera)
+    kare = merkez.canli_kare_al(kam)
     if not kare:
-        raise HTTPException(status_code=404, detail="Canlı akış kapalı")
+        raise HTTPException(status_code=404, detail=f"'{kam}' kamerasında canlı akış kapalı")
     return Response(content=kare, media_type="image/jpeg",
                     headers={"Cache-Control": "no-store"})
 
 
 @app.get("/api/kare/liste")
-async def api_kare_liste(jeton: str = Query(default="")):
+async def api_kare_liste(jeton: str = Query(default=""),
+                         kamera: str = Query(default="")):
+    """Kare künyeleri. `kamera` boşsa hepsi — her kaydın içinde adı yazıyor."""
     _parola_dogrula(jeton)
-    return {"kareler": await asyncio.to_thread(kareler.liste)}
+    return {"kareler": await asyncio.to_thread(kareler.liste, kamera or None)}
 
 
 @app.get("/api/kare/{damga}")
-async def api_kare(damga: str, jeton: str = Query(default="")):
+async def api_kare(damga: str, jeton: str = Query(default=""),
+                   kamera: str = Query(default=kareler.VARSAYILAN_KAMERA)):
     _parola_dogrula(jeton)
-    kare = await asyncio.to_thread(kareler.getir, damga)
+    kare = await asyncio.to_thread(kareler.getir, damga, kareler.ad_temizle(kamera))
     if kare is None:
         raise HTTPException(status_code=404, detail="Kare bulunamadı")
     return Response(content=kare, media_type="image/jpeg")

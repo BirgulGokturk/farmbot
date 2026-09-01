@@ -133,8 +133,27 @@ Pinler çıkışa alınırken önce kapalı seviye yazılıyor, sonra `pinMode`
 
 ### Kamera
 
-Panelden aç/kapa ve **kare aralığı** (5 sn · 30 sn · 5 dk · 1 saat). 5 saniye
-canlıya en yakın olanı — gerçek bir video akışı değil, art arda kare.
+**İki kamera var ve ikisi aynı şeyi görmüyor.** Uç kamerası uç kafasına bağlı,
+yatağa yakın ve makineyle birlikte hareket ediyor; üst kamera sabit bir
+direkte, yatağın tamamını uzaktan görüyor. Bu fark iki yerde sonuç doğuruyor:
+
+* **mm/piksel her kamera için ayrı.** Yakındaki kameranın bir pikseli yarım
+  milimetre, uzaktakinin birkaç milimetre. Kalibrasyon kamera başına
+  saklanıyor ve çözümleme, karenin geldiği kameranın sayısını kullanıyor.
+  Kalibre edilmemiş kamerada milimetre yazılmıyor — piksel yazılıyor.
+* **Sabit kameranın karelerine makine konumu yazılmıyor.** Kamera makineyle
+  gitmiyor; makinenin o anki yeri, o karenin yatağın neresini gösterdiği
+  hakkında hiçbir şey söylemiyor. O kareden ölçü (çap, alan) çıkıyor, yatak
+  koordinatı ve kayıtlı bitkilerle eşleştirme çıkmıyor.
+
+Panelde her kamera için ayrı bir yüzen kutu var: kendi başına sürükleniyor,
+kendi boyut kademesini hatırlıyor, ayrı ayrı kapanıp açılıyor. Bir kamera
+kapalıyken ya da arızalıyken öteki çalışmaya devam ediyor — her kameranın
+kendi iş parçacığı ve kendi hata sayacı var.
+
+Panelden aç/kapa ve **kare aralığı** (5 sn · 30 sn · 5 dk · 1 saat) *seçili*
+kameraya işliyor. 5 saniye canlıya en yakın olanı — gerçek bir video akışı
+değil, art arda kare.
 
 Aralık seçmek kamerayı da açıyor: kapalıyken aralık seçip hiçbir şey
 olmaması kafa karıştırıcıydı.
@@ -593,13 +612,32 @@ Tür kataloğu `docs/bitki_turleri.json` (37 tür) ve `GET /api/turler` ile
 sunuluyor; dosyayı düzenlemek yeni tür eklemeye yetiyor.
 
 ### Kamera
-`ayarlar.json` → `"kamera": {"aktif": true, "aralik_sn": 30}`. Kare yakalama
-picamera2 → rpicam-still → libcamera-still → fswebcam sırasıyla deneniyor;
-hiçbiri yoksa
-kamera kapanır, geri kalan her şey çalışmaya devam eder. Kare WebSocket'ten
-panellere yayılmıyor (40 KB base64 her panele ayrı giderdi): sunucu son 12
-kareyi diskte tutuyor, panele "yeni kare var" haberi gidiyor, tarayıcı `<img>`
-ile çekiyor.
+Kameralar `ayarlar.json` → `"kameralar": [...]` içinde tanımlı ama asıl yer
+ajandaki **`kameralar.json`**: panelden (Ayarlar → Kameralar) kaydedilenler
+oraya yazılıyor ve bundan sonra o dosya okunuyor. Eski tek kameralı
+`"kamera": {...}` bloğu bozulmuyor — "uc" adlı kameraya dönüşüyor.
+
+Her kameranın kendi `yol`u var: `pi` şerit kablolu modül
+(picamera2 → rpicam-still → libcamera-still), `usb` USB webcam
+(fswebcam → ffmpeg), `oto` sırayla dener. **`rpicam-still` USB kamerayı
+sürmüyor**, o yüzden USB kamerada `usb` seçmek gerekiyor.
+
+**USB kameranın cihaz yolu sabit yazılmıyor.** `/dev/videoN` numarası kamera
+çıkarılıp takılınca değişiyor; adı değişmiyor. `cihaz_adi` alanına adın bir
+parçası yazılıyor (panelde "Bağlı cihazları tara" listeyi getiriyor) ve cihaz
+her açılışta `/sys/class/video4linux/*/name` üzerinden adından bulunuyor.
+Kare alınamadığında yol yeniden çözülüyor — kabloyu takıp paneli yeniden
+başlatmak gerekmiyor. `cihaz` alanı yalnızca ad bulunamazsa kullanılan yedek.
+
+Bir kamera açılamazsa yalnızca o kamera kapalı kalıyor, ötekiler ve makine
+çalışmaya devam ediyor.
+
+Kare WebSocket'ten panellere yayılmıyor (40 KB base64 her panele ayrı
+giderdi): sunucu **kamera başına** son 12 kareyi `kareler/<kamera>/` altında
+diskte tutuyor, panele "yeni kare var" haberi kamera adıyla gidiyor, tarayıcı
+`<img>` ile çekiyor. Halkanın kamera başına olması şart: ortak bir halkada
+5 saniyede bir çeken üst kamera, uç kamerasının bütün karelerini bir dakikada
+silerdi.
 
 **Şerit kablolu Pi kamera modülü için** Pi'de:
 

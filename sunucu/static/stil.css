@@ -2330,3 +2330,58 @@ input.hatali {
 }
 .tepsi-kart-bas { display: flex; align-items: center; gap: var(--b2); }
 .tepsi-arac { display: flex; flex-direction: column; gap: 6px; }
+
+/* --------------------------------------------------- çok kameralı arayüz
+   Kutular artık `#kamera-yuzenler` sarmalayıcısının içinde üretiliyor
+   (kamera sayısı ayardan geliyor, HTML'e sabit yazılamıyor). `display:
+   contents` sarmalayıcıyı yerleşimden çıkarıyor: kutular yine SAHNE
+   ızgarasının doğrudan çocuğuymuş gibi, sağ alt gözde duruyorlar. Araya
+   gerçek bir kutu koysaydık ızgara yerleşimi sarmalayıcıya geçer, kutular
+   onun içine sıkışırdı. */
+#kamera-yuzenler { display: contents; }
+
+/* Kamera seçme şeridi — Ayarlar kartındaki denetimlerin hangi kameraya
+   işlediğini gösteriyor. Tek kamerada gizli (`.gizli`). */
+.kam-sekmeler { flex-wrap: wrap; gap: var(--b1); }
+.kam-sekme { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+
+/* Kamera tanım kartları. Her kamera kendi kutusunda: bir kameranın
+   ayarını değiştirirken ötekinin alanlarına yanlışlıkla yazmak zor olsun. */
+.kam-ayar { display: flex; flex-direction: column; gap: var(--b2); }
+.kam-ayar + .kam-ayar { margin-top: var(--b2); }
+.kam-ayar input:disabled {
+  opacity: .6;
+  cursor: not-allowed;
+}
+
+/* Kutu başlığındaki kamera adı TAŞMIYOR. Ad artık kullanıcının yazdığı bir
+   etiket ("Üst kamera (direk)") ve kutu dar; sarmalanınca başlık üç satıra
+   çıkıp görüntüyü aşağı itiyordu.
+   SIRALAMA: yer daralınca önce SAAT kısalıyor, ad en sonda. Kutunun hangi
+   kamera olduğu, saatinden çok daha önemli — iki kutu yan yana dururken
+   ayırt edilmelerinin tek yolu bu. Tamamı `title`de duruyor. */
+.kamera-yuzen-bas { flex-direction: column; align-items: stretch; gap: 2px; }
+.kamera-yuzen-ad-satir { display: flex; min-width: 0; }
+.kamera-yuzen-bas .ad {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* İkinci satır: saat solda, düğmeler sağda. Saat esnek boşluğu yiyor ki
+   düğmeler hep sağ uçta hizalı kalsın (eski davranışın aynısı). */
+.kamera-yuzen-araclar {
+  display: flex;
+  align-items: center;
+  gap: var(--b2);
+  min-width: 0;
+}
+.kamera-yuzen-araclar .ikincil {
+  margin-right: auto;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-variant-numeric: tabular-nums;
+}
+.kamera-yuzen-araclar .kapat { flex: 0 0 auto; }

@@ -33,7 +33,13 @@ Tarla.katman({
 
   kareAdresi(k) {
     const jeton = (window.Panel && Panel.S && Panel.S.jeton) || "";
-    return `/api/kare/${encodeURIComponent(k.damga)}?jeton=${encodeURIComponent(jeton)}`;
+    // Kamera adı AÇIKÇA yazılıyor: kareler artık kamera başına ayrı
+    // saklanıyor ve iki kamera aynı saniyeye denk gelen damgalar
+    // üretebiliyor. Haritada yalnız konumlu kareler var (bkz. `konumlu`),
+    // yani pratikte hep uç kamerası — ama adres bunu varsaymamalı.
+    const kam = encodeURIComponent(k.kamera || "uc");
+    return `/api/kare/${encodeURIComponent(k.damga)}`
+      + `?kamera=${kam}&jeton=${encodeURIComponent(jeton)}`;
   },
 
   /** Görüntüyü bir kez yükleyip saklıyor; yüklenince haritayı tazeliyor. */

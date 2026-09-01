@@ -1,12 +1,27 @@
-"""Kamera — Pi'den periyodik kare.
+"""Kamera — Pi'den periyodik kare. Birden çok kamera olabilir.
 
-Kare yakalama üç yoldan denenir, ilk çalışan kullanılır:
+Makinede iki kamera var ve ikisi AYNI ŞEYİ görmüyor:
+
+  * **uç kamerası** — uç kafasına bağlı, yatağa yakın, MAKİNEYLE BİRLİKTE
+    hareket ediyor. Karenin çekildiği X/Y biliniyor, bu yüzden karedeki bir
+    leke yatağın bir koordinatına çevrilebiliyor.
+  * **üst kamera** — sabit bir direkte, yatağın tamamını uzaktan görüyor.
+    HAREKET ETMİYOR; makinenin o anki konumu bu karenin neresini gösterdiği
+    hakkında hiçbir şey söylemiyor. Bu yüzden bu kameranın karelerine makine
+    konumu YAZILMIYOR (bkz. `hareketli`).
+
+Her kameranın kendi iş parçacığı, kendi hata sayacı ve kendi ayarı var:
+biri arızalanınca ötekinin durmaması bunun sonucu, ayrı bir önlem değil.
+
+Kare yakalama şu yollardan denenir, ilk çalışan kullanılır:
 
   1. **picamera2** — Raspberry Pi kamera modülü (şerit kablo). Bookworm'ün
      önerdiği kütüphane.
-  2. **rpicam-still / libcamera-still / fswebcam** — komut satırı araçları.
-     Bookworm'de `libcamera-still` yerini `rpicam-still`e bıraktı; ikisi de
-     aranıyor. USB webcam ya da picamera2'nin kurulu olmadığı sistemler için.
+  2. **rpicam-still / libcamera-still** — komut satırı araçları. Bookworm'de
+     `libcamera-still` yerini `rpicam-still`e bıraktı; ikisi de aranıyor.
+     picamera2'nin kurulu olmadığı sistemler için.
+  2b. **fswebcam / ffmpeg** — USB webcam yolu. `rpicam-*` şerit kablodaki
+     kamerayı sürüyor, USB kamerayı DEĞİL; USB için ayrı yol gerekiyor.
 
      Not: `pi-kur.sh` sanal ortamı `--system-site-packages` olmadan kurarsa
      apt ile gelen `python3-picamera2` venv'in içinden GÖRÜNMEZ ve 1. yol
@@ -46,20 +61,118 @@ JPEG_BAS = bytes([0xFF, 0xD8])
 JPEG_SON = bytes([0xFF, 0xD9])
 
 VARSAYILAN = {
+    "ad": "uc",                 # kısa kimlik — kareler ve kalibrasyon buna bağlı
+    "etiket": "Uç kamerası",    # panelde görünen ad
+    # HAREKET EDİYOR MU. Uç kamerası makineyle gidiyor, karenin çekildiği
+    # X/Y anlamlı. Sabit kamera gitmiyor; ona makine konumu yazmak, kareyi
+    # yatağın rastgele bir yerine koymak demek — yanlış ve sessiz.
+    "hareketli": True,
     "aktif": False,
     "aralik_sn": 3600.0,   # saatte bir kare
     "genislik": 640,
     "kalite": 75,
     "sahte": False,
-    "cihaz": "/dev/video0",     # fswebcam için
+    # CİHAZ YOLU SABİT YAZILMIYOR. USB kamera bugün /dev/video8'de ama
+    # çıkarılıp takılınca numara değişiyor. `cihaz_adi` doluysa her açılışta
+    # ADINDAN bulunuyor; `cihaz` yalnızca ad bulunamazsa kullanılan yedek.
+    "cihaz": "",
+    "cihaz_adi": "",
+    # "oto" | "pi" (picamera2/rpicam) | "usb" (fswebcam/ffmpeg) | "sahte"
+    "yol": "oto",
 }
+
+#: Kamera adında yalnız bunlar: ad hem dosya yolu (kareler/<ad>/) hem de
+#: kalibrasyon anahtarı oluyor.
+AD_HARFLERI = set("abcdefghijklmnopqrstuvwxyz0123456789_-")
+
+V4L2_KOK = "/sys/class/video4linux"
+
+
+def ad_temizle(ham: Any, varsayilan: str = "uc") -> str:
+    metin = "".join(h for h in str(ham or "").strip().lower() if h in AD_HARFLERI)
+    return metin[:24] or varsayilan
+
+
+def _dosya_oku(yol: str) -> str:
+    try:
+        with open(yol, encoding="utf-8", errors="replace") as dosya:
+            return dosya.read().strip()
+    except OSError:
+        return ""
+
+
+def v4l2_cihazlar() -> list[dict[str, Any]]:
+    """Sistemdeki video düğümleri — [{"yol","no","ad","index"}].
+
+    `v4l2-ctl` çağırmıyoruz: kurulu olmayabiliyor ve gereken her şey
+    sysfs'te zaten yazılı. `index`, aynı kameranın düğümleri arasında
+    hangisinin görüntü verdiğini söylüyor (UVC kameralar bir de meta veri
+    düğümü açıyor; onun indeksi 0 değil).
+    """
+    try:
+        adlar = os.listdir(V4L2_KOK)
+    except OSError:
+        return []
+    cikti: list[dict[str, Any]] = []
+    for dugum in adlar:
+        if not dugum.startswith("video"):
+            continue
+        try:
+            no = int(dugum[5:])
+        except ValueError:
+            continue
+        ham_index = _dosya_oku(os.path.join(V4L2_KOK, dugum, "index"))
+        cikti.append({
+            "yol": f"/dev/{dugum}",
+            "no": no,
+            "ad": _dosya_oku(os.path.join(V4L2_KOK, dugum, "name")),
+            "index": int(ham_index) if ham_index.isdigit() else 0,
+        })
+    cikti.sort(key=lambda c: c["no"])
+    return cikti
+
+
+def cihaz_bul(cihaz_adi: str, yedek: str = "") -> tuple[str, str]:
+    """Kamerayı ADINDAN bulur -> (yol, açıklama).
+
+    Yol bulunamazsa ilk eleman boş ve açıklama NEDEN bulunamadığını
+    söylüyor — "kamera hatası" diye içi boş bir mesaj bırakmıyoruz.
+    """
+    hepsi = v4l2_cihazlar()
+    aranan = str(cihaz_adi or "").strip().casefold()
+    if aranan:
+        eslesen = [c for c in hepsi if aranan in (c["ad"] or "").casefold()]
+        if eslesen:
+            # Görüntü düğümü önce: index 0 olanlar, sonra numara sırası.
+            eslesen.sort(key=lambda c: (c["index"] != 0, c["no"]))
+            secili = eslesen[0]
+            return secili["yol"], f"'{secili['ad']}' → {secili['yol']}"
+        varsa = ", ".join(f"{c['yol']} ({c['ad']})" for c in hepsi) or "hiç yok"
+        if yedek and os.path.exists(yedek):
+            return yedek, (f"'{cihaz_adi}' adlı kamera bulunamadı, yedek yol "
+                           f"{yedek} kullanılıyor. Sistemdekiler: {varsa}")
+        return "", (f"'{cihaz_adi}' adlı kamera bulunamadı. Sistemdekiler: {varsa}")
+    if yedek:
+        if os.path.exists(yedek):
+            return yedek, f"{yedek} (elle verilen yol)"
+        return "", f"{yedek} yok — kamera çıkarılmış ya da numarası değişmiş olabilir"
+    # Ne ad ne yol verilmiş: görüntü düğümlerinin ilkini alıyoruz.
+    aday = [c for c in hepsi if c["index"] == 0]
+    if aday:
+        return aday[0]["yol"], f"{aday[0]['yol']} ({aday[0]['ad']}) — kendiliğinden seçildi"
+    return "", "Sistemde hiç video cihazı yok"
 
 
 class Kamera:
-    def __init__(self, ayar: dict[str, Any], gonder: Callable[[str, float], None],
+    def __init__(self, ayar: dict[str, Any],
+                 gonder: Callable[[str, str, float], None],
                  gunluk_cb: Callable[[str, str], None] | None = None,
                  cikarim: Callable[[bytes, float], Any] | None = None) -> None:
         self.ayar = {**VARSAYILAN, **(ayar or {})}
+        self.ayar["ad"] = ad_temizle(self.ayar.get("ad"))
+        # `gonder(kamera_adi, b64, ts)` — kareyi hangi kameranın ürettiği
+        # kaydın parçası. İki kamera aynı depoya yazıyor; hangisinden
+        # geldiğini bilmeden ne kalibrasyon ne de konum doğru seçilebilir.
         self.gonder = gonder
         # ÇIKARIM KANCASI. Kare sunucuya GİTTİKTEN SONRA çağrılıyor ve
         # yalnızca bir kuyruğa bırakıyor — bu döngüde hiçbir şey
@@ -81,6 +194,41 @@ class Kamera:
         self._yontem: str | None = None
         self._picam = None
         self.son_hata: str | None = None
+        # Çözülmüş cihaz yolu ve nasıl çözüldüğü. Panelde görünüyor:
+        # "video8'de sanıyordum, video6'ya taşınmış" demeyi mümkün kılıyor.
+        self._cihaz: str = ""
+        self.cihaz_not: str = ""
+
+    # --- kimlik ---
+    @property
+    def ad(self) -> str:
+        return str(self.ayar.get("ad") or "uc")
+
+    @property
+    def etiket(self) -> str:
+        return str(self.ayar.get("etiket") or self.ad)
+
+    @property
+    def hareketli(self) -> bool:
+        return bool(self.ayar.get("hareketli", True))
+
+    def cihaz_coz(self, zorla: bool = False) -> str:
+        """USB kamerayı adından bulur; sonucu saklar.
+
+        `zorla` yeniden arattırıyor: kamera çıkarılıp takıldığında numara
+        değişiyor ve elimizdeki yol artık başka bir cihazı ya da hiçbir şeyi
+        gösteriyor. Kare alınamadığında bu yüzden yeniden çözüyoruz.
+        """
+        if self._cihaz and not zorla:
+            return self._cihaz
+        yol, aciklama = cihaz_bul(str(self.ayar.get("cihaz_adi") or ""),
+                                  str(self.ayar.get("cihaz") or ""))
+        if aciklama != self.cihaz_not:
+            self.cihaz_not = aciklama
+            self.gunluk_cb(f"[{self.etiket}] {aciklama}",
+                           "bilgi" if yol else "uyari")
+        self._cihaz = yol
+        return yol
 
     # --- yakalama yolları ---
     def _picamera2_dene(self) -> bool:
@@ -145,10 +293,15 @@ class Kamera:
         içinden çağırmak cihazı sürekli kilitler. Burada yalnızca aracın
         kurulu olup olmadığına bakmak yeterli.
         """
-        if self._yontem in ("picamera2", "rpicam", "libcamera"):
+        if self._yontem in ("picamera2", "rpicam", "libcamera", "ffmpeg"):
             return True
         if self._yontem == "fswebcam":
-            return False          # fswebcam'in akış karşılığı yok
+            # fswebcam'in akış karşılığı yok; ffmpeg varsa USB kamerada
+            # akışı O yapıyor.
+            return bool(shutil.which("ffmpeg"))
+        yol = str(self.ayar.get("yol") or "oto").lower()
+        if yol == "usb" or self.ayar.get("cihaz_adi") or self.ayar.get("cihaz"):
+            return bool(shutil.which("ffmpeg"))
         if shutil.which("rpicam-vid") or shutil.which("libcamera-vid"):
             return True
         try:
@@ -181,13 +334,28 @@ class Kamera:
             # in use" hatasına yol açıyordu.
             self._picam_kapat()
 
-    def _canli_rpicam(self):
-        """rpicam-vid / libcamera-vid ile sürekli MJPEG."""
-        arac = "rpicam-vid" if shutil.which("rpicam-vid") else "libcamera-vid"
+    def _canli_komutu(self) -> list[str]:
         genislik = int(self.ayar["genislik"])
-        komut = [arac, "-n", "-t", "0", "--codec", "mjpeg",
-                 "--width", str(genislik), "--height", str(int(genislik * 3 / 4)),
-                 "-q", str(int(self.ayar["kalite"])), "-o", "-"]
+        yukseklik = int(genislik * 3 / 4)
+        if self._yontem in ("fswebcam", "ffmpeg"):
+            # USB kamera: ffmpeg v4l2'den okuyup stdout'a MJPEG basıyor.
+            # `-input_format mjpeg` YAZMIYORUZ: kamera desteklemiyorsa ffmpeg
+            # hiç açılmıyor. Ham kareyi ffmpeg'in sıkıştırması bir çekirdeği
+            # meşgul ediyor ama çalışmama riskini almıyor.
+            cihaz = self.cihaz_coz(zorla=True)
+            if not cihaz:
+                raise RuntimeError(self.cihaz_not or "USB kamera bulunamadı")
+            return ["ffmpeg", "-hide_banner", "-loglevel", "error",
+                    "-f", "v4l2", "-video_size", f"{genislik}x{yukseklik}",
+                    "-i", cihaz, "-f", "mjpeg", "-q:v", "5", "-"]
+        arac = "rpicam-vid" if shutil.which("rpicam-vid") else "libcamera-vid"
+        return [arac, "-n", "-t", "0", "--codec", "mjpeg",
+                "--width", str(genislik), "--height", str(yukseklik),
+                "-q", str(int(self.ayar["kalite"])), "-o", "-"]
+
+    def _canli_rpicam(self):
+        """rpicam-vid / libcamera-vid / ffmpeg ile sürekli MJPEG."""
+        komut = self._canli_komutu()
         surec = subprocess.Popen(komut, stdout=subprocess.PIPE,
                                  stderr=subprocess.DEVNULL, bufsize=0)
         self._canli_surec = surec
@@ -269,27 +437,39 @@ class Kamera:
                 if simdi - son < en_az_ara:
                     continue
                 son = simdi
-                self.gonder(base64.b64encode(kare).decode("ascii"), time.time())
+                self.gonder(self.ad, base64.b64encode(kare).decode("ascii"), time.time())
         except Exception as hata:
             self.son_hata = str(hata)
-            self.gunluk_cb(f"Canlı akış durdu: {hata}", "hata")
+            self.gunluk_cb(f"[{self.etiket}] Canlı akış durdu: {hata}", "hata")
         finally:
             self._canli = False
 
     def _komut_kare(self) -> bytes:
-        """libcamera-still ya da fswebcam ile tek kare."""
+        """libcamera-still, fswebcam ya da ffmpeg ile tek kare."""
         genislik = int(self.ayar["genislik"])
+        yukseklik = int(genislik * 3 / 4)
         gecici = tempfile.NamedTemporaryFile(suffix=".jpg", delete=False)
         gecici.close()
         try:
             if self._yontem in ("rpicam", "libcamera"):
                 arac = "rpicam-still" if self._yontem == "rpicam" else "libcamera-still"
                 komut = [arac, "-n", "-t", "800", "--width", str(genislik),
-                         "--height", str(int(genislik * 3 / 4)),
+                         "--height", str(yukseklik),
                          "-q", str(int(self.ayar["kalite"])), "-o", gecici.name]
+            elif self._yontem == "ffmpeg":
+                cihaz = self.cihaz_coz()
+                if not cihaz:
+                    raise RuntimeError(self.cihaz_not or "USB kamera bulunamadı")
+                komut = ["ffmpeg", "-hide_banner", "-loglevel", "error",
+                         "-f", "v4l2", "-video_size", f"{genislik}x{yukseklik}",
+                         "-i", cihaz, "-frames:v", "1", "-q:v", "3",
+                         "-y", gecici.name]
             else:
-                komut = ["fswebcam", "-d", str(self.ayar["cihaz"]), "-r",
-                         f"{genislik}x{int(genislik * 3 / 4)}", "--no-banner",
+                cihaz = self.cihaz_coz()
+                if not cihaz:
+                    raise RuntimeError(self.cihaz_not or "USB kamera bulunamadı")
+                komut = ["fswebcam", "-d", cihaz, "-r",
+                         f"{genislik}x{yukseklik}", "--no-banner",
                          "-q", gecici.name]
             try:
                 subprocess.run(komut, check=True, capture_output=True, timeout=20)
@@ -327,9 +507,42 @@ class Kamera:
         gorsel.save(tampon, format="JPEG", quality=int(self.ayar["kalite"]))
         return tampon.getvalue()
 
+    def _usb_yontem(self) -> str:
+        """USB kamera yolu — cihazı çözüp aracı seçer."""
+        if not self.cihaz_coz(zorla=True):
+            return ""
+        if shutil.which("fswebcam"):
+            return "fswebcam"
+        if shutil.which("ffmpeg"):
+            return "ffmpeg"
+        return ""
+
     def _yontem_sec(self) -> str:
-        if self.ayar.get("sahte"):
+        """Hangi yolla kare alınacak.
+
+        `yol` ayarı bunu KAMERA BAŞINA belirliyor. Tek kameralıyken "sırayla
+        dene" yetiyordu; iki kamerada yetmiyor, çünkü `rpicam-still` şerit
+        kablodaki kamerayı sürüyor — USB kamera için çağrıldığında yanlış
+        kameranın karesini verir ve bunu hiçbir hata mesajı söylemez.
+        """
+        yol = str(self.ayar.get("yol") or "oto").lower()
+        if self.ayar.get("sahte") or yol == "sahte":
             return "sahte"
+        if yol == "usb":
+            return self._usb_yontem()
+        if yol == "pi":
+            if self._picamera2_dene():
+                return "picamera2"
+            if shutil.which("rpicam-still"):
+                return "rpicam"
+            if shutil.which("libcamera-still"):
+                return "libcamera"
+            return ""
+        # "oto": cihaz adı ya da yolu verilmişse bu bir USB kamera demektir.
+        if self.ayar.get("cihaz_adi") or self.ayar.get("cihaz"):
+            usb = self._usb_yontem()
+            if usb:
+                return usb
         if self._picamera2_dene():
             return "picamera2"
         if shutil.which("rpicam-still"):
@@ -349,15 +562,35 @@ class Kamera:
 
     # --- döngü ---
     def baslat(self) -> None:
-        """Ajan acilirken cagrilir; ayarda kapaliysa dokunmaz."""
-        if not self.ayar.get("aktif"):
-            self.gunluk_cb("Kamera kapali - panelden acilabilir", "bilgi")
-            return
-        self.ac()
+        """Ajan acilirken cagrilir; ayarda kapaliysa dokunmaz.
+
+        HİÇBİR ŞEY FIRLATMIYOR. İki kamera var ve biri açılırken patlarsa
+        öteki de açılamaz olurdu; kamera bir eklenti, ajan onsuz çalışmalı.
+        """
+        try:
+            if not self.ayar.get("aktif"):
+                self.gunluk_cb(f"[{self.etiket}] kapalı — panelden açılabilir", "bilgi")
+                return
+            self.ac()
+        except Exception as hata:
+            self.son_hata = str(hata)
+            self.gunluk_cb(f"[{self.etiket}] açılamadı: {hata} — "
+                           "diğer kameralar ve makine etkilenmedi", "hata")
 
     def durum(self) -> dict[str, Any]:
         """Panelin dugmeyi dogru gostermesi icin."""
         return {
+            "ad": self.ad,
+            "etiket": self.etiket,
+            # Panelin "bu karenin konumu var mı" sorusunu sormasına gerek
+            # kalmıyor: kameranın kendisi hareketli mi, o söylüyor.
+            "hareketli": self.hareketli,
+            "cihaz": self._cihaz,
+            "cihaz_adi": str(self.ayar.get("cihaz_adi") or ""),
+            "cihaz_not": self.cihaz_not,
+            "genislik": int(self.ayar.get("genislik", 640)),
+            "yol": str(self.ayar.get("yol") or "oto"),
+            "sahte": bool(self.ayar.get("sahte")),
             # "acik" = kamera KARE URETIYOR mu. Canli akis acilirken
             # periyodik dongu duruyor (ikisi ayni cihazi acamaz); yalnizca
             # _calisiyor'a bakmak, canli akarken panele "kapali" dedirtiyordu.
@@ -380,16 +613,20 @@ class Kamera:
         self._yontem = self._yontem_sec()
         if not self._yontem:
             # Kamera yoksa ajan çalışmaya devam etmeli: kamera bir eklenti,
-            # makinenin çalışması ona bağlı değil.
+            # makinenin çalışması ona bağlı değil. Diğer kamera da etkilenmez.
+            sebep = self.cihaz_not or ("picamera2 / rpicam-still / libcamera-still / "
+                                       "fswebcam / ffmpeg yok")
             self.gunluk_cb(
-                "Kamera bulunamadı (picamera2 / rpicam-still / libcamera-still / "
-                "fswebcam yok) — kamera kapalı, diğer her şey çalışıyor", "uyari")
-            return False, "Kamera bulunamadi (picamera2 / rpicam-still / fswebcam yok)"
+                f"[{self.etiket}] bulunamadı ({sebep}) — bu kamera kapalı, "
+                "diğer her şey çalışıyor", "uyari")
+            return False, f"{self.etiket} bulunamadı: {sebep}"
         self._calisiyor = True
         self._dur.clear()
-        self.gunluk_cb(f"Kamera açıldı ({self._yontem})", "bilgi")
-        threading.Thread(target=self._dongu, name="kamera", daemon=True).start()
-        return True, f"Kamera acildi ({self._yontem})"
+        self.gunluk_cb(f"[{self.etiket}] açıldı ({self._yontem}"
+                       + (f", {self._cihaz}" if self._cihaz else "") + ")", "bilgi")
+        threading.Thread(target=self._dongu, name=f"kamera-{self.ad}",
+                         daemon=True).start()
+        return True, f"{self.etiket} açıldı ({self._yontem})"
 
     def kapat(self) -> tuple[bool, str]:
         # Canli akis acikken "kapat" demek onu da kapatmali: kullanici
@@ -423,7 +660,7 @@ class Kamera:
         if not self._calisiyor:
             return True, "Kamera zaten kapali"
         self.durdur()
-        self.gunluk_cb("Kamera kapatildi", "bilgi")
+        self.gunluk_cb(f"[{self.etiket}] kapatıldı", "bilgi")
         return True, "Kamera kapatildi"
 
     def durdur(self) -> None:
@@ -442,7 +679,7 @@ class Kamera:
             basladi = time.monotonic()
             try:
                 ham = self.kare_al()
-                self.gonder(base64.b64encode(ham).decode("ascii"), time.time())
+                self.gonder(self.ad, base64.b64encode(ham).decode("ascii"), time.time())
                 self.son_hata = None
                 hata_sayaci = 0
                 # SIRA ÖNEMLİ: önce sunucuya, sonra çıkarıma. Panelin
@@ -457,10 +694,17 @@ class Kamera:
             except Exception as hata:
                 hata_sayaci += 1
                 self.son_hata = str(hata)
+                # USB kamera çıkarılıp takıldığında /dev/videoN numarası
+                # değişiyor ve elimizdeki yol artık yok. Hata alınca cihazı
+                # ADINDAN yeniden arıyoruz: kullanıcının kabloyu takıp
+                # paneli yeniden başlatması gerekmiyor.
+                if self._yontem in ("fswebcam", "ffmpeg"):
+                    self.cihaz_coz(zorla=True)
                 # Her turda günlüğe yazmak, kamerası çıkmış bir Pi'de günlüğü
                 # doldurur. İlk hatayı ve sonra seyrek olarak bildiriyoruz.
                 if hata_sayaci == 1 or hata_sayaci % 20 == 0:
-                    self.gunluk_cb(f"Kare alınamadı ({hata_sayaci}. kez): {hata}", "hata")
+                    self.gunluk_cb(f"[{self.etiket}] kare alınamadı "
+                                   f"({hata_sayaci}. kez): {hata}", "hata")
             # Aralik her turda okunuyor: panelden degistirilirse bir sonraki
             # turda gecerli oluyor, yeniden baslatmak gerekmiyor.
             aralik = max(2.0, float(self.ayar.get("aralik_sn", 3600.0)))
@@ -503,3 +747,174 @@ class Kamera:
                     break
                 if self._dur.wait(min(1.0, kalan - gectiginden)):
                     return
+
+
+# --------------------------------------------------------------------------- #
+# Kamera tanımları — panelden düzenlenebilir, ayrı bir dosyada
+# --------------------------------------------------------------------------- #
+# Neden `ayarlar.json` DEĞİL: ajanın kuralı "ayar dosyasına yazmıyoruz" —
+# panelden yapılan geçici bir deneme yeniden başlatmada sürpriz olmasın diye.
+# Ama kamera tanımları (cihaz adı, çözünürlük, aralık) geçici deneme değil,
+# kalıcı donanım tarifi; her açılışta yeniden girmek anlamsız. `uclar.json`
+# ile aynı çözüm: kendi dosyası.
+#
+# Sıralama korunuyor: panel kutuları bu sırayla diziliyor.
+
+VARSAYILAN_KAMERALAR: list[dict[str, Any]] = [
+    {"ad": "uc", "etiket": "Uç kamerası", "hareketli": True, "yol": "pi",
+     "aktif": False, "aralik_sn": 3600.0, "genislik": 640, "kalite": 75},
+    {"ad": "ust", "etiket": "Üst kamera", "hareketli": False, "yol": "usb",
+     "aktif": False, "aralik_sn": 3600.0, "genislik": 640, "kalite": 75,
+     "cihaz_adi": "", "cihaz": ""},
+]
+
+#: Panelden gelen tanımda kabul edilen alanlar. Beyaz liste: bilinmeyen bir
+#: anahtar sessizce saklanıp sonra "neden çalışmıyor" sorusuna dönüşmesin.
+DUZENLENEBILIR = ("etiket", "hareketli", "aralik_sn", "genislik", "kalite",
+                  "cihaz", "cihaz_adi", "yol", "sahte", "aktif")
+
+
+class KameraAyarHatasi(Exception):
+    """Panelden gelen kamera tanımı geçersiz."""
+
+
+def tanim_dogrula(ham: dict[str, Any], sira: int = 0) -> dict[str, Any]:
+    """Panelden gelen tek bir kamera tanımını temizler.
+
+    Hatalar BURADA yakalanıyor, kamera açılırken değil: "genişlik 20000"
+    yazan bir tanım kaydedilip sonra sessizce kare vermemeli.
+    """
+    if not isinstance(ham, dict):
+        raise KameraAyarHatasi("Kamera tanımı bir nesne olmalı")
+    ad = ad_temizle(ham.get("ad"), f"kam{sira + 1}")
+    temiz: dict[str, Any] = {**VARSAYILAN, "ad": ad}
+    temiz["etiket"] = str(ham.get("etiket") or ad).strip()[:40] or ad
+    temiz["hareketli"] = bool(ham.get("hareketli", True))
+    temiz["sahte"] = bool(ham.get("sahte", False))
+    temiz["aktif"] = bool(ham.get("aktif", False))
+
+    yol = str(ham.get("yol") or "oto").strip().lower()
+    if yol not in ("oto", "pi", "usb", "sahte"):
+        raise KameraAyarHatasi(
+            f"'{temiz['etiket']}' için yol 'oto', 'pi', 'usb' ya da 'sahte' olmalı "
+            f"(verilen: {yol})")
+    temiz["yol"] = yol
+
+    try:
+        genislik = int(float(ham.get("genislik", 640)))
+    except (TypeError, ValueError):
+        raise KameraAyarHatasi(f"'{temiz['etiket']}' çözünürlüğü sayı olmalı") from None
+    if not 160 <= genislik <= 1920:
+        raise KameraAyarHatasi(
+            f"'{temiz['etiket']}' genişliği 160 ile 1920 arasında olmalı "
+            f"(verilen: {genislik}). Kare WebSocket'ten geçiyor; büyük kare ağı "
+            "ve SD kartı yorar.")
+    temiz["genislik"] = genislik
+
+    try:
+        aralik = float(ham.get("aralik_sn", 3600.0))
+    except (TypeError, ValueError):
+        raise KameraAyarHatasi(f"'{temiz['etiket']}' kare aralığı sayı olmalı") from None
+    if not 2.0 <= aralik <= 86400.0:
+        raise KameraAyarHatasi(
+            f"'{temiz['etiket']}' kare aralığı 2 saniye ile 1 gün arasında olmalı "
+            f"(verilen: {aralik})")
+    temiz["aralik_sn"] = aralik
+
+    try:
+        kalite = int(float(ham.get("kalite", 75)))
+    except (TypeError, ValueError):
+        raise KameraAyarHatasi(f"'{temiz['etiket']}' JPEG kalitesi sayı olmalı") from None
+    temiz["kalite"] = max(30, min(95, kalite))
+
+    cihaz = str(ham.get("cihaz") or "").strip()
+    if cihaz and not cihaz.startswith("/dev/"):
+        raise KameraAyarHatasi(
+            f"'{temiz['etiket']}' cihaz yolu /dev/ ile başlamalı (verilen: {cihaz})")
+    temiz["cihaz"] = cihaz
+    temiz["cihaz_adi"] = str(ham.get("cihaz_adi") or "").strip()[:80]
+    return temiz
+
+
+def tanimlari_dogrula(ham: Any) -> list[dict[str, Any]]:
+    if not isinstance(ham, list) or not ham:
+        raise KameraAyarHatasi("En az bir kamera tanımı gerekiyor")
+    if len(ham) > 6:
+        raise KameraAyarHatasi("En çok 6 kamera tanımlanabilir")
+    cikti = [tanim_dogrula(k, i) for i, k in enumerate(ham)]
+    adlar = [k["ad"] for k in cikti]
+    tekrar = {a for a in adlar if adlar.count(a) > 1}
+    if tekrar:
+        raise KameraAyarHatasi(
+            f"Kamera adları benzersiz olmalı — tekrar eden: {', '.join(sorted(tekrar))}. "
+            "Ad hem kare klasörü hem kalibrasyon anahtarı; iki kamera aynı adı "
+            "kullanırsa kareleri ve ölçekleri birbirine karışır.")
+    return cikti
+
+
+def tanim_yolu(ayar_yolu: str) -> str:
+    return os.path.join(os.path.dirname(os.path.abspath(ayar_yolu)) or ".",
+                        "kameralar.json")
+
+
+def tanimlari_yukle(ayar_yolu: str, ayar: dict[str, Any]) -> list[dict[str, Any]]:
+    """Kamera tanımları — dosya varsa oradan, yoksa ayarlardan.
+
+    ESKİ KURULUM BOZULMUYOR: `ayarlar.json` içindeki tek `"kamera": {...}`
+    bloğu, "uc" adlı tek bir kameraya çevriliyor. Kullanıcı hiçbir şey
+    yapmadan bugünkü davranışı sürdürüyor, ikinci kamerayı panelden ekliyor.
+    """
+    import json
+
+    yol = tanim_yolu(ayar_yolu)
+    if os.path.exists(yol):
+        try:
+            with open(yol, encoding="utf-8") as dosya:
+                veri = json.load(dosya)
+            return tanimlari_dogrula(veri.get("kameralar") if isinstance(veri, dict)
+                                     else veri)
+        except (OSError, ValueError, KameraAyarHatasi) as hata:
+            logger.warning("kameralar.json okunamadı (%s) — ayarlardaki tanım "
+                           "kullanılıyor", hata)
+
+    if isinstance(ayar.get("kameralar"), list) and ayar["kameralar"]:
+        try:
+            return tanimlari_dogrula(ayar["kameralar"])
+        except KameraAyarHatasi as hata:
+            logger.warning("ayarlar.json'daki kamera listesi geçersiz (%s)", hata)
+
+    eski = ayar.get("kamera")
+    if isinstance(eski, dict) and eski:
+        # Tek kameralı kurulum: eski blok "uc" oluyor, yanına HENÜZ
+        # TANIMSIZ bir üst kamera konuyor. Kapalı ve cihazsız duruyor —
+        # hiçbir şey açmaya çalışmıyor, yalnızca panelde doldurulacak bir
+        # kart olarak görünüyor. Alternatifi, kullanıcının ikinci kamerayı
+        # eklemek için elle JSON yazması olurdu.
+        return [tanim_dogrula({**eski, "ad": "uc", "etiket": "Uç kamerası",
+                               "hareketli": True}),
+                tanim_dogrula(VARSAYILAN_KAMERALAR[1])]
+    return [tanim_dogrula(k, i) for i, k in enumerate(VARSAYILAN_KAMERALAR)]
+
+
+def tanimlari_kaydet(ayar_yolu: str, tanimlar: list[dict[str, Any]]) -> str:
+    """Doğrulanmış tanımları diske yazar. -> yazılan yol"""
+    import json
+
+    yol = tanim_yolu(ayar_yolu)
+    klasor = os.path.dirname(yol) or "."
+    gecici = tempfile.NamedTemporaryFile("w", encoding="utf-8", dir=klasor,
+                                         prefix=".kameralar-", suffix=".tmp",
+                                         delete=False)
+    try:
+        json.dump({"kameralar": tanimlar}, gecici, ensure_ascii=False, indent=1)
+        gecici.flush()
+        os.fsync(gecici.fileno())
+        gecici.close()
+        os.replace(gecici.name, yol)
+    except Exception:
+        try:
+            os.unlink(gecici.name)
+        except OSError:
+            pass
+        raise
+    return yol

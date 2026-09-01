@@ -145,8 +145,13 @@ def ayar_yukle(yol: str) -> dict[str, Any]:
 
 
 class Ajan:
-    def __init__(self, ayar: dict[str, Any]) -> None:
+    def __init__(self, ayar: dict[str, Any], ayar_yolu: str = "") -> None:
         self.ayar = ayar
+        # Kamera tanımları ayarlarla AYNI klasörde ayrı bir dosyada
+        # (`kameralar.json`); panelden düzenlenebilmesi için gereken tek şey
+        # bu yolu bilmek.
+        self.ayar_yolu = ayar_yolu or os.path.join(os.path.dirname(__file__),
+                                                   "ayarlar.json")
         self.dongu: asyncio.AbstractEventLoop | None = None
         self.kuyruk: asyncio.Queue = asyncio.Queue(maxsize=200)
         self.ws = None
@@ -191,10 +196,37 @@ class Ajan:
         # kamera hiçbir şey fark etmiyor.
         self.hailo = hailo_modulu.olustur(ayar.get("hailo", {}),
                                           gunluk_cb=self._gunluk_gonder)
-        self.kamera = kamera_modulu.Kamera(ayar.get("kamera", {}), self._kare_geldi,
-                                           gunluk_cb=self._gunluk_gonder,
-                                           cikarim=self.hailo.kare_ver)
+        # KAMERALAR — birden çok. Her biri kendi iş parçacığında; biri
+        # arızalanınca öteki durmuyor.
+        self.kameralar: dict[str, kamera_modulu.Kamera] = {}
+        self._kameralari_kur(kamera_modulu.tanimlari_yukle(self.ayar_yolu, ayar))
         self._son_durum: dict[str, Any] = {}
+
+    # --- kameralar -------------------------------------------------------
+    def _kameralari_kur(self, tanimlar: list[dict[str, Any]]) -> None:
+        """Tanımlardan kamera nesnelerini üretir (sıra korunur).
+
+        ÇIKARIM YALNIZ HAREKETLİ KAMERADA. Hailo tespitini yatağın bir
+        koordinatına çevirmenin tek yolu karenin çekildiği X/Y; sabit
+        kamerada o yok. Sabit kameranın karesini çıkarıma vermek, sonucu
+        koyacak yeri olmayan bir hesap yaptırmak olurdu.
+        """
+        self.kameralar = {}
+        for tanim in tanimlar:
+            kam = kamera_modulu.Kamera(
+                tanim, self._kare_geldi, gunluk_cb=self._gunluk_gonder,
+                cikarim=(self.hailo.kare_ver if tanim.get("hareketli", True) else None))
+            self.kameralar[kam.ad] = kam
+
+    @property
+    def kamera(self) -> kamera_modulu.Kamera:
+        """İlk kamera — tek kameralı çağrı yerleri için."""
+        return next(iter(self.kameralar.values()))
+
+    def _kamera_sec(self, ad: Any) -> kamera_modulu.Kamera | None:
+        if not ad:
+            return self.kamera if self.kameralar else None
+        return self.kameralar.get(kamera_modulu.ad_temizle(ad, ""))
 
     #: Kuru ve ıslak ucun arasında en az bu kadar sayım olmalı.
     #: `toprak-kalibre.py` ile aynı eşik.
@@ -263,15 +295,25 @@ class Ajan:
         """Seri port iş parçacığından çağrılır — asyncio'ya güvenli aktarım."""
         self._kuyruga_at({"tip": "olcum", "ts": time.time(), "veri": self._konum_ekle(veri)})
 
-    def _kare_geldi(self, b64: str, ts: float) -> None:
-        """Kamera iş parçacığından çağrılır."""
-        k = (self._son_durum.get("konum") or {}) if self._son_durum else {}
+    def _kare_geldi(self, kam_ad: str, b64: str, ts: float) -> None:
+        """Kamera iş parçacığından çağrılır.
+
+        KONUM YALNIZ HAREKETLİ KAMERAYA yazılıyor. Sabit kamera makineyle
+        gitmiyor; o an makinenin nerede olduğu, o karenin neyi gösterdiği
+        hakkında hiçbir şey söylemiyor. Konumu yine de yazmak, kareyi
+        haritanın rastgele bir yerine oturtan sessiz bir yalan olurdu —
+        eksik bilgi, yanlış bilgiden iyidir.
+        """
+        kam = self.kameralar.get(kam_ad)
         # Canlı akıştaki kareler DİSKE YAZILMIYOR: saniyede beş kare, SD
         # kartı boşuna yorar ve 12'lik halka bir dakikada dolup anlamını
         # yitirir. Sunucu canlı kareyi yalnızca bellekte tutuyor.
-        tip = "canli" if self.kamera.durum().get("canli") else "kare"
-        self._kuyruga_at({"tip": tip, "ts": ts, "veri": b64,
-                          "konum": {"x": k.get("x"), "y": k.get("y"), "z": k.get("z")}})
+        tip = "canli" if (kam and kam.durum().get("canli")) else "kare"
+        paket: dict[str, Any] = {"tip": tip, "ts": ts, "veri": b64, "kamera": kam_ad}
+        if kam is None or kam.hareketli:
+            k = (self._son_durum.get("konum") or {}) if self._son_durum else {}
+            paket["konum"] = {"x": k.get("x"), "y": k.get("y"), "z": k.get("z")}
+        self._kuyruga_at(paket)
 
     def _gunluk_gonder(self, metin: str, seviye: str = "bilgi") -> None:
         """PLC sürücüsünden (bekçi, hareket işçisi) gelen bildirimler."""
@@ -479,18 +521,65 @@ class Ajan:
                 # baslatmada beklenmedik bir davranisa donusmuyor.
                 # Canlı akış ayrı bir yol: periyodik kare döngüsüyle aynı
                 # cihazı açamıyor, o yüzden ayrı komut.
+                #
+                # HANGİ KAMERA: `arg["kamera"]`. Verilmezse ilki — tek
+                # kameralıyken yazılmış çağrılar aynen çalışsın diye.
+                kam = self._kamera_sec(arg.get("kamera"))
+                if kam is None:
+                    return {"ok": False,
+                            "mesaj": f"'{arg.get('kamera')}' adlı kamera tanımlı değil. "
+                                     f"Tanımlılar: {', '.join(self.kameralar) or 'yok'}"}
                 if "canli" in arg:
                     if arg.get("canli"):
-                        ok, mesaj = self.kamera.canli_ac(float(arg.get("fps", 5)))
+                        ok, mesaj = kam.canli_ac(float(arg.get("fps", 5)))
                     else:
-                        ok, mesaj = self.kamera.canli_kapat()
+                        ok, mesaj = kam.canli_kapat()
                     return {"ok": ok, "mesaj": mesaj}
 
                 acik = bool(arg.get("acik"))
                 if "aralik_sn" in arg:
-                    self.kamera.ayar["aralik_sn"] = max(2.0, float(arg["aralik_sn"]))
-                ok, mesaj = self.kamera.ac() if acik else self.kamera.kapat()
+                    kam.ayar["aralik_sn"] = max(2.0, float(arg["aralik_sn"]))
+                ok, mesaj = kam.ac() if acik else kam.kapat()
                 return {"ok": ok, "mesaj": mesaj}
+
+            if ad == "kamera_kaydet":
+                # Kamera TANIMLARI — cihaz adı, çözünürlük, aralık. Geçici
+                # aç/kapattan farklı olarak KALICI: `kameralar.json`a yazılıp
+                # hemen uygulanıyor. Çalışan kameralar önce kapatılıyor,
+                # yoksa eski cihaz açık kalırken yenisi açılamaz.
+                try:
+                    tanimlar = kamera_modulu.tanimlari_dogrula(arg.get("kameralar"))
+                except kamera_modulu.KameraAyarHatasi as hata:
+                    return {"ok": False, "mesaj": str(hata)}
+                # Hangileri açıktı: kaydettikten sonra geri açmak için.
+                acikti = [a for a, k in self.kameralar.items() if k.durum().get("acik")]
+                for kam in self.kameralar.values():
+                    try:
+                        kam.kapat()
+                    except Exception as hata:
+                        logger.warning("Kamera kapatılamadı: %s", hata)
+                try:
+                    yol = await asyncio.to_thread(kamera_modulu.tanimlari_kaydet,
+                                                  self.ayar_yolu, tanimlar)
+                except OSError as hata:
+                    return {"ok": False, "mesaj": f"kameralar.json yazılamadı: {hata}"}
+                self._kameralari_kur(tanimlar)
+                geri = []
+                for kam in self.kameralar.values():
+                    if kam.ad in acikti or kam.ayar.get("aktif"):
+                        ok, _ = kam.ac()
+                        if ok:
+                            geri.append(kam.etiket)
+                return {"ok": True,
+                        "mesaj": f"{len(tanimlar)} kamera kaydedildi ({os.path.basename(yol)})"
+                                 + (f"; yeniden açılan: {', '.join(geri)}" if geri else "")}
+
+            if ad == "kamera_cihazlar":
+                # Sistemdeki video cihazları — panelde "kameranın adı ne"
+                # sorusunun cevabı. Kullanıcının /dev/video* numaralarını
+                # ezberlemesini istemiyoruz; listeden adını seçsin.
+                return {"ok": True, "mesaj": "cihazlar",
+                        "cihazlar": await asyncio.to_thread(kamera_modulu.v4l2_cihazlar)}
 
             if ad == "kalibrasyon_kaydet":
                 # Yalnız home/min/max; cpm ve dir panelden değiştirilemiyor.
@@ -579,7 +668,11 @@ class Ajan:
             # yapılıyor ve tek yerde kalsın diye sayıları da oradan alması
             # gerekiyor. Ajan ham değeri bozmuyor.
             durum["toprak_kalib"] = self._toprak_kalib()
-            durum["kamera"] = self.kamera.durum()
+            # Kamera listesi SIRALI: panel kutuları bu sırayla diziyor.
+            durum["kameralar"] = [k.durum() for k in self.kameralar.values()]
+            # `kamera` tekili duruyor — ilk kameranın hâli. Tek kameraya
+            # göre yazılmış her yer (eski panel dahil) çalışmaya devam etsin.
+            durum["kamera"] = durum["kameralar"][0] if durum["kameralar"] else {}
             # `dusen` sayacı normal işleyişte SIFIR kalmalı; sıfırdan
             # büyükse ya cihaz yavaşladı ya kilitlendi.
             durum["hailo"] = self.hailo.durum()
@@ -680,7 +773,8 @@ class Ajan:
 
         self.dongu = asyncio.get_running_loop()
         self.arduino.baslat()
-        self.kamera.baslat()
+        for kam in self.kameralar.values():
+            kam.baslat()          # kendi hatasını kendi yutuyor
         self.hailo.baslat()
         # Çakılmadan kalan bir jog mandalını miras almayalım. AMA bunu
         # beklemeden: PLC erişilemezken (kablo çıkmış, PLC kapalı) altı Modbus
@@ -724,14 +818,18 @@ class Ajan:
 
 def main() -> None:
     yol = sys.argv[1] if len(sys.argv) > 1 else os.path.join(os.path.dirname(__file__), "ayarlar.json")
-    ajan = Ajan(ayar_yukle(yol))
+    ajan = Ajan(ayar_yukle(yol), ayar_yolu=yol)
     try:
         asyncio.run(ajan.calis())
     except KeyboardInterrupt:
         logger.info("Kapatılıyor")
     finally:
         ajan.arduino.durdur()
-        ajan.kamera.durdur()
+        for kam in ajan.kameralar.values():
+            try:
+                kam.durdur()
+            except Exception as hata:
+                logger.warning("Kamera durdurulamadı: %s", hata)
         ajan.hailo.durdur()
         ajan.plc.kapat()
 

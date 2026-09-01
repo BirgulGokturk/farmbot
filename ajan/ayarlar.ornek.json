@@ -40,16 +40,6 @@
     "toprak_z": 0.0,
     "_toprak_z": "Toprak yuzeyinin makine Z'sindeki yeri (mm). Toprak kabin icinde oldugu icin yuzey sifirda degil. Olcmek icin: ucu toprak yuzeyine hafifce degdirin ve panelde yazan Z degerini buraya yazin. Ekim derinligi ve 3B sahnedeki toprak duzlemi buna gore yerlesiyor. Kaplar ayni hizada degilse her dikim alanina kendi toprak_z'si girilebilir (panel > Ayarlar > Dikim alanlari); girilmemisse buradaki deger gecerlidir."
   },
-  "kamera": {
-    "_not": "picamera2 -> rpicam-still -> libcamera-still -> fswebcam sirasiyla denenir. aktif=false ise ajan acilirken kamera baslamaz; panelden acilabilir ama bu gecicidir, kalici olmasi icin burayi true yapin.",
-    "_pi_kamera": "Şerit kablolu Pi kamera modülü için: sudo apt install -y python3-picamera2 rpicam-apps  ·  test: rpicam-hello --list-cameras",
-    "aktif": false,
-    "aralik_sn": 3600.0,
-    "genislik": 640,
-    "kalite": 75,
-    "sahte": false,
-    "cihaz": "/dev/video0"
-  },
   "hailo": {
     "_not": "Raspberry Pi AI HAT+ (Hailo-8). Cikarim kamera dongusunun ICINDE degil, ayri bir is parcaciginda ve TEK elemanli bir kuyrukla calisir: kuyruk doluysa kare duser. Boylece Hailo yavaslarsa ya da kilitlenirse kamera etkilenmez. Bu donanimin 'device inaccessible' ile kilitlenebildigi sahada gorulmustur.",
     "aktif": false,
@@ -62,5 +52,37 @@
     "azami_hata": 5,
     "_kurtarma": "Ajan surucuye ASLA dokunmaz. `modprobe -r hailo_pci` denenmis ve isi kotulestirmistir: cihaz dugumu kaybolmus, geri gelmesi icin guc cevrimi gerekmistir. Kilitlenirse Pi yeniden baslatilmalidir."
   },
-  "durum_araligi_sn": 0.5
+  "durum_araligi_sn": 0.5,
+  "kameralar": [
+    {
+      "_not": "Kameralar burada TANIMLI ama panelden düzenlenince ajan bunları kameralar.json dosyasına yazıyor ve bundan sonra onu okuyor. Bu blok yalnızca ilk açılışın başlangıç değeri.",
+      "ad": "uc",
+      "etiket": "Uç kamerası",
+      "_hareketli": "Uç kafasına bağlı: kareleri makine konumuyla saklanıyor ve karedeki leke yatak koordinatına çevrilebiliyor.",
+      "hareketli": true,
+      "_yol": "pi = şerit kablolu kamera modülü (picamera2 -> rpicam-still -> libcamera-still). usb = USB webcam (fswebcam -> ffmpeg). oto = sırayla dener.",
+      "yol": "pi",
+      "aktif": false,
+      "aralik_sn": 3600.0,
+      "genislik": 640,
+      "kalite": 75,
+      "sahte": false
+    },
+    {
+      "_not": "Sabit üst kamera — yatağın tamamını yukarıdan görüyor.",
+      "ad": "ust",
+      "etiket": "Üst kamera",
+      "_hareketli": "SABİT: makineyle gitmiyor. Karelerine makine konumu YAZILMIYOR ve o karelerden yatak koordinatı çıkarılmıyor — makinenin o anki yeri, bu karenin neresini gösterdiği hakkında bir şey söylemiyor.",
+      "hareketli": false,
+      "_cihaz_adi": "/dev/videoN numarası kamera çıkarılıp takılınca DEĞİŞİYOR; adı değişmiyor. Adın bir parçasını yazın (v4l2-ctl --list-devices ya da paneldeki 'Bağlı cihazları tara'). 'cihaz' yalnızca ad bulunamazsa kullanılan yedek.",
+      "cihaz_adi": "USB Camera",
+      "cihaz": "",
+      "yol": "usb",
+      "aktif": false,
+      "aralik_sn": 3600.0,
+      "genislik": 640,
+      "kalite": 75,
+      "sahte": false
+    }
+  ]
 }

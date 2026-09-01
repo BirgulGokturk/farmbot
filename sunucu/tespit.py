@@ -50,6 +50,10 @@ YOK_KALIBRASYON = ("Kamera kalibre edilmemiş (mm_px = 0). Ayarlar → Kamera "
                    "onsuz pikseli milimetreye çeviremeyiz.")
 YOK_KONUM = ("Karenin makine konumu yok (PLC kopukken çekilmiş). Nerede "
              "çekildiği bilinmeyen bir kare haritaya konamaz.")
+SABIT_KAMERA = ("Sabit kamera — karenin makine konumu YOK ve olamaz da: kamera "
+                "makineyle hareket etmiyor, makinenin o anki konumu bu karenin "
+                "neyi gösterdiği hakkında bir şey söylemiyor. Ölçüler (en, boy, "
+                "çap) milimetre; yatak koordinatı verilmiyor.")
 HAREKETLI = ("Kare makine hareket hâlindeyken çekilmiş — hem bulanık hem de "
              "konumu belirsiz.")
 
@@ -161,6 +165,44 @@ def leke_mm(leke: dict[str, Any], kare: dict[str, Any], kalib: dict[str, Any] | 
         "cap_mm": round(2.0 * math.sqrt(max(_sayi(leke.get("alan_px")), 0.0) / math.pi)
                         * olcek_x, 1),
     }
+
+
+def leke_boyut_mm(leke: dict[str, Any], kalib: dict[str, Any] | None,
+                  genislik_px: float | None = None) -> dict[str, Any]:
+    """Yalnız ÖLÇÜ — konum yok. Sabit kameranın verebildiği kadarı.
+
+    Sabit kamera yatağın neresine baktığını bilmiyor, ama bir pikselin kaç
+    mm olduğunu biliyor (kendi `mm_px`i). Yaprak çapı, alan, en/boy bu
+    sayıdan çıkıyor ve doğru. Çıkmayan tek şey lekenin yatak koordinatı;
+    onu uydurmuyoruz, hiç yazmıyoruz.
+    """
+    k = kalib or {}
+    olcek = mm_px(k)
+    W = _sayi(genislik_px, 0.0) or _sayi(k.get("genislik_px"), 640.0)
+    olcek_x = olcek * (_sayi(k.get("genislik_px"), 640.0) / W)
+    alan_px = max(_sayi(leke.get("alan_px")), 0.0)
+    return {
+        "no": leke.get("no"),
+        "en_mm": round(_sayi(leke.get("en_px")) * olcek_x, 1),
+        "boy_mm": round(_sayi(leke.get("boy_px")) * olcek_x, 1),
+        "alan_mm2": round(alan_px * olcek_x * olcek_x, 1),
+        "alan_px": leke.get("alan_px"),
+        "dolgu": leke.get("dolgu"),
+        "cap_mm": round(2.0 * math.sqrt(alan_px / math.pi) * olcek_x, 1),
+    }
+
+
+def boyutlar_mm(lekeler_px: list[dict[str, Any]], kalib: dict[str, Any] | None,
+                *, genislik_px: float | None = None) -> dict[str, Any]:
+    """Konumsuz kare için ölçü listesi. -> {lekeler, ret}
+
+    Kalibrasyon yoksa yine hiçbir şey: kalibre edilmemiş kamerada milimetre
+    yazmak, piksel yazmaktan KÖTÜ — yanlış olduğu görünmüyor.
+    """
+    if not kalibre_mi(kalib):
+        return {"lekeler": [], "ret": [YOK_KALIBRASYON]}
+    return {"lekeler": [leke_boyut_mm(b, kalib, genislik_px) for b in lekeler_px],
+            "ret": []}
 
 
 def cozumle(lekeler_px: list[dict[str, Any]], kare: dict[str, Any],

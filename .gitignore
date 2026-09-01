@@ -18,4 +18,7 @@ fb-*.tar.gz
 
 # Ajanin kendi yazdigi calisma durumu — makineye ozel, depoya girmez.
 ajan/bolgeler.json
+# Kamera tanimlari panelden duzenlenip buraya yaziliyor: hangi USB kameranin
+# takili oldugu makineye ozel. Baslangic degeri ayarlar.ornek.json'da.
+ajan/kameralar.json
 kamera_kalibrasyon.json

@@ -142,9 +142,16 @@ aşımı.
 | `GET/POST /api/programlar` | Program listesi / kaydet |
 | `DELETE /api/programlar?ad=…` | Siler |
 | `POST /api/programlar/calistir` | `{ad}` — nokta adlarını çözer, ajana yollar |
-| `GET /api/kare/son` | Son kamera karesi (JPEG) |
-| `GET /api/kare/liste` | Saklanan karelerin damgaları ve **çekildikleri konum** (`x`, `y`; eski karelerde `null`) |
-| `GET /api/kare/<damga>` | Tek kare, JPEG |
+| `GET /api/kare/son?kamera=uc` | O kameranın son karesi (JPEG) |
+| `GET /api/kare/canli?kamera=uc` | O kameranın canlı akışındaki son kare (bellekten) |
+| `GET /api/kare/liste?kamera=` | Kare künyeleri: `damga`, `ts`, **`kamera`** ve **çekildiği konum** (`x`, `y`). `kamera` boşsa hepsi. **Sabit kameranın karelerinde `x`/`y` her zaman `null`** — o kamera makineyle hareket etmiyor, makinenin o anki yeri karenin neresini gösterdiği hakkında bir şey söylemiyor |
+| `GET /api/kare/<damga>?kamera=uc` | Tek kare, JPEG |
+| `GET /api/kamera/kalibrasyon?kamera=uc` | O kameranın `mm_px`, `donme`, `ofset_x/y`, `ayna_x/y` değerleri + `kalibrasyonlar` (hepsi) |
+| `POST /api/kamera/kalibrasyon` | Aynı alanlar + `kamera`. **Yalnız o kamerayı yazar**, ötekine dokunmaz |
+| `POST /api/kamera/kalibrasyon/coz` | `{kare1,kare2,kamera,kaydet}` — iki kare yöntemi (ölçek + açı). **Sabit kamerada 422**: makine oynadığında sahne değişmediği için yöntem hiçbir şey ölçemez |
+| `POST /api/kamera/kalibrasyon/olcek` | `{u1,v1,u2,v2,mm,kamera,kaydet}` — tek kareden ölçek. Sabit kameranın tek kalibrasyon yolu; yalnız `mm_px` çıkar, açı ve konum çıkmaz |
+| `GET /api/goruntu/durum?kamera=uc` | O kameranın kare sayısı ve kalibrasyonu; `hareketli` bayrağı |
+| `POST /api/goruntu/coz` | `{damga, esik, kamera}` — `damga` boşsa o kameranın en yeni karesi. Yanıtta `kamera`, `hareketli` ve `yalniz_olcu`. **Sabit kamerada `lekeler` ölçü taşır ama `x`/`y` taşımaz** ve kayıtlı bitkilerle eşleştirme yapılmaz |
 | `GET /api/katmanlar` | Tarla haritasının katman dosyaları (`statik/katmanlar/*.js`), ada göre sıralı. Panel bu listeyi sırayla yüklüyor |
 | `GET /api/olcum/konumlu?dakika=1440&azami=400` | Konumu bilinen toprak nemi okumaları — `{ts,x,y,toprak_nem}`. 10 mm'lik hücrelerde en yeni okuma |
 | `GET /api/turler` | `{turler, alanlar}`. Türler = katalog (`docs/bitki_turleri.json`, 37 tür) + tür ezmeleri birleşmiş hâli; her tür `ezili: {alan: katalog_degeri}` taşır — boşsa katalogdan hiç sapılmamış demektir. `alanlar` = düzenlenebilir dört alanın başlık/birim/alt/üst tanımı. Katalog dosyası değişmedikçe önbellekten döner; `TUR_YOLU` ile başka bir dosya gösterilebilir |
@@ -406,10 +413,15 @@ Canlı akış. Bağlanınca ilk paket anlık görüntü, sonrası olay bazlı:
 | `olcum` | `{veri: {...}}` — yeni sensör okuması |
 | `durum` | `{durum: {...}}` — konum, bağlantı, acil durum değişimi |
 | `gunluk` | `{seviye, metin}` — olay günlüğü satırı |
-| `kare` | `{ts}` — yeni kamera karesi var; görüntü `GET /api/kare/son` ile alınır |
+| `kare` | `{ts, kamera}` — o kameradan yeni kare var; görüntü `GET /api/kare/son?kamera=…` ile alınır |
+| `canli` | `{ts, kamera}` — canlı akıştan yeni kare; `GET /api/kare/canli?kamera=…` |
 
 `durum` paketine eklenen alanlar: `bolgeler`, `esnetme_acik`, `islem`,
-`uc` (dizi ilerlemesi + takılı uç), `dizi` (program ilerlemesi).
+`uc` (dizi ilerlemesi + takılı uç), `dizi` (program ilerlemesi),
+`kameralar` (sıralı kamera künyeleri: `ad`, `etiket`, `hareketli`, `cihaz`,
+`acik`, `yontem`, `aralik_sn`, `canli`, `hata`). `kamera` tekili hâlâ var ve
+ilk kameranın hâlini taşıyor — tek kameraya göre yazılmış çağrı yerleri
+bozulmasın diye.
 
 İstemciden gönderilebilen tek mesaj basılı-tut jog'u:
 
