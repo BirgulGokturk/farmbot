@@ -142,6 +142,7 @@ aşımı.
 | `GET/POST /api/programlar` | Program listesi / kaydet |
 | `DELETE /api/programlar?ad=…` | Siler |
 | `POST /api/programlar/calistir` | `{ad}` — nokta adlarını çözer, ajana yollar |
+| `GET /api/noktalar/tursuz?yaricap=25` | Türü YAZILI OLMAYAN noktalar. `ustuste` = bir bitkinin yarıçapı içinde duranlar (tür yazılmadan üretilmiş eski ızgara noktaları), `yalniz` = tek başına duranlar (referans olabilir, dokunulmuyor). Silmiyor; silme geri alınabilir olan `/api/toplu` "sil" yolundan geçiyor |
 | `GET /api/kare/son?kamera=uc` | O kameranın son karesi (JPEG) |
 | `GET /api/kare/canli?kamera=uc` | O kameranın canlı akışındaki son kare (bellekten) |
 | `GET /api/kare/liste?kamera=` | Kare künyeleri: `damga`, `ts`, **`kamera`** ve **çekildiği konum** (`x`, `y`). `kamera` boşsa hepsi. **Sabit kameranın karelerinde `x`/`y` her zaman `null`** — o kamera makineyle hareket etmiyor, makinenin o anki yeri karenin neresini gösterdiği hakkında bir şey söylemiyor |
@@ -392,6 +393,7 @@ Haritada seçilmiş noktalara toplu işlem. Gövde:
 | `sil` | Noktaları depodan siler. Yanıt: `{"ok": true, "silinen": [...]}` |
 | `gez` | Sırayla her noktaya gider |
 | `sula` | Her noktaya gidip su vanasını `saniye` kadar açar |
+| `ek` | Seçimdeki BİTKİLERİ eker. Türü yazılı olmayan noktalar **atlanır**, ekimi durdurmazlar (bitkiler ve çıplak noktalar aynı depoda; kutu seçimi ikisini birden alıyor). Kaç tanesinin atlandığı `/api/ekim/onizle` yanıtındaki `atlanan_sayisi` ve oturumun `atlanan` alanında yazıyor. Seçimde tür yazılı **hiç** bitki yoksa `422` |
 
 Sınırlar — ikisi de sunucuda zorlanıyor, panelden gelen değere güvenilmiyor:
 
@@ -415,6 +417,15 @@ Canlı akış. Bağlanınca ilk paket anlık görüntü, sonrası olay bazlı:
 | `gunluk` | `{seviye, metin}` — olay günlüğü satırı |
 | `kare` | `{ts, kamera}` — o kameradan yeni kare var; görüntü `GET /api/kare/son?kamera=…` ile alınır |
 | `canli` | `{ts, kamera}` — canlı akıştan yeni kare; `GET /api/kare/canli?kamera=…` |
+
+**`POST /api/ekim/onayla`** gövdesi uç teyidinde önemli: `{"uc": "tool3"}`
+kullanıcının kafada gerçekte ne olduğunu SÖYLEDİĞİ değer. Alan varsa ve
+yazılımın inancından farklıysa önce `uc_beyan` ile kayıt düzeltiliyor, sonra
+hareket ona göre planlanıyor. Alanın hiç olmaması ("söylemedi") ile boş dize
+("kafa boş") FARKLI şeyler. Kilit servosu ve varlık sensörü bağlı değilken
+kafada ne olduğunu doğrulayabilen tek kaynak kullanıcı; cevabının gerçekten
+işlemesi gerekiyor. Oturum ayrıca `uc_gereken` (ekimin istediği uç) ve
+`uc_inanc` (yazılımın sandığı) alanlarını veriyor.
 
 `durum` paketine eklenen alanlar: `bolgeler`, `esnetme_acik`, `islem`,
 `uc` (dizi ilerlemesi + takılı uç), `dizi` (program ilerlemesi),

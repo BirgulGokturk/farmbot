@@ -414,6 +414,19 @@ def coz(hedefler: list[dict[str, Any]], gozler: list[dict[str, Any]] | None, *,
     `ret` boş değilse ekim HİÇ başlamamalı. Kısmi ekim, hangi bitkinin
     ekildiğini bilinmez yapardı ve toprağa giren tohum geri alınamaz.
 
+    TÜRSÜZ NOKTA BUNUN İSTİSNASI — `atlanan`a giriyor, `ret`e değil.
+    Sebep: bitkiler ve çıplak noktalar AYNI depoda duruyor, ayıran tek şey
+    `tur` alanı. Kutu seçimi ikisini birden alıyor ve kullanıcı ekranda
+    bitkiyi seçtiğini sanırken altındaki türsüz ızgara noktası da sessizce
+    seçime giriyor. Tek bir türsüz nokta yüzünden altı bitkinin ekilmemesi,
+    kullanıcının anlamadığı ve çözemediği bir ret demekti.
+
+    Atlamak burada güvenli: türsüz nokta zaten EKİLECEK bir şey değil,
+    ekilecek şeylerin listesinden çıkmasının hiçbir yan etkisi yok.
+    Sessizce de olmuyor — kaç tanesinin atlandığı `atlanan`da yazıyor ve
+    panel bunu ekim başlamadan söylüyor. Ekilecek hiçbir bitki KALMAZSA
+    o zaman ret var: kullanıcı ekmek istemişti ve hiçbir şey ekilmeyecek.
+
     RET MESAJLARI KISA. Uzun cümleler panelde kesiliyordu ve kullanıcı
     sebebi ancak günlüğü açıp okuyunca görüyordu; sebebin kendisi kısa,
     ne yapılacağı ikinci cümlede.
@@ -528,14 +541,31 @@ def coz(hedefler: list[dict[str, Any]], gozler: list[dict[str, Any]] | None, *,
             "alan": (alan or {}).get("ad") or "",
         })
 
+    # TÜRSÜZ NOKTALAR ATLANIYOR, ekimi durdurmuyor. Bunlar bitki değil:
+    # ızgara/referans noktaları. Ekilecek bir şey olmadıkları için
+    # listeden çıkmalarının bir bedeli yok — bedeli olan, tek bir tanesi
+    # yüzünden hiçbir şeyin ekilememesiydi.
     if eksik_tur:
-        ret.append(f"{_liste(eksik_tur)}: türü yazılı değil. "
-                   "Bitkiye tür verin ya da seçimden çıkarın.")
+        uyari.append(f"{len(eksik_tur)} türsüz nokta atlanacak "
+                     f"({_liste(eksik_tur)}) — bunlar bitki değil, "
+                     "ızgara/referans noktası.")
     for sebep, kimler in haznesiz.items():
         ret.append(f"{_liste(kimler)}: {sebep}")
 
+    # Ekilecek HİÇBİR bitki kalmadıysa ret: kullanıcı ekmek istemişti.
+    if hedefler and not ozet and not ret:
+        ret.append(
+            f"Seçimde tür yazılı bitki yok — {len(eksik_tur)} noktanın "
+            "hiçbirinde tür yazmıyor. Bunlar ızgara/referans noktası; "
+            "bitkileri seçin ya da noktalara tür verin.")
+
     return {
         "plan": plan, "ozet": ozet, "ret": ret, "uyari": uyari,
+        # ATLANAN: seçimde olup ekilmeyecekler ve sebebi. Panel "6 bitki
+        # ekilecek, 6 türsüz nokta atlanacak" diyebilsin diye ayrı duruyor;
+        # uyarı metnine gömülü olsaydı sayıyı ayrıştırmak gerekirdi.
+        "atlanan": [{"ad": a, "sebep": "türsüz"} for a in eksik_tur],
+        "atlanan_sayisi": len(eksik_tur),
         # Ön kontrol (yasak bölge / yumuşak sınır) için düz adım listesi.
         # Parçalarla AYNI kaynaktan: ikisi ayrışamaz.
         "adimlar": [a for p in plan for k in ("hazne", "al", "tasi", "ek")

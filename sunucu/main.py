@@ -481,6 +481,66 @@ async def api_noktalar(jeton: str = Query(default="")):
     return {"noktalar": await asyncio.to_thread(noktalar.hepsi)}
 
 
+#: Türsüz noktanın "bir bitkinin altında" sayılması için en çok bu kadar
+#: uzakta olması gerekiyor (mm). 25 mm, ekim sırasında oluşan küçük
+#: kaymaları kapsayacak kadar geniş, komşu bitkiye atlamayacak kadar dar
+#: (en sık ızgara adımı 100 mm'nin çok altı).
+TURSUZ_YARICAP_MM = 25.0
+
+
+@app.get("/api/noktalar/tursuz")
+async def api_noktalar_tursuz(jeton: str = Query(default=""),
+                              yaricap: float = Query(default=TURSUZ_YARICAP_MM)):
+    """Türü yazılı OLMAYAN noktalar — ve kaçı bir bitkinin altında.
+
+    NEDEN VARLAR: bitkiler ve çıplak noktalar aynı depoda duruyor, ayıran
+    tek şey `tur` alanı. Izgara üreteci türü ancak sonradan yazmaya başladı;
+    ondan önce üretilmiş ızgaralar türsüz kaldı ve sonra aynı koordinatlara
+    bitki eklendiğinde, her bitkinin ALTINDA türsüz bir nokta oluştu.
+    Ekranda üst üsteler, kutu seçimi ikisini birden alıyor.
+
+    Bu uç NOKTA SİLMİYOR — hangi noktaların böyle olduğunu söylüyor.
+    Silme, geri alınabilir olan `/api/toplu` "sil" yolundan geçiyor:
+    30 saniye içinde geri alınabilsin.
+    """
+    _parola_dogrula(jeton)
+    hepsi = await asyncio.to_thread(noktalar.hepsi)
+    r = max(1.0, min(500.0, float(yaricap or TURSUZ_YARICAP_MM)))
+    bitkiler = [n for n in hepsi if n.get("tur")]
+    tursuz = [n for n in hepsi if not n.get("tur")]
+
+    cikti = []
+    for n in tursuz:
+        yakin = None
+        en_iyi = r + 1.0
+        for b in bitkiler:
+            try:
+                d = math.hypot(float(n["x"]) - float(b["x"]),
+                               float(n["y"]) - float(b["y"]))
+            except (TypeError, ValueError):
+                continue
+            if d < en_iyi:
+                en_iyi, yakin = d, b
+        cikti.append({
+            "ad": n.get("ad"), "x": n.get("x"), "y": n.get("y"),
+            "etiket": n.get("etiket") or "",
+            # Altında durduğu bitki — varsa. Bu bilgi silmeyi güvenli
+            # yapan şey: "bir bitkinin altında duran türsüz nokta" ile
+            # "tek başına duran referans noktası" aynı şey değil.
+            "bitki": (yakin or {}).get("ad") if yakin else None,
+            "uzaklik_mm": round(en_iyi, 1) if yakin else None,
+        })
+    cikti.sort(key=lambda k: (k["bitki"] is None, str(k["ad"])))
+    return {
+        "yaricap_mm": r,
+        "toplam": len(cikti),
+        "ustuste": [k["ad"] for k in cikti if k["bitki"]],
+        "yalniz": [k["ad"] for k in cikti if not k["bitki"]],
+        "noktalar": cikti[:AZAMI_SECIM],
+        "bitki_sayisi": len(bitkiler),
+    }
+
+
 @app.post("/api/noktalar")
 async def api_nokta_ekle(govde: dict[str, Any], jeton: str = Query(default="")):
     _parola_dogrula(jeton)
@@ -1160,6 +1220,10 @@ class EkimOturumu:
         self.uc_inanc = ""
         self.basladi_mi = False        # bu parçanın çalıştığını GÖRDÜK mü
         self.ekilen: list[str] = []
+        # Seçimde olup EKİLMEYECEKLER (türsüz noktalar). Onay kutusunda
+        # görünüyor: kullanıcı ilk onayı vermeden önce neyin atlandığını
+        # bilsin, sonradan "6 seçmiştim, 3 ekilmiş" diye aramasın.
+        self.atlanan: list[dict[str, Any]] = []
 
     # --- görünüm ------------------------------------------------------
     def goruntu(self) -> dict[str, Any]:
@@ -1186,6 +1250,10 @@ class EkimOturumu:
             # gerekmediği. Panel düzeltme satırını buna bakarak açıyor.
             "uc_teyit": self.durum == "onay_uc",
             "uc_inanc": self._inanc(),
+            # Ekim hangi ucu istiyor — kullanıcı onaylamadan önce
+            # "kafada tool2 var, ekim tool3 istiyor" diyebilelim.
+            "uc_gereken": self.uc_adi,
+            "atlanan": list(self.atlanan),
             "pompa_acik": self.pompa_acik,
             "hata": self.hata,
             "mesaj": self.mesaj,
@@ -1267,6 +1335,17 @@ async def _ekim_baslat(cozum: dict[str, Any]) -> dict[str, Any]:
             "uç kilidi bağlı değil (lock_reg = 0); şart onay adımıyla "
             "değiştirildi — ucun takılı olduğunu kullanıcı doğrulayacak.",
             "uyari")
+    # ATLANANLAR SESSİZ GEÇMİYOR. Seçimde türsüz nokta varsa ekim artık
+    # durmuyor ama kullanıcı neyin ekilip neyin atlandığını görmeli:
+    # "6 bitki ekilecek, 6 türsüz nokta atlanacak".
+    _ekim.atlanan = list(cozum.get("atlanan") or [])
+    if _ekim.atlanan:
+        await _ekim_gunluk(
+            f"{len(_ekim.atlanan)} türsüz nokta atlandı "
+            f"({', '.join(a['ad'] for a in _ekim.atlanan[:4])}"
+            + (f" ve {len(_ekim.atlanan) - 4} tane daha"
+               if len(_ekim.atlanan) > 4 else "")
+            + ") — bunlar bitki değil, ekilecek bir şey yok.", "uyari")
     await _ekim_gunluk(
         f"ekim başladı — {len(_ekim.ozet)} bitki, hazne: "
         + ", ".join(cozum.get("kullanilan_hazneler") or ["?"]))
@@ -1519,8 +1598,21 @@ async def api_ekim_onayla(govde: dict[str, Any] | None = None,
                           jeton: str = Query(default="")):
     """Kullanıcı "gördüm, devam" dedi.
 
-    Gövde ARANMIYOR: onayın söyleyecek başka bir şeyi yok ve boş gövdeye
-    422 vermek, makine beklerken basılan düğmenin çalışmaması demek.
+    UÇ TEYİDİNDE GÖVDE ÖNEMLİ: `{"uc": "tool3"}` kullanıcının kafada
+    gerçekte ne olduğunu SÖYLEDİĞİ değer. Alan varsa ve yazılımın
+    inancından farklıysa önce kayıt düzeltiliyor, sonra hareket
+    planlanıyor.
+
+    Neden: listeden doğru ucu seçip "Onayla, devam et"e basmak, kaydı
+    değiştirmiyordu — düzeltme ayrı bir düğmedeydi. Kullanıcı doğru cevabı
+    verdiğini sanırken makine eski (yanlış) inançla hareket ediyordu ve
+    olmayan bir ucun yuvasına iniyordu. Kilit servosu ve varlık sensörü
+    bağlı değilken tek doğrulama kaynağı kullanıcı; onun cevabının
+    GERÇEKTEN işlemesi gerekiyor.
+
+    Diğer onaylarda gövde aranmıyor: onayın söyleyecek başka bir şeyi yok
+    ve boş gövdeye 422 vermek, makine beklerken basılan düğmenin
+    çalışmaması demek.
     """
     _parola_dogrula(jeton)
     if not _ekim.aktif or _ekim.durum not in ("onay_uc", "onay1", "onay2"):
@@ -1528,11 +1620,45 @@ async def api_ekim_onayla(govde: dict[str, Any] | None = None,
             status_code=409,
             detail=f"Onay beklenmiyor (durum: {_ekim.durum}).")
     if _ekim.durum == "onay_uc":
+        # BEYAN VARSA ÖNCE O. `None` = kullanıcı bir şey söylemedi
+        # (eski panel, ya da liste hiç açılmadı); "" = "kafa boş" demek.
+        # İkisini ayırt etmek şart: boş dizeyi "söylenmedi" saysaydık
+        # "kafa boş" cevabı hiç işlemezdi.
+        beyan = (govde or {}).get("uc")
+        if beyan is not None:
+            beyan = str(beyan).strip()
+            onceki = _ekim._inanc()
+            if beyan != onceki:
+                sonuc = await merkez.komut_gonder("uc_beyan", {"ad": beyan})
+                if not sonuc.get("ok"):
+                    raise HTTPException(
+                        status_code=422,
+                        detail=("Uç kaydı düzeltilemedi: "
+                                + str(sonuc.get("mesaj") or "ajan reddetti")))
+                # Ajanın yeni durumu bir sonraki pakette gelecek; onay
+                # kararını beklemeden veriyoruz ama inancı da hemen
+                # güncelliyoruz ki günlük doğru yazsın.
+                uc_d = dict((merkez.son_durum or {}).get("uc") or {})
+                uc_d["uc"] = beyan or None
+                merkez.son_durum["uc"] = uc_d
+                await _ekim_gunluk(
+                    f"uç kaydı kullanıcı beyanıyla düzeltildi: "
+                    f"'{onceki or 'boş'}' → '{beyan or 'boş'}' — "
+                    "hiçbir eksen hareket etmedi.", "uyari")
         # Kullanıcı kaydın doğru olduğunu söyledi; uç değiştirme
         # ARTIK doğru inançla çalışacak.
+        inanc = _ekim._inanc()
+        # NE YAPILACAĞI GÜNLÜĞE: kullanıcı onayladıktan sonra makinenin
+        # ne yapacağı, onaydan önce söylenenle aynı olmalı.
+        if inanc == _ekim.uc_adi:
+            ne = f"'{_ekim.uc_adi}' zaten takılı sayılıyor — uç için hareket yok"
+        elif inanc:
+            ne = (f"önce '{inanc}' yuvasına bırakılacak, sonra "
+                  f"'{_ekim.uc_adi}' alınacak")
+        else:
+            ne = f"doğrudan '{_ekim.uc_adi}' alınacak"
         await _ekim_gunluk(
-            f"kafada '{_ekim._inanc() or 'boş'}' olduğu onaylandı — "
-            f"'{_ekim.uc_adi}' takılıyor")
+            f"kafada '{inanc or 'boş'}' olduğu onaylandı — {ne}")
         await _ekim_parca_baslat("uc", ekim.uc_parcasi(_ekim.uc_adi))
         return _ekim.goruntu()
     o = _ekim.ozet[_ekim.sira]
@@ -1688,6 +1814,10 @@ async def api_ekim_onizle(govde: dict[str, Any], jeton: str = Query(default=""))
             # hazne tükenmiyor, aynı hazne bütün marullara hizmet ediyor.
             "kullanilan_hazneler": cozum["kullanilan_hazneler"],
             "uc_adi": cozum["uc_adi"], "uc_takili": cozum["uc_takili"],
+            # Seçimde olup ekilmeyecekler. Panel "6 bitki ekilecek,
+            # 6 türsüz nokta atlanacak" diyebilsin diye ayrı alan.
+            "atlanan": cozum["atlanan"],
+            "atlanan_sayisi": cozum["atlanan_sayisi"],
             "onay": cozum["onay"]}
 
 

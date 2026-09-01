@@ -548,7 +548,12 @@ class Ajan:
                 # hemen uygulanıyor. Çalışan kameralar önce kapatılıyor,
                 # yoksa eski cihaz açık kalırken yenisi açılamaz.
                 try:
-                    tanimlar = kamera_modulu.tanimlari_dogrula(arg.get("kameralar"))
+                    # Mevcut tanımlar da veriliyor: panelin göndermediği
+                    # alanlar (örneğin "açılışta çalışsın") sessizce
+                    # sıfırlanmasın.
+                    tanimlar = kamera_modulu.tanimlari_dogrula(
+                        arg.get("kameralar"),
+                        [dict(k.ayar) for k in self.kameralar.values()])
                 except kamera_modulu.KameraAyarHatasi as hata:
                     return {"ok": False, "mesaj": str(hata)}
                 # Hangileri açıktı: kaydettikten sonra geri açmak için.

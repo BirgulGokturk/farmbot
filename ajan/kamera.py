@@ -591,6 +591,9 @@ class Kamera:
             "genislik": int(self.ayar.get("genislik", 640)),
             "yol": str(self.ayar.get("yol") or "oto"),
             "sahte": bool(self.ayar.get("sahte")),
+            # AÇILIŞTA kendiliğinden çalışsın mı — `acik` ile karıştırılmasın:
+            # `acik` şu anki hâl, `aktif` bir sonraki açılışın hâli.
+            "aktif": bool(self.ayar.get("aktif")),
             # "acik" = kamera KARE URETIYOR mu. Canli akis acilirken
             # periyodik dongu duruyor (ikisi ayni cihazi acamaz); yalnizca
             # _calisiyor'a bakmak, canli akarken panele "kapali" dedirtiyordu.
@@ -836,12 +839,30 @@ def tanim_dogrula(ham: dict[str, Any], sira: int = 0) -> dict[str, Any]:
     return temiz
 
 
-def tanimlari_dogrula(ham: Any) -> list[dict[str, Any]]:
+def tanimlari_dogrula(ham: Any,
+                      mevcut: list[dict[str, Any]] | None = None
+                      ) -> list[dict[str, Any]]:
+    """Panelden gelen liste. `mevcut` verilirse SÖYLENMEYEN alanlar oradan.
+
+    `aktif` (açılışta kendiliğinden çalışsın mı) bunun için var: panel bu
+    alanı göndermeyebiliyor ve göndermediğinde varsayılan `false` devreye
+    girip ayarı sessizce kapatıyordu. Kamera o an açık kaldığı için sorun
+    ancak bir sonraki yeniden başlatmada, "kameralarım neden açılmıyor"
+    diye görünüyordu. Söylenmeyen bir alan değiştirilmemeli.
+    """
     if not isinstance(ham, list) or not ham:
         raise KameraAyarHatasi("En az bir kamera tanımı gerekiyor")
     if len(ham) > 6:
         raise KameraAyarHatasi("En çok 6 kamera tanımlanabilir")
-    cikti = [tanim_dogrula(k, i) for i, k in enumerate(ham)]
+    eski = {str(k.get("ad")): k for k in (mevcut or [])}
+    tamam = []
+    for k in ham:
+        if isinstance(k, dict) and "aktif" not in k:
+            onceki = eski.get(str(k.get("ad")))
+            if onceki is not None:
+                k = {**k, "aktif": bool(onceki.get("aktif"))}
+        tamam.append(k)
+    cikti = [tanim_dogrula(k, i) for i, k in enumerate(tamam)]
     adlar = [k["ad"] for k in cikti]
     tekrar = {a for a in adlar if adlar.count(a) > 1}
     if tekrar:

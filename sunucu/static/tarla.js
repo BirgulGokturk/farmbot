@@ -87,6 +87,13 @@
     //   "sec"  — sürükleme kutu seçimi çizer, Shift ile tek tek eklenir
     kip: "tasi",
     secim: new Set(),            // seçili nokta ADLARI
+    /* YALNIZ BİTKİ SÜZGECİ. Bitkiler ve çıplak noktalar aynı depoda
+     * duruyor, ayıran tek şey `tur` alanı; kutu seçimi ikisini birden
+     * alıyor ve kullanıcı ekranda bitkiyi seçtiğini sanırken altındaki
+     * türsüz ızgara noktası da sessizce seçime giriyor. Bu açıkken kutu
+     * seçimi türsüz noktalara HİÇ dokunmuyor.
+     * Tarayıcıda saklanıyor: her açılışta yeniden açmak gerekmiyor. */
+    yalnizBitki: localStorage.getItem("farmbot_yalniz_bitki") === "1",
     harita: Object.assign({}, HARITA_VARSAYILAN),
 
     // Çizim döngüsü yalnız bu işaretliyken çiziyor (bkz. kirlet).
@@ -1359,7 +1366,15 @@
       if (!k.acik || !k.tanim.secilebilir) continue;
       try {
         const parca = k.tanim.secilebilir(katmanBaglami(k)) || [];
-        for (const n of parca) if (n && n.ad) liste.push(n);
+        for (const n of parca) {
+          if (!n || !n.ad) continue;
+          // YALNIZ BİTKİ: türü olmayan kayıt kutu seçimine hiç girmiyor.
+          if (T.yalnizBitki) {
+            const kayit = VERI.noktalar.find((p) => p && p.ad === n.ad);
+            if (!kayit || !kayit.tur) continue;
+          }
+          liste.push(n);
+        }
       } catch (h) { console.error("katman secilebilir:", k.tanim.kimlik, h); }
     }
     return liste;
@@ -1388,13 +1403,66 @@
     secimiCiz();
   }
 
+  /** Seçimin BİTKİ / ÇIPLAK NOKTA kırılımı.
+   *
+   * "12 seçili" yazmak, ekranda altı bitki seçmiş birine hangi altısının
+   * daha seçildiğini söylemiyordu: bitkilerin ALTINDA türsüz ızgara
+   * noktaları duruyor ve kutu seçimi ikisini birden alıyor. Sayacın neyi
+   * saydığını ayırması, sorunun kendisini görünür kılıyor. */
+  function secimKirilim() {
+    let bitki = 0, nokta = 0;
+    for (const ad of T.secim) {
+      const n = VERI.noktalar.find((k) => k && k.ad === ad);
+      if (n && n.tur) bitki += 1;
+      else nokta += 1;
+    }
+    return { bitki, nokta, toplam: T.secim.size };
+  }
+
   function secimiCiz() {
     kirlet("secim");
     const cubuk = $("#toplu-cubuk");
     const sayi = $("#toplu-sayi");
     if (cubuk) cubuk.classList.toggle("gizli", T.secim.size === 0);
-    if (sayi) sayi.textContent = `${T.secim.size} seçili`;
+    if (sayi) {
+      const k = secimKirilim();
+      // Tek tür varsa tek sayı: "6 bitki" ya da "6 nokta". Karışıksa
+      // ikisi de yazıyor — asıl anlatılması gereken durum bu.
+      sayi.textContent = (k.bitki && k.nokta)
+        ? `${k.bitki} bitki · ${k.nokta} nokta`
+        : k.bitki ? `${k.bitki} bitki seçili` : `${k.nokta} nokta seçili`;
+      sayi.title = k.nokta
+        ? "Çıplak nokta = türü yazılı olmayan kayıt (ızgara/referans). "
+          + "Ekimde atlanır."
+        : "";
+    }
+    // "Yalnız bitkiler" düğmesi seçimin hâline göre okunur olsun.
+    const yb = $("#d-toplu-yalniz-bitki");
+    if (yb) {
+      yb.classList.toggle("secili", !!T.yalnizBitki);
+      yb.setAttribute("aria-pressed", T.yalnizBitki ? "true" : "false");
+    }
     katmanlariGuncelle();
+  }
+
+  /** Seçimden çıplak noktaları atar ve süzgeci açar/kapatır. */
+  function yalnizBitkiAlSat(acik) {
+    T.yalnizBitki = acik === undefined ? !T.yalnizBitki : !!acik;
+    try {
+      localStorage.setItem("farmbot_yalniz_bitki", T.yalnizBitki ? "1" : "0");
+    } catch { /* depolama kapalı olabilir — bu oturumda geçerli */ }
+    if (T.yalnizBitki) {
+      const atilan = [];
+      for (const ad of [...T.secim]) {
+        const n = VERI.noktalar.find((k) => k && k.ad === ad);
+        if (!n || !n.tur) { T.secim.delete(ad); atilan.push(ad); }
+      }
+      if (atilan.length) {
+        gunluk(`${atilan.length} çıplak nokta seçimden çıkarıldı — `
+               + "kutu seçimi artık yalnız bitkileri alıyor", "iyi");
+      }
+    }
+    secimiCiz();
   }
 
   /** Kutu seçimi dikdörtgenini tuvalin üstüne çiziyor. */
@@ -1556,6 +1624,13 @@
           return;
         }
         (o.uyari || []).slice(0, 4).forEach((u) => gunluk(`⚠ ${u}`, "uyari"));
+        // ATLANANLAR AYRI SATIRDA. Tek bir türsüz nokta yüzünden hiçbir
+        // şeyin ekilmemesi yerine artık atlanıyor; ama kaç tanesinin
+        // atlandığı ekim başlamadan önce açıkça yazılmalı.
+        if (o.atlanan_sayisi) {
+          gunluk(`${o.tohum_sayisi} bitki ekilecek · `
+                 + `${o.atlanan_sayisi} türsüz nokta atlanacak`, "uyari");
+        }
         // "Boşalacak göz" yazmıyoruz artık: hazne tükenmiyor, aynı hazne
         // seçimdeki bütün bitkilere hizmet ediyor.
         gunluk(`${o.tohum_sayisi} tohum · hazne: ${
@@ -2203,6 +2278,20 @@
     /** Deneme yardımcısı — çoklu seçimdeki nokta adları. */
     secimDurumu() { return [...T.secim]; },
 
+    /** Seçimin bitki / çıplak nokta kırılımı — panel ve denemeler için. */
+    secimKirilimi() { return secimKirilim(); },
+
+    /** Verilen adları seçer. Panelin "türsüz noktaları haritada seç"
+     *  işlevi buradan geçiyor: silmeden önce gözle görmek için. */
+    secimeYaz(adlar, ekle) { secimeYaz(adlar || [], !!ekle); },
+
+    /** "Yalnız bitkiler" süzgeci — panelden ve denemeden açılıp kapanıyor. */
+    yalnizBitki(acik) {
+      if (acik === undefined) return !!T.yalnizBitki;
+      yalnizBitkiAlSat(acik);
+      return !!T.yalnizBitki;
+    },
+
     /** PROFİL GÖRÜNTÜLEYİCİ'nin beslendiği tek yer.
      *
      * `profil.js` sahneye hiçbir şey çizmiyor — aynı verinin ikinci bir
@@ -2447,6 +2536,8 @@
 
     $("#d-kip-tasi").onclick = () => kipSec("tasi");
     $("#d-kip-sec").onclick = () => kipSec("sec");
+    const yalnizBitkiDugme = $("#d-toplu-yalniz-bitki");
+    if (yalnizBitkiDugme) yalnizBitkiDugme.onclick = () => yalnizBitkiAlSat();
     $("#d-toplu-sula").onclick = () => topluIslem("sula");
     const ekDugme = $("#d-toplu-ek");
     if (ekDugme) ekDugme.onclick = () => topluIslem("ek");

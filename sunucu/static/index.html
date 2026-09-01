@@ -156,6 +156,14 @@
          sıralama ve güvenlik denetimi ajanda kalıyor. -->
     <div id="toplu-cubuk" class="toplu-cubuk gizli">
       <span id="toplu-sayi" class="toplu-sayi"></span>
+      <!-- BİTKİ mi ÇIPLAK NOKTA mı. İkisi aynı depoda duruyor, ayıran tek
+           şey türün yazılı olması. Kutu seçimi ikisini birden alıyordu ve
+           kullanıcı bitkiyi seçtiğini sanırken altındaki türsüz ızgara
+           noktası da sessizce seçime giriyordu. Bu düğme açıkken kutu
+           seçimi türsüz noktalara hiç dokunmuyor. -->
+      <button class="dugme" id="d-toplu-yalniz-bitki" aria-pressed="false"
+              title="Kutu seçimi yalnız türü yazılı bitkileri alsın; türsüz ızgara/referans noktalarını hiç almasın">
+        Yalnız bitkiler</button>
       <button class="dugme birincil" id="d-toplu-sula">Sula</button>
       <button class="dugme" id="d-toplu-ek"
               title="Tohumluk gözünden tohum alıp seçili noktalara eker">Ek</button>
@@ -797,10 +805,16 @@
             numaralı ve kalıcı oluyor, tepsi kayarsa hepsi birlikte
             hizalanıyor. Gözlü bir kap için Ayarlar → Dikim alanları'ndan
             zemini <b>Gözlü fidelik tepsisi</b> yapın.<br><br>
-            <b>Tür seçin.</b> Türü yazılı olmayan bir noktayı ekim
-            reddediyor ("türü yazılı değil"), çünkü hangi hazneden tohum
-            alacağını bilemiyor. Burada seçtiğiniz tür noktalara yazılır ve
-            nokta bir <b>bitki</b> olur.<br><br>
+            <b>Tür seçin.</b> Türü yazılı olmayan nokta bir bitki değil:
+            ekim onu <b>atlıyor</b> (hangi hazneden tohum alacağını
+            bilemiyor) ve kaç tanesinin atlandığını söylüyor. Seçimde
+            yalnız türsüz nokta varsa ekim hiç başlamıyor. Burada
+            seçtiğiniz tür noktalara yazılır ve nokta bir <b>bitki</b>
+            olur.<br><br>
+            Türsüz noktalar bir bitkinin <b>altında</b> duruyorsa bunlar
+            tür yazılmadan üretilmiş eski ızgara noktalarıdır: kutu
+            seçimine girip sayacı şişirirler. Aşağıdaki <b>Türsüz
+            noktalar</b> bölümünden bulunup temizlenebilirler.<br><br>
             Z, güvenli taşıma yüksekliği olarak yazılır; ekim derinliği ayrı
             bir bilgi ve türde duruyor.
           </p>
@@ -835,6 +849,29 @@
             <button class="dugme birincil gizli" id="d-izgara-uygula">Uygula</button>
           </div>
           <div id="izgara-onizleme" class="gomulu gizli"></div>
+
+          <!-- TÜRSÜZ NOKTA TEMİZLİĞİ.
+               Bu üretecin türü sonradan yazmaya başlamasından önce
+               üretilmiş ızgaralar türsüz kaldı; sonra aynı koordinatlara
+               bitki eklenince her bitkinin ALTINDA bir türsüz nokta oluştu.
+               Ekranda bitki onları örtüyor, kutu seçimi ikisini birden
+               alıyor. Buradan bulunup temizleniyorlar. -->
+          <h4 class="alt-baslik">Türsüz noktalar</h4>
+          <p class="ikincil">
+            Türü yazılı olmayan noktalar bitki sayılmıyor: ekimde atlanıyorlar
+            ama kutu seçimine giriyorlar ve sayacı şişiriyorlar. Bir bitkinin
+            <b>altında</b> duranlar, tür yazılmadan üretilmiş eski ızgara
+            noktalarıdır ve silinebilir. Tek başına duranlar referans noktası
+            olabilir — onlara dokunulmuyor. Silme 30 saniye geri alınabiliyor.
+          </p>
+          <div class="satir-8 alt-hizali">
+            <button class="dugme" id="d-tursuz-tara" type="button">Tara</button>
+            <button class="dugme gizli" id="d-tursuz-sec" type="button">
+              Haritada seç</button>
+            <button class="dugme tehlike gizli" id="d-tursuz-sil" type="button">
+              Bitki altındakileri sil</button>
+          </div>
+          <div id="tursuz-sonuc" class="gomulu gizli"></div>
         </div>
       </section>
     </section>
@@ -1083,20 +1120,27 @@
                önce soruluyor ve cevap yanlışsa burada düzeltiliyor. -->
           <div class="uc-teyit gizli" id="uc-teyit">
             <div class="uc-teyit-soru" id="uc-teyit-soru"></div>
-            <p class="alt-not" id="uc-teyit-gerekce"></p>
-            <div class="satir-8">
-              <button class="dugme birincil" id="d-uc-teyit-evet">Doğru, devam et</button>
-              <button class="dugme" id="d-uc-teyit-vazgec">Vazgeç</button>
-            </div>
+            <!-- LİSTE DÜĞMELERDEN ÖNCE. Cevabınız burada; düğme onu
+                 uyguluyor. Ters sırada dururken kullanıcı önce onaya
+                 basıyor, listeyi hiç görmüyordu. -->
             <div class="uc-teyit-duzelt">
-              <span class="alt-not">Yanlışsa düzeltin — hiçbir eksen hareket etmez:</span>
+              <span class="alt-not">Kafada gerçekte ne varsa onu seçin —
+                <b>seçtiğiniz değer "Doğru, devam et"e bastığınızda kayda
+                geçer</b> ve hareket ona göre planlanır:</span>
               <div class="satir-8 alt-hizali">
                 <div class="alan esnek-alan">
                   <label for="uc-teyit-secim">Kafada gerçekte ne var</label>
                   <select id="uc-teyit-secim"></select>
                 </div>
-                <button class="dugme" id="d-uc-teyit-duzelt">Kaydı düzelt</button>
+                <button class="dugme" id="d-uc-teyit-duzelt"
+                        title="Yalnız kaydı düzeltir, hareket başlatmaz">
+                  Yalnız kaydı düzelt</button>
               </div>
+            </div>
+            <p class="alt-not" id="uc-teyit-gerekce"></p>
+            <div class="satir-8">
+              <button class="dugme birincil" id="d-uc-teyit-evet">Doğru, devam et</button>
+              <button class="dugme" id="d-uc-teyit-vazgec">Vazgeç</button>
             </div>
           </div>
           <div class="satir-8 alt-hizali">
@@ -1804,15 +1848,29 @@
            açılıyor: cevap yanlışsa kullanıcı burada düzeltiyor ve
            hiçbir eksen hareket etmiyor. -->
       <div class="uc-teyit-duzelt gizli" id="ekim-uc-duzelt">
-        <span class="alt-not">Yanlışsa düzeltin — hiçbir eksen hareket etmez:</span>
+        <span class="alt-not">Kafada gerçekte ne varsa onu seçin —
+          <b>seçtiğiniz değer "Onayla, devam et"e bastığınızda kayda geçer</b>
+          ve hareket ona göre planlanır:</span>
         <div class="satir-8 alt-hizali">
           <div class="alan esnek-alan">
             <label for="ekim-uc-secim">Kafada gerçekte ne var</label>
             <select id="ekim-uc-secim"></select>
           </div>
-          <button class="dugme" id="d-ekim-uc-duzelt">Kaydı düzelt</button>
+          <!-- Yalnız kaydı düzeltmek isteyenler için ayrı kalıyor (hiçbir
+               işlev silinmiyor) ama artık onaya GEREK OLMAYAN bir kısayol:
+               adı da bunu söylüyor. Asıl yol yukarıdaki listedir. -->
+          <button class="dugme" id="d-ekim-uc-duzelt"
+                  title="Yalnız kaydı düzeltir, ekime devam etmez">
+            Yalnız kaydı düzelt</button>
         </div>
+        <!-- NE OLACAĞI, SEÇİME GÖRE, ÖNCEDEN. Liste değiştikçe bu satır
+             yeniden yazılıyor: kullanıcı Onayla'ya basmadan makinenin ne
+             yapacağını okuyor. -->
+        <p class="ekim-uc-plan" id="ekim-uc-plan"></p>
       </div>
+      <!-- Seçimde olup EKİLMEYECEKLER. İlk onaydan önce görünüyor: makine
+           daha hiç kımıldamamışken kullanıcı neyin atlandığını bilsin. -->
+      <p class="alt-not gizli" id="ekim-onay-atlanan"></p>
       <div class="ekim-onay-dugmeler" id="ekim-onay-dugmeler">
         <button class="dugme birincil" id="d-ekim-onayla">Onayla, devam et</button>
         <button class="dugme tehlike" id="d-ekim-iptal">İptal</button>

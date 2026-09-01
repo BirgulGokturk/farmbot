@@ -585,11 +585,12 @@ function izgaraTurYaz() {
   sec.innerHTML = tohumSecenekleri(onceki);
   const uyari = $("#iz-tur-uyari");
   if (uyari) {
-    // Sebebi ekimden ÖNCE söylüyoruz: kullanıcı 12 nokta üretip ekime
-    // basınca "türü yazılı değil" ile karşılaşmasın.
+    // Sebebi ekimden ÖNCE söylüyoruz: kullanıcı 12 nokta üretip sonra
+    // "neden ekilmediler" diye aramasın.
     uyari.textContent = sec.value
-      ? "" : "Tür seçilmedi — bu noktalar ekilemez, ekim \"türü yazılı "
-             + "değil\" diyerek reddeder. Sonradan da verebilirsiniz.";
+      ? "" : "Tür seçilmedi — bu noktalar BİTKİ olmayacak ve ekimde "
+             + "atlanacaklar (ekimi durdurmazlar). Türü sonradan da "
+             + "verebilirsiniz.";
     uyari.classList.toggle("gizli", !!sec.value);
   }
 }
@@ -643,13 +644,103 @@ async function izgaraUygula() {
     });
     const tur = ($("#iz-tur") || {}).value || "";
     gunluk(`✓ ${o.eklendi} yeni, ${o.guncellendi} güncellendi (toplam ${o.toplam})`
-      + (tur ? ` · tür yazıldı` : " · TÜRSÜZ — ekim reddeder"),
+      + (tur ? ` · tür yazıldı`
+             : " · TÜRSÜZ — bunlar bitki değil, ekimde atlanırlar"),
       tur ? "ok" : "uyari");
     $("#izgara-onizleme").classList.add("gizli");
     $("#d-izgara-uygula").classList.add("gizli");
     await noktalariYukle();
   } catch (hata) {
     gunluk(`✕ Izgara uygulanamadı: ${hata.message}`, "hata");
+  }
+}
+
+/* ------------------------------------------ türsüz nokta temizliği
+ *
+ * NEDEN VARLAR. Bitkiler ve çıplak noktalar aynı depoda; ayıran tek şey
+ * `tur` alanı. Bu üreteç türü ancak sonradan yazmaya başladı — ondan önce
+ * üretilmiş ızgaralar türsüz kaldı ve aynı koordinatlara bitki eklenince
+ * her bitkinin ALTINDA türsüz bir nokta oluştu. Ekranda bitki onları
+ * örtüyor; kutu seçimi ikisini birden alıyor ve "6 bitki seçtim ama 12
+ * seçili yazıyor" oradan geliyor.
+ *
+ * SİLMEK GÜVENLİ AMA KÖR DEĞİL. Yalnız bir bitkinin yarıçapı içinde
+ * duranlar siliniyor; tek başına duran nokta bir referans/kalibrasyon
+ * noktası olabilir ve ona dokunmuyoruz. Silme `/api/toplu` üzerinden
+ * geçiyor, yani 30 saniye geri alınabiliyor.
+ */
+const TURSUZ = { son: null };
+
+function tursuzYaz(y) {
+  TURSUZ.son = y;
+  const kutu = $("#tursuz-sonuc");
+  const sec = $("#d-tursuz-sec");
+  const sil = $("#d-tursuz-sil");
+  if (!kutu) return;
+  kutu.classList.remove("gizli");
+  const ust = (y.ustuste || []).length;
+  const yalniz = (y.yalniz || []).length;
+  if (!y.toplam) {
+    kutu.innerHTML = `<div class="alt-not">Türsüz nokta yok — kayıtlı
+      ${y.bitki_sayisi} noktanın hepsinde tür yazılı.</div>`;
+    if (sec) sec.classList.add("gizli");
+    if (sil) sil.classList.add("gizli");
+    return;
+  }
+  const ornek = (y.noktalar || []).filter((n) => n.bitki).slice(0, 6)
+    .map((n) => `${kacisli(n.ad)} → ${kacisli(n.bitki)} (${n.uzaklik_mm} mm)`)
+    .join("<br>");
+  kutu.innerHTML = `<div class="alt-not">
+    <b>${y.toplam}</b> türsüz nokta ·
+    <b>${ust}</b> tanesi bir bitkinin altında (${y.yaricap_mm} mm içinde) ·
+    <b>${yalniz}</b> tanesi tek başına.
+    ${ust ? `<br><br>Bitkinin altında duranlar — silinecek olanlar:<br>${ornek}`
+          + (ust > 6 ? `<br>… ve ${ust - 6} tane daha` : "") : ""}
+    ${yalniz ? `<br><br>Tek başına duran ${yalniz} noktaya <b>dokunulmuyor</b>:
+      referans ya da kalibrasyon noktası olabilirler.` : ""}
+    </div>`;
+  if (sec) sec.classList.toggle("gizli", !ust);
+  if (sil) sil.classList.toggle("gizli", !ust);
+}
+
+async function tursuzTara() {
+  try {
+    tursuzYaz(await apiIste("/api/noktalar/tursuz"));
+  } catch (h) {
+    gunluk(`✕ Türsüz noktalar taranamadı: ${h.message}`, "hata");
+  }
+}
+
+/** Bitki altındakileri haritada SEÇER — silmeden önce gözle görmek için. */
+function tursuzSec() {
+  const y = TURSUZ.son;
+  if (!y || !(y.ustuste || []).length) return;
+  if (!window.Tarla || !Tarla.secimeYaz) {
+    gunluk("Harita hazır değil — Tarla sayfasını bir kez açın", "uyari");
+    return;
+  }
+  // Süzgeç açıkken seçim boş kalırdı: bu noktaların hepsi türsüz.
+  if (Tarla.yalnizBitki && Tarla.yalnizBitki()) Tarla.yalnizBitki(false);
+  Tarla.secimeYaz(y.ustuste, false);
+  gunluk(`${y.ustuste.length} türsüz nokta haritada seçildi — `
+         + "Tarla sayfasında görebilir, çubuktan silebilirsiniz", "iyi");
+}
+
+async function tursuzSil() {
+  const y = TURSUZ.son;
+  if (!y || !(y.ustuste || []).length) return;
+  try {
+    const s = await apiIste("/api/toplu", {
+      method: "POST",
+      body: JSON.stringify({ islem: "sil", noktalar: y.ustuste }),
+    });
+    gunluk(`✓ ${(s.silinen || []).length} türsüz nokta silindi — `
+           + "30 saniye geri alınabilir", "ok");
+    geriAlGoster(s.geri_al);      // silme geri alınabilir olmalı
+    await noktalariYukle();
+    await tursuzTara();
+  } catch (h) {
+    gunluk(`✕ Silinemedi: ${h.message}`, "hata");
   }
 }
 
@@ -1068,33 +1159,50 @@ function ucTeyitAc(islem, hedef) {
     ? `Yazılım kafada <b>${kacisli(takili)}</b> olduğunu sanıyor. Doğru mu?`
     : "Yazılım kafanın <b>boş</b> olduğunu sanıyor. Doğru mu?";
 
-  // NE OLACAĞINI ÖNCEDEN SÖYLE. Kullanıcı "evet"e basmadan önce
-  // makinenin nereye gideceğini bilmeli — asıl şikâyet buydu.
-  let ne;
-  if (islem === "birak") {
-    ne = takili
-      ? `Devam ederseniz makine <b>${kacisli(takili)}</b> yuvasına gidip ucu bırakacak.`
-      : "Kafa boşsa bırakacak bir şey yok; makine hareket etmeyecek.";
-  } else if (takili && takili !== hedef) {
-    ne = `Devam ederseniz makine <b>önce ${kacisli(takili)} yuvasına gidip onu`
-       + ` bırakacak</b>, sonra ${kacisli(hedef)} almaya gidecek.`;
-  } else if (takili === hedef) {
-    ne = `${kacisli(hedef)} zaten takılı sayılıyor; makine hareket etmeyecek.`;
-  } else {
-    ne = `Devam ederseniz makine doğrudan <b>${kacisli(hedef)}</b> almaya gidecek.`;
-  }
-  $("#uc-teyit-gerekce").innerHTML = ne
-    + " Kafada gerçekte ne olduğunu yazılım ölçemiyor — kilit servosu ve "
-    + "varlık sensörü bağlı değil.";
-
   // Düzeltme listesi: bilinen uçlar + "boş".
   const sec = $("#uc-teyit-secim");
   sec.innerHTML = `<option value="">— kafa boş —</option>`
     + (S.ucListesi || []).map((a) =>
         `<option value="${kacisli(a)}"${a === takili ? " selected" : ""}>${kacisli(a)}</option>`).join("");
   sec.value = takili;
+  // Liste değişince plan da değişiyor: "kafada tool2 var" ile "kafada
+  // tool3 var" farklı hareketler demek ve kullanıcı Onayla'ya basmadan
+  // hangisini okuduğunu bilmeli.
+  sec.onchange = ucTeyitGerekceYaz;
+  ucTeyitGerekceYaz();
 
   kutu.classList.remove("gizli");
+}
+
+/** NE OLACAĞINI ÖNCEDEN SÖYLE — listede SEÇİLİ olana göre.
+ *  Kayıtlı inanca göre yazsaydık, kullanıcı listeyi düzelttikten sonra
+ *  bile eski (yanlış) planı okurdu. */
+function ucTeyitGerekceYaz() {
+  const t = S.ucTeyit;
+  const kutu = $("#uc-teyit-gerekce");
+  if (!t || !kutu) return;
+  const secilen = ($("#uc-teyit-secim") || {}).value || "";
+  const inanc = (S.ucDurum || {}).uc || "";
+  const hedef = t.hedef;
+  const kayit = secilen === inanc ? ""
+    : `Kayıt <b>${kacisli(inanc || "boş")}</b> → <b>${kacisli(secilen || "boş")}</b>`
+      + " olarak düzeltilecek. ";
+  let ne;
+  if (t.islem === "birak") {
+    ne = secilen
+      ? `Devam ederseniz makine <b>${kacisli(secilen)}</b> yuvasına gidip ucu bırakacak.`
+      : "Kafa boşsa bırakacak bir şey yok; makine hareket etmeyecek.";
+  } else if (secilen && secilen !== hedef) {
+    ne = `Devam ederseniz makine <b>önce ${kacisli(secilen)} yuvasına gidip onu`
+       + ` bırakacak</b>, sonra ${kacisli(hedef)} almaya gidecek.`;
+  } else if (secilen === hedef) {
+    ne = `${kacisli(hedef)} zaten takılı sayılıyor; makine hareket etmeyecek.`;
+  } else {
+    ne = `Devam ederseniz makine doğrudan <b>${kacisli(hedef)}</b> almaya gidecek.`;
+  }
+  kutu.innerHTML = kayit + ne
+    + " Kafada gerçekte ne olduğunu yazılım ölçemiyor — kilit servosu ve "
+    + "varlık sensörü bağlı değil.";
 }
 
 function ucTeyitKapat() {
@@ -1108,10 +1216,31 @@ async function ucIslemGonder(islem, hedef) {
   else await komutGonder("uc_degistir", { ad: hedef });
 }
 
-function ucTeyitOnayla() {
+/** Onay — LİSTEDE SEÇİLİ olan kayda geçtikten SONRA hareket.
+ *
+ * Ekim onay kutusundaki hatanın aynısı buradaydı: liste bir düğme, onay
+ * başka bir düğmeydi. Kullanıcı listeden doğru ucu seçip "Evet, devam et"e
+ * bastığında kayıt değişmiyor, makine eski inançla hareket ediyordu.
+ * Şimdi tek iş: seçilen değer önce kayda geçiyor, sonra plan ona göre. */
+async function ucTeyitOnayla() {
   const t = S.ucTeyit;
+  if (!t) { ucTeyitKapat(); return; }
+  const secilen = ($("#uc-teyit-secim") || {}).value || "";
+  const inanc = (S.ucDurum || {}).uc || "";
+  if (secilen !== inanc) {
+    const sonuc = await komutGonder("uc_beyan", { ad: secilen });
+    if (!sonuc || !sonuc.ok) {
+      // Kayıt düzeltilemediyse HAREKET ETMİYORUZ: yanlış inançla
+      // gitmek, bu kutunun engellemek için var olduğu şeyin ta kendisi.
+      gunluk("✕ Uç kaydı düzeltilemedi — hareket başlatılmadı", "hata");
+      return;
+    }
+    if (S.ucDurum) S.ucDurum = { ...S.ucDurum, uc: secilen || null };
+    gunluk(`Uç kaydı düzeltildi: '${inanc || "boş"}' → '${secilen || "boş"}'`,
+           "uyari");
+  }
   ucTeyitKapat();
-  if (t) ucIslemGonder(t.islem, t.hedef);
+  ucIslemGonder(t.islem, t.hedef);
 }
 
 /** Kayıt düzeltme — HAREKET YOK, yalnız yazılımın inancı düzeliyor.
@@ -3088,6 +3217,25 @@ function ekimOnayYaz(e) {
         + (S.ucListesi || []).map((a) =>
             `<option value="${kacisli(a)}"${a === inanc ? " selected" : ""}>${kacisli(a)}</option>`).join("");
       sec.value = inanc;
+      // Liste her değiştiğinde ne olacağı yeniden yazılıyor.
+      sec.onchange = ekimUcPlanYaz;
+      ekimUcPlanYaz();
+    }
+  }
+
+  /* ATLANANLAR. Seçimde türsüz nokta varsa ekim artık durmuyor; ama
+   * kullanıcı ilk onayı vermeden ÖNCE neyin ekilip neyin atlandığını
+   * görmeli, sonradan "6 seçmiştim, 3 ekilmiş" diye aramasın. */
+  const atl = $("#ekim-onay-atlanan");
+  if (atl) {
+    const liste = e.atlanan || [];
+    atl.classList.toggle("gizli", !liste.length);
+    if (liste.length) {
+      const adlar = liste.slice(0, 4).map((a) => a.ad).join(", ");
+      atl.innerHTML = `<b>${e.toplam} bitki ekilecek</b> · `
+        + `<b>${liste.length} türsüz nokta atlandı</b> (${kacisli(adlar)}`
+        + (liste.length > 4 ? ` ve ${liste.length - 4} tane daha` : "")
+        + ") — bunlar bitki değil, ızgara/referans noktası.";
     }
   }
 
@@ -3110,6 +3258,39 @@ function ekimOnayYaz(e) {
   $("#ekim-onay-iptal-secim").classList.add("gizli");
   $("#ekim-onay-dugmeler").classList.remove("gizli");
   kutu.classList.remove("gizli");
+}
+
+/* NE OLACAĞINI ÖNCEDEN SÖYLE — hem de LİSTEDE SEÇİLİ olana göre.
+ *
+ * Kullanıcı listeden doğru ucu seçtiğinde makinenin ne yapacağı değişiyor:
+ * "kafada tool3 var, ekim tool3 istiyor → hareket yok" ile "kafada tool2
+ * var, ekim tool3 istiyor → önce tool2 bırakılacak" arasında büyük fark
+ * var. Cümleyi kayıtlı inanca göre yazsaydık, kullanıcı listeyi
+ * düzelttikten sonra bile eski (yanlış) planı okurdu. */
+function ekimUcPlanYaz() {
+  const kutu = $("#ekim-uc-plan");
+  const e = S.ekimOnay;
+  if (!kutu || !e) return;
+  const secilen = (($("#ekim-uc-secim") || {}).value || "");
+  const gereken = e.uc_gereken || e.uc_adi || "";
+  const inanc = e.uc_inanc || "";
+  const kayit = secilen === inanc
+    ? ""
+    : `Kayıt <b>${kacisli(inanc || "boş")}</b> → <b>${kacisli(secilen || "boş")}</b>`
+      + " olarak düzeltilecek. ";
+  let ne;
+  if (secilen && secilen === gereken) {
+    ne = `Kafada <b>${kacisli(secilen)}</b> var, ekim <b>${kacisli(gereken)}</b>`
+       + " istiyor — <b>makine uç için hareket etmeyecek</b>.";
+  } else if (secilen) {
+    ne = `Kafada <b>${kacisli(secilen)}</b> var, ekim <b>${kacisli(gereken)}</b>`
+       + ` istiyor — önce <b>${kacisli(secilen)} yuvasına bırakılacak</b>,`
+       + ` sonra <b>${kacisli(gereken)}</b> alınacak.`;
+  } else {
+    ne = `Kafa <b>boş</b>, ekim <b>${kacisli(gereken)}</b> istiyor —`
+       + ` makine doğrudan <b>${kacisli(gereken)}</b> almaya gidecek.`;
+  }
+  kutu.innerHTML = kayit + ne;
 }
 
 async function ekimOnayYukle() {
@@ -3135,7 +3316,20 @@ async function ekimOnayGonder(yol, govde) {
 
 function ekimOnayBagla() {
   const d = (kimlik, is) => { const e = $(kimlik); if (e) e.onclick = is; };
-  d("#d-ekim-onayla", () => ekimOnayGonder("/api/ekim/onayla"));
+  /* ONAY, LİSTEDEKİ CEVABI TAŞIYOR.
+   *
+   * Eskiden liste ile onay düğmesi iki ayrı işti: kullanıcı listeden doğru
+   * ucu seçip "Onayla, devam et"e bastığında kayıt değişmiyordu ve makine
+   * eski (yanlış) inançla hareket ediyordu — olmayan bir ucun yuvasına
+   * iniyordu. Kilit servosu ve varlık sensörü bağlı değilken tek doğrulama
+   * kaynağı kullanıcı; verdiği cevabın GERÇEKTEN işlemesi gerekiyor. */
+  d("#d-ekim-onayla", () => {
+    const e = S.ekimOnay;
+    const govde = (e && e.uc_teyit)
+      ? { uc: (($("#ekim-uc-secim") || {}).value || "") }
+      : {};
+    ekimOnayGonder("/api/ekim/onayla", govde);
+  });
   /* Onay beklenmiyorken İptal doğrudan yarıda kesiyor: seçenek sormanın
    * anlamı yok, çünkü "tohumu gözüne geri koy" makineyi hareket ettirir
    * ve tıkanmanın sebebi çoğu zaman makinenin zaten cevap vermemesi. */
@@ -3835,6 +4029,10 @@ function kamAyarTaslak() {
     genislik: Number(k.genislik) || 640,
     aralik_sn: Number(k.aralik_sn) || 3600,
     sahte: !!k.sahte,
+    // AÇILIŞTA çalışsın mı. Taslakta DURMASI şart: alan gönderilmezse
+    // ajan varsayılana (kapalı) düşüp ayarı sessizce kapatıyordu ve
+    // sorun ancak bir sonraki yeniden başlatmada görünüyordu.
+    aktif: !!k.aktif,
   }));
   return S.kamAyarTaslak;
 }
@@ -3885,6 +4083,9 @@ function kamAyarKartlariYaz() {
         <label class="onay" title="Donanım olmadan paneli denemek için üretilen kare">
           <input type="checkbox" data-alan="sahte"${k.sahte ? " checked" : ""}>
           Sahte kare</label>
+        <label class="onay" title="Ajan her açıldığında bu kamera kendiliğinden çalışsın mı? Şu anki açık/kapalı hâlden ayrı bir ayar.">
+          <input type="checkbox" data-alan="aktif"${k.aktif ? " checked" : ""}>
+          Açılışta çalışsın</label>
       </div>
       <p class="ikincil">${k.hareketli
         ? "Kareleri konumlu: karedeki leke yatak koordinatına çevrilebiliyor."
@@ -4075,12 +4276,18 @@ function kamKutuBagla(kutu, ad, sira = 0) {
    * boyutlandığında kutu yine sağ alta göre oturuyor. */
   const bas = kutu.querySelector(".kamera-yuzen-bas");
   const anahtarKayma = `farmbot_kamera_kayma_${ad}`;
-  // Bir kutu boyu (başlık + 4:3 görüntü + boşluk) kadar yukarı: kaydedilmiş
-  // bir konum yoksa kutular birbirinin üstünü kapatmasın.
-  let kayma = { x: 0, y: -sira * 214 };
+  // Bir kutu boyu kadar yukarı: kaydedilmiş bir konum yoksa kutular
+  // birbirinin üstünü kapatmasın. Sayı bir TAHMİN (başlık + 4:3 görüntü);
+  // kutu görünür olup gerçek boyu ölçülebildiğinde aşağıda düzeltiliyor —
+  // yoksa başlık satırı bir piksel uzadığında kutular yeniden çakışırdı.
+  let kendi = true;              // konum hâlâ varsayılan mı (sürüklenmedi mi)
+  let kayma = { x: 0, y: -sira * 230 };
   try {
     const kayit = JSON.parse(localStorage.getItem(anahtarKayma) || "null");
-    if (kayit && Number.isFinite(kayit.x) && Number.isFinite(kayit.y)) kayma = kayit;
+    if (kayit && Number.isFinite(kayit.x) && Number.isFinite(kayit.y)) {
+      kayma = kayit;
+      kendi = false;
+    }
   } catch { /* bozuk kayıt — varsayılan konumda kal */ }
 
   const uygula = () => {
@@ -4107,7 +4314,17 @@ function kamKutuBagla(kutu, ad, sira = 0) {
                        Math.min(innerHeight - y.top - pay, kayma.y));
   };
   uygula();
-  KAM_SINIRLA.set(ad, () => { sinirla(); uygula(); });
+  /* Kutu görünür olunca GERÇEK boyuna göre yeniden diziyoruz. Tahmini
+   * sayı tutmadığında kutular birbirinin başlığını örtüyordu ve alttaki
+   * kutunun hangi kamera olduğu görünmüyordu — kutuların tek ayırt edici
+   * işareti o başlık. Sürüklenmiş bir kutuya DOKUNULMUYOR. */
+  const yenidenDiz = () => {
+    if (!kendi || !sira) return;
+    const boy = kutu.offsetHeight;
+    if (!boy) return;                       // gizliyken ölçülemiyor
+    kayma.y = -sira * (boy + 8);
+  };
+  KAM_SINIRLA.set(ad, () => { yenidenDiz(); sinirla(); uygula(); });
   sinirla(); uygula();
 
   let surukle = null;
@@ -4132,6 +4349,7 @@ function kamKutuBagla(kutu, ad, sira = 0) {
   const birak = () => {
     if (!surukle) return;
     surukle = null;
+    kendi = false;            // artık kullanıcının konumu; kendiliğinden dizme
     kutu.classList.remove("surukleniyor");
     try {
       localStorage.setItem(anahtarKayma, JSON.stringify(kayma));
@@ -5230,6 +5448,12 @@ function olaylariBagla() {
 
   $("#d-izgara-onizle").onclick = izgaraOnizle;
   $("#d-izgara-uygula").onclick = izgaraUygula;
+  const tt = $("#d-tursuz-tara");
+  if (tt) tt.onclick = tursuzTara;
+  const ts = $("#d-tursuz-sec");
+  if (ts) ts.onclick = tursuzSec;
+  const tsil = $("#d-tursuz-sil");
+  if (tsil) tsil.onclick = tursuzSil;
   const tSec = $("#tepsi-secim");
   if (tSec) tSec.onchange = () => { S.tepsiSecim = []; tepsiCiz(); };
   const bagla = (kimlik, is) => { const e = $(kimlik); if (e) e.onclick = is; };
