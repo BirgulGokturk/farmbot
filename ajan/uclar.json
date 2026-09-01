@@ -76,8 +76,8 @@
   ]
  },
  "sulama_basligi": {
-  "dx": 50.0,
-  "dy": 50.0,
+  "dx": 60.0,
+  "dy": 60.0,
   "z_min": 230.0
  },
  "current_tool": null,
