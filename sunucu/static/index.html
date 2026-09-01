@@ -1340,22 +1340,39 @@
         </div>
         <div class="bolum-govde">
           <p class="yardim-metin gizli" id="yardim-ekim">
-            <b>Akış.</b> Ekim başlayınca makine önce tohum alma ucunu
-            takıyor. Sonra her bitki için: türüne uyan haznenin üstüne
-            gidip <b>duruyor ve soruyor</b> → onaylayınca iniyor, hava
-            pompasını açıp tohumu vakumla alıyor → ekilecek koordinatın
-            üstüne gidip <b>yine duruyor ve soruyor</b> → onaylayınca
-            inip tohumu bırakıyor → <b>home'a dönüyor</b>. Döngü sıradaki
-            bitkiyle baştan işliyor; bütün bitkiler bitince uç yuvasına
-            bırakılıyor.<br><br>
+            <b>Akış (uçlar sabit takılıyken — varsayılan).</b> Ekim
+            başlayınca makine <b>doğrudan</b> türüne uyan haznenin üstüne
+            gidiyor, iniyor, hava pompasını açıp tohumu vakumla alıyor →
+            ekilecek koordinatın üstüne gidip <b>duruyor ve soruyor</b>
+            ("tohum ucta mı?") → onaylayınca inip tohumu bırakıyor. Döngü
+            sıradaki bitkiyle baştan işliyor; hepsi bitince <b>bir kez</b>
+            home'a dönüyor ve orada kalıyor. Uç yuvalarına hiç
+            gidilmiyor.<br><br>
+            <b>Anahtar kapalıyken</b> eski akış geri geliyor: ekim önce
+            "kafada ne var" diye soruyor, tohum alma ucunu takıyor, her
+            haznenin üstünde "uç takılı mı" diye bir kez daha soruyor ve
+            bitince ucu yuvasına bırakıyor.<br><br>
             <b>Hazne tükenmiyor.</b> Haznede yüzlerce tohum var; ekim
             hazneyi "boş" işaretlemiyor ve aynı hazne seçimdeki bütün
             marullara hizmet ediyor. Hazne ancak siz "bitti" dediğinizde
             kapanıyor.<br><br>
+            <b>Uçlar sabit takılı.</b> Bu makinede uçlar kalıcı olarak
+            takılı duruyor; yuvadan alıp bırakma hiç yapılmıyor. Anahtar
+            açıkken yazılım <b>hiçbir uç hareketi planlamıyor</b>, uç
+            yuvalarına gitmiyor ve kafada uç varmış gibi davranıyor. Uç
+            kilidi şartı da kalkıyor: <code>lock_reg</code> bir
+            <i>takma</i> işleminin tuttuğunu söyler, takma yapılmıyorsa
+            söyleyeceği bir şey yoktur.<br>
+            Uç değiştirme kodu ve aşağıdaki elle <b>Tak/Bırak</b>
+            düğmeleri duruyor — anahtarı kapatınca eski davranış aynen
+            geri geliyor. Anahtar açıkken o düğmelere basarsanız makine
+            hareket etmeden önce uyarılıyorsunuz.<br><br>
             <b>İki onay, iki eksik sensör.</b><br>
             <b>Uç kilidi (lock_reg)</b> bağlı değil: servo komutu sessiz
             geçiyor, yazılım ucun takılı olduğunu doğrulayamıyor. Uç
-            yokken kafa haznenin içine iner — birinci onay bunu soruyor.<br>
+            yokken kafa haznenin içine iner — birinci onay bunu soruyor.
+            (Uçlar sabit takılıyken bu onay hiç sorulmuyor: takma diye bir
+            iş yoksa doğrulanacak bir şey de yok.)<br>
             <b>Tohum sensörü (presence_reg)</b> bağlı değil: vakumun
             tohumu tuttuğunu makine bilemiyor. Tohum yolda düşerse
             yazılım fark etmez, iner, pompayı kapatır ve "ekildi" der;
@@ -1367,6 +1384,15 @@
             başlamaz. Yani bu anahtar ekimi kolaylaştırmıyor,
             doğrulamayı kimin yapacağını seçiyor.
           </p>
+
+          <!-- UÇLAR SABİT TAKILI. En üstte, çünkü altındaki iki ayarın
+               ne anlama geldiğini bu belirliyor. -->
+          <label class="anahtar">
+            <input type="checkbox" id="a-ekim-uclar-sabit" checked>
+            <span class="yuva"></span>
+            <span class="ikincil">Uçlar sabit takılı — uç hareketi yok</span>
+          </label>
+          <p class="alt-not" id="ekim-uclar-sabit-not"></p>
 
           <label class="anahtar">
             <input type="checkbox" id="a-ekim-onay" checked>

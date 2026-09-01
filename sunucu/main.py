@@ -462,6 +462,25 @@ async def api_komut(govde: dict[str, Any], jeton: str = Query(default="")):
     arg = govde.get("arg") or {}
     if not isinstance(arg, dict):
         raise HTTPException(status_code=400, detail="arg bir nesne olmalı")
+    # UÇ HAREKETİ, "uçlar sabit takılı" AÇIKKEN. Engellemiyoruz —
+    # kullanıcı gerçekten uç değiştirmek isteyebilir ve elle tak/bırak
+    # düğmeleri bunun için duruyor. Ama sessiz de geçmiyor: ayar
+    # makinede uçların hiç sökülmediğini söylüyorsa, bir ucun yuvasına
+    # inmek beklenmedik bir harekettir ve günlükte görünmeli.
+    if ad in ("uc_degistir", "uc_birak"):
+        try:
+            if bool((await asyncio.to_thread(ekim.ayar_oku))["uclar_sabit"]):
+                await merkez.yayinla({
+                    "tip": "gunluk", "seviye": "uyari",
+                    "metin": ("UYARI: 'Uçlar sabit takılı' ayarı AÇIK ama bir uç "
+                              f"hareketi istendi ({ad}). Makine uç yuvasına "
+                              "gidecek. Gerçekten uç değiştiriyorsanız ayarı "
+                              "kapatın (Ayarlar → Ekim)."),
+                })
+        except Exception:
+            # Ayar okunamadıysa komut yine de gitmeli: uyarı bir kolaylık,
+            # güvenlik katmanı değil.
+            pass
     if ad in HIZLI_KOMUTLAR:
         await merkez.komut_yolla(ad, arg)
         return {"ok": True, "mesaj": "", "sessiz": True}
@@ -1134,6 +1153,9 @@ def _ekim_coz(adlar: list[str]) -> dict[str, Any]:
         vakum_sn=ayar["vakum_sn"], dusme_sn=ayar["dusme_sn"],
         onay=bool(ayar["onay_iste"]),
         uc_adi=ayar["uc_adi"], bitince_birak=bool(ayar["bitince_birak"]),
+        # Uçlar kalıcı takılıysa uç takma/teyit/birinci onay/uç bırakma
+        # akıştan tamamen çıkıyor (bkz. `ekim.py` başı).
+        uclar_sabit=bool(ayar["uclar_sabit"]),
         # Hazne koordinatları makine sınırlarının içinde mi. Bunu ekim
         # başlarken öğrenmek geç ve kullanıcıyı bugün üç kez durdurdu;
         # panel aynı denetimi koordinat girilirken de yapıyor.
@@ -1163,6 +1185,17 @@ def _ekim_coz(adlar: list[str]) -> dict[str, Any]:
 #   └ (sıradaki bitkiye doğrudan geçiliyor)
 #     home     hepsi bitince, bir kez
 #     uç bırak (ayar.bitince_birak)
+#
+# UÇLAR SABİT TAKILIYKEN (`ayar.uclar_sabit`, VARSAYILAN) yıldızlı
+# satırların HİÇBİRİ çalışmıyor: "uç tak", ondan önceki uç teyidi
+# (`onay_uc`), ONAY 1 ve "uç bırak". Akış doğrudan `hazne` ile başlıyor,
+# `hazne` bitince soru sormadan `al`a geçiyor, home'dan sonra oturum
+# kapanıyor. Uç yuvası koordinatlarına giden tek bir hareket kalmıyor.
+#
+# Sebep: bu makinede uçlar kalıcı olarak takılı, yuvadan alıp bırakma
+# hiç yapılmıyor. Sorulan soru her seferinde "evet" cevaplanan bir soru,
+# yapılan hareket ise boşuna. Kod silinmedi, yalnız akışın yolundan
+# çıkarıldı — anahtar kapatılırsa eski davranış aynen geri geliyor.
 #
 # Döngü bitki başına baştan işliyor ve KARIŞMIYOR: bir sonraki parça
 # ancak öncekinin bittiği ajanın durum paketinde görülünce gönderiliyor.
@@ -1213,6 +1246,9 @@ class EkimOturumu:
         self.uc_adi = ekim.UC_ADI
         self.bitince_birak = True
         self.onay_istiyor = True
+        # Uçlar kalıcı takılı mı. Açıkken uç takma, uç teyidi, birinci
+        # onay ve uç bırakma akışta HİÇ yer almıyor.
+        self.uclar_sabit = True
         # Uç değiştirmeden önce kafada ne olduğu SORULACAK mı, ve o an
         # yazılımın inancı ne. İnanç bir ölçüm değil: kilit servosu ve
         # varlık sensörü bağlı değilken yazılım yalnız hatırlıyor.
@@ -1253,6 +1289,7 @@ class EkimOturumu:
             # Ekim hangi ucu istiyor — kullanıcı onaylamadan önce
             # "kafada tool2 var, ekim tool3 istiyor" diyebilelim.
             "uc_gereken": self.uc_adi,
+            "uclar_sabit": self.uclar_sabit,
             "atlanan": list(self.atlanan),
             "pompa_acik": self.pompa_acik,
             "hata": self.hata,
@@ -1328,8 +1365,9 @@ async def _ekim_baslat(cozum: dict[str, Any]) -> dict[str, Any]:
     _ekim.uc_adi = str(cozum.get("uc_adi") or ekim.UC_ADI)
     _ekim.bitince_birak = bool(cozum.get("bitince_birak"))
     _ekim.onay_istiyor = bool(cozum.get("onay"))
+    _ekim.uclar_sabit = bool(cozum.get("uclar_sabit"))
 
-    if cozum.get("kilit_yok"):
+    if cozum.get("kilit_yok") and not _ekim.uclar_sabit:
         # GÜVENLİK DENETİMİ İNSAN ONAYIYLA DEĞİŞTİ — günlüğe yazılıyor.
         await _ekim_gunluk(
             "uç kilidi bağlı değil (lock_reg = 0); şart onay adımıyla "
@@ -1349,6 +1387,20 @@ async def _ekim_baslat(cozum: dict[str, Any]) -> dict[str, Any]:
     await _ekim_gunluk(
         f"ekim başladı — {len(_ekim.ozet)} bitki, hazne: "
         + ", ".join(cozum.get("kullanilan_hazneler") or ["?"]))
+
+    # UÇLAR SABİT TAKILIYSA UÇ İŞİ HİÇ YOK: ne teyit, ne takma, ne
+    # birinci onay. Doğrudan ilk bitkinin haznesinin üstüne gidiliyor.
+    # Uç yuvası koordinatlarına giden hiçbir hareket üretilmiyor.
+    if _ekim.uclar_sabit:
+        await _ekim_gunluk(
+            "uçlar sabit takılı — uç takma, uç teyidi ve birinci onay "
+            "atlandı; doğrudan hazneye gidiliyor")
+        await _ekim_parca_baslat("hazne")
+        return {"ok": True,
+                "mesaj": f"Ekim başladı — {len(_ekim.ozet)} bitki, "
+                         "doğrudan hazneye gidiliyor",
+                "ekim": _ekim.goruntu()}
+
     # UÇ ÖNCE. Uç takılı değilken hazneye inmek tepsiyi kırar; kilit
     # servosu bunu doğrulayamadığı için sıra da önemli.
     #
@@ -1442,8 +1494,10 @@ async def _ekim_ilerlet_ic(parca: str) -> None:
         return
 
     if parca == "hazne":
-        # Onay kapalıysa durmadan devam: aynı döngü, yalnız soru yok.
-        if not _ekim.onay_istiyor:
+        # BİRİNCİ ONAY "uç takılı mı" diye soruyor. Uçlar sabit takılıysa
+        # takma diye bir iş yok ve doğrulanacak bir şey de yok: uç zaten
+        # orada. Onay kapalıysa da durmadan devam — aynı döngü, soru yok.
+        if not _ekim.onay_istiyor or _ekim.uclar_sabit:
             await _ekim_parca_baslat("al")
             return
         _ekim.durum = "onay1"
@@ -1527,7 +1581,11 @@ async def _ekim_bitir(durum: str) -> None:
     if durum == "bitti":
         _ekim.mesaj = f"{ekildi} tohum ekildi."
         await _ekim_gunluk(_ekim.mesaj)
-    if _ekim.bitince_birak:
+    # UÇLAR SABİTKEN BIRAKMA YOK: makine home'da olduğu yerde kalıyor.
+    # `cozum` zaten `bitince_birak`ı kapatıyor; burada ikinci kez
+    # bakmak, ayarın sonradan değişmesi hâlinde de akışın tek anlamı
+    # olmasını sağlıyor.
+    if _ekim.bitince_birak and not _ekim.uclar_sabit:
         # Uç bırakma da bir dizi: bitişini izleyip oturumu ondan sonra
         # kapatıyoruz, yoksa panel "bitti" derken makine hâlâ hareket
         # hâlinde olurdu.

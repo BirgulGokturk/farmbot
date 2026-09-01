@@ -14,6 +14,26 @@ bir dizi çalıştırması:
   └ home             makine home'a dönüyor
     uç bırak         bütün bitkiler bitince (isteğe bağlı)
 
+UÇLAR SABİT TAKILIYSA (`ayar.uclar_sabit`, VARSAYILAN) akış kısalıyor:
+
+  ┌ hazne↑           haznenin ÜSTÜNE gidiyor         (soru YOK)
+  │ hazne↓           iniyor, hava pompası açılıyor
+  │ taşı             bekliyor, kalkıyor, hedefin ÜSTÜNE       → ONAY
+  │ ek               iniyor, pompa kapanıyor, tohum düşüyor, kalkıyor
+  └ home             makine home'a dönüyor
+
+"uç tak", ondan önceki uç teyidi, birinci onay ve "uç bırak" HİÇ
+çalışmıyor — yani uç yuvası koordinatlarına giden tek bir hareket
+kalmıyor. Bu makinede uçlar kalıcı olarak takılı duruyor; yuvadan alıp
+bırakma hiç yapılmıyor. O yüzden "kafada ne var" sorusunun da, uç için
+yuvaya gitmenin de karşılığı yok: sorulan soru kullanıcının her
+seferinde "evet" dediği bir soru, yapılan hareket ise boşuna.
+
+KOD SİLİNMİYOR, YOLDAN ÇIKIYOR. Uç değiştirme mantığı (`uc_parcasi`,
+`uc_birak_parcasi`, teyit akışı, Ayarlar'daki elle tak/bırak) yerinde
+duruyor; anahtar kapatılırsa eski davranış aynen geri geliyor. Bir gün
+gerçekten uç değiştirilirse geri dönüş bir onay kutusu kadar uzakta.
+
 Döngü bitki başına baştan işliyor: al, ek, home. Arada karışmıyor,
 çünkü bir sonraki parça ancak öncekinin bittiği ajanın durum paketinde
 görülünce gönderiliyor.
@@ -31,6 +51,15 @@ makinenin başında duruyor ve gözüyle doğruluyor. Onay açıkken kilit
 şartı kalkıyor — sessizce değil, `uyari` listesinde ve olay günlüğünde.
 Onay kapatılırsa şart geri geliyor: doğrulamayı ya sensör yapar ya
 insan, ikisi de yoksa ekim başlamaz.
+
+UÇLAR SABİT TAKILIYKEN ONAY 1 DE KALKIYOR ve bu bir taviz değil: o
+soru "uç takılı mı" diye soruyordu, çünkü kilit servosu takmanın
+gerçekten olduğunu söyleyemiyordu. Takma diye bir iş yoksa
+doğrulanacak bir şey de yok — uç zaten orada duruyor. Aynı sebeple
+kilit şartı da geçerliliğini yitiriyor: `lock_reg` bir TAKMA işleminin
+tuttuğunu söylüyor, takma yapılmıyorsa söyleyeceği bir şey yok.
+Onay 2 aynen kalıyor; o vakumun tohumu tutup tutmadığını soruyor ve
+bunun uç değiştirmeyle ilgisi yok.
 
 HAZNE TÜKENMİYOR
 ----------------
@@ -124,7 +153,17 @@ AYAR_VARSAYILAN: dict[str, Any] = {
     # kod değil bu satır değişsin.
     "uc_adi": UC_ADI,
     # Bütün bitkiler ekildikten sonra uç yuvasına bırakılsın mı.
+    # `uclar_sabit` açıkken bu ayarın hiçbir etkisi yok.
     "bitince_birak": True,
+    # UÇLAR KALICI OLARAK TAKILI MI. Bu makinede öyle: yuvadan alıp
+    # bırakma hiç yapılmıyor. Açıkken ekim akışı uç takmayı, uç teyidini,
+    # birinci onayı ve uç bırakmayı ATLIYOR — uç yuvası koordinatlarına
+    # giden tek bir hareket kalmıyor.
+    #
+    # VARSAYILAN AÇIK, çünkü makinenin bugünkü fiziksel hâli bu. Kapatmak
+    # eski (uç değiştiren) davranışı olduğu gibi geri getiriyor; hiçbir
+    # kod silinmedi.
+    "uclar_sabit": True,
 }
 
 AYAR_SINIR: dict[str, tuple[float, float]] = {
@@ -168,6 +207,7 @@ def ayar_duzelt(veri: dict[str, Any]) -> dict[str, Any]:
     cikti = dict(AYAR_VARSAYILAN)
     cikti["onay_iste"] = bool(veri.get("onay_iste", True))
     cikti["bitince_birak"] = bool(veri.get("bitince_birak", True))
+    cikti["uclar_sabit"] = bool(veri.get("uclar_sabit", True))
     uc = str(veri.get("uc_adi") or "").strip()[:40]
     cikti["uc_adi"] = uc or UC_ADI
     for ad, (alt, ust) in AYAR_SINIR.items():
@@ -403,7 +443,7 @@ def coz(hedefler: list[dict[str, Any]], gozler: list[dict[str, Any]] | None, *,
         tur_adlari: dict[str, str] | None = None,
         sinirlar: dict[str, Any] | None = None,
         uc_adi: str = UC_ADI, bitince_birak: bool = True,
-        onay: bool = False,
+        onay: bool = False, uclar_sabit: bool = True,
         ) -> dict[str, Any]:
     """Ekimi çözer: bitki başına parçalar + özet + ret sebepleri.
 
@@ -447,7 +487,15 @@ def coz(hedefler: list[dict[str, Any]], gozler: list[dict[str, Any]] | None, *,
 
     # --- ön koşullar ------------------------------------------------------
     kilit_yok = int(lock_reg or 0) <= 0
-    if kilit_yok and not onay:
+    if uclar_sabit:
+        # KİLİT ŞARTI GEÇERSİZ. `lock_reg` bir TAKMA işleminin tuttuğunu
+        # söylüyor; uçlar kalıcı olarak takılıysa takma diye bir iş yok ve
+        # doğrulanacak bir şey de yok. Uç orada duruyor, birinin onu
+        # tuttuğunu doğrulamaya gerek yok.
+        uyari.append("Uçlar sabit takılı sayılıyor: uç takma, uç teyidi ve "
+                     "birinci onay atlanıyor, uç yuvalarına gidilmiyor. "
+                     "(Ayarlar → Ekim)")
+    elif kilit_yok and not onay:
         ret.append("Uç kilit servosu bağlı değil (lock_reg = 0). "
                    "Kilidi bağlayın ya da Ayarlar → Ekim'den onay adımını açın.")
     elif kilit_yok:
@@ -576,7 +624,10 @@ def coz(hedefler: list[dict[str, Any]], gozler: list[dict[str, Any]] | None, *,
         "kullanilan_hazneler": sorted({o["hazne"] for o in ozet}),
         "uc_adi": str(uc_adi or UC_ADI),
         "uc_takili": uc_takili or "",
-        "bitince_birak": bool(bitince_birak),
+        "uclar_sabit": bool(uclar_sabit),
+        # Uçlar sabitken bırakma diye bir iş yok: ayar açık bile olsa
+        # burada kapanıyor ki akış tek bir yerden okunabilsin.
+        "bitince_birak": bool(bitince_birak) and not uclar_sabit,
         "guvenli_z": guvenli_z,
         "vakum_sn": vakum_sn,
         "dusme_sn": dusme_sn,

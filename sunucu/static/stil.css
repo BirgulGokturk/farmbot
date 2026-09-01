@@ -2394,3 +2394,12 @@ input.hatali {
   font-size: 13px;
   align-self: center;
 }
+
+/* Bir ayar KAPALI ama silinmemişken: yerinde duruyor, soluk ve
+   tıklanamaz. Silmek yerine soluklaştırmanın sebebi, ayarın geri
+   geleceğini göstermek — "Uçlar sabit takılı" anahtarı kapatılınca
+   uç adı ve "bitince bırak" yeniden anlam kazanıyor. */
+.etkisiz {
+  opacity: .45;
+  pointer-events: none;
+}

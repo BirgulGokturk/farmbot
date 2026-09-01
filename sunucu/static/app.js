@@ -1147,8 +1147,37 @@ function ucGuncelle(u) {
  * sorulmuyor: ölçebilen bir sisteme "emin misin" diye sormak gereksiz
  * sürtünme.
  */
+/* "Uçlar sabit takılı" AÇIKKEN elle tak/bırak — MAKİNE HAREKET ETMEDEN
+ * ÖNCE UYARI.
+ *
+ * Ayar makinede uçların hiç sökülmediğini söylüyor; o hâlde bir uç
+ * yuvasına inmek beklenmedik bir harekettir ve yanlışlıkla basılmış
+ * olabilir. Engellemiyoruz — kullanıcı gerçekten uç değiştirmek
+ * isteyebilir ve bu düğmeler bunun için duruyor — ama sessizce de
+ * yapmıyoruz. `confirm` bilerek: bu, geri alınamayan fiziksel bir
+ * hareketten önceki son duraktır. */
+function ucSabitUyar(islem, hedef) {
+  if (!(S.ekimAyar || {}).uclar_sabit) return true;
+  const ne = islem === "birak"
+    ? "takılı sayılan ucu yuvasına BIRAKMAYA"
+    : `'${hedef}' ucunu ALMAYA`;
+  const tamam = confirm(
+    "\"Uçlar sabit takılı\" ayarı AÇIK.\n\n"
+    + `Devam ederseniz makine ${ne} gidecek, yani bir uç yuvasının `
+    + "üstüne gidip inecek.\n\n"
+    + "Bu makinede uçlar kalıcı takılı olduğu için bu hareket normalde "
+    + "hiç yapılmıyor. Gerçekten uç değiştiriyorsanız Ayarlar → Ekim'den "
+    + "anahtarı kapatın.\n\nYine de devam edilsin mi?");
+  if (!tamam) {
+    gunluk("Uç hareketi iptal edildi — 'uçlar sabit takılı' ayarı açık",
+           "uyari");
+  }
+  return tamam;
+}
+
 function ucTeyitAc(islem, hedef) {
   const u = S.ucDurum || {};
+  if (!ucSabitUyar(islem, hedef)) return;
   // Ölçebiliyorsak sormuyoruz — doğrudan hareket.
   if (u.dogrulanabilir !== false) { ucIslemGonder(islem, hedef); return; }
 
@@ -2361,6 +2390,15 @@ function kalibBagla() {
   ekimOnayBagla();
   const ekimKaydet = $("#d-ekim-ayar-kaydet");
   if (ekimKaydet) ekimKaydet.onclick = ekimAyarKaydet;
+  /* "Uçlar sabit takılı" anahtarı çevrilince açıklama ve etkisiz kalan
+   * kutular HEMEN güncelleniyor — kaydetmeyi beklemeden. Anahtarın ne
+   * yaptığını görmeden kaydetmek, sonucu makineden öğrenmek demekti. */
+  const ucSabit = $("#a-ekim-uclar-sabit");
+  if (ucSabit) {
+    ucSabit.addEventListener("change", () => {
+      ekimAyarYaz({ ...(S.ekimAyar || {}), uclar_sabit: ucSabit.checked });
+    });
+  }
   const ekimBolum = $("#bolum-ekim");
   if (ekimBolum) {
     const bas = ekimBolum.querySelector(".bolum-bas");
@@ -3383,16 +3421,50 @@ function ekimAyarYaz(a) {
   if (v && document.activeElement !== v) v.value = a.vakum_sn;
   if (ds && document.activeElement !== ds) ds.value = a.dusme_sn;
   if (uc && document.activeElement !== uc) uc.value = a.uc_adi || "";
+
+  /* UÇLAR SABİT TAKILI. Açıkken uç takma, uç teyidi, birinci onay ve uç
+   * bırakma akıştan tamamen çıkıyor — bu makinede uçlar hiç sökülmüyor.
+   * Altındaki iki ayar (uç adı, bitince bırak) o hâlde anlamsız: silmek
+   * yerine kapatıp SEBEBİNİ yazıyoruz, yoksa kullanıcı değeri değiştirip
+   * neden bir şey olmadığını arardı. */
+  const sabit = !!a.uclar_sabit;
+  const us = $("#a-ekim-uclar-sabit");
+  if (us && document.activeElement !== us) us.checked = sabit;
+  const sabitNot = $("#ekim-uclar-sabit-not");
+  if (sabitNot) {
+    sabitNot.innerHTML = sabit
+      ? "Ekim <b>doğrudan hazneye</b> gidiyor: uç takma, \"kafada ne var\" "
+        + "teyidi ve \"uç takılı mı\" onayı sorulmuyor, bitince uç yuvasına "
+        + "gidilmiyor. <b>\"Tohum ucta mı\" onayı duruyor.</b> "
+        + "Uç yuvası koordinatlarına giden hiçbir hareket üretilmiyor."
+      : "Eski akış: ekim önce kafada ne olduğunu soruyor, ucu takıyor, her "
+        + "haznede \"uç takılı mı\" diye soruyor ve bitince ucu bırakıyor.";
+  }
+  // Uçlar sabitken bu ikisinin karşılığı yok.
+  [["#a-ekim-birak", "Uçlar sabit takılıyken bırakma diye bir iş yok."],
+   ["#ekim-uc", "Uçlar sabit takılıyken uç takılmıyor; bu ad kullanılmıyor."],
+  ].forEach(([sec, sebep]) => {
+    const el = $(sec);
+    if (!el) return;
+    el.disabled = sabit;
+    el.title = sabit ? sebep : "";
+    const kap = el.closest(".anahtar, .alan");
+    if (kap) kap.classList.toggle("etkisiz", sabit);
+  });
+
   not.textContent = (a.onay_iste ? "onaylı" : "onaysız")
-    + ` · ${a.uc_adi || "?"} · vakum ${a.vakum_sn} sn · düşme ${a.dusme_sn} sn`;
+    + (sabit ? " · uçlar sabit" : ` · ${a.uc_adi || "?"}`)
+    + ` · vakum ${a.vakum_sn} sn · düşme ${a.dusme_sn} sn`;
   if (uyari) {
     // Kapalıyken ne olacağını AÇIKÇA söylüyoruz: kullanıcı anahtarı
     // "ekim hızlansın" diye kapatıp neden hiç başlamadığını aramasın.
-    uyari.textContent = a.onay_iste
-      ? ""
-      : "Onay kapalı: kilit şartı geri geldi. Uç kilit servosu bağlı "
-        + "değilse (lock_reg = 0) ekim dizisi hiç başlamayacak.";
-    uyari.classList.toggle("gizli", !!a.onay_iste);
+    // Uçlar sabitken kilit şartı zaten geçerli değil — takma yapılmıyor.
+    const kilitSarti = !a.onay_iste && !sabit;
+    uyari.textContent = kilitSarti
+      ? "Onay kapalı: kilit şartı geri geldi. Uç kilit servosu bağlı "
+        + "değilse (lock_reg = 0) ekim dizisi hiç başlamayacak."
+      : "";
+    uyari.classList.toggle("gizli", !kilitSarti);
   }
 }
 
@@ -3407,6 +3479,10 @@ async function ekimAyarKaydet() {
       method: "POST",
       body: JSON.stringify({
         onay_iste: $("#a-ekim-onay").checked,
+        uclar_sabit: $("#a-ekim-uclar-sabit").checked,
+        // Kapalı (etkisiz) kutular DEĞERLERİNİ koruyor: uçlar sabitken
+        // bunlar kullanılmıyor ama anahtarı kapatınca eski ayarların
+        // yerinde durması gerekiyor.
         bitince_birak: $("#a-ekim-birak").checked,
         uc_adi: $("#ekim-uc").value.trim(),
         vakum_sn: Number($("#ekim-vakum").value),

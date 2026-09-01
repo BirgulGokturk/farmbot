@@ -418,6 +418,22 @@ Canlı akış. Bağlanınca ilk paket anlık görüntü, sonrası olay bazlı:
 | `kare` | `{ts, kamera}` — o kameradan yeni kare var; görüntü `GET /api/kare/son?kamera=…` ile alınır |
 | `canli` | `{ts, kamera}` — canlı akıştan yeni kare; `GET /api/kare/canli?kamera=…` |
 
+**`uclar_sabit`** (`/api/ekim/ayar`, VARSAYILAN `true`) uç değiştirmeyi
+ekim akışının yolundan çıkarıyor: bu makinede uçlar kalıcı olarak takılı,
+yuvadan alıp bırakma hiç yapılmıyor. Açıkken "uç tak" parçası, ondan önceki
+uç teyidi (`onay_uc`), birinci onay (`onay1`, "uç takılı mı") ve "uç bırak"
+HİÇ çalışmıyor; akış doğrudan `hazne` ile başlıyor ve home'dan sonra
+kapanıyor. Uç yuvası koordinatlarına giden hiçbir adım üretilmiyor. Kilit
+şartı da geçersiz: `lock_reg` bir TAKMA işleminin tuttuğunu söyler, takma
+yapılmıyorsa söyleyeceği bir şey yoktur. `onay2` ("tohum ucta mı") aynen
+kalıyor — o vakumu soruyor, uç değiştirmeyi değil.
+
+Kod silinmedi: `uc_parcasi`, `uc_birak_parcasi`, teyit akışı ve elle
+tak/bırak yerinde duruyor; anahtar kapatılınca eski davranış aynen geri
+geliyor. Anahtar açıkken elle `uc_degistir`/`uc_birak` komutu gelirse
+sunucu olay günlüğüne uyarı yazıyor (engellemiyor) ve panel harekete
+geçmeden önce onay soruyor.
+
 **`POST /api/ekim/onayla`** gövdesi uç teyidinde önemli: `{"uc": "tool3"}`
 kullanıcının kafada gerçekte ne olduğunu SÖYLEDİĞİ değer. Alan varsa ve
 yazılımın inancından farklıysa önce `uc_beyan` ile kayıt düzeltiliyor, sonra
