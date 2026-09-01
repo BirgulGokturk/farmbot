@@ -162,6 +162,41 @@ aşımı.
 | `PUT /api/dikim` | `{alanlar:[{ad,x1,y1,x2,y2,toprak_z?}…]}` — doğrulanmış hâli geri döner |
 | `POST /api/sulama/onizle` | `{noktalar:[ad…], saniye?}` — sulamayı BAŞLATMADAN nereye gidileceğini döndürür |
 
+### Bahçe modu (kullanıcı katmanı)
+
+Bu uçlar YENİ BİR DEPO AÇMIYOR. Bitkiler nokta deposundan, tür bilgisi
+katalogdan, nem sensörden, alanlar dikimden okunuyor; yazma da aynı
+yerlere — sulama `/api/toplu`, ekim aynı ekim akışı. Tek yeni kalıcı şey
+bitki fotoğraf arşivi (`bahce_arsiv/`), çünkü onun karşılığı başka hiçbir
+yerde tutulmuyor.
+
+| Uç | Ne yapar |
+|---|---|
+| `GET /api/bahce` | Ekranın **bütün** anlık görüntüsü tek çağrıda: `bitkiler` (susama/hasat hâli ve gerekçesi, yarıçap, çakışma, film künyesi), `kartlar`, `seri`, `kuyruk`, `ekim`, `turler`, `kamera` (kalibrasyon dâhil), `alanlar`, `sinirlar`, `sulama_basligi`, `bolgeler`, `konum`, `mesgul`, `bagli` |
+| `POST /api/bahce/is` | `{tip: sula\|ek\|gez\|foto, noktalar:[ad], saniye?}` — kuyruğa koyar ve **hemen döner**. Kullanıcı beklemiyor |
+| `POST /api/bahce/is/iptal` | `{kimlik}` ya da `{kimlik:"hepsi"}`. Yalnız BEKLEYEN iş iptal edilir; çalışanı durdurmanın yolu teknik paneldeki Dur |
+| `POST /api/bahce/ek` | `{tur, x, y}` ya da `{tur, yerler:[{x,y}]}` — noktayı yaratır (`etiket:"bitki"`, `tur`, `ekim`) ve ekimi kuyruğa koyar. Dikim alanı dışına 422 |
+| `POST /api/bahce/hasat` | `{noktalar:[ad]}` — **kayıt işlemi, hareket değil**: makine hasat edemiyor, toplayan kullanıcı. Yeri boşaltır, 30 sn `geri_al` verir. Film SİLİNMEZ |
+| `POST /api/bahce/onay` | Bekleyen ekim onayını geçer (`/api/ekim/onayla`ya iletir) |
+| `POST /api/bahce/foto` | `{noktalar:[ad]}` — üst kameranın son karesinden şimdi kırpar. Makine hareket etmez. Kalibrasyon yoksa 409 ve **sebebini söyler** |
+| `GET /api/bahce/film?kimlik=` | O ekimin arşiv kareleri (`damga`, `ts`, `bayt`). `kimlik` boşsa bütün filmler + toplam bayt |
+| `GET /api/bahce/film/kare?kimlik=&damga=` | Tek arşiv karesi (JPEG, bir gün önbelleklenir) |
+
+**Kuyruk** (`sunucu/kuyruk.py`) bellekte duruyor, diske yazılmıyor: sunucu
+yeniden başladığında istenmeyen işler saatler sonra yapılmasın. En fazla
+40 bekleyen iş, son 12 bitmiş iş ekranda tutuluyor. İşçi döngüsü makine
+boşaldıkça (`dizi.calisiyor` yok, hareket yok, ekim oturumu yok) sıradaki
+işi `/api/toplu`ya veriyor — yani aynı ön kontrollerden geçiriyor.
+
+**Arşiv** (`sunucu/arsiv.py`): `<veri klasörü>/bahce_arsiv/<nokta>_<ekim
+damgası>/<ts>.jpg`. Kırpma penceresi türün OLGUN `spread_mm` değerinin
+1.8 katı (90–420 mm arası), çıktı 240×240. Bitki başına en fazla 240 kare,
+toplam en fazla 80 MB; aşılırsa en eski kareler silinir. `numpy`/`Pillow`
+yoksa arşiv sessizce kapalı kalır, bahçenin geri kalanı çalışır.
+
+`{"tip":"bahce","kuyruk":{…}}` — kuyruk değişince panel soketine düşen
+haber. Panelin bahçe ekranı bunu ve `{"tip":"ekim"}`i dinliyor.
+
 ### AI HAT (Hailo) — kamera karelerinde tespit
 
 `durum.hailo` = `{aktif, kilitli, sahte, model, islenen, dusen, hatali,

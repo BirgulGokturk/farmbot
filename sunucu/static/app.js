@@ -3180,15 +3180,15 @@ function kamCanliIste(ac) {
   kamListe().forEach((k) => {
     if (!k.canli_var) return;                 // akış yapamıyor
     if (ac && S.kamCanliElle[k.ad] === false) return;   // kullanıcı kapattı
-    if (ac && !k.acik && !k.canli) {
-      // Kapalı kamerayı canlıya almak onu AÇMAK demek; kullanıcı bu
-      // sayfaya bakmak için geldi, açıyoruz.
+    // AÇARKEN HER ZAMAN GÖNDERİYORUZ. "Zaten canlı" diye atlamak, HIZI da
+    // atlamak demekti: bahçe ekranı akışı 1 kare/sn ile açıyor ve bu
+    // sekmeye geçince akış 1'de takılı kalıyordu. Komut aynı hızdaysa
+    // ajanda hiçbir şey değişmiyor — göndermenin bedeli yok.
+    if (ac) {
       komutGonder("kamera", { kamera: k.ad, canli: true, fps: KAM_FPS });
       return;
     }
-    if (ac !== !!k.canli) {
-      komutGonder("kamera", { kamera: k.ad, canli: ac, fps: KAM_FPS });
-    }
+    if (k.canli) komutGonder("kamera", { kamera: k.ad, canli: false });
   });
 }
 
@@ -3350,6 +3350,9 @@ function kareyiTazele(ts, canli = false, ad = "") {
   // Üstlerinde bırakmak, bakan kişiye yeni karede bulunmuş gibi görünürdü.
   // Yalnız BU kameranın tespitleri siliniyor.
   kamOrtuTemizle(kam);
+  // Bahçe zemini de aynı kareyi kullanıyor. Aynı adres, tek istek:
+  // tarayıcı iki <img> için ikinci kez indirmiyor.
+  if (window.Bahce) window.Bahce.kareGeldi(kam);
 }
 
 /* --------------------------------------------------------- ekim onayı
@@ -5187,6 +5190,9 @@ function durumGuncelle(d) {
   tanilariCiz(d);
   // Tarla sahnesi yatak ölçüsünü ve robot konumunu buradan alıyor.
   if (window.Tarla) window.Tarla.durumDegisti(d);
+  // Bahçedeki robot da: ekranda yürüyorsa makine gerçekten hareket
+  // ediyor demek. Bahçe kapalıyken bu çağrı hemen dönüyor.
+  if (window.Bahce) window.Bahce.durumDegisti(d);
 
   S.enable = !!d.enable;
   $("#d-enable").textContent = d.enable ? "Sürücüleri kapat" : "Sürücüleri aç";
@@ -5241,7 +5247,13 @@ function wsBagla() {
     else if (m.tip === "durum") durumGuncelle(m.durum);
     else if (m.tip === "kare") kareyiTazele(m.ts, false, m.kamera);
     else if (m.tip === "canli") kareyiTazele(m.ts, true, m.kamera);
-    else if (m.tip === "ekim") ekimOnayYaz(m.ekim);
+    else if (m.tip === "ekim") {
+      ekimOnayYaz(m.ekim);
+      if (window.Bahce) window.Bahce.ekimDegisti(m.ekim);
+    }
+    else if (m.tip === "bahce") {
+      if (window.Bahce) window.Bahce.kuyrukDegisti(m.kuyruk);
+    }
     // Göz durumu değişti (ekildi, sulandı, tepsi kaydı). Panel kendi
     // isteğiyle çekiyor: paket yalnız "değişti" haberi taşıyor.
     else if (m.tip === "tepsi") tepsiYukle();
@@ -5271,11 +5283,20 @@ function olaylariBagla() {
       const oncekiSekme = S.sekme;
       S.sekme = dugme.dataset.sayfa;
       localStorage.setItem("farmbot_sekme", S.sekme);
-      // KAMERA SEKMESİ: girince iki kamera da canlıya alınıyor, çıkınca
-      // ikisi de durduruluyor. Canlı akış panelin en pahalı yolu; kimse
+      // KAMERA ve BAHÇE sekmeleri canlı akışı açıp kapatıyor (biri 5,
+      // öteki 1 kare/sn). Canlı akış panelin en pahalı yolu; kimse
       // bakmıyorken Pi'yi meşgul etmesinin sebebi yok.
+      //
+      // ÖNCE ÇIKIŞ, SONRA GİRİŞ. Ters sıra sessiz bir hataydı: bahçeden
+      // kameraya geçerken önce kamera akışı 5'e çıkıyor, hemen ardından
+      // bahçenin çıkış işlemi aynı kamerayı KAPATIYORDU. Sonuç, üst
+      // kameranın kendi sekmesinde hiç akmaması.
+      if (oncekiSekme === "kamera" && S.sekme !== "kamera") kamSekmesi(false);
+      if (window.Bahce && oncekiSekme === "bahce" && S.sekme !== "bahce") {
+        window.Bahce.sekme(false);
+      }
       if (S.sekme === "kamera") kamSekmesi(true);
-      else if (oncekiSekme === "kamera") kamSekmesi(false);
+      if (window.Bahce && S.sekme === "bahce") window.Bahce.sekme(true);
       // Sekme adı panelin başlığına yazılıyor: sekme çubuğu artık üstte,
       // panelin kendisi hangi sayfada olduğunu söylemeli.
       const ad = $("#sol-panel-ad");
@@ -5286,7 +5307,9 @@ function olaylariBagla() {
       Object.values(S.grafikler).forEach((g) => g.resize());
       // SAHNE KAYBOLMUYOR: arka planda duruyor, sekmeden bağımsız. Yalnız
       // yeniden ölçülmesini istiyoruz (telefonda sahne şeridi kayabiliyor).
-      if (window.Tarla) window.Tarla.gorunurluk(true);
+      // Bahçe sekmesi ayrık: orada sahne ekranda hiç değil ve arka planda
+      // çizmesinin sebebi yok — küçük bir bilgisayarda o boş çizim ısı.
+      if (window.Tarla) window.Tarla.gorunurluk(S.sekme !== "bahce");
       // Panel kendi içinde kaydırılıyor; sayfa değil.
       const govde = $("#sol-panel-govde");
       if (govde) govde.scrollTop = 0;

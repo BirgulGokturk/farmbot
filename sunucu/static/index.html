@@ -6,6 +6,7 @@
 <title>Tarım Robotu</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌱</text></svg>">
 <link rel="stylesheet" href="/statik/stil.css">
+<link rel="stylesheet" href="/statik/bahce.css">
 <!-- Kütüphaneler proje içinde duruyor (CDN değil): panel internetsiz bir yerel
      ağda da açılsın ve dış bir servisin kesintisi paneli düşürmesin. -->
 <script src="/statik/chart.umd.js"></script>
@@ -59,6 +60,10 @@
       </div>
 
       <nav class="sekmeler" aria-label="Sayfalar">
+        <!-- BAHÇE ÖNDE. Teknik sekmeler olduğu gibi duruyor; bahçe onların
+             yerine değil, önlerine geliyor: bahçeyle uğraşan biri paneli
+             açtığında ilk gördüğü şey koordinat değil bahçesi olsun. -->
+        <button data-sayfa="bahce" class="bahce-sekme">🌱 Bahçe</button>
         <button data-sayfa="izle" class="etkin">İzle</button>
         <button data-sayfa="sur">Sür</button>
         <button data-sayfa="tarla">Tarla</button>
@@ -200,6 +205,136 @@
          Ölçüm okumaları hep açık (sayfanın asıl işi bu), grafikler ve tablo
          katlanabilir. Eskiden beş kart + dört grafik + kamera + tablo aynı
          anda ekrandaydı ve hepsi aynı görsel ağırlıktaydı. -->
+    <!-- ===================================================== BAHÇE MODU ===
+         Kullanıcı katmanı. Koordinat yok, ayar yok, soru yok. Zemin üst
+         kameranın canlı karesi; bitkiler o gerçek toprağın üstünde duruyor.
+         Bütün işaretleme `data-rol` ile: bitki, kart ve film karesi
+         şablondan çoğaltılıyor ve id tekrarlanamaz. -->
+    <section class="sayfa" id="sayfa-bahce">
+
+      <!-- Giriş şeridi: bugün ne gerekiyor + seri sayacı. -->
+      <div class="bh-ust">
+        <div class="bh-seri" id="bh-seri" hidden>
+          <span class="bh-alev">🔥</span>
+          <b id="bh-seri-gun">0</b><span class="ikincil">gün üst üste</span>
+        </div>
+        <span class="esnek"></span>
+        <button class="bh-ikon" id="bh-egik" type="button" aria-pressed="true"
+                title="Bahçeye eğik ya da tam tepeden bak">Eğik bak</button>
+        <button class="bh-ikon" id="bh-sakin" type="button" aria-pressed="false"
+                title="Bütün hareketi durdurur — küçük bilgisayarda işlemciyi rahatlatır"
+                >Sakin mod</button>
+      </div>
+
+      <div class="bh-kartlar" id="bh-kartlar"></div>
+
+      <!-- Uyarı satırı: kalibrasyon yok, kamera yok, ajan yok gibi hâller.
+           Ekran BUNLARA RAĞMEN çalışıyor; satır sebebini söylüyor. -->
+      <div class="bh-not gizli" id="bh-not"></div>
+
+      <div class="bh-tahta-sar">
+        <div class="bh-tahta" id="bh-tahta">
+          <div class="bh-duzlem" id="bh-duzlem">
+            <!-- Zemin kabı AYRI: kamera karesi yatağın dışını da görüyor ve
+                 taşan kısım kırpılmalı. Kırpma (`overflow`) 3B düzlemi
+                 düzleştirdiği için kabı ayırdık — bitkiler düzlemin
+                 kendisinde kalıp dik durabilsin. -->
+            <div class="bh-zemin-kap"><img class="bh-zemin" id="bh-zemin" alt="" hidden></div>
+            <div class="bh-cizili" id="bh-cizili" hidden></div>
+            <!-- Toprağın şekli TEK BİR SVG'de: dikim alanı, yasak bölge ve
+                 suyun gidemediği şerit. Hepsi milimetreden hesaplanıp
+                 çokgen olarak çiziliyor — kamera dönmüş olsa da şerit
+                 gerçekte durduğu yerde duruyor. Hata kutusu yok; kullanıcı
+                 yasağı okuyarak değil görerek öğreniyor. -->
+            <svg class="bh-cizim" id="bh-cizim" viewBox="0 0 1000 1000"
+                 preserveAspectRatio="none" aria-hidden="true"></svg>
+            <div class="bh-bitkiler" id="bh-bitkiler"></div>
+            <div class="bh-hayalet" id="bh-hayalet" hidden></div>
+            <div class="bh-robot" id="bh-robot" hidden><i></i></div>
+            <!-- Dört köşe ölçü noktası: ekran koordinatını yatak
+                 milimetresine çeviren dönüşüm bunlardan ÖLÇÜLEREK
+                 çıkarılıyor, elle hesaplanmıyor. -->
+            <span class="bh-olcu" data-kose="0"></span>
+            <span class="bh-olcu" data-kose="1"></span>
+            <span class="bh-olcu" data-kose="2"></span>
+            <span class="bh-olcu" data-kose="3"></span>
+          </div>
+          <p class="bh-bos" id="bh-bos" hidden></p>
+        </div>
+      </div>
+
+      <div class="bh-raf" id="bh-raf" role="group" aria-label="Tohum rafı"></div>
+
+      <!-- Kuyruk şeridi. Soru kutusu YOK: makine bir onay bekliyorsa
+           burada tek bir düğme çıkıyor, kullanıcı o sırada başka işine
+           devam edebiliyor. Ekim akışındaki "tohum ucta mı" onayı
+           duruyor — onu atlamak, tohumun gerçekten alındığını doğrulayan
+           tek şeyi atmak olurdu. -->
+      <div class="bh-kuyruk" id="bh-kuyruk">
+        <span class="bh-nokta"></span>
+        <span id="bh-kuyruk-yazi">Robot bekliyor.</span>
+        <span class="esnek"></span>
+        <button class="bh-dugme birincil gizli" id="bh-onay" type="button">Devam et</button>
+        <button class="bh-ikon gizli" id="bh-kuyruk-iptal" type="button">Sırayı boşalt</button>
+      </div>
+
+      <template id="bh-bitki-sablon">
+        <button class="bh-bitki" type="button">
+          <span class="bh-halka" data-rol="halka"></span>
+          <span class="bh-govde" data-rol="govde">
+            <span class="bh-simge" data-rol="simge">🌱</span>
+          </span>
+          <!-- Bir bitki hem susamış hem hasada gelmiş olabilir; ikisi de
+               görünmeli. Tek baloncukta birini seçmek, ötekini gizlemek
+               demekti — "bir bakışta ne gerektiğini anla" sözü bozulurdu. -->
+          <span class="bh-balonlar" data-rol="balonlar" hidden></span>
+        </button>
+      </template>
+
+      <template id="bh-kart-sablon">
+        <article class="bh-kart">
+          <span class="bh-kart-simge" data-rol="simge"></span>
+          <div class="bh-kart-govde">
+            <h3 data-rol="baslik"></h3>
+            <p data-rol="aciklama"></p>
+            <p class="bh-kanit" data-rol="kanit"></p>
+          </div>
+          <div class="bh-kart-dugmeler">
+            <button class="bh-dugme birincil" data-rol="evet"></button>
+            <button class="bh-dugme" data-rol="sonra">Sonra</button>
+          </div>
+        </article>
+      </template>
+    </section>
+
+    <!-- Bitkiye dokununca açılan halka menü ve büyüme filmi: sayfanın
+         DIŞINDA, çünkü ikisi de sahnenin üstünde duruyor ve tahtanın 3B
+         dönüşümünden etkilenmemeleri gerekiyor. -->
+    <div class="bh-menu" id="bh-menu" hidden></div>
+    <div class="bh-film-ortu" id="bh-film" hidden>
+      <div class="bh-film-kutu" role="dialog" aria-label="Büyüme filmi">
+        <header>
+          <b id="bh-film-ad">Büyüme filmi</b>
+          <span class="esnek"></span>
+          <button class="bh-ikon" id="bh-film-kapat" type="button">Kapat</button>
+        </header>
+        <div class="bh-film-sahne">
+          <img id="bh-film-kare" alt="Bitkinin fotoğrafı">
+          <p class="bh-film-bos" id="bh-film-bos" hidden></p>
+          <div class="bh-film-damga"><b id="bh-film-gun"></b>
+            <span id="bh-film-tarih"></span></div>
+        </div>
+        <div class="bh-film-alt">
+          <button class="bh-dugme birincil" id="bh-film-oynat" type="button">▶ Oynat</button>
+          <button class="bh-ikon" id="bh-film-cek" type="button"
+                  title="Üst kameradan şimdi bir kare arşivle">📷</button>
+          <input type="range" id="bh-film-serit" min="0" max="0" value="0"
+                 aria-label="Film karesi">
+          <span class="ikincil sayi" id="bh-film-sayi"></span>
+        </div>
+      </div>
+    </div>
+
     <section class="sayfa etkin" id="sayfa-izle">
 
       <!-- 1. ANLIK OKUMALAR — canlı sayı, sayfanın konusu. -->
@@ -2031,6 +2166,7 @@
 <script src="/statik/tarla.js"></script>
 <!-- Profil görüntüleyici: haritanın verisini okuyup Z kesiti çiziyor -->
 <script src="/statik/profil.js"></script>
+<script src="/statik/bahce.js"></script>
 <script src="/statik/app.js"></script>
 </body>
 </html>

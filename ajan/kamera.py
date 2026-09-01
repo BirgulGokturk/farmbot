@@ -571,6 +571,15 @@ class Kamera:
 
     def canli_ac(self, fps: float = 5.0) -> tuple[bool, str]:
         if self._canli:
+            # HIZ AÇIKKEN DE DEĞİŞEBİLİYOR. Eskiden "zaten açık" deyip
+            # dönüyordu ve istenen hız yutuluyordu: bahçe ekranı 1 kare/sn
+            # ile açtıktan sonra Kamera sekmesine geçince akış 1'de takılı
+            # kalıyordu, çünkü panel "zaten canlı" gördüğü için komut bile
+            # göndermiyordu. Hız artık bir özellik, açılış anına ait değil.
+            eski = self._canli_fps
+            self._canli_fps = max(1.0, min(15.0, float(fps)))
+            if abs(eski - self._canli_fps) > 0.01:
+                return True, f"Canlı akış hızı {self._canli_fps:.0f} kare/sn"
             return True, "Canlı akış zaten açık"
         if not self._yontem:
             self._yontem = self._yontem_sec()
@@ -603,6 +612,21 @@ class Kamera:
         if not self._canli:
             return True, "Canlı akış zaten kapalı"
         self._canli = False
+        # AKIŞ İŞ PARÇACIĞININ BİTMESİNİ BEKLİYORUZ.
+        #
+        # Eskiden burada yalnız bayrak indiriliyordu ve hemen dönülüyordu.
+        # İki sonucu vardı, ikisi de sessiz:
+        #   * Hemen ardından `canli_ac` çağrılırsa (sekme değiştirmek tam
+        #     olarak bunu yapıyor) eski iş parçacığı hâlâ yaşıyor, yeni
+        #     bayrağı görüp kare göndermeye devam ediyor ve İKİ ÜRETİCİ
+        #     birden akıyordu — panelde hız iki katı görünüyordu.
+        #   * Cihaz hâlâ tutuluyorken periyodik döngü açılıyor ve gerçek
+        #     donanımda "device busy" veriyordu.
+        # `kapat()` bu beklemeyi zaten yapıyordu; burada eksikti.
+        ip = self._canli_ip
+        if ip is not None and ip.is_alive():
+            ip.join(timeout=5.0)
+        self._canli_ip = None
         # Periyodik kare döngüsü canlıdan önce açıksa geri getiriyoruz:
         # kullanıcı canlıyı kapatınca kamera tamamen susmasın.
         if getattr(self, "_periyodik_geri", False):
@@ -626,14 +650,15 @@ class Kamera:
         uretici = (self._canli_sahte if self._yontem == "sahte"
                    else self._canli_picamera2 if self._yontem == "picamera2"
                    else self._canli_rpicam)
-        en_az_ara = 1.0 / self._canli_fps
         son = 0.0
         try:
             for kare in uretici():
                 if not self._canli:
                     break
                 # Kaynak istediğimizden hızlı üretebiliyor; fazlasını
-                # göndermek ağı ve paneli boşuna yoruyor.
+                # göndermek ağı ve paneli boşuna yoruyor. Hız HER TURDA
+                # okunuyor: akış açıkken değiştirilebiliyor.
+                en_az_ara = 1.0 / max(0.1, self._canli_fps)
                 simdi = time.monotonic()
                 if simdi - son < en_az_ara:
                     continue

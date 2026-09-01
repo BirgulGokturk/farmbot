@@ -18,6 +18,7 @@ import json
 import logging
 import math
 import os
+import re
 import subprocess
 import time
 import uuid
@@ -30,6 +31,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.staticfiles import StaticFiles
 
+import arsiv
+import bahce
 import depo
 import dikim
 import egriler
@@ -37,6 +40,7 @@ import ekim
 import geri_al
 import kalibrasyon
 import kareler
+import kuyruk as kuyruk_modul
 import noktalar
 import programlar
 import sulama
@@ -250,10 +254,13 @@ async def yasam(app: FastAPI):
         raise RuntimeError("AJAN_JETONU ortam değişkeni zorunlu — ajanla aynı değeri kullanın")
     await asyncio.to_thread(depo.baglan)
     merkez.son_olcum = await asyncio.to_thread(depo.son_kayit) or {}
-    gorev = asyncio.create_task(_budama_dongusu())
+    gorevler = [asyncio.create_task(_budama_dongusu()),
+                asyncio.create_task(_kuyruk_dongusu()),
+                asyncio.create_task(_arsiv_dongusu())]
     logger.info("Sunucu hazır. Panel parolası: %s", "var" if PANEL_PAROLA else "yok (açık)")
     yield
-    gorev.cancel()
+    for g in gorevler:
+        g.cancel()
 
 
 app = FastAPI(title="Farmbot", lifespan=yasam)
@@ -3069,6 +3076,485 @@ class TazeStatik(StaticFiles):
         else:
             yanit.headers["Cache-Control"] = "no-store, must-revalidate"
         return yanit
+
+
+# --------------------------------------------------------------------------- #
+# BAHÇE MODU
+#
+# Kullanıcı katmanı. Teknik panel olduğu gibi duruyor; burası bahçeyle
+# uğraşan ama robotla uğraşmak istemeyen biri için ayrı bir görünüm.
+#
+# TEK GERÇEK. Bu uçlar yeni bir depo açmıyor: bitkiler nokta deposundan,
+# tür bilgisi katalogdan, nem sensörden, alanlar dikimden geliyor. Yazma da
+# aynı yerlere — sulama `/api/toplu` ile, ekim aynı ekim akışıyla. Panelde
+# ne yazıyorsa bahçede de o yazıyor, çünkü ikisi aynı satırı okuyor.
+#
+# SORU SORULMUYOR. Bahçe hiçbir iş için kullanıcıyı bekletmiyor: iş kuyruğa
+# giriyor, kullanıcı devam ediyor, makine sırayla yapıyor. Kuyruk güvenliği
+# aşmıyor — her iş yine `/api/toplu`dan, yani aynı çözümleme ve aynı yasak
+# bölge ön kontrolünden geçiyor.
+# --------------------------------------------------------------------------- #
+kuyruk = kuyruk_modul.Kuyruk()
+
+# Arşiv tarayıcısı bu sıklıkta bakıyor: "kimin karesi geldi" sorusu ucuz
+# (klasör okuma), kırpma pahalı ve zaten bitki başına günde bir oluyor.
+ARSIV_BAKMA_SN = 300.0
+
+
+def _bahce_tur_indeks() -> dict[str, Any]:
+    return {t.get("slug"): t for t in turler.hepsi()}
+
+
+def _bahce_okumalar() -> list[dict[str, Any]]:
+    """Konumlu toprak nemi okumaları — sulamanın kullandığı pencere."""
+    try:
+        return depo.konumlu_okumalar(dakika=int(sulama.NEM_AZAMI_YAS_SN // 60),
+                                     azami=400)
+    except Exception:
+        logger.exception("Bahçe: nem okumaları alınamadı")
+        return []
+
+
+def _bahce_veri() -> dict[str, Any]:
+    """Bahçe ekranının bütün anlık görüntüsü — TEK çağrıda.
+
+    Parça parça çekmek, ekranın bir yerinde eski bir sayının durması
+    demekti: bitkiler yenilenmiş, kartlar eskiye göre yazılmış. Tek
+    görüntü, tek an.
+    """
+    simdi = time.time()
+    hepsi = noktalar.hepsi()
+    tur_indeks = _bahce_tur_indeks()
+    yaricaplar, _ = _yaricaplar(bahce.bitkiler(hepsi))
+    okumalar = _bahce_okumalar()
+    durum = merkez.durum()
+    toprak_kalib = durum.get("toprak_kalib") or {}
+    alanlar = dikim.listele()
+    sinirlar = durum.get("sinirlar") or {}
+
+    liste = []
+    for b in bahce.bitkiler(hepsi):
+        tur = tur_indeks.get(str(b.get("tur") or "")) or {}
+        su = bahce.susama_durumu(b, tur, okumalar, toprak_kalib, simdi)
+        hasat = bahce.hasat_durumu(b, tur, simdi)
+        kimlik = arsiv.film_kimlik(b)
+        liste.append({
+            "ad": b.get("ad"), "x": b.get("x"), "y": b.get("y"), "z": b.get("z"),
+            "tur": b.get("tur"),
+            "tur_ad": tur.get("name_tr") or b.get("tur"),
+            "simge": tur.get("icon") or "🌱",
+            "renk": tur.get("color") or "#7bbf5a",
+            "ekim": b.get("ekim"), "sulama_ts": b.get("sulama_ts"),
+            "yaricap_mm": yaricaplar.get(b.get("ad"), 0.0),
+            "yayilim_mm": _sayi_guvenli(tur.get("spread_mm")),
+            "susadi": su["susadi"], "su_gerekce": su["gerekce"],
+            "su_kanit": su["kanit"], "nem_yuzde": su.get("nem_yuzde"),
+            "hasat": hasat["hazir"], "hasat_gerekce": hasat["gerekce"],
+            "yas_gun": hasat.get("gun"), "olgun_gun": hasat.get("olgun"),
+            "olgunluk": hasat.get("oran"),
+            "film_kimlik": kimlik,
+            "film_kare": len(arsiv.kareler_listesi(kimlik)),
+        })
+
+    # Çakışma: iki bitkinin yayılım çemberi kesişiyorsa ikisi de işaretli.
+    for i, a in enumerate(liste):
+        for b2 in liste[i + 1:]:
+            d = math.hypot(_sayi_guvenli(a["x"]) - _sayi_guvenli(b2["x"]),
+                           _sayi_guvenli(a["y"]) - _sayi_guvenli(b2["y"]))
+            if d < (a["yaricap_mm"] + b2["yaricap_mm"]):
+                a["cakisik"] = b2["cakisik"] = True
+    for b in liste:
+        b.setdefault("cakisik", False)
+
+    kalib = kalibrasyon.oku("ust")
+    baslik = _baslik_oku()
+    gunler = bahce.ilgi_gunleri(
+        hepsi, [k["ts"] for kim in arsiv.filmler() for k in arsiv.kareler_listesi(kim)])
+
+    return {
+        "bitkiler": liste,
+        "kartlar": bahce.kartlar(hepsi, tur_indeks, yaricaplar, okumalar,
+                                 toprak_kalib, alanlar, sinirlar, simdi),
+        "seri": bahce.seri(gunler, simdi),
+        "kuyruk": kuyruk.goruntu(),
+        "turler": [{"slug": t.get("slug"), "ad": t.get("name_tr"),
+                    "simge": t.get("icon"), "renk": t.get("color"),
+                    "yayilim_mm": t.get("spread_mm"),
+                    "olgun_gun": t.get("days_to_harvest")}
+                   for t in turler.hepsi()],
+        "kamera": {
+            "ad": "ust",
+            "kalibre": float(kalib.get("mm_px") or 0) > 0,
+            "kalibrasyon": kalib,
+            "etiket": _kamera_etiket("ust"),
+            "kare_var": kareler.son_kayit("ust") is not None,
+        },
+        "alanlar": alanlar,
+        "sinirlar": sinirlar,
+        "sulama_basligi": baslik,
+        "bolgeler": durum.get("bolgeler") or [],
+        "konum": durum.get("konum") or {},
+        "ekim": _bahce_ekim_ozet(),
+        "mesgul": _bahce_mesgul(),
+        "bagli": bool(durum.get("bagli")),
+        "arsiv_bayt": arsiv.toplam_bayt(),
+        "ts": simdi,
+    }
+
+
+def _bahce_ekim_ozet() -> dict[str, Any]:
+    """Ekim oturumunun bahçe diliyle özeti.
+
+    EKİM AKIŞINA DOKUNMUYORUZ. "Tohum ucta mı" onayı duruyor ve durmalı:
+    makinenin tohumu gerçekten aldığını doğrulayan tek şey o. Bahçe modu
+    kullanıcıya soru sormuyor ama makinenin BEKLEDİĞİNİ de gizlemiyor —
+    onayı bir soru kutusu olarak değil, kuyruk şeridinde tek bir düğme
+    olarak gösteriyor. Kullanıcı basana kadar başka işine devam edebilir;
+    kimse ekranın ortasında bir soruyla kilitlenmiyor.
+    """
+    g = _ekim.goruntu()
+    if not g.get("aktif"):
+        return {"aktif": False, "onay": "", "soru": "", "sira": 0, "toplam": 0}
+    soru = {
+        "onay2": "Robot tohumu aldı. Ucunda duruyorsa devam ettirin.",
+        "onay1": "Uç takılı mı?",
+        "onay_uc": "Kafada hangi uç var?",
+    }.get(str(g.get("durum") or ""), "")
+    return {
+        "aktif": True,
+        "onay": str(g.get("durum") or "") if soru else "",
+        "soru": soru,
+        "sira": g.get("sira") or 0,
+        "toplam": g.get("toplam") or 0,
+        "tur_ad": g.get("tur_ad") or "",
+    }
+
+
+@app.post("/api/bahce/onay")
+async def api_bahce_onay(govde: dict[str, Any], jeton: str = Query(default="")):
+    """Bekleyen ekim onayını geçer — mevcut onay ucunun aynısına gidiyor."""
+    _parola_dogrula(jeton)
+    return await api_ekim_onayla(govde or {}, jeton=jeton)
+
+
+def _sayi_guvenli(deger: Any, varsayilan: float = 0.0) -> float:
+    try:
+        s = float(deger)
+        return s if math.isfinite(s) else varsayilan
+    except (TypeError, ValueError):
+        return varsayilan
+
+
+def _bahce_mesgul() -> bool:
+    """Makine şu an bir iş yapıyor mu — kuyruğun beklemesi gereken hâl."""
+    d = merkez.durum()
+    if not d.get("bagli"):
+        return True
+    if (d.get("dizi") or {}).get("calisiyor"):
+        return True
+    if d.get("hareket"):
+        return True
+    return bool(_ekim.goruntu().get("aktif"))
+
+
+@app.get("/api/bahce")
+async def api_bahce(jeton: str = Query(default="")):
+    _parola_dogrula(jeton)
+    return await asyncio.to_thread(_bahce_veri)
+
+
+@app.post("/api/bahce/is")
+async def api_bahce_is(govde: dict[str, Any], jeton: str = Query(default="")):
+    """Kuyruğa iş koyar ve HEMEN döner — kullanıcı beklemiyor."""
+    _parola_dogrula(jeton)
+    tip = str(govde.get("tip") or "")
+    adlar = [str(a) for a in (govde.get("noktalar") or []) if str(a).strip()]
+    if tip not in ("sula", "ek", "gez", "foto"):
+        raise HTTPException(status_code=400, detail=f"Bilinmeyen iş: {tip!r}")
+    if not adlar:
+        raise HTTPException(status_code=400, detail="İş için nokta gerekiyor")
+    if len(adlar) > AZAMI_SECIM:
+        raise HTTPException(status_code=400,
+                            detail=f"Tek işte en fazla {AZAMI_SECIM} bitki olabilir")
+    etiketler = {"sula": "Sulama", "ek": "Ekim", "gez": "Ziyaret",
+                 "foto": "Fotoğraf"}
+    try:
+        kayit = kuyruk.ekle(tip, f"{etiketler[tip]} · {len(adlar)} bitki", adlar,
+                            {"saniye": govde.get("saniye")})
+    except kuyruk_modul.KuyrukDolu as hata:
+        raise HTTPException(status_code=429, detail=str(hata))
+    await merkez.yayinla({"tip": "bahce", "kuyruk": kuyruk.goruntu()})
+    return {"ok": True, "is": kuyruk.goruntu()["isler"][-1],
+            "kuyruk": kuyruk.goruntu()}
+
+
+@app.post("/api/bahce/is/iptal")
+async def api_bahce_is_iptal(govde: dict[str, Any], jeton: str = Query(default="")):
+    _parola_dogrula(jeton)
+    kimlik = str(govde.get("kimlik") or "")
+    if kimlik == "hepsi":
+        n = kuyruk.hepsini_iptal()
+        await merkez.yayinla({"tip": "bahce", "kuyruk": kuyruk.goruntu()})
+        return {"ok": True, "iptal": n, "kuyruk": kuyruk.goruntu()}
+    if not kuyruk.iptal(kimlik):
+        raise HTTPException(
+            status_code=409,
+            detail="Bu iş iptal edilemiyor — ya çalışıyor ya da çoktan bitti. "
+                   "Çalışan bir işi durdurmak için teknik paneldeki Dur.")
+    await merkez.yayinla({"tip": "bahce", "kuyruk": kuyruk.goruntu()})
+    return {"ok": True, "kuyruk": kuyruk.goruntu()}
+
+
+@app.post("/api/bahce/ek")
+async def api_bahce_ek(govde: dict[str, Any], jeton: str = Query(default="")):
+    """Tohum bırakma: noktayı yaratır, ekimi kuyruğa koyar.
+
+    İki adım tek istekte, çünkü kullanıcı için tek hareket: tohumu toprağa
+    bıraktı. Nokta önce yaratılıyor ki ekran hemen filizi gösterebilsin;
+    ekim kuyruğa giriyor ve makine sırası gelince gerçekten ekiyor.
+    """
+    _parola_dogrula(jeton)
+    slug = str(govde.get("tur") or "").strip()
+    if not slug:
+        raise HTTPException(status_code=400, detail="Tür gerekiyor")
+    if not any(t.get("slug") == slug for t in turler.hepsi()):
+        raise HTTPException(status_code=404, detail=f"'{slug}' diye bir tür yok")
+    yerler = govde.get("yerler")
+    if not yerler:
+        yerler = [{"x": govde.get("x"), "y": govde.get("y")}]
+    if len(yerler) > AZAMI_SECIM:
+        raise HTTPException(status_code=400,
+                            detail=f"Tek seferde en fazla {AZAMI_SECIM} tohum")
+
+    alanlar = await asyncio.to_thread(dikim.listele)
+    guvenli_z = _sayi_guvenli(merkez.durum().get("guvenli_z"), 0.0)
+    yeni, ret = [], []
+    for yer in yerler:
+        x, y = _sayi_guvenli(yer.get("x")), _sayi_guvenli(yer.get("y"))
+        kabul, gerekce, _ = dikim.nokta_kabul(x, y, alanlar)
+        if not kabul:
+            ret.append({"x": x, "y": y, "sebep": gerekce})
+            continue
+        ad = await asyncio.to_thread(_bahce_ad_uret, slug)
+        try:
+            kayit = await asyncio.to_thread(
+                noktalar.ekle, ad, x, y, guvenli_z, False, "bitki",
+                {"tur": slug, "ekim": time.time()})
+        except noktalar.NoktaHatasi as hata:
+            ret.append({"x": x, "y": y, "sebep": str(hata)})
+            continue
+        yeni.append(kayit)
+
+    if not yeni:
+        raise HTTPException(
+            status_code=422,
+            detail="Buraya ekilemiyor — " + (ret[0]["sebep"] if ret else "sebep yok"))
+
+    adlar = [str(n.get("ad")) for n in yeni]
+    try:
+        kuyruk.ekle("ek", f"Ekim · {len(adlar)} tohum", adlar)
+    except kuyruk_modul.KuyrukDolu as hata:
+        # Nokta yaratıldı ama iş sıraya girmedi: kullanıcıya söylüyoruz,
+        # sessizce yutmuyoruz. Nokta duruyor, sonra elle ekilebilir.
+        raise HTTPException(status_code=429, detail=str(hata))
+    await merkez.yayinla({"tip": "bahce", "kuyruk": kuyruk.goruntu()})
+    return {"ok": True, "noktalar": yeni, "ret": ret, "kuyruk": kuyruk.goruntu()}
+
+
+def _bahce_ad_uret(slug: str) -> str:
+    """Çakışmayan bir nokta adı: `marul-3` gibi."""
+    var = {str(n.get("ad")) for n in noktalar.hepsi()}
+    kok = re.sub(r"[^a-z0-9]+", "-", slug.lower()).strip("-")[:24] or "bitki"
+    for i in range(1, 9999):
+        ad = f"{kok}-{i}"
+        if ad not in var:
+            return ad
+    raise HTTPException(status_code=409, detail="Boş nokta adı bulunamadı")
+
+
+@app.post("/api/bahce/hasat")
+async def api_bahce_hasat(govde: dict[str, Any], jeton: str = Query(default="")):
+    """Hasat KAYITTIR, hareket değil.
+
+    Makine hasat edemiyor — toplayan kullanıcı. Yaptığımız şey bitkiyi
+    yataktan düşürmek, yani yeri boşaltmak. Fotoğraf filmi silinmiyor:
+    bitkinin hikâyesi hasattan sonra da duruyor. 30 saniyelik geri alma
+    penceresi mevcut geri alma yolunun aynısı.
+    """
+    _parola_dogrula(jeton)
+    adlar = [str(a) for a in (govde.get("noktalar") or []) if str(a).strip()]
+    if not adlar:
+        raise HTTPException(status_code=400, detail="Seçim boş")
+    silinen = await asyncio.to_thread(noktalar.sil_coklu, adlar)
+    if not silinen:
+        raise HTTPException(status_code=404, detail="Bitki bulunamadı")
+    parti = geri_al.ekle(silinen, f"{len(silinen)} bitki hasat edildi")
+    await merkez.yayinla({"tip": "bahce", "kuyruk": kuyruk.goruntu()})
+    return {"ok": True, "hasat": [n.get("ad") for n in silinen], "geri_al": parti,
+            "mesaj": f"{len(silinen)} bitki hasat edildi"}
+
+
+# --------------------------------------------------------------------------- #
+# Büyüme filmi
+# --------------------------------------------------------------------------- #
+@app.get("/api/bahce/film")
+async def api_bahce_film(kimlik: str = Query(default=""), jeton: str = Query(default="")):
+    _parola_dogrula(jeton)
+    if not kimlik:
+        return {"filmler": await asyncio.to_thread(arsiv.filmler),
+                "bayt": await asyncio.to_thread(arsiv.toplam_bayt)}
+    liste = await asyncio.to_thread(arsiv.kareler_listesi, kimlik)
+    return {"kimlik": kimlik, "kareler": liste, "adet": len(liste),
+            "aralik_sn": arsiv.ARALIK_SN}
+
+
+@app.get("/api/bahce/film/kare")
+async def api_bahce_film_kare(kimlik: str = Query(...), damga: str = Query(...),
+                              jeton: str = Query(default="")):
+    _parola_dogrula(jeton)
+    veri = await asyncio.to_thread(arsiv.kare_oku, kimlik, damga)
+    if not veri:
+        raise HTTPException(status_code=404, detail="Kare yok")
+    return Response(content=veri, media_type="image/jpeg",
+                    headers={"Cache-Control": "public, max-age=86400"})
+
+
+@app.post("/api/bahce/foto")
+async def api_bahce_foto(govde: dict[str, Any], jeton: str = Query(default="")):
+    """Şimdi kare çek — kullanıcı "Fotoğraf"a bastığında.
+
+    Makine hareket etmiyor: üst kamera zaten yatağın tamamını görüyor ve
+    filmin tutarlı olması için bütün kareler AYNI kameradan gelmeli. Uç
+    kamerasıyla yakın çekim yapsaydık filmde iki farklı ölçek karışır ve
+    büyüme yerine zıplama görünürdü.
+    """
+    _parola_dogrula(jeton)
+    adlar = [str(a) for a in (govde.get("noktalar") or []) if str(a).strip()]
+    sonuc = await asyncio.to_thread(_bahce_foto_cek, adlar, True)
+    if not sonuc["ok"]:
+        raise HTTPException(status_code=409, detail=_ARSIV_SEBEP.get(
+            sonuc["sebep"], "Fotoğraf çekilemedi"))
+    await merkez.yayinla({"tip": "bahce", "kuyruk": kuyruk.goruntu()})
+    return sonuc
+
+
+_ARSIV_SEBEP = {
+    "kalibrasyon-yok": ("Üst kamera kalibre edilmemiş — karenin hangi "
+                        "milimetreye denk geldiği bilinmeden kırpılamıyor. "
+                        "Kamera sekmesinden ölçek verin."),
+    "kare-yok": "Üst kameradan henüz kare gelmedi.",
+    "kutuphane-yok": ("Fotoğraf arşivi için numpy ve Pillow gerekiyor. "
+                      "Pi'de: sunucu/.venv/bin/pip install numpy Pillow"),
+}
+
+
+def _bahce_foto_cek(adlar: list[str] | None = None, zorla: bool = False) -> dict[str, Any]:
+    yuklu = _goruntu_yukle()
+    if not yuklu:
+        return {"ok": False, "sebep": "kutuphane-yok", "cekilen": [], "atlanan": []}
+    _, _, _, Image = yuklu
+    hepsi = bahce.bitkiler(noktalar.hepsi())
+    if adlar:
+        istenen = set(adlar)
+        hepsi = [b for b in hepsi if str(b.get("ad")) in istenen]
+    if not hepsi:
+        return {"ok": True, "sebep": "", "cekilen": [], "atlanan": []}
+    return arsiv.cek(hepsi, _bahce_tur_indeks(), kalibrasyon.oku("ust"), Image,
+                     kamera="ust", zorla=zorla)
+
+
+# --------------------------------------------------------------------------- #
+# Kuyruk işçisi
+# --------------------------------------------------------------------------- #
+async def _kuyruk_dongusu() -> None:
+    """Makine boşaldıkça sıradaki işi başlatır.
+
+    İşi ÇALIŞTIRAN kod burada değil: her iş mevcut `/api/toplu` yolundan
+    geçiyor, yani aynı çözümleme, aynı yasak bölge ön kontrolü, aynı
+    sınır denetimi. Kuyruk bir kestirme değil, bir bekleme odası.
+    """
+    while True:
+        try:
+            await asyncio.sleep(0.5)
+            is_ = kuyruk.sonraki()
+            if is_ is None or _bahce_mesgul():
+                continue
+            kuyruk.basladi(is_["kimlik"])
+            await merkez.yayinla({"tip": "bahce", "kuyruk": kuyruk.goruntu()})
+            try:
+                mesaj = await _kuyruk_calistir(is_)
+                kuyruk.bitti(is_["kimlik"], mesaj)
+            except HTTPException as hata:
+                kuyruk.hata(is_["kimlik"], str(hata.detail))
+                await merkez.yayinla({
+                    "tip": "gunluk", "seviye": "hata",
+                    "metin": f"Bahçe · {is_['etiket']}: {hata.detail}"})
+            except Exception as hata:            # beklenmedik — kuyruk durmasın
+                logger.exception("Kuyruk işi patladı")
+                kuyruk.hata(is_["kimlik"], str(hata))
+            await merkez.yayinla({"tip": "bahce", "kuyruk": kuyruk.goruntu()})
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("Kuyruk döngüsü")
+            await asyncio.sleep(2)
+
+
+async def _kuyruk_calistir(is_: dict[str, Any]) -> str:
+    tip, adlar = is_["tip"], is_["noktalar"]
+    if tip == "foto":
+        sonuc = await asyncio.to_thread(_bahce_foto_cek, adlar, True)
+        if not sonuc["ok"]:
+            raise HTTPException(status_code=409,
+                                detail=_ARSIV_SEBEP.get(sonuc["sebep"], "çekilemedi"))
+        return f"{len(sonuc['cekilen'])} fotoğraf"
+    govde: dict[str, Any] = {"islem": tip, "noktalar": adlar}
+    if tip == "sula":
+        govde["saniye"] = is_["veri"].get("saniye") or 3
+    await api_toplu(govde, jeton=PANEL_PAROLA)
+    # Dizi başladı; bitmesini bekliyoruz ki sıradaki iş üstüne binmesin.
+    await _dizi_bitmesini_bekle()
+    return {"sula": "sulandı", "ek": "ekildi", "gez": "gidildi"}.get(tip, "bitti")
+
+
+async def _dizi_bitmesini_bekle(azami_sn: float = 900.0) -> None:
+    """Çalışan dizi/ekim bitene kadar bekler.
+
+    Önce BAŞLAMASINI bekliyoruz: `dizi_baslat` komutu döndüğünde ajanın
+    durum paketi henüz "çalışıyor" demiyor olabilir ve hemen bakarsak
+    "bitti" sanıp sıradaki işi üstüne yollarız. Bu yarış sahada bir kez
+    yaşandı (bkz. ekim akış testi).
+    """
+    basla = time.time()
+    while time.time() - basla < 5.0:
+        if _bahce_mesgul():
+            break
+        await asyncio.sleep(0.2)
+    while time.time() - basla < azami_sn:
+        if not _bahce_mesgul():
+            return
+        await asyncio.sleep(0.4)
+    logger.warning("Kuyruk: iş %.0f sn'de bitmedi, sıradakine geçiliyor", azami_sn)
+
+
+async def _arsiv_dongusu() -> None:
+    """Günde bir, her bitkinin fotoğrafını kendiliğinden arşivler.
+
+    Kullanıcı düğmeye basmasa da film birikiyor: büyüme filminin değeri
+    tam olarak "hiç uğraşmadan geriye bakabilmek".
+    """
+    while True:
+        try:
+            await asyncio.sleep(ARSIV_BAKMA_SN)
+            if _bahce_mesgul():
+                continue
+            sonuc = await asyncio.to_thread(_bahce_foto_cek, None, False)
+            if sonuc.get("cekilen"):
+                logger.info("Bahçe arşivi: %d kare", len(sonuc["cekilen"]))
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("Arşiv döngüsü")
 
 
 def _surum_oku() -> str:

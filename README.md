@@ -337,6 +337,18 @@ ediyordu.)
 
 ## Panel
 
+Panelin iki katmanı var ve ikisi AYNI VERİYİ okuyor:
+
+* **Bahçe** — bahçeyle uğraşan ama robotla uğraşmak istemeyen biri için.
+  Koordinat yok, ayar yok, soru yok. Ayrıntısı [Bahçe modu](#bahçe-modu)
+  başlığında.
+* **Teknik sekmeler** (İzle · Sür · Tarla · Kamera · Otomasyon · Ayarlar) —
+  makineyi süren, kalibre eden, program yazan taraf. Bahçe modu bunların
+  hiçbirini değiştirmedi.
+
+İkisi ayrı depo tutmuyor: bahçedeki bitki, teknik paneldeki noktanın
+kendisi. Ayrı tutsalardı hangisinin doğru olduğunu kimse bilemezdi.
+
 * **Panel** — anlık değerler, grafikler, zaman aralığı seçimi (15 dk → 7 gün).
   Kartlar ve grafikler yalnızca **gerçekten veri gelen** kanallar için
   görünür: bağlı olmayan bir sensör için boş eksen çizilmez. İşaret yapışkan,
@@ -697,6 +709,165 @@ yeniden yaratmak gerekir (`rm -rf ajan/.venv && bash pi-kur.sh`) — ya da hiç
 uğraşmayın: `rpicam-still` yolu da aynı işi görüyor, 30 saniyede bir tek kare
 için işlem açmanın maliyeti önemsiz.
 
+## Bahçe modu
+
+Panelin ikinci katmanı: bahçeyle uğraşan ama robotla uğraşmak istemeyen
+biri için. Teknik sekmeler olduğu gibi duruyor — bu onların yerine değil,
+önlerine geliyor.
+
+**Kural: bu katman kendi verisini tutmuyor.** Bitkiler aynı nokta
+deposundan, tür bilgisi aynı katalogdan, nem aynı sensörden geliyor;
+sulama `/api/toplu` ile, ekim aynı ekim akışıyla yazıyor. Panelde ne
+yazıyorsa bahçede de o yazıyor, çünkü ikisi aynı satırı okuyor. İki ayrı
+gerçek olsaydı hangisinin doğru olduğunu kimse bilemezdi.
+
+### Zemin çizim değil, kendi toprağınız
+
+Tahtanın zemini **üst kameranın canlı karesi**. Çizilmiş bir yatak güzel
+durur ama yalan söyler: ekranda gördüğüne bakıp "toprağım kurumuş"
+diyemezsin. Kare tahtayı germiyor, kendi milimetre yerine oturuyor
+(merkezi `ofset_x/y`, ölçüsü `genislik_px × mm_px`, dönmesi `donme`) —
+yani fotoğraftaki toprak parçası gerçekte bulunduğu yerde görünüyor ve
+bitkinin yayılım halkasıyla fotoğraftaki yeşil aynı yere düşüyor.
+
+Tohumu toprağa bırakınca bırakma noktası kameranın `mm_px` ölçeğiyle
+milimetreye çevriliyor, nokta deposuna gerçek bir bitki olarak giriyor ve
+ekim kuyruğa alınıyor.
+
+**Kalibre değilse kırılmıyor.** Ölçek yoksa piksel–milimetre dönüşümü
+yapılamaz; ekran çizilmiş yatağa düşüyor, tek satırla sebebini söylüyor
+(*"Üst kamera henüz ölçeklenmedi… Bahçe çalışıyor"*) ve her şey — sulama,
+hasat, kartlar — çalışmaya devam ediyor. "Önce kalibre et" demek,
+bahçesine bakmak isteyen birini kamera ayarına göndermek olurdu.
+
+### Ekran koordinatı ölçülüyor, hesaplanmıyor
+
+Tahta eğik duruyor (CSS 3B dönüşümü). Parmağın değdiği pikselin hangi
+milimetreye denk geldiğini dönüşüm matrisini elle çarparak bulmak,
+CSS'teki her değişiklikte sessizce kayacak bir hesap demekti. Onun yerine
+düzlemin dört köşesine görünmez ölçü noktaları konuyor, gerçek ekran
+yerleri `getBoundingClientRect` ile okunuyor ve aradaki izdüşüm
+(homografi) buradan çıkarılıyor. Tarayıcı ne çiziyorsa hesap onu izliyor.
+Perspektif varken dönüşüm afin değil projektif — üç nokta yetmiyor, dördü
+gerekiyor.
+
+### Soru sorulmuyor, işler sıraya giriyor
+
+Makine tek dizi çalıştırabiliyor; ikinci istek teknik panelde doğru
+biçimde reddediliyor. Bahçede bu yanlış olurdu: iki bitkiye arka arkaya
+dokunan birine "makine meşgul" demek, kullanıcıyı makinenin takvimine
+uydurmak demek. Burada işler **kuyruğa** giriyor (`sunucu/kuyruk.py`),
+kullanıcı devam ediyor, robot sırayla yapıyor.
+
+Kuyruk güvenliği aşmıyor: her iş yine `/api/toplu`dan, yani aynı
+çözümleme, aynı yasak bölge ön kontrolü, aynı sınır denetiminden geçiyor.
+Kuyruk bir kestirme değil, bir bekleme odası. Bellekte duruyor, diske
+yazılmıyor — sunucu yeniden başladığında istenmeyen işleri saatler sonra
+yapmasın diye.
+
+**Ekimin "tohum ucta mı" onayı duruyor** ve durmalı: makinenin tohumu
+gerçekten aldığını doğrulayan tek şey o. Bahçe onu bir soru kutusu olarak
+değil, kuyruk şeridinde tek bir düğme olarak gösteriyor — makine
+bekliyor, kullanıcı beklemiyor.
+
+### Ne gerektiği bir bakışta
+
+* Susayan bitkinin üstünde **damla**, hasadı gelenin üstünde **sepet**.
+  İkisi birden olabiliyor ve ikisi birden görünüyor.
+* Her bitkinin etrafında **türün gerçek yayılma çapı** kadar bir halka;
+  iki halka çakışırsa ikisi de renk değiştiriyor. Kimse milimetre
+  hesaplamıyor.
+* Sulama başlığı Z ekseninin yanında (`sulama_basligi.dx/dy`, bu makinede
+  60 mm), o yüzden kenarda suyun gidemediği bir şerit var. Bu bir hata
+  kutusuyla değil, tahtada **taralı gölge** olarak duruyor; sulama kabını
+  tutunca belirginleşiyor. Kullanıcı yasağı okuyarak değil görerek
+  öğreniyor. Dikim alanının dışı da karartılıyor: toprağın olduğu yer
+  aydınlık.
+* Ekrandaki robot makinenin bildirdiği konumda. Hareket etmiyorsa
+  görünmüyor — süslemek için hareket eklenmedi.
+
+### Görev kartları — hepsi gerçek ölçütten
+
+Bahçeyi açınca bugün ne gerektiğini söylüyor ve **her kart hangi ölçütten
+doğduğunu yazıyor**. Uydurma görev yok; ölçüt yoksa kart da yok.
+
+| Kart | Ölçüt |
+|---|---|
+| Sulama | Tür eşiği açıksa (`sulama_nem_esigi` < %100) ve bitkinin 100 mm yakınında son 24 saatte toprak nemi okuması varsa **ölçülen nem**; yoksa **son sulamadan geçen gün**. Hangisi kullanıldıysa kartta yazıyor. |
+| Hasat | Ekim tarihi **bilinen** bitkilerde `days_to_harvest` doldu mu. Tarih yoksa kart yok — "hasadın geldi" demek uydurma olurdu. |
+| Boş yer | Dikim alanının içinde, yumuşak sınırların içinde ve hiçbir bitkinin yayılım çemberine girmeyen yerler. Önerilen tür, **en son ekilen** tür. |
+
+Nem kanıtı sulama akışının kullandığının aynısı (`sulama.en_yakin_nem`) —
+kopyalanmıyor, çağrılıyor. İkisi ayrışsaydı bahçe "susadı" derken sulama
+"atlandı" derdi.
+
+**Seri sayacı** da uydurma değil ve yeni bir dosya tutmuyor: ekim tarihi,
+sulama damgası ve arşivdeki fotoğrafın tarihi zaten kayıtlı; "o gün
+bahçeye dokunuldu" bu üçünün birleşimi. Bugün henüz bir şey yapılmadıysa
+seri hemen bozulmuyor — saat dokuzda "serin bitti" demek günün kalanını
+yok saymak olurdu.
+
+### Büyüme filmi
+
+Her bitkinin **kendi fotoğraflarından** yapılmış, tohumdan bugüne bir
+filmi var (`sunucu/arsiv.py`).
+
+Kare halkası buna yetmiyor ve yetmemeli: halka kamera başına 12 kare
+tutuyor, amacı "az önce ne gördü". Arşiv ayrı ve seyrek — bitki başına
+günde bir, üst kameranın karesinden **kırpılmış** küçük bir kare. Tam kare
+40–100 KB, kırpılmış kare 5–8 KB: 20 bitki × 120 gün ≈ 17 MB. Tam kare
+saklasaydık 200 MB olurdu.
+
+Üç karar filmi film yapıyor:
+
+* **Pencere sabit.** Kırpma penceresi bitkinin o anki yayılımına göre
+  değil, TÜRÜN OLGUN yayılımına göre (`spread_mm × 1.8`). Yaşa göre
+  büyüyen bir pencerede bitki her karede aynı boyda görünür — yani büyüme
+  filmi büyümeyi göstermez. Sabit pencerede fide küçük başlar ve kareyi
+  doldurur.
+* **Bitki hep ortada.** Pencere kareye sığmıyorsa kaydırılmıyor,
+  küçültülüyor. Kaydırmak daha çok toprak gösterirdi ama bitki köşeye
+  kayar ve film büyüme yerine kayma gösterirdi. Bitki yerinden
+  oynamadığı için küçültülmüş pencere de ömrü boyunca aynı kalıyor.
+* **Film bir EKİME ait, bir ada değil.** Klasör adı `<nokta>_<ekim
+  damgası>`. Hasat edilip aynı ada yeniden ekilen bir yerde eski bitkinin
+  fotoğrafları yeni bitkinin filmine karışırdı; "tohumdan bugüne" demek,
+  "bu koordinatta bugüne kadar" demek değil.
+
+Kareler kendiliğinden birikiyor (sunucuda beş dakikada bir bakılıyor,
+bitki başına en fazla günde bir çekiliyor); "Fotoğraf" düğmesi hem şimdi
+bir kare çekiyor hem filmi açıyor. Makine bunun için hareket etmiyor —
+üst kamera yatağın tamamını zaten görüyor ve filmin tutarlı olması için
+bütün kareler aynı kameradan gelmeli.
+
+Toplam arşiv 80 MB'ı aşarsa en eski kareler siliniyor.
+
+### Dokunmatik ve ısınma
+
+Ekran Raspberry'nin 7" dokunmatiğinde parmakla kullanılıyor: dokunulan
+her şey en az 48 px, halka menü düğmeleri 68 px. Sürükleme gerçek
+işaretçi olaylarıyla, 4 piksel ölü bölgeyle (dokunmatikte parmak hep
+biraz kayıyor; her dokunuş sürükleme sayılırsa tohuma basmak imkânsız).
+
+Alçak ya da dar ekranda görev kartları tek satıra iniyor ve yan yana
+kaydırılıyor; açıklama ve ölçüt kartın `title`ında kalıyor. Tahtanın
+yüksekliği kartların altında **ekranda kalan yere** göre hesaplanıyor —
+sabit bir oran, üç kart varken tahtayı ekranın dışına itiyordu.
+
+Isınma tarafında dört önlem var:
+
+* Canlı zemin **1 kare/sn** (Kamera sekmesi 5 istiyor; toprak o kadar hızlı
+  değişmiyor). Sekmeden çıkınca akış duruyor.
+* Bahçe açıkken **3B sahne çizmiyor** (`Tarla.gorunurluk(false)`).
+* **Sakin mod**: bütün canlandırmayı durduran tek düğme, seçim
+  hatırlanıyor.
+* Sekmeye girerken **bir saniyelik kare süresi ölçülüyor**; tarayıcı
+  yetişemiyorsa sakin moda kendiliğinden geçiliyor ve sebebi yazılıyor.
+  Cihazı çekirdek sayısından tahmin etmedik — aynı Pi'de tarayıcı
+  hızlandırma açık ve kapalıyken arasındaki fark on kat.
+
+Sekme arkaya alınınca (`visibilitychange`) canlandırma da duruyor.
+
 ## Sırada ne var
 
 - [x] Nokta deposu ve "şu noktaya git"
@@ -706,6 +877,7 @@ için işlem açmanın maliyeti önemsiz.
 - [x] Kayıtlı program çalıştırma
 - [x] Kamera görüntüsü
 - [x] 3B tarla tasarımcısı (bitki yerleşimi, yayılım çakışması)
+- [x] Bahçe modu (kullanıcı katmanı, canlı kamera zemini, büyüme filmi)
 - [ ] Zamanlanmış sulama (eşik + saat kuralları)
 - [ ] Uyarı kuralları (nem düşerse bildirim)
 - [ ] Fide durumu takibi (sulandı / hasat edildi — ekim tarihi zaten tutuluyor)
