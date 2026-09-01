@@ -446,9 +446,20 @@ işlemesi gerekiyor. Oturum ayrıca `uc_gereken` (ekimin istediği uç) ve
 `durum` paketine eklenen alanlar: `bolgeler`, `esnetme_acik`, `islem`,
 `uc` (dizi ilerlemesi + takılı uç), `dizi` (program ilerlemesi),
 `kameralar` (sıralı kamera künyeleri: `ad`, `etiket`, `hareketli`, `cihaz`,
-`acik`, `yontem`, `aralik_sn`, `canli`, `hata`). `kamera` tekili hâlâ var ve
-ilk kameranın hâlini taşıyor — tek kameraya göre yazılmış çağrı yerleri
-bozulmasın diye.
+`acik`, `aktif`, `yontem`, `aralik_sn`, `canli`, `canli_var`, `hata`).
+`kamera` tekili hâlâ var ve ilk kameranın hâlini taşıyor — tek kameraya göre
+yazılmış çağrı yerleri bozulmasın diye.
+
+`canli_var` "bu kamera canlı akış yapabiliyor mu" demek; `fswebcam` yolunda
+akış yok. Panel bu bayrak yanlışken "Canlı" düğmesini kapatıyor: basıp hata
+almak, sebebini önceden söylemekten kötü.
+
+Panelin Kamera sekmesi açılırken her kamera için
+`{"ad": "kamera", "arg": {"kamera": "ust", "canli": true, "fps": 5}}`,
+sekmeden çıkarken aynısını `"canli": false` ile yolluyor. Canlı kareler
+**diske yazılmıyor**, sunucunun belleğinde kamera başına son kare olarak
+duruyor (`GET /api/kare/canli?kamera=…`); aralıklı kareler diskteki halkaya
+gitmeye devam ediyor ve canlı açıkken aralıklı döngü duruyor.
 
 İstemciden gönderilebilen tek mesaj basılı-tut jog'u:
 

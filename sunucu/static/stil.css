@@ -1986,6 +1986,12 @@ table.veri.kalib th:nth-child(n+4), table.veri.kalib td:nth-child(n+4) { width: 
 
 /* Çalışan sürüm damgası — günlük şeridinin sağ ucunda, sessiz. */
 .surum-damga {
+  /* SATIR İÇİ DEĞİL. `max-width` satır içi öğelere işlemiyor: şerit kapalıyken
+     kapsayıcı `flex` değil `block` oluyor, damga da satır içi kalıp genişliği
+     ne olursa olsun yazıyordu. Uzun bir sürüm dizisiyle 480 px'lik ekranda
+     487 px yer kaplıyor ve TÜM sayfayı yana kaydırıyordu. */
+  display: inline-block;
+  vertical-align: middle;
   margin-left: auto;
   padding-right: var(--b2);
   font-variant-numeric: tabular-nums;
@@ -1993,7 +1999,11 @@ table.veri.kalib th:nth-child(n+4), table.veri.kalib td:nth-child(n+4) { width: 
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 46ch;
+  /* `46ch` tek başına dar ekranda sayfayı yatay kaydırtıyordu: damga uzun
+     bir sürüm dizisi aldığında 480 px'lik ekranda 487 px yer kaplıyor ve
+     TÜM sayfa yana kayıyordu. Sürüm damgası için ödenecek bedel değil. */
+  max-width: min(46ch, 100%);
+  min-width: 0;
 }
 .serit-ic { display: flex; align-items: center; }
 .serit-ic > #d-gunluk-ac { flex: 0 0 auto; }
@@ -2402,4 +2412,125 @@ input.hatali {
 .etkisiz {
   opacity: .45;
   pointer-events: none;
+}
+
+/* ===================================================== KAMERA SEKMESİ
+   İki kamera YAN YANA ve ikisi de canlı. Sol yarı sabit üst kamera, sağ
+   yarı uç kamerası.
+
+   SAYFA TAM GENİŞLİK. Öteki sekmeler sol panelin dar sütununda duruyor
+   (--sol-en); iki canlı görüntüyü oraya sıkıştırmak yarım yarım iki küçük
+   kare demekti ve "ikisini de net göreyim" isteğinin tam tersi. Kamera
+   sekmesi açıkken panel kabuğun tamamını kaplıyor. Sahne arkada duruyor,
+   kirli bayrağı sayesinde hiçbir şey çizmiyor. */
+body.kamera-sekmesi .yuzen.sol {
+  width: auto;
+  grid-column: 1 / -1;
+}
+/* SAHNE MOBİLYASI BU SEKMEDE GİZLİ. Araç çubuğu, yüzen kamera kutuları,
+   profil ve toplu işlem çubuğu 3B sahnenin denetimleri; kamera sayfası
+   kabuğun tamamını kapladığı için altta kalan sahneye ait bu parçalar
+   görüntülerin ÜSTÜNDE duruyor ve sağdaki kameranın düğmelerini
+   kapatıyordu. Yüzen kutular ayrıca aynı yayının ikinci kopyası —
+   burada gösterecek bir şeyleri yok. */
+body.kamera-sekmesi .sahne-cubuk,
+body.kamera-sekmesi .kamera-yuzen,
+body.kamera-sekmesi .profil,
+body.kamera-sekmesi .toplu-cubuk { display: none; }
+
+/* auto-fit: geniş ekranda iki sütun, Raspberry'nin küçük ekranında tek
+   sütun (alt alta). 300 px, görüntünün hâlâ okunur kaldığı en dar yarı. */
+.kam-tahta {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: var(--b3);
+  align-items: start;
+}
+
+.kam-yari {
+  display: flex;
+  flex-direction: column;
+  gap: var(--b2);
+  background: var(--kart);
+  border-radius: var(--yaricap);
+  padding: var(--b3);
+  min-width: 0;
+}
+.kam-yari-bas {
+  display: flex;
+  align-items: center;
+  gap: var(--b2);
+  min-width: 0;
+}
+.kam-yari-ad {
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* Durum rozeti: akıyor / açık / kapalı — tek bakışta. */
+.kam-rozet {
+  font-size: var(--yazi-kucuk);
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--gomulu);
+  color: var(--ikincil);
+  white-space: nowrap;
+}
+.kam-rozet.canli { background: rgba(90, 200, 120, .18); color: var(--iyi); }
+.kam-rozet.kapali { background: var(--gomulu); color: var(--ikincil); }
+/* Donmuş ekran yeşil OLMAMALI: görüntü ilerlemiyor, "canlı" ile aynı renk
+   olsa bakan kişi akan bir görüntüye baktığını sanırdı. */
+.kam-rozet.donuk { background: rgba(230, 175, 70, .18); color: var(--uyari, #e6af46); }
+.kam-rozet.hata { background: rgba(226, 86, 74, .18); color: var(--kotu); }
+
+/* Görüntü kutusu — kutuların çizildiği katmanların konum atası. Oran
+   sabit (4:3): kare gelmeden de yer kaplasın, gelince yerleşim zıplamasın. */
+.kam-yari-goruntu {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  background: #0d100e;
+  border-radius: var(--yaricap-kucuk);
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.kam-yari-goruntu img[data-rol="kare"] {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
+.kam-yari-goruntu .bos-durum { margin: 0; text-align: center; padding: var(--b3); }
+
+.kam-yari-ayar { margin-top: var(--b1); }
+.kam-yari-ayar > summary {
+  cursor: pointer;
+  font-size: var(--yazi-kucuk);
+  color: var(--ikincil);
+  padding: var(--b1) 0;
+}
+.kam-yari-ayar[open] > summary { color: var(--metin); }
+
+/* Kalibrasyon bölümü bir yarının içine taşındığında kart içinde kart
+   görünmesin: kendi zeminini bırakıyor. */
+.kam-yari-ayar #bolum-kamera-kalib {
+  background: none;
+  padding: 0;
+  margin-top: var(--b2);
+}
+
+@media (max-width: 900px) {
+  /* Dar ekranda yarılar zaten alt alta; görüntüyü de biraz kısaltıyoruz ki
+     ikinci kamera için kaydırma yolu kısalsın. */
+  .kam-yari-goruntu { aspect-ratio: 3 / 2; }
+
+  /* SAHNE ŞERİDİ BU SEKMEDE GİZLİ. Dar ekranda 3B sahne panelin ÜSTÜNDE
+     bir şerit olarak akışta duruyor ve Raspberry'nin 800x480 ekranında
+     yüksekliğin yarısını yiyordu — kamera sayfasına gelen kişi kameraya
+     bakmaya geliyor. Geniş ekranda sahne zaten panelin altında kalıyor,
+     orada gizlemeye gerek yok. */
+  body.kamera-sekmesi .sahne-alan { display: none; }
 }

@@ -293,6 +293,11 @@ class Kamera:
         içinden çağırmak cihazı sürekli kilitler. Burada yalnızca aracın
         kurulu olup olmadığına bakmak yeterli.
         """
+        # SAHTE KAMERA DA AKIYOR. Donanımsız denemenin bütün anlamı panelin
+        # gerçek davranışını sınayabilmek; "canlı" panelin en pahalı yolu ve
+        # sahte kamerada denenemiyorsa hiç denenmiyor demektir.
+        if self.ayar.get("sahte") or self._yontem == "sahte":
+            return True
         if self._yontem in ("picamera2", "rpicam", "libcamera", "ffmpeg"):
             return True
         if self._yontem == "fswebcam":
@@ -334,20 +339,53 @@ class Kamera:
             # in use" hatasına yol açıyordu.
             self._picam_kapat()
 
+    def mjpeg_verebilir_mi(self, cihaz: str) -> bool:
+        """USB kamera MJPEG'i KENDİSİ üretebiliyor mu?
+
+        Neden önemli: üretebiliyorsa ffmpeg akışı olduğu gibi geçiriyor
+        (`-c:v copy`) ve Pi hiçbir kareyi yeniden sıkıştırmıyor. Aksi hâlde
+        ham YUYV geliyor ve her kareyi ffmpeg JPEG'e çeviriyor — iki kamera
+        birden akarken bu, bir çekirdeği tek başına doldurabiliyor.
+
+        Sormanın bedeli tek bir kısa işlem, ve YALNIZ akış açılırken bir kez.
+        Cevap alınamazsa ham yola düşüyoruz: çalışmama riskini almıyoruz.
+        """
+        if not shutil.which("ffmpeg"):
+            return False
+        try:
+            sonuc = subprocess.run(
+                ["ffmpeg", "-hide_banner", "-f", "v4l2",
+                 "-list_formats", "all", "-i", cihaz],
+                capture_output=True, timeout=6)
+        except (OSError, subprocess.SubprocessError):
+            return False
+        # `-list_formats` bilgiyi stderr'e yazıyor ve sonunda "hata" ile
+        # çıkıyor; dönüş kodu anlamlı değil, çıktı anlamlı.
+        cikti = (sonuc.stderr or b"").decode("utf-8", "replace").lower()
+        return "mjpeg" in cikti
+
     def _canli_komutu(self) -> list[str]:
         genislik = int(self.ayar["genislik"])
         yukseklik = int(genislik * 3 / 4)
         if self._yontem in ("fswebcam", "ffmpeg"):
             # USB kamera: ffmpeg v4l2'den okuyup stdout'a MJPEG basıyor.
-            # `-input_format mjpeg` YAZMIYORUZ: kamera desteklemiyorsa ffmpeg
-            # hiç açılmıyor. Ham kareyi ffmpeg'in sıkıştırması bir çekirdeği
-            # meşgul ediyor ama çalışmama riskini almıyor.
             cihaz = self.cihaz_coz(zorla=True)
             if not cihaz:
                 raise RuntimeError(self.cihaz_not or "USB kamera bulunamadı")
-            return ["ffmpeg", "-hide_banner", "-loglevel", "error",
-                    "-f", "v4l2", "-video_size", f"{genislik}x{yukseklik}",
-                    "-i", cihaz, "-f", "mjpeg", "-q:v", "5", "-"]
+            temel = ["ffmpeg", "-hide_banner", "-loglevel", "error", "-f", "v4l2"]
+            if self.mjpeg_verebilir_mi(cihaz):
+                # KAMERA ZATEN JPEG VERİYOR: kopyalayıp geçiyoruz, Pi hiçbir
+                # kareyi yeniden sıkıştırmıyor. İki kamera birden akarken
+                # aradaki fark bir çekirdek.
+                self.gunluk_cb(f"[{self.etiket}] MJPEG doğrudan geçiliyor "
+                               "(yeniden sıkıştırma yok)", "bilgi")
+                return temel + ["-input_format", "mjpeg",
+                                "-video_size", f"{genislik}x{yukseklik}",
+                                "-i", cihaz, "-c:v", "copy", "-f", "mjpeg", "-"]
+            self.gunluk_cb(f"[{self.etiket}] kamera MJPEG vermiyor; kareler "
+                           "Pi'de sıkıştırılacak (daha çok CPU)", "uyari")
+            return temel + ["-video_size", f"{genislik}x{yukseklik}",
+                            "-i", cihaz, "-f", "mjpeg", "-q:v", "5", "-"]
         arac = "rpicam-vid" if shutil.which("rpicam-vid") else "libcamera-vid"
         return [arac, "-n", "-t", "0", "--codec", "mjpeg",
                 "--width", str(genislik), "--height", str(yukseklik),
@@ -400,9 +438,17 @@ class Kamera:
                            "desteklenmiyor; picamera2 ya da rpicam gerekiyor")
         # Periyodik kare döngüsü ile canlı akış AYNI cihazı açamaz. Canlı
         # açılırken periyodik döngü duruyor, kapanınca geri geliyor.
+        #
+        # YÖNTEMİ ÖNCE SAKLIYORUZ. `durdur()` `_yontem`i sıfırlıyor (cihazı
+        # bırakırken doğrusu bu), ama akış üreticisi tam da ona bakıp
+        # seçiliyor. Saklamadan çağırınca picamera2 kamerası rpicam-vid ile
+        # akmaya çalışıyordu — yani periyodik döngü açıkken "Canlı"ya basmak
+        # ile kapalıyken basmak farklı yollara gidiyordu.
+        yontem = self._yontem
         self._periyodik_geri = self._calisiyor
         if self._calisiyor:
             self.durdur()
+        self._yontem = yontem
         self._canli = True
         self._canli_fps = max(1.0, min(15.0, float(fps)))
         # İş parçacığı SAKLANIYOR: kapatırken bitmesini beklememiz gerekiyor,
@@ -422,8 +468,22 @@ class Kamera:
             self.ac()
         return True, "Canlı akış kapatıldı"
 
+    def _canli_sahte(self):
+        """Sahte kameranın akışı — donanımsız denemenin canlı hâli.
+
+        Gerçek yollar gibi bir üretici: `_canli_dongu` hız sınırını kendisi
+        uyguluyor, burası yalnız istendikçe kare üretiyor. Saat kareye
+        yazıldığı için akışın gerçekten aktığı ekranda görülüyor.
+        """
+        while self._canli:
+            yield self._sahte_kare()
+            # Üretim ucuz; döngüyü tamamen boşa döndürmemek için istenen
+            # hızın biraz üstünde bir tempoda duruyoruz.
+            time.sleep(max(0.02, 1.0 / max(1.0, self._canli_fps) / 2))
+
     def _canli_dongu(self) -> None:
-        uretici = (self._canli_picamera2 if self._yontem == "picamera2"
+        uretici = (self._canli_sahte if self._yontem == "sahte"
+                   else self._canli_picamera2 if self._yontem == "picamera2"
                    else self._canli_rpicam)
         en_az_ara = 1.0 / self._canli_fps
         son = 0.0

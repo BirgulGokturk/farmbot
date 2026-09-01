@@ -62,6 +62,7 @@
         <button data-sayfa="izle" class="etkin">İzle</button>
         <button data-sayfa="sur">Sür</button>
         <button data-sayfa="tarla">Tarla</button>
+        <button data-sayfa="kamera">Kamera</button>
         <button data-sayfa="otomasyon">Otomasyon</button>
         <button data-sayfa="ayarlar">Ayarlar</button>
       </nav>
@@ -304,106 +305,11 @@
       </section>
 
       <!-- 3. KAMERA — katlı başlıyor. -->
-      <section class="bolum kapali" id="bolum-kamera">
-        <div class="bolum-ust">
-          <button class="bolum-bas" aria-expanded="false">
-            <svg class="ikon ok"><use href="#i-ok"/></svg>
-            <span class="bolum-ad">Kamera</span>
-            <span class="bolum-not" id="kamera-durum">—</span>
-          </button>
-          <button class="yardim" type="button" aria-expanded="false"
-                  aria-controls="yardim-kamera" aria-label="Açıklama">?</button>
-        </div>
-        <div class="bolum-govde">
-          <p class="yardim-metin gizli" id="yardim-kamera">
-            Birden çok kamera var. Yukarıdaki şerit hangi kamerayı
-            <b>ayarladığınızı</b> seçer; bu karttaki anahtar, aralık, canlı ve
-            çözümle düğmeleri hep <i>seçili</i> kameraya işler. İkisini aynı
-            anda <b>izlemek</b> için "sahnede" düğmeleriyle yüzen kutuları
-            açın — her kutu kendi başına sürüklenir, kendi boyutunu hatırlar
-            ve ayrı ayrı kapanır. Bir kamera kapalıyken ya da arızalıyken
-            öteki çalışmaya devam eder.<br><br>
-            Anahtar kamerayı <b>o an</b> açıp kapatır. Cihaz, çözünürlük ve
-            varsayılan aralık gibi kalıcı tanımlar <b>Ayarlar → Kameralar</b>
-            bölümünde; oradan kaydedilenler ajanda
-            <code>kameralar.json</code> dosyasına yazılır.<br><br>
-            <b>Aralık</b> kaç saniyede bir kare alınacağını söyler. <b>5 sn</b>
-            canlıya en yakın olanı — gerçek bir video akışı değil, art arda
-            kare. Kamera bu hızı taşıyamıyorsa kareler daha seyrek gelir ve
-            sebebi günlüğe yazılır. Kısa aralık Pi'yi sürekli meşgul eder,
-            bitkileri izlemek için <b>1 saat</b> yeterli.<br><br>
-            Sunucu son 12 kareyi saklıyor: 5 saniyede bir seçilirse bu son
-            bir dakika demek.
-          </p>
-          <!-- HANGİ KAMERA. Bu karttaki her denetim (anahtar, aralık,
-               canlı, çözümle, eşik) SEÇİLİ kameraya işliyor. Kameraları
-               aynı anda İZLEMEK için sahnedeki yüzen kutular var; burası
-               "bir kamerayı ayarlamak" yeri.
-               Tek kamera varsa şerit hiç görünmüyor. -->
-          <div class="araclar kam-sekmeler gizli" id="kamera-sekmeler"
-               role="group" aria-label="Kamera seçimi"></div>
-          <label class="anahtar">
-            <input type="checkbox" id="a-kamera">
-            <span class="yuva"></span>
-            <span class="ikincil">Kamerayı aç</span>
-          </label>
-          <div class="araclar" role="group" aria-label="Kare aralığı">
-            <button class="ikon-dugme kamera-aralik" data-saniye="5">5 sn</button>
-            <button class="ikon-dugme kamera-aralik" data-saniye="3600">1 saat</button>
-            <span class="esnek"></span>
-            <button class="ikon-dugme" id="d-kamera-canli">Canlı</button>
-          </div>
-          <!-- Her kamera SAHNEDE AYRI AÇILIP KAPANIYOR: biri kapalıyken
-               öteki görünmeye devam ediyor. Düğmeler kamera listesinden
-               üretiliyor. -->
-          <div class="araclar" id="kamera-goster" role="group"
-               aria-label="Sahnede göster"></div>
-
-          <!-- TEK TUŞLA ÇÖZÜMLEME. Görüntü bölümündeki tam donanımlı
-               çözümleyicinin AYNI uç noktasını (`/api/goruntu/coz`)
-               kullanıyor — ikinci bir hat yok. Buradaki fark yalnız
-               sunum: sonuç listesi yerine karenin ÜSTÜNE kutu.
-               Eşik burada da var, çünkü maskeye bakıp eşiği ayarlamak
-               tek bir işin iki yarısı; ayrı bölüme gidip gelmek o
-               döngüyü kırıyordu. -->
-          <div class="araclar" role="group" aria-label="Karede çözümleme">
-            <button class="ikon-dugme" id="d-kamera-coz"
-                    title="Karedeki yeşili bul ve görüntünün üstüne çiz">Çözümle</button>
-            <button class="ikon-dugme" id="d-kamera-maske" aria-pressed="false"
-                    title="Neyin bitki sayıldığını göster">Maske</button>
-            <span class="esnek"></span>
-            <label class="kam-esik" title="Yeşillik eşiği — boş bırakılırsa varsayılan">
-              eşik
-              <input type="number" id="kamera-esik" step="0.01" min="0" max="1"
-                     placeholder="0.12" inputmode="decimal">
-            </label>
-          </div>
-
-          <!-- Görüntü ve ÜSTÜNDEKİ katman. Kutular resmin kendisine
-               değil bu katmana çiziliyor: kare yenilendiğinde katman
-               boşaltılıyor ve eski kutular yeni görüntünün üstünde
-               asılı kalmıyor. -->
-          <div id="kamera-kutu">
-            <p class="bos-durum" id="kamera-yok">Henüz kare gelmedi.<br>
-              Kamerayı yukarıdaki anahtarla açın; ilk kare birkaç saniye
-              içinde düşer.</p>
-            <img id="kamera-kare" class="gizli" alt="Kamera görüntüsü">
-            <img id="kamera-maske-im" class="kam-maske gizli" alt="">
-            <div id="kamera-ortu" class="kam-ortu" aria-hidden="true"></div>
-          </div>
-          <div class="kam-not gizli" id="kamera-coz-not"></div>
-          <div class="ikincil sayi" id="kamera-zaman"></div>
-
-          <!-- AI HAT (Hailo). Kamera bölümünün altında, çünkü aynı kareyi
-               tüketiyor — ama AYRI bir iş parçacığında: çıkarım yavaşlarsa
-               ya da kilitlenirse kamera etkilenmiyor. `düşen` sayacı
-               sorunu fark etmenin en hızlı yolu, normalde sıfır. -->
-          <div id="hailo-kutu" class="gizli">
-            <div class="ikincil" id="hailo-durum"></div>
-            <div class="rozet-uyari gizli" id="hailo-uyari"></div>
-          </div>
-        </div>
-      </section>
+      <!-- KAMERA BÖLÜMÜ BURADAN TAŞINDI. Kameranın her şeyi (görüntü,
+           aç/kapa, canlı, çözünürlük, cihaz, kalibrasyon) artık üstteki
+           "Kamera" sekmesinde ve her kamera KENDİ yarısında duruyor.
+           Aynı ayarın iki yerde durup birbiriyle çelişmesini istemiyoruz;
+           o yüzden burada bir kopya BIRAKMIYORUZ. -->
 
       <!-- 4. SON ÖLÇÜMLER — grafikteki aynı veri, sayı olarak. Katlı. -->
       <section class="bolum kapali" id="bolum-tablo">
@@ -880,6 +786,223 @@
     <!-- ============================== OTOMASYON =============================
          Programlar hep açık (asıl iş), eğriler ve otomatik sulama katlı:
          ikisi de kurulup bırakılan şeyler. -->
+    <!-- ============================== KAMERA ==============================
+         İKİ KAMERA YAN YANA, İKİSİ DE CANLI.
+         Solda sabit üst kamera (yatağın tamamı), sağda uç kamerası (yakın
+         plan). Bu sayfa açıkken ikisi de canlı akışa alınıyor, sayfadan
+         çıkınca ikisi de durduruluyor — canlı akış panelin en pahalı yolu
+         ve kimse bakmıyorken Pi'yi meşgul etmesinin sebebi yok.
+
+         YERLEŞİM: `auto-fit` ızgara. Geniş ekranda iki sütun, Raspberry'nin
+         küçük ekranında bir sütun (alt alta). Yarı genişliği 300 px'in
+         altına düşerse ızgara kendiliğinden tek sütuna geçiyor.
+
+         AYARLAR BURADA TOPLANDI. Çözünürlük, cihaz seçimi, aç/kapa, kare
+         aralığı ve kalibrasyon Ayarlar'dan buraya taşındı; her kameranın
+         ayarı KENDİ yarısının altında. Kopya bırakılmadı. -->
+    <section class="sayfa" id="sayfa-kamera">
+      <div class="kam-tahta" id="kam-tahta"></div>
+
+      <!-- KALİBRASYON TEK KOPYA. Kalibre edilen kameranın yarısının altına
+           TAŞINIYOR (aynı öğe, `appendChild` ile); iki kopya açmak aynı
+           id'leri ikiye katlar ve hangisinin geçerli olduğunu bilinmez
+           yapardı. Hiçbir yarı seçili değilken burada duruyor. -->
+      <div id="kam-kalib-yuva">
+      <section class="bolum kapali" id="bolum-kamera-kalib">
+        <div class="bolum-ust">
+          <button class="bolum-bas" aria-expanded="false">
+            <svg class="ikon ok"><use href="#i-ok"/></svg>
+            <span class="bolum-ad">Kamera kalibrasyonu</span>
+            <span class="bolum-not" id="kalib-durum"></span>
+          </button>
+          <button class="yardim" type="button" aria-expanded="false"
+                  aria-controls="yardim-kalib" aria-label="Açıklama">?</button>
+        </div>
+        <div class="bolum-govde">
+          <p class="yardim-metin gizli" id="yardim-kalib">
+            Kamera uç kafasında; her kare çekildiği eksen konumuyla saklanıyor.
+            Kareyi haritanın doğru yerine, doğru ölçekte ve açıda koyabilmek
+            için bir pikselin kaç mm olduğunu ve kameranın makine eksenine
+            göre açısını bilmek gerekiyor.<br><br>
+            <b>İki kare yöntemi</b> bunları kendisi hesaplıyor: makineyi
+            bilinen bir mesafe oynatıp iki kare çekiyorsunuz, her iki karede de
+            <i>aynı</i> toprak parçasına tıklıyorsunuz. Piksel farkı ile mm
+            farkı hem ölçeği hem açıyı veriyor. En az 20 mm hareket ve 12
+            piksel fark gerekiyor — daha azı gürültüye karışıyor.<br><br>
+            <b>Kayma</b> kamera merkezinin uç ucundan ne kadar uzakta
+            olduğudur; kareyi haritada kaydırır, elle girilir.<br><br>
+            <b>mm/piksel her kamera için AYRIDIR.</b> Uç kamerası yatağa
+            yakın, sabit kamera uzaktan tümünü görüyor; aynı sayıyı ikisine
+            birden uygulamak ölçüleri kat kat yanlış yapar ve yanlış olduğu
+            belli olmaz. Bu yüzden kalibrasyon kamera başına saklanıyor ve
+            çözümleme, karenin geldiği kameranın sayısını kullanıyor.<br><br>
+            <b>Sabit kamerada iki kare yöntemi çalışmaz</b>: makine
+            oynadığında sabit kameranın gördüğü sahne değişmiyor, aradaki
+            piksel farkı sıfır. Onun yerine <b>ölçek yöntemi</b> var —
+            karede uzunluğu bilinen bir şeyin (cetvel, yatak kenarı, iki
+            tepsi gözü arası) iki ucunu işaretleyip gerçek mesafesini
+            yazıyorsunuz. Yalnız ölçek çıkıyor; açı ve konum çıkmıyor,
+            çünkü o karenin makine koordinatı yok.
+          </p>
+
+          <div class="araclar kam-sekmeler gizli" id="kalib-sekmeler"
+               role="group" aria-label="Kalibre edilecek kamera"></div>
+          <p class="ikincil" id="kalib-kamera-not"></p>
+
+          <div class="satir-8 alt-hizali">
+            <div class="alan"><label for="kalib-mmpx">mm / piksel</label>
+              <input type="number" id="kalib-mmpx" step="0.001" min="0" max="20" value="0"></div>
+            <div class="alan"><label for="kalib-donme">Açı (°)</label>
+              <input type="number" id="kalib-donme" step="0.1" min="-180" max="180" value="0"></div>
+          </div>
+          <div class="satir-8 alt-hizali">
+            <div class="alan"><label for="kalib-ofx">Kayma X (mm)</label>
+              <input type="number" id="kalib-ofx" step="0.5" min="-500" max="500" value="0"></div>
+            <div class="alan"><label for="kalib-ofy">Kayma Y (mm)</label>
+              <input type="number" id="kalib-ofy" step="0.5" min="-500" max="500" value="0"></div>
+          </div>
+          <div class="satir-8">
+            <label class="onay"><input type="checkbox" id="kalib-ayna-x"> Yatay ayna</label>
+            <label class="onay"><input type="checkbox" id="kalib-ayna-y"> Dikey ayna</label>
+            <span class="esnek"></span>
+            <button class="dugme birincil" id="d-kalib-kaydet">Kaydet</button>
+          </div>
+
+          <h4 class="alt-baslik" id="kalib-yontem-bas">İki kare ile hesapla</h4>
+          <p class="ikincil" id="kalib-yonerge">
+            1. Makineyi bir yere götürün, kare gelsin, aşağıda bir toprak
+            parçasına tıklayın. 2. Makineyi en az 20 mm oynatın, yeni kare
+            gelsin, <i>aynı</i> yere tıklayın.
+          </p>
+          <div class="kalib-tuval-kutu">
+            <img id="kalib-kare" alt="Son kamera karesi">
+            <canvas id="kalib-tuval"></canvas>
+          </div>
+          <div class="satir-8 alt-hizali" id="kalib-ikikare-araclar">
+            <button class="dugme" id="d-kalib-kare1">1. kareyi işaretle</button>
+            <button class="dugme" id="d-kalib-kare2">2. kareyi işaretle</button>
+            <button class="dugme" id="d-kalib-temizle">Sıfırla</button>
+          </div>
+          <!-- SABİT KAMERANIN YOLU. Aynı tuval, farklı anlam: iki işaret
+               aynı karede ve aralarındaki GERÇEK mesafe elle giriliyor. -->
+          <div class="satir-8 alt-hizali gizli" id="kalib-olcek-araclar">
+            <button class="dugme" id="d-kalib-olcek1">1. ucu işaretle</button>
+            <button class="dugme" id="d-kalib-olcek2">2. ucu işaretle</button>
+            <div class="alan"><label for="kalib-olcek-mm">Gerçek mesafe (mm)</label>
+              <input type="number" id="kalib-olcek-mm" step="1" min="50"
+                     placeholder="örn. 500"></div>
+            <button class="dugme birincil" id="d-kalib-olcek-hesapla">Hesapla</button>
+            <button class="dugme" id="d-kalib-olcek-temizle">Sıfırla</button>
+          </div>
+          <div id="kalib-sonuc" class="gomulu gizli"></div>
+        </div>
+      </section>
+      </div>
+
+      <!-- AI HAT (Hailo). Kameranın altında, çünkü aynı kareyi tüketiyor —
+           ama AYRI bir iş parçacığında: çıkarım yavaşlarsa ya da
+           kilitlenirse kamera etkilenmiyor. `düşen` sayacı sorunu fark
+           etmenin en hızlı yolu, normalde sıfır. -->
+      <section class="bolum kapali gizli" id="bolum-hailo">
+        <div class="bolum-ust">
+          <button class="bolum-bas" aria-expanded="false">
+            <svg class="ikon ok"><use href="#i-ok"/></svg>
+            <span class="bolum-ad">AI HAT (Hailo)</span>
+            <span class="bolum-not" id="hailo-durum">—</span>
+          </button>
+        </div>
+        <div class="bolum-govde">
+          <div id="hailo-kutu">
+            <div class="rozet-uyari gizli" id="hailo-uyari"></div>
+          </div>
+        </div>
+      </section>
+
+      <datalist id="kam-cihaz-listesi"></datalist>
+      <p class="ikincil" id="kam-cihaz-not"></p>
+    </section>
+
+    <!-- Bir kameranın yarısı: görüntü + o kameraya ait HER ŞEY. Kamera
+         sayısı ayardan geldiği için şablondan üretiliyor; içeride id
+         yerine `data-rol` var (iki kopya id'leri tekrarlayamaz). -->
+    <template id="kam-yari-sablon">
+      <section class="kam-yari">
+        <header class="kam-yari-bas">
+          <span class="kam-yari-ad" data-rol="ad">Kamera</span>
+          <span class="kam-rozet" data-rol="rozet">—</span>
+          <span class="esnek"></span>
+          <span class="ikincil sayi" data-rol="fps"></span>
+        </header>
+
+        <!-- Görüntü ve ÜSTÜNDEKİ katman. Kutular resmin kendisine değil
+             bu katmana çiziliyor: kare yenilenince katman boşaltılıyor ve
+             eski kutular yeni görüntünün üstünde asılı kalmıyor. -->
+        <div class="kam-yari-goruntu">
+          <p class="bos-durum" data-rol="yok">Kare bekleniyor…</p>
+          <img data-rol="kare" class="gizli" alt="Kamera görüntüsü">
+          <img data-rol="maske-im" class="kam-maske gizli" alt="">
+          <div data-rol="ortu" class="kam-ortu" aria-hidden="true"></div>
+        </div>
+        <div class="kam-not gizli" data-rol="not"></div>
+        <div class="ikincil sayi" data-rol="zaman"></div>
+
+        <div class="araclar">
+          <label class="anahtar">
+            <input type="checkbox" data-rol="acik">
+            <span class="yuva"></span>
+            <span class="ikincil">Açık</span>
+          </label>
+          <button class="ikon-dugme" data-rol="canli"
+                  title="Canlı akış — bu sayfa açıkken kendiliğinden açılıyor">Canlı</button>
+          <!-- İzle sahnesindeki yüzen kutuyu gizleyip geri açan tek yer.
+               Kutunun kendi × düğmesi gizliyor; geri açacak bir yer
+               olmasaydı kapatmak geri dönülmez olurdu. -->
+          <button class="ikon-dugme" data-rol="sahnede" aria-pressed="true"
+                  title="İzle sahnesinde yüzen kutu olarak göster">Sahnede</button>
+          <span class="esnek"></span>
+          <button class="ikon-dugme" data-rol="coz"
+                  title="Karedeki yeşili bul ve görüntünün üstüne çiz">Çözümle</button>
+          <!-- Çözümleme ekrandayken kare donuyor (yoksa canlı akışta bir
+               sonraki kare kutuları silerdi). Buradan akışa dönülüyor. -->
+          <button class="ikon-dugme gizli" data-rol="coz-kapat"
+                  title="Çözümlemeyi kaldır, canlı akışa dön">Akışa dön</button>
+          <button class="ikon-dugme" data-rol="maske" aria-pressed="false"
+                  title="Neyin bitki sayıldığını göster">Maske</button>
+          <label class="kam-esik" title="Yeşillik eşiği — boş bırakılırsa varsayılan">
+            eşik
+            <input type="number" data-rol="esik" step="0.01" min="0" max="1"
+                   placeholder="0.12" inputmode="decimal">
+          </label>
+        </div>
+        <div class="araclar" role="group" aria-label="Kare aralığı">
+          <span class="ikincil">Canlı kapalıyken kare aralığı:</span>
+          <button class="ikon-dugme kam-aralik" data-saniye="5">5 sn</button>
+          <button class="ikon-dugme kam-aralik" data-saniye="60">1 dk</button>
+          <button class="ikon-dugme kam-aralik" data-saniye="3600">1 saat</button>
+        </div>
+
+        <!-- O KAMERANIN AYARLARI. Tanım kartı buraya çiziliyor. -->
+        <details class="kam-yari-ayar" data-rol="ayar-kutu">
+          <summary>Ayarlar — cihaz, çözünürlük, kalibrasyon</summary>
+          <div data-rol="ayar"></div>
+          <div class="satir-8 alt-hizali">
+            <button class="dugme" data-rol="cihazlar" type="button">
+              Bağlı cihazları tara</button>
+            <span class="esnek"></span>
+            <button class="dugme" data-rol="geri" type="button">Geri al</button>
+            <button class="dugme birincil" data-rol="kaydet" type="button">Kaydet</button>
+          </div>
+          <div class="uyari-kutu gizli" data-rol="hata"></div>
+          <div class="satir-8 alt-hizali">
+            <span class="ikincil" data-rol="kalib-ozet"></span>
+            <span class="esnek"></span>
+            <button class="dugme" data-rol="kalib" type="button">
+              Kalibrasyonu buraya getir</button>
+          </div>
+        </details>
+      </section>
+    </template>
+
     <section class="sayfa" id="sayfa-otomasyon">
 
       <section class="bolum" id="bolum-program">
@@ -1438,146 +1561,12 @@
         </div>
       </section>
 
-      <!-- KAMERA TANIMLARI. Her kamera AYRI tanımlanıyor: kendi cihazı,
-           kendi çözünürlüğü, kendi kare aralığı. Bir kameranın ayarını
-           değiştirmek ötekine dokunmuyor. -->
-      <section class="bolum kapali" id="bolum-kameralar">
-        <div class="bolum-ust">
-          <button class="bolum-bas" aria-expanded="false">
-            <svg class="ikon ok"><use href="#i-ok"/></svg>
-            <span class="bolum-ad">Kameralar</span>
-            <span class="bolum-not" id="kameralar-durum"></span>
-          </button>
-          <button class="yardim" type="button" aria-expanded="false"
-                  aria-controls="yardim-kameralar" aria-label="Açıklama">?</button>
-        </div>
-        <div class="bolum-govde">
-          <p class="yardim-metin gizli" id="yardim-kameralar">
-            <b>Cihaz adı</b> ile <b>cihaz yolu</b> arasındaki fark önemli.
-            USB kameranın <code>/dev/videoN</code> numarası, kamera çıkarılıp
-            takılınca ya da Pi yeniden başlayınca <i>değişebiliyor</i>. Adı
-            değişmiyor. Bu yüzden yolu sabit yazmak yerine adının bir
-            parçasını yazın (örneğin <code>USB Camera</code>); sistem her
-            açılışta cihazı adından buluyor. Yol alanı yalnızca ad
-            bulunamazsa kullanılan yedek.<br><br>
-            <b>Hareketli</b> işareti, kameranın uç kafasıyla birlikte gidip
-            gitmediğini söylüyor. Hareketli kamerada karenin çekildiği X/Y
-            biliniyor ve karedeki bir leke yatak koordinatına çevrilebiliyor.
-            Sabit kamerada bu yok: makinenin o anki konumu, sabit kameranın
-            karesinin neresini gösterdiği hakkında hiçbir şey söylemiyor.
-            O yüzden sabit kameranın karelerine makine konumu
-            <i>yazılmıyor</i> ve o kareden yatak koordinatı çıkarılmıyor.<br><br>
-            <b>Yol</b>: <code>pi</code> şerit kablodaki kamera modülü
-            (picamera2 / rpicam), <code>usb</code> USB webcam
-            (fswebcam / ffmpeg), <code>oto</code> sırayla dener.
-            <code>rpicam-still</code> USB kamerayı sürmüyor — USB kamerada
-            <code>usb</code> seçin.<br><br>
-            Bir kamera kapalıyken ya da arızalıyken diğeri çalışmaya
-            devam ediyor: her kameranın kendi iş parçacığı var.
-          </p>
-          <div id="kam-ayar-liste"></div>
-          <datalist id="kam-cihaz-listesi"></datalist>
-          <div class="satir-8 alt-hizali">
-            <button class="dugme" id="d-kam-cihazlar" type="button">
-              Bağlı cihazları tara</button>
-            <span class="esnek"></span>
-            <button class="dugme" id="d-kam-geri" type="button">Geri al</button>
-            <button class="dugme birincil" id="d-kam-kaydet" type="button">Kaydet</button>
-          </div>
-          <div class="uyari-kutu gizli" id="kam-ayar-hata"></div>
-          <p class="ikincil" id="kam-cihaz-not"></p>
-        </div>
-      </section>
-
-      <section class="bolum kapali" id="bolum-kamera-kalib">
-        <div class="bolum-ust">
-          <button class="bolum-bas" aria-expanded="false">
-            <svg class="ikon ok"><use href="#i-ok"/></svg>
-            <span class="bolum-ad">Kamera kalibrasyonu</span>
-            <span class="bolum-not" id="kalib-durum"></span>
-          </button>
-          <button class="yardim" type="button" aria-expanded="false"
-                  aria-controls="yardim-kalib" aria-label="Açıklama">?</button>
-        </div>
-        <div class="bolum-govde">
-          <p class="yardim-metin gizli" id="yardim-kalib">
-            Kamera uç kafasında; her kare çekildiği eksen konumuyla saklanıyor.
-            Kareyi haritanın doğru yerine, doğru ölçekte ve açıda koyabilmek
-            için bir pikselin kaç mm olduğunu ve kameranın makine eksenine
-            göre açısını bilmek gerekiyor.<br><br>
-            <b>İki kare yöntemi</b> bunları kendisi hesaplıyor: makineyi
-            bilinen bir mesafe oynatıp iki kare çekiyorsunuz, her iki karede de
-            <i>aynı</i> toprak parçasına tıklıyorsunuz. Piksel farkı ile mm
-            farkı hem ölçeği hem açıyı veriyor. En az 20 mm hareket ve 12
-            piksel fark gerekiyor — daha azı gürültüye karışıyor.<br><br>
-            <b>Kayma</b> kamera merkezinin uç ucundan ne kadar uzakta
-            olduğudur; kareyi haritada kaydırır, elle girilir.<br><br>
-            <b>mm/piksel her kamera için AYRIDIR.</b> Uç kamerası yatağa
-            yakın, sabit kamera uzaktan tümünü görüyor; aynı sayıyı ikisine
-            birden uygulamak ölçüleri kat kat yanlış yapar ve yanlış olduğu
-            belli olmaz. Bu yüzden kalibrasyon kamera başına saklanıyor ve
-            çözümleme, karenin geldiği kameranın sayısını kullanıyor.<br><br>
-            <b>Sabit kamerada iki kare yöntemi çalışmaz</b>: makine
-            oynadığında sabit kameranın gördüğü sahne değişmiyor, aradaki
-            piksel farkı sıfır. Onun yerine <b>ölçek yöntemi</b> var —
-            karede uzunluğu bilinen bir şeyin (cetvel, yatak kenarı, iki
-            tepsi gözü arası) iki ucunu işaretleyip gerçek mesafesini
-            yazıyorsunuz. Yalnız ölçek çıkıyor; açı ve konum çıkmıyor,
-            çünkü o karenin makine koordinatı yok.
-          </p>
-
-          <div class="araclar kam-sekmeler gizli" id="kalib-sekmeler"
-               role="group" aria-label="Kalibre edilecek kamera"></div>
-          <p class="ikincil" id="kalib-kamera-not"></p>
-
-          <div class="satir-8 alt-hizali">
-            <div class="alan"><label for="kalib-mmpx">mm / piksel</label>
-              <input type="number" id="kalib-mmpx" step="0.001" min="0" max="20" value="0"></div>
-            <div class="alan"><label for="kalib-donme">Açı (°)</label>
-              <input type="number" id="kalib-donme" step="0.1" min="-180" max="180" value="0"></div>
-          </div>
-          <div class="satir-8 alt-hizali">
-            <div class="alan"><label for="kalib-ofx">Kayma X (mm)</label>
-              <input type="number" id="kalib-ofx" step="0.5" min="-500" max="500" value="0"></div>
-            <div class="alan"><label for="kalib-ofy">Kayma Y (mm)</label>
-              <input type="number" id="kalib-ofy" step="0.5" min="-500" max="500" value="0"></div>
-          </div>
-          <div class="satir-8">
-            <label class="onay"><input type="checkbox" id="kalib-ayna-x"> Yatay ayna</label>
-            <label class="onay"><input type="checkbox" id="kalib-ayna-y"> Dikey ayna</label>
-            <span class="esnek"></span>
-            <button class="dugme birincil" id="d-kalib-kaydet">Kaydet</button>
-          </div>
-
-          <h4 class="alt-baslik" id="kalib-yontem-bas">İki kare ile hesapla</h4>
-          <p class="ikincil" id="kalib-yonerge">
-            1. Makineyi bir yere götürün, kare gelsin, aşağıda bir toprak
-            parçasına tıklayın. 2. Makineyi en az 20 mm oynatın, yeni kare
-            gelsin, <i>aynı</i> yere tıklayın.
-          </p>
-          <div class="kalib-tuval-kutu">
-            <img id="kalib-kare" alt="Son kamera karesi">
-            <canvas id="kalib-tuval"></canvas>
-          </div>
-          <div class="satir-8 alt-hizali" id="kalib-ikikare-araclar">
-            <button class="dugme" id="d-kalib-kare1">1. kareyi işaretle</button>
-            <button class="dugme" id="d-kalib-kare2">2. kareyi işaretle</button>
-            <button class="dugme" id="d-kalib-temizle">Sıfırla</button>
-          </div>
-          <!-- SABİT KAMERANIN YOLU. Aynı tuval, farklı anlam: iki işaret
-               aynı karede ve aralarındaki GERÇEK mesafe elle giriliyor. -->
-          <div class="satir-8 alt-hizali gizli" id="kalib-olcek-araclar">
-            <button class="dugme" id="d-kalib-olcek1">1. ucu işaretle</button>
-            <button class="dugme" id="d-kalib-olcek2">2. ucu işaretle</button>
-            <div class="alan"><label for="kalib-olcek-mm">Gerçek mesafe (mm)</label>
-              <input type="number" id="kalib-olcek-mm" step="1" min="50"
-                     placeholder="örn. 500"></div>
-            <button class="dugme birincil" id="d-kalib-olcek-hesapla">Hesapla</button>
-            <button class="dugme" id="d-kalib-olcek-temizle">Sıfırla</button>
-          </div>
-          <div id="kalib-sonuc" class="gomulu gizli"></div>
-        </div>
-      </section>
+      <!-- KAMERA TANIMLARI VE KALİBRASYONU BURADAN TAŞINDI — üstteki
+           "Kamera" sekmesine. Her kameranın tanımı kendi yarısının altında;
+           kalibrasyon da kalibre edilen kameranın yarısına taşınıyor.
+           Burada kopya bırakmıyoruz: aynı ayarın iki yerde durup
+           birbiriyle çelişmesi, hangisinin geçerli olduğunu bilinmez
+           yapardı. -->
 
       <!-- GÖRÜNTÜ ÇÖZÜMLEME. Kalibrasyonun hemen ardında, çünkü onsuz
            piksel milimetreye çevrilemiyor ve bu bölüm bir işe yaramıyor. -->
@@ -1949,6 +1938,10 @@
                  olduğu için simge; adı `title` ve `aria-label`de. -->
             <button class="kapat" data-rol="coz" type="button"
                     title="Çözümle — karedeki yeşili bul" aria-label="Çözümle">⌖</button>
+            <!-- Çözümleme ekrandayken kare donuyor; buradan akışa dönülüyor. -->
+            <button class="kapat gizli" data-rol="coz-kapat" type="button"
+                    title="Çözümlemeyi kaldır, akışa dön"
+                    aria-label="Akışa dön">⟳</button>
             <button class="kapat" data-rol="maske" type="button"
                     aria-pressed="false" title="Maske — neyin bitki sayıldığı"
                     aria-label="Maske">◍</button>

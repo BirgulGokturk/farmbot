@@ -146,14 +146,53 @@ direkte, yatağın tamamını uzaktan görüyor. Bu fark iki yerde sonuç doğur
   hakkında hiçbir şey söylemiyor. O kareden ölçü (çap, alan) çıkıyor, yatak
   koordinatı ve kayıtlı bitkilerle eşleştirme çıkmıyor.
 
-Panelde her kamera için ayrı bir yüzen kutu var: kendi başına sürükleniyor,
-kendi boyut kademesini hatırlıyor, ayrı ayrı kapanıp açılıyor. Bir kamera
-kapalıyken ya da arızalıyken öteki çalışmaya devam ediyor — her kameranın
-kendi iş parçacığı ve kendi hata sayacı var.
+#### Kamera sekmesi
 
-Panelden aç/kapa ve **kare aralığı** (5 sn · 30 sn · 5 dk · 1 saat) *seçili*
-kameraya işliyor. 5 saniye canlıya en yakın olanı — gerçek bir video akışı
-değil, art arda kare.
+**Kameraların tek yeri burası.** Solda üst kamera, sağda uç kamerası, yan
+yana ve **ikisi de canlı**. Görüntü işleme burada çalışacağı için ikisini
+aynı anda net görebilmek şart; sırayla bakılan iki görüntü, aynı anda ne
+olduğunu söylemez.
+
+Bir kameranın bütün ayarı **kendi yarısının altında**: cihaz seçimi,
+çözünürlük, aç/kapa, kare aralığı, kalibrasyon. Bunlar önce Ayarlar'a ve
+kalibrasyon bölümüne dağılmıştı; taşındılar, **kopyalanmadılar**. Aynı ayarın
+iki yerde durması, ikisi çeliştiğinde hangisinin geçerli olduğunu bilinmez
+yapar. Kalibrasyon bölümü de tek kopya: "Kalibrasyonu buraya getir" onu o
+kameranın yarısına *taşıyor* ve seçili kamerayı da değiştiriyor — kutunun bir
+yarının altında durup başka bir kamerayı ölçmesi, bulunması en zor hatalardan
+biri olurdu.
+
+Yerleşim dar ekranda alt alta geçiyor: Raspberry'nin 7" ekranında (800×480)
+iki kamera hâlâ yan yana, telefon genişliğinde alt alta. Hiçbir genişlikte
+yatay kaydırma yok.
+
+**Sekmeden çıkınca canlı akış duruyor.** Akış sekmeye girerken kendiliğinden
+açılıyor, çıkarken kapanıyor; boşta duran bir sayfanın saniyede on kare
+çekmesi için sebep yok. Sahte kameralarla ölçüldüğünde iki kamera birlikte
+~5 kare/sn akıyor ve sunucu+ajan CPU'su %0,9'dan %6,9'a çıkıyor; sekmeden
+çıkınca %0,8'e dönüyor.
+
+**Çözümleme ekrandayken kare donuyor.** Canlı akış saniyede beş kare atıyor
+ve her yeni kare eski tespitleri siliyor (silmeli de: kutular artık o
+görüntüye ait değil). İkisi bir arada, Çözümle'ye basınca kutuların 200 ms
+görünüp kaybolması demekti. Kutuları akan görüntünün üstünde bırakmak
+seçenek değil — yanlış yeri gösterirdi; onun yerine çözümlenen kare ekranda
+donduruluyor. Rozet "donduruldu" yazıyor (yeşil "canlı" değil, çünkü görüntü
+ilerlemiyor), akış arkada sürüyor, "Akışa dön" hem kutuları kaldırıyor hem
+görüntüyü geri veriyor.
+
+Panelde her kamera için ayrıca İzle sahnesinde bir yüzen kutu var: kendi
+başına sürükleniyor, kendi boyut kademesini hatırlıyor, ayrı ayrı kapanıp
+açılıyor. Kutuyu gizledikten sonra geri açan tek yer Kamera sekmesindeki
+**Sahnede** düğmesi. Bir kamera kapalıyken ya da arızalıyken öteki çalışmaya
+devam ediyor — her kameranın kendi iş parçacığı ve kendi hata sayacı var.
+
+Canlı akış yapamayan bir yolda (`fswebcam` gibi) "Canlı" düğmesi kapalı
+geliyor ve sebebini söylüyor; basıp hata almak dürüst değil. Akış
+yapabilenlerde kamera MJPEG üretiyorsa Pi'de yeniden kodlama yapılmıyor,
+kare olduğu gibi geçiyor.
+
+Canlı kapalıyken **kare aralığı** (5 sn · 1 dk · 1 saat) o kameraya işliyor.
 
 Aralık seçmek kamerayı da açıyor: kapalıyken aralık seçip hiçbir şey
 olmaması kafa karıştırıcıydı.
@@ -304,9 +343,14 @@ ediyordu.)
   yani DHT'nin ara sıra atladığı bir okuma kartı gözden kaybettirmez.
 * **Kontrol** — jog paneli, konuma git, hız, sürücü aç/kapa, röleler
   (düğme kartın bildirdiği gerçek durumu gösterir), kayıtlı noktalar, tohum ızgarası, yasak bölgeler, uç değiştirme,
-  programlar ve kamera önizlemesi.
+  programlar.
 * **Tarla** — yatağın 3B görünümü: bitki ekleme, sürükleyerek taşıma,
   yayılım daireleri ve çakışma uyarıları (aşağıda).
+* **Kamera** — iki kamera **yan yana ve ikisi de canlı**: solda üst kamera,
+  sağda uç kamerası. Kameranın bütün ayarı kendi yarısının altında —
+  cihaz seçimi, çözünürlük, aç/kapa, kare aralığı, kalibrasyon. Aynı ayar
+  başka bir yerde İKİNCİ KEZ durmuyor; ikisi birbiriyle çelişirse hangisinin
+  geçerli olduğunu kimse bilemez. Ayrıntısı aşağıda.
 * **Tablo** — aynı verinin sayı hâli; grafik okuyamadığınız durumlar için.
 
 Jog düğmeleri **tıklayınca başlar, tekrar tıklayınca durur**; çalışan eksenin
@@ -613,8 +657,8 @@ sunuluyor; dosyayı düzenlemek yeni tür eklemeye yetiyor.
 
 ### Kamera
 Kameralar `ayarlar.json` → `"kameralar": [...]` içinde tanımlı ama asıl yer
-ajandaki **`kameralar.json`**: panelden (Ayarlar → Kameralar) kaydedilenler
-oraya yazılıyor ve bundan sonra o dosya okunuyor. Eski tek kameralı
+ajandaki **`kameralar.json`**: panelden (Kamera sekmesi → o kameranın yarısı
+→ Ayarlar) kaydedilenler oraya yazılıyor ve bundan sonra o dosya okunuyor. Eski tek kameralı
 `"kamera": {...}` bloğu bozulmuyor — "uc" adlı kameraya dönüşüyor.
 
 Her kameranın kendi `yol`u var: `pi` şerit kablolu modül
