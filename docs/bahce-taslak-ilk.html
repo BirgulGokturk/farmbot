@@ -1,0 +1,751 @@
+<title>Bahçe Modu</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,700&family=Karla:wght@400;500;700&family=JetBrains+Mono:wght@400;600&display=swap">
+
+<style>
+:root{
+  --ground:#E9ECE1; --kart:#FFFFFF; --kart-2:#F3F5EC;
+  --cizgi:#CFD6C4; --cizgi-yumusak:#DFE4D6;
+  --metin:#1B2620; --metin-yumusak:#5B6B5D; --metin-silik:#87957F;
+  --amber:#B87310; --amber-zemin:#F7EAD4;
+  --su:#2A78AE; --su-zemin:#DDECF7;
+  --filiz:#3F8434; --filiz-zemin:#E0EFD9;
+  --uyari:#B0492F;
+  --golge:0 1px 2px rgba(27,38,32,.06), 0 8px 24px rgba(27,38,32,.07);
+  --r:14px;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --ground:#121A14; --kart:#1C261E; --kart-2:#222D24;
+    --cizgi:#2C3A2E; --cizgi-yumusak:#243021;
+    --metin:#E6EDE3; --metin-yumusak:#9CAD9D; --metin-silik:#74856F;
+    --amber:#E7A63A; --amber-zemin:#33270F;
+    --su:#57B0E6; --su-zemin:#0F2634;
+    --filiz:#74BE60; --filiz-zemin:#152A14;
+    --uyari:#E27A5E;
+    --golge:0 1px 2px rgba(0,0,0,.3), 0 10px 30px rgba(0,0,0,.35);
+  }
+}
+:root[data-theme="dark"]{
+  --ground:#121A14; --kart:#1C261E; --kart-2:#222D24;
+  --cizgi:#2C3A2E; --cizgi-yumusak:#243021;
+  --metin:#E6EDE3; --metin-yumusak:#9CAD9D; --metin-silik:#74856F;
+  --amber:#E7A63A; --amber-zemin:#33270F;
+  --su:#57B0E6; --su-zemin:#0F2634;
+  --filiz:#74BE60; --filiz-zemin:#152A14;
+  --uyari:#E27A5E;
+  --golge:0 1px 2px rgba(0,0,0,.3), 0 10px 30px rgba(0,0,0,.35);
+}
+
+*{box-sizing:border-box}
+body{
+  background:var(--ground); color:var(--metin);
+  font-family:Karla, ui-sans-serif, system-ui, sans-serif;
+  font-size:16px; line-height:1.55;
+  -webkit-font-smoothing:antialiased;
+}
+.sayfa{max-width:1120px; margin:0 auto; padding:40px 22px 80px;}
+
+h1,h2,h3{font-family:Fraunces, Georgia, serif; text-wrap:balance; margin:0;}
+h1{font-size:clamp(34px,5.2vw,54px); font-weight:700; line-height:1.04; letter-spacing:-.01em;}
+h2{font-size:clamp(23px,2.6vw,30px); font-weight:700; line-height:1.15;}
+h3{font-size:18px; font-weight:700;}
+p{margin:0;}
+.giris{max-width:63ch; display:flex; flex-direction:column; gap:14px;}
+.giris p{color:var(--metin-yumusak); font-size:17px;}
+.giris strong{color:var(--metin); font-weight:700;}
+
+.etiket{
+  font-size:11px; font-weight:700; letter-spacing:.13em; text-transform:uppercase;
+  color:var(--metin-silik); font-family:Karla, sans-serif;
+}
+.mono{font-family:"JetBrains Mono", ui-monospace, monospace; font-variant-numeric:tabular-nums;}
+
+/* ---------------------------------------------------------- oyun tahtasi */
+.tahta-blok{
+  margin-top:38px; background:var(--kart); border:1px solid var(--cizgi);
+  border-radius:20px; box-shadow:var(--golge); overflow:hidden;
+}
+.tahta-bas{
+  display:flex; align-items:center; gap:14px; flex-wrap:wrap;
+  padding:16px 20px; border-bottom:1px solid var(--cizgi-yumusak);
+}
+.tahta-bas h2{font-size:20px;}
+.bosluk{flex:1}
+.canli{
+  display:inline-flex; align-items:center; gap:7px; font-size:12px; font-weight:700;
+  letter-spacing:.06em; text-transform:uppercase; color:var(--uyari);
+}
+.canli i{width:8px; height:8px; border-radius:50%; background:var(--uyari); display:block;
+  animation:nabiz 1.8s ease-in-out infinite;}
+@keyframes nabiz{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.35;transform:scale(.8)}}
+
+.tahta-govde{
+  display:grid; grid-template-columns:190px minmax(0,1fr) 230px; gap:18px; padding:18px 20px 20px;
+}
+@media (max-width:960px){ .tahta-govde{grid-template-columns:1fr;} }
+
+.raf{display:flex; flex-direction:column; gap:8px;}
+.raf-bas{margin-bottom:2px;}
+.tohum{
+  display:flex; align-items:center; gap:10px; padding:8px 10px;
+  background:var(--kart-2); border:1px solid var(--cizgi-yumusak); border-radius:11px;
+  cursor:grab; touch-action:none; user-select:none;
+  transition:transform .14s ease, border-color .14s ease, box-shadow .14s ease;
+}
+.tohum + .tohum{margin-top:0;}
+.tohum:hover{transform:translateX(3px); border-color:var(--filiz); box-shadow:var(--golge);}
+.tohum:focus-visible{outline:2px solid var(--filiz); outline-offset:2px;}
+.tohum .benek{width:15px; height:15px; border-radius:50%; flex:none;}
+.tohum .ad{font-weight:700; font-size:14px;}
+.tohum .alt{font-size:11.5px; color:var(--metin-silik);}
+.tohum.su{border-color:var(--su); background:var(--su-zemin);}
+.tohum.su .benek{background:var(--su); border-radius:50% 50% 50% 0; transform:rotate(45deg);}
+#raf{display:flex; flex-direction:column; gap:8px;}
+
+.tahta-sar{position:relative;}
+.tahta{
+  position:relative; width:100%; aspect-ratio:535/645; border-radius:12px; overflow:hidden;
+  background:#3A2A1E; touch-action:none; cursor:crosshair;
+  box-shadow:inset 0 0 0 1px rgba(0,0,0,.4), inset 0 14px 40px rgba(0,0,0,.35);
+}
+.tahta canvas{position:absolute; inset:0; width:100%; height:100%; display:block;}
+.katman{position:absolute; inset:0;}
+
+/* erisim sinirlari — kalici, hata degil */
+.erisim{
+  position:absolute; inset:0; pointer-events:none;
+  background:
+    linear-gradient(to left, rgba(10,6,3,.62) 0, rgba(10,6,3,.62) var(--sag), transparent var(--sag)),
+    linear-gradient(to top, rgba(10,6,3,.62) 0, rgba(10,6,3,.62) var(--alt), transparent var(--alt));
+  opacity:0; transition:opacity .25s ease;
+}
+.tahta.sulama .erisim{opacity:1;}
+.erisim-yazi{
+  position:absolute; right:8px; bottom:8px; max-width:150px; text-align:right;
+  font-size:11px; line-height:1.35; color:#F0E4D2; text-shadow:0 1px 3px rgba(0,0,0,.8);
+  opacity:0; transition:opacity .25s ease; pointer-events:none;
+}
+.tahta.sulama .erisim-yazi{opacity:1;}
+
+.saksi{
+  position:absolute; width:44px; height:44px; margin:-22px 0 0 -22px; border-radius:50%;
+  background:radial-gradient(circle at 42% 34%, rgba(0,0,0,.16), rgba(0,0,0,.42));
+  box-shadow:inset 0 2px 5px rgba(0,0,0,.5), 0 1px 0 rgba(255,255,255,.05);
+  display:grid; place-items:center; cursor:pointer; border:0; padding:0;
+  transition:transform .18s cubic-bezier(.34,1.56,.64,1);
+}
+.saksi:hover{transform:scale(1.09);}
+.saksi:focus-visible{outline:2px solid #fff; outline-offset:2px;}
+.saksi.secili{box-shadow:inset 0 2px 5px rgba(0,0,0,.5), 0 0 0 2px var(--filiz);}
+.saksi svg{width:30px; height:30px; overflow:visible;}
+.saksi.yeni{animation:filizlen .7s cubic-bezier(.34,1.56,.64,1);}
+@keyframes filizlen{0%{transform:scale(.3);opacity:0}60%{transform:scale(1.15)}100%{transform:scale(1);opacity:1}}
+.saksi .susuz{
+  position:absolute; top:-2px; right:0; width:9px; height:9px; border-radius:50% 50% 50% 0;
+  background:var(--uyari); transform:rotate(45deg); opacity:0;
+}
+.saksi.susadi .susuz{opacity:1; animation:nabiz 2.4s ease-in-out infinite;}
+
+.hayalet{
+  position:absolute; width:52px; height:52px; margin:-26px 0 0 -26px; border-radius:50%;
+  border:2px dashed rgba(255,255,255,.75); pointer-events:none; opacity:0;
+  transition:opacity .12s ease; z-index:6;
+}
+.hayalet.gorunur{opacity:1;}
+.hayalet.yasak{border-color:var(--uyari); background:rgba(176,73,47,.18);}
+
+.robot{
+  position:absolute; width:30px; height:30px; margin:-15px 0 0 -15px; pointer-events:none;
+  transition:left 1s cubic-bezier(.45,.05,.25,1), top 1s cubic-bezier(.45,.05,.25,1);
+  z-index:4;
+}
+.robot .govde{
+  position:absolute; inset:0; border-radius:8px;
+  background:linear-gradient(160deg,#F2C879,#C98A22); border:1.5px solid #6E4A0E;
+  box-shadow:0 3px 10px rgba(0,0,0,.5);
+}
+.robot .goz{position:absolute; top:10px; left:7px; width:5px; height:5px; border-radius:50%;
+  background:#2B1B04; animation:kirp 4.5s infinite;}
+.robot .goz.sag{left:18px;}
+@keyframes kirp{0%,92%,100%{transform:scaleY(1)}95%{transform:scaleY(.15)}}
+.robot .hale{
+  position:absolute; inset:-9px; border-radius:12px; border:2px solid var(--amber);
+  opacity:0; transition:opacity .2s;
+}
+.robot.calisiyor .hale{opacity:.75; animation:nabiz 1.2s ease-in-out infinite;}
+
+.damla{
+  position:absolute; width:8px; height:8px; margin:-4px 0 0 -4px; border-radius:50% 50% 50% 0;
+  background:var(--su); transform:rotate(45deg); pointer-events:none; z-index:5;
+  animation:dus .9s ease-in forwards;
+}
+@keyframes dus{0%{opacity:0;transform:rotate(45deg) translate(0,-14px) scale(.6)}
+  25%{opacity:1}100%{opacity:0;transform:rotate(45deg) translate(0,10px) scale(1.1)}}
+
+.tahta-alt{
+  display:flex; align-items:center; gap:10px; margin-top:10px; font-size:12.5px;
+  color:var(--metin-silik); flex-wrap:wrap;
+}
+.olcu{padding:2px 8px; border-radius:99px; background:var(--kart-2); border:1px solid var(--cizgi-yumusak);}
+
+.durum{display:flex; flex-direction:column; gap:12px;}
+.durum-kart{
+  background:var(--kart-2); border:1px solid var(--cizgi-yumusak); border-radius:12px; padding:12px 13px;
+}
+.durum-kart .baslik{display:flex; align-items:center; justify-content:space-between; gap:8px;}
+.rozet{
+  font-size:11px; font-weight:700; letter-spacing:.06em; text-transform:uppercase;
+  padding:3px 9px; border-radius:99px; background:var(--amber-zemin); color:var(--amber);
+}
+.rozet.bos{background:var(--cizgi-yumusak); color:var(--metin-silik);}
+.durum-kart .satir{display:flex; justify-content:space-between; font-size:13px; margin-top:7px;}
+.durum-kart .satir span:last-child{font-family:"JetBrains Mono",monospace; font-variant-numeric:tabular-nums;}
+
+.kuyruk{padding:0 20px 20px;}
+.kuyruk-serit{
+  display:flex; gap:9px; overflow-x:auto; padding:11px; min-height:66px;
+  background:var(--kart-2); border:1px solid var(--cizgi-yumusak); border-radius:12px;
+  align-items:center; margin-top:7px;
+}
+.kuyruk-bos{color:var(--metin-silik); font-size:13.5px; padding-left:4px;}
+.is{
+  display:flex; align-items:center; gap:9px; padding:8px 12px; border-radius:10px;
+  background:var(--kart); border:1px solid var(--cizgi); flex:none;
+  animation:gir .35s cubic-bezier(.34,1.56,.64,1);
+}
+@keyframes gir{from{opacity:0; transform:translateY(9px) scale(.94)} to{opacity:1; transform:none}}
+.is .benek{width:11px; height:11px; border-radius:50%; flex:none;}
+.is .ad{font-size:13.5px; font-weight:700;}
+.is .kon{font-size:11px; color:var(--metin-silik); font-family:"JetBrains Mono",monospace;}
+.is.suruyor{border-color:var(--amber); box-shadow:0 0 0 2px var(--amber-zemin);}
+.is.bitti{opacity:.45;}
+.is.bitti .ad{text-decoration:line-through;}
+
+.dugme{
+  font:inherit; font-weight:700; font-size:13.5px; padding:8px 15px; border-radius:10px;
+  border:1px solid var(--cizgi); background:var(--kart); color:var(--metin); cursor:pointer;
+  transition:transform .12s ease, border-color .12s ease;
+}
+.dugme:hover{transform:translateY(-1px); border-color:var(--metin-silik);}
+.dugme:focus-visible{outline:2px solid var(--filiz); outline-offset:2px;}
+
+/* ------------------------------------------------------------- kartlar */
+.bolum{margin-top:56px;}
+.bolum-bas{display:flex; flex-direction:column; gap:9px; max-width:60ch;}
+.bolum-bas p{color:var(--metin-yumusak);}
+.kartlar{display:grid; grid-template-columns:repeat(auto-fit,minmax(290px,1fr)); gap:18px; margin-top:22px;}
+.kart{
+  background:var(--kart); border:1px solid var(--cizgi); border-radius:var(--r);
+  padding:18px; display:flex; flex-direction:column; gap:11px; box-shadow:var(--golge);
+}
+.kart p{font-size:14.5px; color:var(--metin-yumusak);}
+.kart .kural{
+  font-size:13px; padding:9px 11px; border-radius:9px; background:var(--kart-2);
+  border-left:3px solid var(--filiz); color:var(--metin);
+}
+
+/* buyume filmi */
+.film{display:flex; align-items:flex-end; gap:9px; padding:10px 6px;
+  background:var(--kart-2); border-radius:10px;}
+.kare{
+  flex:1; display:flex; flex-direction:column; align-items:center; gap:6px; opacity:.32;
+  transition:opacity .3s ease, transform .3s ease;
+}
+.kare.aktif{opacity:1; transform:translateY(-4px);}
+.kare .resim{
+  width:100%; aspect-ratio:1; border-radius:8px; display:grid; place-items:center;
+  background:radial-gradient(circle at 45% 35%, #5A4029, #2E2015);
+}
+.kare .resim svg{width:70%; height:70%; overflow:visible;}
+.kare .tar{font-size:10px; color:var(--metin-silik); font-family:"JetBrains Mono",monospace;}
+
+/* sensor -> hava */
+.gok{
+  height:88px; border-radius:10px; position:relative; overflow:hidden;
+  transition:background .6s ease; background:#8FC7E8;
+}
+.gok .yer{position:absolute; left:0; right:0; bottom:0; height:26px;
+  background:linear-gradient(180deg,#6B4B33,#3F2C1D);}
+.gok .not{position:absolute; left:12px; top:11px; font-size:13px; font-weight:700; color:#fff;
+  text-shadow:0 1px 4px rgba(0,0,0,.55);}
+.kaydir{width:100%; accent-color:var(--su);}
+
+.son{
+  margin-top:56px; padding:22px; border-radius:var(--r); background:var(--kart);
+  border:1px solid var(--cizgi); display:flex; flex-direction:column; gap:12px;
+}
+.son ol{margin:0; padding-left:20px; color:var(--metin-yumusak); font-size:15px;}
+.son li{margin-bottom:7px;}
+.son li b{color:var(--metin);}
+.dip{margin-top:34px; font-size:13px; color:var(--metin-silik); max-width:62ch;}
+
+@media (prefers-reduced-motion: reduce){
+  *{animation-duration:.01ms !important; animation-iteration-count:1 !important;
+    transition-duration:.01ms !important;}
+}
+</style>
+
+<div class="sayfa">
+
+  <header class="giris">
+    <span class="etiket">Tarım Robotu · kullanıcı katmanı taslağı</span>
+    <h1>Bahçe Modu</h1>
+    <p><strong>Fark şurada: bizim bahçemiz çizim değil.</strong> Oyun tahtasının zemini
+      üst kameranın canlı görüntüsü olsun — çizilmiş saksılar değil, kendi toprağınız.
+      Tohumu gerçek toprağın üstüne bırakıyorsunuz, robot oraya gidiyor, birkaç saniye
+      sonra aynı görüntüde kendi ektiğiniz filizi görüyorsunuz.</p>
+    <p>Aşağıdaki tahta çalışıyor. Soldaki raftan bir tohum tutup toprağa sürükleyin;
+      sulama kabını da bir bitkinin üstüne bırakabilirsiniz.</p>
+  </header>
+
+  <section class="tahta-blok">
+    <div class="tahta-bas">
+      <h2>Yatak A</h2>
+      <span class="etiket mono">535 × 645 mm</span>
+      <span class="bosluk"></span>
+      <span class="canli"><i></i> Üst kamera</span>
+    </div>
+
+    <div class="tahta-govde">
+      <div class="raf">
+        <span class="etiket raf-bas">Tohum rafı</span>
+        <div id="raf"></div>
+        <span class="etiket raf-bas" style="margin-top:8px">Sulama</span>
+        <div class="tohum su" data-su="1" tabindex="0" role="button" aria-label="Sulama kabı">
+          <span class="benek"></span>
+          <span><span class="ad">Sulama kabı</span><br><span class="alt">bitkinin üstüne bırakın</span></span>
+        </div>
+      </div>
+
+      <div class="tahta-sar">
+        <div class="tahta" id="tahta">
+          <canvas id="toprak"></canvas>
+          <div class="katman" id="bitkiler"></div>
+          <div class="erisim" id="erisim"></div>
+          <div class="erisim-yazi">Sulama başlığı 60 mm yanda — bu şeride su gidemiyor</div>
+          <div class="hayalet" id="hayalet"></div>
+          <div class="robot" id="robot"><div class="hale"></div><div class="govde"></div>
+            <div class="goz"></div><div class="goz sag"></div></div>
+        </div>
+        <div class="tahta-alt">
+          <span class="olcu mono" id="imlec">—</span>
+          <span>Koordinat kullanıcıya hiç gösterilmez; burada yalnız taslak olduğu için var.</span>
+        </div>
+      </div>
+
+      <div class="durum">
+        <div class="durum-kart">
+          <div class="baslik"><span class="etiket">Robot</span>
+            <span class="rozet bos" id="robot-durum">boşta</span></div>
+          <div class="satir"><span>Şu an</span><span id="robot-is">—</span></div>
+          <div class="satir"><span>Bugün</span><span id="robot-sayac">0 iş</span></div>
+        </div>
+        <div class="durum-kart">
+          <div class="baslik"><span class="etiket">Seçili bitki</span></div>
+          <div id="bitki-kart" style="font-size:13.5px; color:var(--metin-silik); margin-top:7px">
+            Bir bitkiye dokunun.</div>
+        </div>
+        <button class="dugme" id="sifirla">Tahtayı temizle</button>
+      </div>
+    </div>
+
+    <div class="kuyruk">
+      <span class="etiket">Kuyruk — soru sorulmuyor, işler sıraya giriyor</span>
+      <div class="kuyruk-serit" id="kuyruk">
+        <span class="kuyruk-bos">Henüz iş yok. Bir tohum sürükleyin.</span>
+      </div>
+    </div>
+  </section>
+
+  <section class="bolum">
+    <div class="bolum-bas">
+      <h2>Üç kural, üç mekanik</h2>
+      <p>Eğlenceli yapan şey animasyon değil, kuralların diyalog kutusu yerine görsel
+        olması. Üçü de yukarıdaki tahtada zaten çalışıyor.</p>
+    </div>
+
+    <div class="kartlar">
+      <div class="kart">
+        <h3>Sınır bir hata değil, arazinin şekli</h3>
+        <p>Sulama başlığı Z ekseninin yanında duruyor; bu yüzden sağ ve üst kenarda
+          60 mm'lik bir kör şerit var. Bunu hata kutusuyla söylemek yerine tahtada
+          gölge olarak gösteriyoruz: sulama kabını tuttuğunuzda kararan yer, suyun
+          gidemediği yer.</p>
+        <p class="kural">Kullanıcı yasağı okuyarak değil, görerek öğreniyor.</p>
+      </div>
+
+      <div class="kart">
+        <h3>Büyüme filmi</h3>
+        <p>Kareleri zaten saklıyoruz. Her bitkinin kendi fotoğraflarından yapılmış küçük
+          bir filmi olsun — tohumdan bugüne. Fotoğrafı olmayan bir bahçe uygulaması
+          bunu üretemez; bence projenin en çarpıcı anı bu.</p>
+        <div class="film" id="film"></div>
+      </div>
+
+      <div class="kart">
+        <h3>Sensör, havanın ruh hâli olsun</h3>
+        <p>Toprak nemi bir yüzde değil, gökyüzü olsun. Nem düştükçe hava kurusun,
+          suladığınızda bulut geçsin. Arka planda aynı sayı; kullanıcının gördüğü
+          şey değişiyor.</p>
+        <div class="gok" id="gok"><span class="not" id="gok-not"></span><span class="yer"></span></div>
+        <input class="kaydir" id="nem" type="range" min="8" max="92" value="34"
+               aria-label="Toprak nemi">
+      </div>
+    </div>
+  </section>
+
+  <section class="son">
+    <span class="etiket">Yapılabilirlik</span>
+    <h2>Teknik taraf hiç değişmiyor</h2>
+    <ol>
+      <li><b>İkinci bir gerçek yaratmıyoruz.</b> Bahçe modu kendi verisini tutmaz;
+        aynı nokta deposunu okur, aynı uçlara yazar. Panelde ne yazıyorsa burada da o.</li>
+      <li><b>Bırakma noktası milimetreye kameradan çevrilir.</b> Üst kameranın
+        <span class="mono">mm_px</span> ölçeği tam bunun için var — kullanıcı sayı
+        görmez, çeviriyi biz yaparız.</li>
+      <li><b>Soru sormak yerine bakarız.</b> "Tohum ucta mı" onayını uç kamerasının
+        karesi cevaplasın; kullanıcı hiçbir yerde beklemesin, işler kuyrukta biriksin.</li>
+      <li><b>Ön koşul:</b> üst kameranın canlı olması ve ölçeğinin kalibre edilmesi.
+        <span class="mono">mm_px</span> şu anda sıfır, yani bugün bir tıklamayı
+        milimetreye çeviremeyiz. Kamera sekmesi bu temeli kuruyor — sıra doğru.</li>
+    </ol>
+  </section>
+
+  <p class="dip">Bu bir taslak. Toprak dokusu ve bitkiler temsilî çizim; gerçeğinde bu
+    yüzey üst kameranın canlı karesi olacak. Ölçüler makinenin kendi değerleri: yatak
+    535 × 645 mm, sulama kayması X+60 / Y+60, yumuşak sınırlar X 540,1 / Y 645,1.</p>
+</div>
+
+<script>
+(function(){
+  "use strict";
+  const $ = (s) => document.querySelector(s);
+  const YATAK = { x: 535, y: 645 };
+  const OFSET = 60;                      // sulama basligi kaymasi (mm)
+  const SINIR = { x: 540.1, y: 645.1 };  // makinenin yumusak sinirlari
+
+  const TURLER = [
+    { ad:"fesleğen",  renk:"#5FA84C", hazir:48 },
+    { ad:"marul",     renk:"#7CBF57", hazir:47 },
+    { ad:"havuç",     renk:"#D98032", hazir:47 },
+    { ad:"maydanoz",  renk:"#3F9153", hazir:49 },
+    { ad:"roka",      renk:"#4E9E7A", hazir:49 },
+    { ad:"semiz otu", renk:"#8FBF3F", hazir:49 },
+  ];
+
+  /* ------------------------------------------------------------- toprak */
+  function toprakCiz(){
+    const c = $("#toprak"), kutu = $("#tahta").getBoundingClientRect();
+    if (!kutu.width) return;
+    const o = Math.min(window.devicePixelRatio || 1, 2);
+    c.width = Math.round(kutu.width * o); c.height = Math.round(kutu.height * o);
+    const g = c.getContext("2d");
+    g.fillStyle = "#46301F"; g.fillRect(0, 0, c.width, c.height);
+
+    /* Toprak PUANTİYE olmamalı. Belirgin daireler çizmek "toprak" değil
+     * "benekli zemin" veriyor. Üç katman: geniş yumuşak lekelenme, üstüne
+     * ışığı yukarıdan alan küçük kesekler, en üstte ince tanecik. */
+    for (let i = 0; i < 70; i++){          // lekelenme — nemli/kuru alanlar
+      const x = Math.random() * c.width, y = Math.random() * c.height;
+      const r = (30 + Math.random() * 95) * o;
+      const l = g.createRadialGradient(x, y, 0, x, y, r);
+      const acik = Math.random() < .5;
+      l.addColorStop(0, acik ? "rgba(150,110,68,.10)" : "rgba(26,16,8,.13)");
+      l.addColorStop(1, "rgba(0,0,0,0)");
+      g.fillStyle = l; g.beginPath(); g.arc(x, y, r, 0, 6.284); g.fill();
+    }
+    for (let i = 0; i < 2600; i++){        // kesek — üstü aydınlık, altı gölge
+      const x = Math.random() * c.width, y = Math.random() * c.height;
+      const r = (1.2 + Math.random() * 4.2) * o;
+      g.fillStyle = "rgba(20,12,6,.10)";
+      g.beginPath(); g.arc(x, y + r * .35, r, 0, 6.284); g.fill();
+      g.fillStyle = "rgba(176,136,88,.10)";
+      g.beginPath(); g.arc(x, y - r * .18, r * .78, 0, 6.284); g.fill();
+    }
+    for (let i = 0; i < 22000; i++){       // tanecik
+      const x = Math.random() * c.width, y = Math.random() * c.height;
+      g.fillStyle = Math.random() < .5 ? "rgba(0,0,0,.07)" : "rgba(200,160,110,.055)";
+      g.fillRect(x, y, o, o);
+    }
+    const kn = g.createLinearGradient(0, 0, 0, c.height);
+    kn.addColorStop(0, "rgba(0,0,0,.42)"); kn.addColorStop(.16, "rgba(0,0,0,0)");
+    kn.addColorStop(.84, "rgba(0,0,0,0)"); kn.addColorStop(1, "rgba(0,0,0,.34)");
+    g.fillStyle = kn; g.fillRect(0, 0, c.width, c.height);
+  }
+
+  /* ------------------------------------------------------------ yardimci */
+  const tahta = $("#tahta");
+  const mmToYuzde = (mx, my) => ({ l: (mx / YATAK.x) * 100, t: (my / YATAK.y) * 100 });
+  function olayaMM(o){
+    const k = tahta.getBoundingClientRect();
+    return {
+      x: Math.max(0, Math.min(YATAK.x, ((o.clientX - k.left) / k.width) * YATAK.x)),
+      y: Math.max(0, Math.min(YATAK.y, ((o.clientY - k.top) / k.height) * YATAK.y)),
+    };
+  }
+  const sulanabilir = (mm) => (mm.x + OFSET <= SINIR.x) && (mm.y + OFSET <= SINIR.y);
+
+  (function erisimKur(){
+    const e = $("#erisim");
+    e.style.setProperty("--sag", ((1 - (SINIR.x - OFSET) / YATAK.x) * 100).toFixed(2) + "%");
+    e.style.setProperty("--alt", ((1 - (SINIR.y - OFSET) / YATAK.y) * 100).toFixed(2) + "%");
+  })();
+
+  function filizSVG(renk, evre){
+    const govde = ["M16 26 L16 24", "M16 26 L16 18", "M16 26 L16 12", "M16 26 L16 7"][evre];
+    const k = evre * 3;
+    const yaprak = evre === 0 ? "" :
+      '<path d="M16 ' + (22 - k) + ' C 9 ' + (20 - k) + ', 7 ' + (25 - k) + ', 13 ' + (26 - k) +
+      ' C 16 ' + (26 - k) + ', 16 ' + (23 - k) + ', 16 ' + (22 - k) + ' Z" fill="' + renk + '"/>' +
+      '<path d="M16 ' + (20 - k) + ' C 23 ' + (18 - k) + ', 25 ' + (23 - k) + ', 19 ' + (24 - k) +
+      ' C 16 ' + (24 - k) + ', 16 ' + (21 - k) + ', 16 ' + (20 - k) + ' Z" fill="' + renk +
+      '" opacity=".85"/>';
+    return '<svg viewBox="0 0 32 32" aria-hidden="true"><path d="' + govde + '" stroke="' + renk +
+      '" stroke-width="2.2" stroke-linecap="round" fill="none"/>' + yaprak + '</svg>';
+  }
+
+  /* --------------------------------------------------------------- durum */
+  const bitkiler = [], kuyruk = [];
+  let sayac = 0, mesgul = false, secili = null, sonId = 0;
+
+  $("#raf").innerHTML = TURLER.map((t, i) =>
+    '<div class="tohum" data-tur="' + i + '" tabindex="0" role="button" aria-label="' +
+    t.ad + ' tohumu"><span class="benek" style="background:' + t.renk + '"></span>' +
+    '<span><span class="ad">' + t.ad + '</span><br><span class="alt">' + t.hazir +
+    ' tohum hazır</span></span></div>').join("");
+
+  /* --------------------------------------------------------- suruklemek */
+  let surukle = null;
+  const hayalet = $("#hayalet");
+
+  function surukleBasla(kaynak, o){
+    const su = kaynak.dataset.su === "1";
+    surukle = su ? { tip:"su" } : { tip:"tohum", tur: TURLER[+kaynak.dataset.tur] };
+    tahta.classList.toggle("sulama", su);
+    document.body.style.cursor = "grabbing";
+    if (o) surukleHareket(o);
+  }
+  function tahtaIcinde(o){
+    const k = tahta.getBoundingClientRect();
+    return o.clientX >= k.left && o.clientX <= k.right
+        && o.clientY >= k.top  && o.clientY <= k.bottom;
+  }
+  function surukleHareket(o){
+    if (!surukle) return;
+    if (!tahtaIcinde(o)){ hayalet.classList.remove("gorunur"); $("#imlec").textContent = "—"; return; }
+    const mm = olayaMM(o), p = mmToYuzde(mm.x, mm.y);
+    hayalet.style.left = p.l + "%"; hayalet.style.top = p.t + "%";
+    hayalet.classList.add("gorunur");
+    const yasak = surukle.tip === "su" && !sulanabilir(mm);
+    hayalet.classList.toggle("yasak", yasak);
+    hayalet.style.borderColor = yasak ? "" : (surukle.tip === "su" ? "#57B0E6" : "rgba(255,255,255,.8)");
+    $("#imlec").textContent = "X" + mm.x.toFixed(0) + " Y" + mm.y.toFixed(0) + " mm"
+      + (yasak ? " · su gidemiyor" : "");
+  }
+  function surukleBirak(o){
+    if (!surukle) return;
+    if (tahtaIcinde(o)){
+      const mm = olayaMM(o);
+      if (surukle.tip === "tohum") isEkle({ tip:"ek", tur:surukle.tur, mm:mm });
+      else {
+        const hedef = enYakinBitki(mm);
+        if (hedef && sulanabilir(hedef.mm)) isEkle({ tip:"su", tur:hedef.tur, mm:hedef.mm, hedef:hedef });
+        else geriIt();
+      }
+    }
+    surukle = null; hayalet.classList.remove("gorunur");
+    tahta.classList.remove("sulama"); document.body.style.cursor = "";
+    $("#imlec").textContent = "—";
+  }
+  function geriIt(){
+    hayalet.classList.add("gorunur", "yasak");
+    hayalet.animate(
+      [{transform:"translate(0,0)"},{transform:"translate(-7px,0)"},
+       {transform:"translate(7px,0)"},{transform:"translate(0,0)"}],
+      {duration:280, easing:"ease-in-out"});
+    setTimeout(() => hayalet.classList.remove("gorunur"), 300);
+  }
+  function enYakinBitki(mm){
+    let en = null, mesafe = 60;
+    for (const b of bitkiler){
+      const d = Math.hypot(b.mm.x - mm.x, b.mm.y - mm.y);
+      if (d < mesafe){ mesafe = d; en = b; }
+    }
+    return en;
+  }
+
+  document.addEventListener("pointerdown", (o) => {
+    const t = o.target.closest(".tohum");
+    if (!t) return;
+    o.preventDefault();
+    surukleBasla(t, o);
+  });
+  document.addEventListener("pointermove", surukleHareket);
+  document.addEventListener("pointerup", surukleBirak);
+  document.addEventListener("pointercancel", () => {
+    surukle = null; hayalet.classList.remove("gorunur");
+    tahta.classList.remove("sulama"); document.body.style.cursor = "";
+  });
+  document.addEventListener("keydown", (o) => {
+    if (o.key !== "Enter" && o.key !== " ") return;
+    const t = o.target.closest && o.target.closest(".tohum");
+    if (!t || t.dataset.su === "1") return;
+    o.preventDefault();
+    isEkle({ tip:"ek", tur:TURLER[+t.dataset.tur],
+             mm:{ x: 80 + Math.random() * 340, y: 80 + Math.random() * 420 } });
+  });
+
+  /* -------------------------------------------------------------- kuyruk */
+  function isEkle(is){ is.durum = "bekliyor"; kuyruk.push(is); kuyrukCiz(); isle(); }
+
+  function kuyrukCiz(){
+    const s = $("#kuyruk");
+    if (!kuyruk.length){
+      s.innerHTML = '<span class="kuyruk-bos">Henüz iş yok. Bir tohum sürükleyin.</span>';
+      return;
+    }
+    s.innerHTML = kuyruk.slice(-9).map((i) =>
+      '<div class="is ' + (i.durum === "suruyor" ? "suruyor" : i.durum === "bitti" ? "bitti" : "") +
+      '"><span class="benek" style="background:' + (i.tip === "su" ? "#57B0E6" : i.tur.renk) +
+      '"></span><span><span class="ad">' + (i.tip === "su" ? "sula" : i.tur.ad) +
+      '</span><br><span class="kon">X' + i.mm.x.toFixed(0) + " Y" + i.mm.y.toFixed(0) +
+      '</span></span></div>').join("");
+    s.scrollLeft = s.scrollWidth;
+  }
+
+  const robot = $("#robot");
+  function robotGit(mm){
+    const p = mmToYuzde(mm.x, mm.y);
+    robot.style.left = p.l + "%"; robot.style.top = p.t + "%";
+  }
+  const bekle = (ms) => new Promise((c) => setTimeout(c, ms));
+
+  async function isle(){
+    if (mesgul) return;
+    const is = kuyruk.find((i) => i.durum === "bekliyor");
+    if (!is){ durumYaz("boşta", "—"); return; }
+    mesgul = true; is.durum = "suruyor"; kuyrukCiz();
+    robot.classList.add("calisiyor");
+    durumYaz(is.tip === "su" ? "suluyor" : "ekiyor",
+             (is.tip === "su" ? "sula" : is.tur.ad) + " · X" + is.mm.x.toFixed(0));
+    robotGit(is.mm);
+    await bekle(1050);
+    if (is.tip === "ek") bitkiEkle(is.tur, is.mm);
+    else await sula(is.hedef);
+    await bekle(260);
+    is.durum = "bitti"; sayac += 1;
+    $("#robot-sayac").textContent = sayac + " iş";
+    robot.classList.remove("calisiyor");
+    kuyrukCiz(); mesgul = false;
+    isle();
+  }
+
+  function durumYaz(durum, is){
+    const r = $("#robot-durum");
+    r.textContent = durum; r.classList.toggle("bos", durum === "boşta");
+    $("#robot-is").textContent = is;
+  }
+
+  /* ------------------------------------------------------------ bitkiler */
+  function bitkiEkle(tur, mm, evre){
+    const el = document.createElement("button");
+    el.className = "saksi" + (evre === undefined ? " yeni" : "");
+    el.type = "button";
+    const p = mmToYuzde(mm.x, mm.y);
+    el.style.left = p.l + "%"; el.style.top = p.t + "%";
+    const b = { id: ++sonId, tur:tur, mm:mm, evre: evre === undefined ? 1 : evre,
+                susadi: Math.random() < .45, el: el };
+    el.innerHTML = filizSVG(tur.renk, b.evre) + '<span class="susuz"></span>';
+    el.classList.toggle("susadi", b.susadi);
+    el.setAttribute("aria-label", tur.ad);
+    el.addEventListener("click", () => bitkiSec(b));
+    $("#bitkiler").appendChild(el);
+    bitkiler.push(b);
+    setTimeout(() => el.classList.remove("yeni"), 750);
+    return b;
+  }
+
+  async function sula(b){
+    if (!b) return;
+    const p = mmToYuzde(b.mm.x, b.mm.y);
+    for (let i = 0; i < 5; i++){
+      const d = document.createElement("div");
+      d.className = "damla";
+      d.style.left = "calc(" + p.l + "% + " + (Math.random() * 14 - 7).toFixed(1) + "px)";
+      d.style.top = p.t + "%";
+      d.style.animationDelay = (i * 90) + "ms";
+      tahta.appendChild(d);
+      setTimeout(() => d.remove(), 1300);
+    }
+    await bekle(560);
+    b.susadi = false; b.el.classList.remove("susadi");
+    if (b.evre < 3){
+      b.evre += 1;
+      b.el.innerHTML = filizSVG(b.tur.renk, b.evre) + '<span class="susuz"></span>';
+    }
+    if (secili === b) bitkiSec(b);
+  }
+
+  function bitkiSec(b){
+    for (const x of bitkiler) x.el.classList.toggle("secili", x === b);
+    secili = b;
+    const evreAd = ["tohum", "filiz", "fide", "olgun"][b.evre];
+    $("#bitki-kart").innerHTML =
+      '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">' +
+      '<span style="width:12px;height:12px;border-radius:50%;background:' + b.tur.renk +
+      '"></span><b style="color:var(--metin);font-size:15px">' + b.tur.ad + '</b></div>' +
+      '<div style="display:flex;justify-content:space-between"><span>Durum</span><b style="color:' +
+      (b.susadi ? "var(--uyari)" : "var(--filiz)") + '">' +
+      (b.susadi ? "susadı" : "keyfi yerinde") + '</b></div>' +
+      '<div style="display:flex;justify-content:space-between"><span>Evre</span>' +
+      '<span class="mono">' + evreAd + '</span></div>';
+  }
+
+  $("#sifirla").onclick = () => {
+    bitkiler.length = 0; kuyruk.length = 0; secili = null;
+    $("#bitkiler").innerHTML = ""; kuyrukCiz();
+    $("#bitki-kart").textContent = "Bir bitkiye dokunun.";
+    sayac = 0; $("#robot-sayac").textContent = "0 iş";
+    robotGit({ x: 30, y: 30 }); durumYaz("boşta", "—");
+  };
+
+  /* --------------------------------------------------------- buyume filmi */
+  const TARIH = ["12 Ağu", "19 Ağu", "26 Ağu", "1 Eyl"];
+  const film = $("#film");
+  film.innerHTML = TARIH.map((t, i) =>
+    '<div class="kare"><span class="resim">' + filizSVG("#7CBF57", i) +
+    '</span><span class="tar">' + t + '</span></div>').join("");
+  let filmKare = 0;
+  setInterval(() => {
+    const kareler = film.querySelectorAll(".kare");
+    kareler.forEach((k, i) => k.classList.toggle("aktif", i === filmKare));
+    filmKare = (filmKare + 1) % kareler.length;
+  }, 900);
+
+  /* ------------------------------------------------------------ nem -> gok */
+  const nem = $("#nem"), gok = $("#gok"), gokNot = $("#gok-not");
+  function gokYaz(){
+    const v = +nem.value, kuru = v < 30, iyi = v >= 30 && v <= 65;
+    gok.style.background = kuru
+      ? "linear-gradient(180deg,#E8B96A,#D98032)"
+      : iyi ? "linear-gradient(180deg,#8FC7E8,#BFE0C9)"
+            : "linear-gradient(180deg,#5D7F99,#8FA6B5)";
+    gokNot.textContent = kuru ? "Toprak kurudu · %" + v
+      : iyi ? "Keyfi yerinde · %" + v : "Fazla ıslak · %" + v;
+  }
+  nem.addEventListener("input", gokYaz); gokYaz();
+
+  /* ----------------------------------------------------------- baslangic */
+  toprakCiz();
+  let zaman;
+  window.addEventListener("resize", () => {
+    clearTimeout(zaman); zaman = setTimeout(toprakCiz, 160);
+  });
+  robotGit({ x: 30, y: 30 });
+  [[120,140,0,2],[260,210,1,3],[400,160,2,1],[180,380,3,2],[330,470,4,3]]
+    .forEach(function(d){ bitkiEkle(TURLER[d[2]], { x:d[0], y:d[1] }, d[3]); });
+  durumYaz("boşta", "—");
+})();
+</script>
