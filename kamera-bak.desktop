@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Kameraya bak
+Comment=USB kamerayı ekranda açar — açı ayarlamak için
+Exec=/home/batupi/farmbot/kamera-bak.sh
+Icon=camera-video
+Terminal=true
+Categories=Utility;
