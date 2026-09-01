@@ -2385,3 +2385,12 @@ input.hatali {
   font-variant-numeric: tabular-nums;
 }
 .kamera-yuzen-araclar .kapat { flex: 0 0 auto; }
+
+/* Kalibrasyon tablosunun "Kaydedildi" izi. Kaydın işlediğini gösteren
+   başka bir şey yoktu; olay günlüğü kapalıyken başarı ile sessiz
+   başarısızlık aynı görünüyordu. */
+.kalib-kaydedildi {
+  color: var(--iyi);
+  font-size: 13px;
+  align-self: center;
+}

@@ -1709,9 +1709,14 @@
           <!-- Ret sebebi burada, tablonun hemen altında. Olay günlüğü
                kapalı olduğu için oraya düşen mesaj görülmüyordu. -->
           <div id="kalib-hata" class="uyari-kutu gizli"></div>
+          <!-- KİMLİK AYRI. Kamera kalibrasyonunun Kaydet düğmesi de
+               `d-kalib-kaydet` idi; `querySelector` ilkini döndürdüğü için
+               bu düğmeye hiçbir işleyici bağlanmıyor, basmak hiçbir şey
+               yapmıyordu. -->
           <div class="satir-8" style="margin-top:8px">
-            <button class="dugme birincil" id="d-kalib-kaydet">Kaydet</button>
+            <button class="dugme birincil" id="d-eksen-kalib-kaydet">Kaydet</button>
             <button class="dugme" id="d-kalib-geri">Geri al</button>
+            <span id="kalib-kaydedildi" class="kalib-kaydedildi gizli"></span>
           </div>
           <div class="ikincil" id="kalib-ek"></div>
         </div>

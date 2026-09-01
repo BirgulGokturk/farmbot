@@ -5182,40 +5182,8 @@ function olaylariBagla() {
    * çalışıyor. Burada yalnız ilk kurulumu tetikliyoruz. */
   kamKutulariKur();
 
-  const kalibKaydet = $("#d-kalib-kaydet");
-  if (kalibKaydet) {
-    kalibKaydet.onclick = async () => {
-      const eksenler = ["x", "y", "z"].map((e) => {
-        const al = (alan) => {
-          const el = document.querySelector(
-            `.kalib-girdi[data-eksen="${e}"][data-alan="${alan}"]`);
-          // Virgül -> nokta: Türkçe klavyede ondalık ayırıcı virgül ve
-          // kullanıcının "414,23" yazması en doğal hâli.
-          const v = el ? el.value.trim().replace(",", ".") : "";
-          if (v === "") return null;
-          const s = Number(v);
-          return Number.isFinite(s) ? s : null;
-        };
-        return { home: al("home"), min: al("min"), max: al("max") };
-      });
-      const uyariKutu = $("#kalib-hata");
-      if (uyariKutu) { uyariKutu.textContent = ""; uyariKutu.classList.add("gizli"); }
-      const sonuc = await komutGonder("kalibrasyon_kaydet", { eksenler });
-      /* RET SEBEBİ TABLONUN YANINDA. Ajan geçersiz bir değeri reddedince
-       * mesaj yalnızca alttaki KAPALI olay günlüğüne düşüyordu; kullanıcı
-       * hiçbir şey görmüyor, yazdığı değerin "silindiğini" sanıyordu.
-       * Sebep, hatayı yapan kutunun yanında yazmalı. */
-      if (sonuc && sonuc.ok === false && uyariKutu) {
-        uyariKutu.textContent = sonuc.mesaj || "Kaydedilemedi";
-        uyariKutu.classList.remove("gizli");
-      }
-      // Kaydedilen değerler ajandan geri gelsin diye imzayı sıfırlıyoruz;
-      // yoksa tablo eski imzayla aynı kalıp tazelenmiyor.
-      // Kayıt başarılıysa elle girilenler artık ajanın değeri; tabloyu
-      // ondan tazelesin diye izi siliyoruz.
-      if (sonuc && sonuc.ok) { S.kalibElle = {}; S.kalibImza = ""; }
-    };
-  }
+  const kalibKaydet = $("#d-eksen-kalib-kaydet");
+  if (kalibKaydet) kalibKaydet.onclick = () => eksenKalibGonder();
   const kalibGeri = $("#d-kalib-geri");
   if (kalibGeri) {
     // Kutulara yazılmış ama kaydedilmemiş değerleri atar: ajandan gelen
@@ -5780,10 +5748,84 @@ function kalibrasyonCiz(d) {
     const anahtar = `${el.dataset.eksen}.${el.dataset.alan}`;
     if (S.kalibElle[anahtar] !== undefined) el.value = S.kalibElle[anahtar];
     el.addEventListener("input", () => { S.kalibElle[anahtar] = el.value; });
+    /* KUTUDAN ÇIKINCA KENDİLİĞİNDEN KAYDET.
+     *
+     * Değeri yazıp Kaydet'e basmayı hatırlamak zorunda kalmak panelin
+     * işi değil; hatırlamayınca da hiçbir şey söylemiyordu — kullanıcı
+     * sınırı değiştirdiğini sanarken eski sınır yürürlükte kalıyordu.
+     * `change` yalnız değer GERÇEKTEN değiştiyse ve odak kutudan
+     * çıkınca (ya da Enter'a basılınca) tetikleniyor, yani her tuş
+     * vuruşunda ajana komut gitmiyor. */
+    el.addEventListener("change", () => eksenKalibGonder());
   });
   $("#kalib-ek").innerHTML =
     `Güvenli Z yüksekliği: <b>${sayi(d.guvenli_z, 0)} mm</b> — X/Y hareketi için ` +
     `Z'nin bulunması gereken en düşük yükseklik. Hız: <b>${sayi(d.hiz, 0)} mm/s</b>.`;
+}
+
+/* -------------------------------------------------- eksen kalibrasyonu
+ *
+ * İKİ DÜĞME AYNI KİMLİĞİ TAŞIYORDU. Kamera kalibrasyonunun Kaydet'i de
+ * `d-kalib-kaydet` idi ve `querySelector` ilkini döndürüyor: eksen
+ * tablosunun düğmesine hiçbir işleyici bağlanmıyordu. Kullanıcı sınırı
+ * yazıp Kaydet'e basıyor, hiçbir şey olmuyor, hata da görünmüyordu.
+ * Kimlikler ayrıldı; ayrıca kutudan çıkmak artık tek başına yetiyor.
+ */
+let _kalibGonderiliyor = false;
+
+async function eksenKalibGonder() {
+  // Kutudan kutuya geçerken üst üste binmesin: `change` ile düğme aynı
+  // anda tetiklenebiliyor ve ikinci istek birincinin yazdığını okumuyor.
+  if (_kalibGonderiliyor) return;
+  _kalibGonderiliyor = true;
+  try {
+    const eksenler = ["x", "y", "z"].map((e) => {
+      const al = (alan) => {
+        const el = document.querySelector(
+          `.kalib-girdi[data-eksen="${e}"][data-alan="${alan}"]`);
+        // Virgül -> nokta: Türkçe klavyede ondalık ayırıcı virgül ve
+        // kullanıcının "414,23" yazması en doğal hâli.
+        const v = el ? el.value.trim().replace(",", ".") : "";
+        if (v === "") return null;
+        const s = Number(v);
+        return Number.isFinite(s) ? s : null;
+      };
+      return { home: al("home"), min: al("min"), max: al("max") };
+    });
+    const uyariKutu = $("#kalib-hata");
+    if (uyariKutu) { uyariKutu.textContent = ""; uyariKutu.classList.add("gizli"); }
+    const sonuc = await komutGonder("kalibrasyon_kaydet", { eksenler });
+    /* RET SEBEBİ TABLONUN YANINDA. Ajan geçersiz bir değeri reddedince
+     * mesaj yalnızca alttaki KAPALI olay günlüğüne düşüyordu; kullanıcı
+     * hiçbir şey görmüyor, yazdığı değerin "silindiğini" sanıyordu. */
+    if (sonuc && sonuc.ok === false && uyariKutu) {
+      uyariKutu.textContent = sonuc.mesaj || "Kaydedilemedi";
+      uyariKutu.classList.remove("gizli");
+    }
+    // Kayıt başarılıysa elle girilenler artık ajanın değeri; tabloyu
+    // ondan tazelesin diye izi siliyoruz. İmza da sıfırlanmalı, yoksa
+    // tablo eski imzayla aynı kalıp tazelenmiyor.
+    if (sonuc && sonuc.ok) {
+      S.kalibElle = {}; S.kalibImza = "";
+      kalibKaydedildiIsareti();
+    }
+  } finally {
+    _kalibGonderiliyor = false;
+  }
+}
+
+/** Kısa ömürlü "Kaydedildi" — tablonun yanında.
+ *
+ * Olay günlüğü kapalıyken kaydın işlediğini gösteren HİÇBİR ŞEY yoktu:
+ * başarı da başarısızlık da aynı görünüyordu. */
+function kalibKaydedildiIsareti() {
+  const el = $("#kalib-kaydedildi");
+  if (!el) return;
+  el.textContent = "Kaydedildi";
+  el.classList.remove("gizli");
+  clearTimeout(kalibKaydedildiIsareti._zaman);
+  kalibKaydedildiIsareti._zaman = setTimeout(
+    () => el.classList.add("gizli"), 2500);
 }
 
 /* --------------------------------------------------------------- köprü
@@ -5792,7 +5834,11 @@ function kalibrasyonCiz(d) {
  * bağ tek satırda görülebiliyor.
  */
 window.Panel = { S, komutGonder, apiIste, gunluk, noktalariYukle, egrileriYukle,
-                 geriAlGoster, tanilariCiz };
+                 geriAlGoster, tanilariCiz,
+                 /* Deneme yardımcısı — kalibrasyon gönderimini tarayıcı
+                  * konsolundan tetiklemek için. `tarla.js`teki
+                  * `secimDurumu()` ile aynı gerekçe. */
+                 eksenKalibGonder };
 
 /** Çalışan sürümü şeride yazar.
  *
