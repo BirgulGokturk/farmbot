@@ -680,6 +680,13 @@ async def api_toplu(govde: dict[str, Any], jeton: str = Query(default="")):
         # bir yatak, hiç sulanmamış bir yataktan daha kötü.
         await _sulama_on_kontrol(cozum)
         adimlar = cozum["adimlar"]
+        # MAKİNE GERÇEKTE NEREYE GİDİYOR — günlüğe yazılıyor.
+        #
+        # Sahada su bitkinin yanına düştü ve sebebi tahminle arandı. Oysa
+        # bilinmesi gereken tek şey makinenin gittiği koordinattı: hedef
+        # neresi, başlık kayması ne, makine nereye gidiyor. Üçü yan yana
+        # yazılınca hangi hatanın olduğu bakınca anlaşılıyor.
+        await _sulama_gunluk(cozum)
         # SULAMA DAMGASI. Panelde gözün "sulandı" rengi buradan geliyor.
         # DÜRÜST OLMAK GEREKİRSE bu "su düştü" demek değil, "sulama
         # komutu gitti" demek: akış sensörü yok ve dizi ortada kesilirse
@@ -797,6 +804,155 @@ def _sulama_coz(adlar: list[str], saniye: float) -> dict[str, Any]:
 async def _sulama_on_kontrol(cozum: dict[str, Any]) -> None:
     """Sulama adımları için ön kontrol — bkz. `_adim_on_kontrol`."""
     await _adim_on_kontrol(cozum["adimlar"], "Sulama")
+
+
+async def _sulama_gunluk(cozum: dict[str, Any]) -> None:
+    """Hedef, kayma ve makinenin GİDECEĞİ koordinat — yan yana.
+
+    Bu satır olmadığı için sahada su bitkinin yanına düştü ve sebep
+    tahminle arandı: "ofsetin işareti ters olabilir, +50 yerine -50
+    deneyelim". Oysa üç sayı yan yana yazılınca hangi hata olduğu
+    bakınca görünüyor — makine hedefe mi gidiyor, kaymayı uyguluyor mu,
+    yoksa kaymayı hiç mi uygulamıyor.
+    """
+    bas = (cozum.get("ozet") or [{}])[0].get("baslik") or {}
+    dx, dy = _sayi_ya_da(bas.get("dx")), _sayi_ya_da(bas.get("dy"))
+    satir = []
+    for o in (cozum.get("ozet") or [])[:4]:
+        for nk in (o.get("noktalar") or [])[:1]:
+            satir.append(
+                f"{o.get('ad')}: hedef X{nk['su_x']:.0f} Y{nk['su_y']:.0f}"
+                f" → makine X{nk['x']:.0f} Y{nk['y']:.0f}")
+    if not satir:
+        return
+    kalan = len(cozum.get("ozet") or []) - 4
+    await merkez.yayinla({
+        "tip": "gunluk", "seviye": "bilgi",
+        "metin": f"Sulama · başlık kayması X{dx:+.0f} Y{dy:+.0f} mm · "
+                 + " · ".join(satir)
+                 + (f" · … {kalan} bitki daha" if kalan > 0 else "")})
+
+
+def _sayi_ya_da(deger: Any, varsayilan: float = 0.0) -> float:
+    try:
+        return float(deger)
+    except (TypeError, ValueError):
+        return varsayilan
+
+
+# --------------------------------------------------------------------------- #
+# Sulama başlığı hizalama — ölçerek, tahminle değil
+#
+# Başlık ucun merkezinden kaymış ve kaymanın YÖNÜ ile BÜYÜKLÜĞÜ elle
+# giriliyor. İşaretini yanlış vermek kolay ve sonucu ancak toprağa bakınca
+# görünüyor; sahada tam bu oldu, "+50 yerine -50 deneyelim" noktasına
+# gelindi.
+#
+# Tahmini bitiren şey ölçüm: makine BİLİNEN bir noktayı sulasın, kullanıcı
+# suyun düştüğü yerin hedeften ne kadar saptığını ölçsün, doğru kaymayı
+# sistem hesaplasın.
+#
+# Hesap tek satır ve işareti düşünmeyi gerektirmiyor:
+#
+#     makine  = hedef + kayma
+#     su      = makine + başlığın gerçek konumu (h)
+#     sapma   = su - hedef = kayma + h
+#     istenen = su - hedef = 0  →  yeni kayma = kayma - sapma
+#
+# Yani kullanıcı "su hedefin 60 mm sağına, 30 mm ilerisine düştü" diyor,
+# sistem o kadarını mevcut kaymadan düşüyor. İşaret hatası mümkün değil:
+# ölçülen şey doğrudan düzeltilecek şey.
+# --------------------------------------------------------------------------- #
+
+
+def _baslik_oku() -> dict[str, float]:
+    b = ((merkez.son_durum or {}).get("uc") or {}).get("sulama_basligi") or {}
+    return {"dx": _sayi_ya_da(b.get("dx")), "dy": _sayi_ya_da(b.get("dy")),
+            "z_min": _sayi_ya_da(b.get("z_min"))}
+
+
+@app.post("/api/sulama/hizala/dene")
+async def api_sulama_hizala_dene(govde: dict[str, Any],
+                                 jeton: str = Query(default="")):
+    """Bilinen bir noktayı kısa süre sular — ölçüm için.
+
+    Bitki gerekmiyor: kullanıcı boş bir yer seçip suyun izini görebilsin.
+    Nereye gidildiği günlüğe yazılıyor.
+    """
+    _parola_dogrula(jeton)
+    try:
+        hx, hy = float(govde.get("x")), float(govde.get("y"))
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="Hedef X ve Y gerekiyor")
+    saniye = max(0.5, min(20.0, _sayi_ya_da(govde.get("saniye"), 2.0)))
+    bas = _baslik_oku()
+    durum = merkez.son_durum or {}
+    toprak_z = _sayi_ya_da(durum.get("toprak_z"))
+    alanlar = await asyncio.to_thread(dikim.listele)
+    yuzey = dikim.toprak_yuzeyi(hx, hy, toprak_z, alanlar)
+    # Sulama Z'si normal sulamadaki kuralla aynı: yüzeyin üstünde,
+    # başlığın Z tabanından aşağı inmeden.
+    # Açıklık normal sulamadakiyle AYNI tabandan: 50 mm hedef, en az 20.
+    # Ayrı bir sayı uydursaydık hizalama gerçek sulamadan farklı bir
+    # yükseklikten su dökerdi ve ölçülen sapma yanlış olurdu — su
+    # yükseklikten düşerken yayılıyor.
+    z = max(yuzey + 50.0, bas["z_min"], yuzey + sulama.EN_AZ_ACIKLIK_MM)
+    mx, my = round(hx + bas["dx"], 2), round(hy + bas["dy"], 2)
+
+    adimlar = [
+        {"tip": "nokta", "ad": "hizalama", "x": mx, "y": my, "z": round(z, 2)},
+        {"tip": "role", "ad": "su_pompasi", "durum": True},
+        {"tip": "bekle", "saniye": saniye},
+        {"tip": "role", "ad": "su_pompasi", "durum": False},
+    ]
+    await _adim_on_kontrol(adimlar, "Hizalama")
+    await merkez.yayinla({
+        "tip": "gunluk", "seviye": "bilgi",
+        "metin": f"Hizalama · hedef X{hx:.0f} Y{hy:.0f} · başlık kayması "
+                 f"X{bas['dx']:+.0f} Y{bas['dy']:+.0f} → makine "
+                 f"X{mx:.0f} Y{my:.0f} Z{z:.0f} · {saniye:.0f} sn su"})
+    yanit = await merkez.komut_gonder("dizi_baslat", {
+        "ad": "Başlık hizalama", "adimlar": adimlar, "tekrar": 1})
+    return {"ok": True, "hedef": {"x": hx, "y": hy},
+            "makine": {"x": mx, "y": my, "z": round(z, 2)},
+            "baslik": bas, "mesaj": (yanit or {}).get("mesaj", "")}
+
+
+@app.post("/api/sulama/hizala/uygula")
+async def api_sulama_hizala_uygula(govde: dict[str, Any],
+                                   jeton: str = Query(default="")):
+    """Ölçülen sapmadan doğru kaymayı hesaplar ve ajana yazar.
+
+    `sapma_x/sapma_y` = suyun düştüğü yer eksi hedef, makine eksenlerinde.
+    Yeni kayma = mevcut kayma - sapma. İşaret hatası mümkün değil: ölçülen
+    şey doğrudan düzeltilecek şey.
+    """
+    _parola_dogrula(jeton)
+    try:
+        sx, sy = float(govde.get("sapma_x")), float(govde.get("sapma_y"))
+    except (TypeError, ValueError):
+        raise HTTPException(
+            status_code=400,
+            detail="Sapma X ve Y gerekiyor (suyun düştüğü yer eksi hedef).")
+    if abs(sx) > 500 or abs(sy) > 500:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Sapma çok büyük (X{sx:.0f} Y{sy:.0f} mm). Yatak "
+                   "535×645 mm; ölçüyü kontrol edin.")
+    eski = _baslik_oku()
+    yeni = {"dx": round(eski["dx"] - sx, 1), "dy": round(eski["dy"] - sy, 1),
+            "z_min": eski["z_min"]}
+    # z_min'i de yolluyoruz: `uclar.kaydet` üst düzeyde birleştiriyor, yani
+    # `sulama_basligi` sözlüğünün TAMAMI değişiyor ve eksik gönderilen bir
+    # alan sessizce sıfırlanırdı.
+    await merkez.komut_gonder("uc_kaydet", {"ayar": {"sulama_basligi": yeni}})
+    await merkez.yayinla({
+        "tip": "gunluk", "seviye": "bilgi",
+        "metin": f"Başlık kayması ölçümle güncellendi: X{eski['dx']:+.0f} "
+                 f"Y{eski['dy']:+.0f} → X{yeni['dx']:+.0f} Y{yeni['dy']:+.0f} mm "
+                 f"(ölçülen sapma X{sx:+.0f} Y{sy:+.0f})"})
+    return {"ok": True, "eski": eski, "yeni": yeni,
+            "sapma": {"x": sx, "y": sy}}
 
 
 async def _adim_on_kontrol(adimlar: list[dict[str, Any]], etiket: str) -> None:
@@ -933,11 +1089,16 @@ def _ekim_coz(adlar: list[str]) -> dict[str, Any]:
 #   │ al       iniyor                → burası pompayı AÇIYOR
 #   │ taşı     bekle, kalk, hedefe   → ONAY 2: "tohum ucta mı?"
 #   │ ek       in, pompa kapat, kalk
-#   └ home     makinenin home komutu
+#   └ (sıradaki bitkiye doğrudan geçiliyor)
+#     home     hepsi bitince, bir kez
 #     uç bırak (ayar.bitince_birak)
 #
 # Döngü bitki başına baştan işliyor ve KARIŞMIYOR: bir sonraki parça
 # ancak öncekinin bittiği ajanın durum paketinde görülünce gönderiliyor.
+#
+# HOME YALNIZ EN SONDA. Önce her bitkiden sonra dönülüyordu; her tohum
+# için yatağın bir ucundan öbürüne iki fazladan yolculuk demek ve sahada
+# zaman kaybettirdi.
 #
 # İKİ ONAYIN SEBEBİ. `lock_reg` ve `presence_reg` bağlı değil; ikisi de
 # makinenin BİLEMEDİĞİ bir şeyi soruyor. Özellikle ikincisi: vakum
@@ -1229,12 +1390,8 @@ async def _ekim_ilerlet_ic(parca: str) -> None:
         return
 
     if parca == "home":
-        # Home döndü; sıradaki bitki ya da bitiş.
-        _ekim.sira += 1
-        if _ekim.sira >= len(_ekim.ozet):
-            await _ekim_bitir("bitti")
-            return
-        await _ekim_parca_baslat("hazne")
+        # Home döndü — bu artık yalnız EN SONDA oluyor, bitişi tetikliyor.
+        await _ekim_bitir("bitti")
         return
 
     # parca == "ek": tohum toprağa bırakıldı.
@@ -1248,13 +1405,20 @@ async def _ekim_ilerlet_ic(parca: str) -> None:
     await asyncio.to_thread(
         noktalar.alanlari_yaz, {str(o.get("ad")): {"ekim": time.time()}})
     await merkez.yayinla({"tip": "tepsi"})
-    await _ekim_gunluk(
-        f"{o.get('ad')} ekildi ({_ekim.sira + 1}/{len(_ekim.ozet)}) — home'a dönülüyor")
-    await _ekim_home()
+    await _ekim_gunluk(f"{o.get('ad')} ekildi ({_ekim.sira + 1}/{len(_ekim.ozet)})")
+    # HER BİTKİDEN SONRA HOME YOK. Önce öyleydi ve her tohum için yatağın
+    # bir ucundan öbürüne iki fazladan yolculuk demekti; sahada zaman
+    # kaybettirdiği görüldü. Sıradaki bitkinin haznesine doğrudan
+    # gidiyoruz, home'a yalnız hepsi bitince dönülüyor.
+    _ekim.sira += 1
+    if _ekim.sira >= len(_ekim.ozet):
+        await _ekim_home()
+        return
+    await _ekim_parca_baslat("hazne")
 
 
 async def _ekim_home() -> None:
-    """Makineyi home'a gönderir ve bittiğini izlemeye devam eder.
+    """BÜTÜN bitkiler ekildikten sonra makineyi home'a gönderir.
 
     `home` bir DİZİ değil, ajanın kendi komutu; "çalışıyor" bayrağı
     üzerinden izleyemiyoruz. Komut senkron: ajan yanıt verdiğinde

@@ -1204,6 +1204,47 @@
                  kullanıcı 50 yazınca makinenin nereye gideceğini görüyor. -->
             <p class="alt-not" id="ua-sb-ornek"></p>
 
+            <!-- HİZALAMA: TAHMİNLE DEĞİL ÖLÇEREK.
+                 Kaymanın işaretini elle vermek kolayca ters gidiyor ve
+                 sonucu ancak toprağa bakınca görünüyor. Burada makine
+                 bilinen bir noktayı suluyor, kullanıcı sapmayı ölçüyor,
+                 doğru kaymayı sistem hesaplıyor. -->
+            <details class="uc-ayar" id="sh-kutu">
+              <summary>Başlığı hizala — bir kez sula, sapmayı ölç</summary>
+              <p class="alt-not"><b>1.</b> Boş bir yere hedef verin ve
+                <b>Sula</b>'ya basın; makine hedefe <i>mevcut kaymayla</i>
+                gidip kısa süre su döker.<br>
+                <b>2.</b> Suyun düştüğü ıslak izin hedeften ne kadar
+                saptığını ölçün ve aşağıya yazın.<br>
+                <b>3.</b> <b>Hesapla ve kaydet</b>: doğru kayma hesaplanıp
+                ajana yazılır. Başlığın yeri değişirse aynı adımı
+                tekrarlayın.</p>
+              <div class="satir-8 alt-hizali">
+                <div class="alan"><label for="sh-x">Hedef X</label>
+                  <input type="number" id="sh-x" step="1"></div>
+                <div class="alan"><label for="sh-y">Hedef Y</label>
+                  <input type="number" id="sh-y" step="1"></div>
+                <div class="alan"><label for="sh-sn">sn</label>
+                  <input type="number" id="sh-sn" step="0.5" min="0.5" max="20" value="2"></div>
+                <button class="dugme" id="d-sh-dene">Sula</button>
+              </div>
+              <div class="alt-not" id="sh-nerede"></div>
+
+              <p class="alt-not" style="margin-top:8px"><b>Sapma:</b> ıslak
+                izin merkezi hedefin neresinde? Makine eksenlerinde ölçün —
+                <b>X+</b> makinenin X'inin arttığı yön, <b>Y+</b> Y'nin
+                arttığı yön. İşareti düşünmek zorunda değilsiniz: ne
+                ölçerseniz o kadarı mevcut kaymadan düşülüyor.</p>
+              <div class="satir-8 alt-hizali">
+                <div class="alan"><label for="sh-sx">Sapma X (mm)</label>
+                  <input type="number" id="sh-sx" step="1"></div>
+                <div class="alan"><label for="sh-sy">Sapma Y (mm)</label>
+                  <input type="number" id="sh-sy" step="1"></div>
+                <button class="dugme birincil" id="d-sh-uygula">Hesapla ve kaydet</button>
+              </div>
+              <div class="alt-not" id="sh-sonuc"></div>
+            </details>
+
             <label class="onay"><input type="checkbox" id="ua-alan-acik"> Uç değiştirme alanını aç</label>
             <div class="alan-izgara">
               <div class="alan"><label for="ua-k0x">K1 X</label><input type="number" id="ua-k0x" step="1"></div>

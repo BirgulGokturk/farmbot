@@ -2551,6 +2551,62 @@ function sulamaOfsetOrnek() {
     + "su X300 Y150'ye düşüyor.";
 }
 
+/* --------------------------------------- sulama başlığı hizalama
+ *
+ * Kaymanın işaretini elle vermek kolayca ters gidiyor ve sonucu ancak
+ * toprağa bakınca görünüyor — sahada tam bu oldu. Burada tahmin yok:
+ * makine bilinen bir noktayı suluyor, kullanıcı ıslak izin hedeften ne
+ * kadar saptığını ÖLÇÜYOR, doğru kaymayı sunucu hesaplıyor.
+ *
+ * Hesap sunucuda ve tek satır: yeni kayma = mevcut kayma − ölçülen
+ * sapma. İşaret hatası mümkün değil, çünkü ölçülen şey doğrudan
+ * düzeltilecek şey. Panelde ikinci bir hesap YOK.
+ */
+async function sulamaHizalaDene() {
+  const x = $("#sh-x").value, y = $("#sh-y").value;
+  if (x === "" || y === "") { gunluk("Hedef X ve Y gerekiyor", "uyari"); return; }
+  try {
+    const s = await apiIste("/api/sulama/hizala/dene", {
+      method: "POST",
+      body: JSON.stringify({ x: Number(x), y: Number(y),
+                             saniye: Number($("#sh-sn").value || 2) }),
+    });
+    // NEREYE GİTTİĞİ YAZILIYOR. Asıl soru buydu: makine kaymayı
+    // uyguluyor mu, uyguluyorsa hangi yöne.
+    $("#sh-nerede").innerHTML =
+      `Hedef <b>X${s.hedef.x} Y${s.hedef.y}</b> · kayma `
+      + `X${s.baslik.dx >= 0 ? "+" : ""}${s.baslik.dx} `
+      + `Y${s.baslik.dy >= 0 ? "+" : ""}${s.baslik.dy} → makine `
+      + `<b>X${s.makine.x} Y${s.makine.y} Z${s.makine.z}</b>`;
+    gunluk(`Hizalama suyu döküldü — makine X${s.makine.x} Y${s.makine.y}`, "iyi");
+  } catch (h) {
+    gunluk(`✕ Hizalama: ${h.message}`, "hata");
+  }
+}
+
+async function sulamaHizalaUygula() {
+  const sx = $("#sh-sx").value, sy = $("#sh-sy").value;
+  if (sx === "" || sy === "") { gunluk("Sapma X ve Y gerekiyor", "uyari"); return; }
+  try {
+    const s = await apiIste("/api/sulama/hizala/uygula", {
+      method: "POST",
+      body: JSON.stringify({ sapma_x: Number(sx), sapma_y: Number(sy) }),
+    });
+    $("#sh-sonuc").innerHTML =
+      `Kayma <b>X${s.eski.dx} Y${s.eski.dy}</b> → `
+      + `<b>X${s.yeni.dx} Y${s.yeni.dy}</b> mm olarak kaydedildi. `
+      + "Aynı noktayı yeniden sulayıp doğrulayın.";
+    gunluk(`✓ Başlık kayması: X${s.yeni.dx} Y${s.yeni.dy} mm`, "ok");
+    // Uç ayarları formundaki kutular da yeni değeri göstersin.
+    const dx = $("#ua-sb-dx"), dy = $("#ua-sb-dy");
+    if (dx) dx.value = s.yeni.dx;
+    if (dy) dy.value = s.yeni.dy;
+    sulamaOfsetOrnek();
+  } catch (h) {
+    gunluk(`✕ Hizalama: ${h.message}`, "hata");
+  }
+}
+
 /** "bitki 2/5 · m2" — hangi bitkide olduğumuz her hâlde görünsün. */
 function ekimIlerleme(e) {
   return `bitki ${e.sira}/${e.toplam}` + (e.tohum ? ` · ${e.tohum}` : "");
@@ -4420,6 +4476,8 @@ function olaylariBagla() {
   bagla("#d-tepsi-sula", () => tepsiTopluIslem("sula"));
   bagla("#d-tepsi-secim-temizle", () => { S.tepsiSecim = []; tepsiCiz(); });
   bagla("#d-tepsi-kayma", tepsiKaymaGonder);
+  bagla("#d-sh-dene", sulamaHizalaDene);
+  bagla("#d-sh-uygula", sulamaHizalaUygula);
   // `addEventListener`, `oninput =` DEĞİL. Bu iki kutuya aşağıda
   // (`details.uc-ayar input`) zaten bir işleyici bağlanıyor ve o işleyici
   // "kullanıcı düzenliyor" bayrağını kaldırıyor — atama yapsaydık onu
