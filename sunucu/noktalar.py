@@ -129,7 +129,8 @@ def bul(ad: str) -> dict[str, Any] | None:
 # depoya yazılıyor: "şu noktaya git", program adımı ve sınır denetimi bir
 # bitki için de aynen çalışsın diye. Paralel bir nokta kavramı öğrenmek
 # gerekmiyor; bitki, tür bilgisi taşıyan bir noktadan ibaret.
-BITKI_ALANLARI = ("tur", "ekim", "egri_su", "egri_yayilim", "egri_yukseklik", "ozel")
+BITKI_ALANLARI = ("tur", "ekim", "egri_su", "egri_yayilim", "egri_yukseklik",
+                  "ozel", "tepsi", "goz", "sulama_ts")
 
 # Eğri alanları bir eğrinin ADINI tutuyor, değerini değil: eğri düzenlenince
 # ona bağlı bütün bitkiler kendiliğinden yeni değeri kullanıyor. Eğri
@@ -167,6 +168,20 @@ def _ekstra_suz(kaynak: dict[str, Any]) -> dict[str, Any]:
     if kaynak.get("ekim") is not None:
         try:
             cikti["ekim"] = float(kaynak["ekim"])
+        except (TypeError, ValueError):
+            pass
+    # TEPSİ GÖZÜ. Bitki bir fidelik tepsisinin gözünde duruyorsa hangi
+    # tepsinin hangi gözünde olduğu burada; koordinatı GÖZDEN türüyor.
+    # İkisi ayrı alan çünkü alan adı "/" içerebiliyor ve tek alanda
+    # birleştirip ayrıştırmak sessizce yanlış tepsiye bakmak demek olurdu.
+    for alan in ("tepsi", "goz"):
+        if kaynak.get(alan):
+            cikti[alan] = str(kaynak[alan])[:40]
+    # Sulamanın BAŞLATILDIĞI an. "Su düştü" demek DEĞİL: sensör yok,
+    # kaydettiğimiz şey komutun gittiği an (bkz. `main._sulama_damgala`).
+    if kaynak.get("sulama_ts") is not None:
+        try:
+            cikti["sulama_ts"] = float(kaynak["sulama_ts"])
         except (TypeError, ValueError):
             pass
     for alan in EGRI_ALANLARI:
@@ -260,6 +275,39 @@ def geri_koy(kayitlar: list[dict[str, Any]]) -> list[str]:
         if konan:
             yaz(veri)
     return konan
+
+
+def alanlari_yaz(guncelle: dict[str, dict[str, Any]]) -> int:
+    """Var olan noktalara alan yazar. -> kaç nokta değişti
+
+    `{"m1": {"ekim": 1.7e9}, "m2": {"x": 300, "y": 150}}` gibi. Tek tek
+    `ekle` çağırmak her nokta için dosyayı baştan yazmak olurdu ve
+    `ekle` alanların TAMAMINI istiyor — burada yalnız verilenler
+    değişiyor, gerisi olduğu gibi kalıyor.
+
+    Tepsi kaydırılınca gözlerdeki bitkilerin koordinatını toplu
+    güncellemek ve ekim/sulama damgası basmak buradan geçiyor.
+    """
+    if not guncelle:
+        return 0
+    with _KILIT:
+        veri = oku()
+        degisen = 0
+        for n in veri["noktalar"]:
+            yeni = guncelle.get(n.get("ad"))
+            if not yeni:
+                continue
+            for anahtar, deger in yeni.items():
+                if anahtar in ("x", "y", "z"):
+                    n[anahtar] = round(float(deger), 2)
+                elif anahtar in BITKI_ALANLARI or anahtar == "etiket":
+                    n.update(_ekstra_suz({anahtar: deger})
+                             if anahtar in BITKI_ALANLARI
+                             else {"etiket": str(deger or "")})
+            degisen += 1
+        if degisen:
+            yaz(veri)
+    return degisen
 
 
 def nokta_listesi_uret(ciftler: list[Any], z: float,

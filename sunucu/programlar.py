@@ -122,7 +122,31 @@ def adim_dogrula(adim: dict[str, Any]) -> dict[str, Any]:
         ad = str(adim.get("ad", "")).strip()
         if not ad:
             raise ProgramHatasi("Nokta adımı bir nokta adı ister")
-        return {"tip": "nokta", "ad": ad}
+        temiz = {"tip": "nokta", "ad": ad}
+        # ÖNCEDEN ÇÖZÜLMÜŞ KOORDİNAT KORUNUYOR.
+        #
+        # Sulama adımları buraya x/y/z dolu geliyor ve o koordinat
+        # bitkinin kendi konumu DEĞİL: başlık kaymasıyla ötelenmiş sulama
+        # noktası, ya da desenin çember noktalarından biri. Burada
+        # düşürülünce `coz` onları isimden yeniden çözüyordu ve makine
+        # bitkinin tam üstüne gidiyordu — yani başlık kayması hiç
+        # uygulanmıyor, çok noktalı desen de tek noktaya çöküyordu.
+        # (Önizleme doğru sayıyı gösteriyordu, çünkü o bu yoldan
+        # geçmiyor; ekranda 318/123 yazarken makine 260/70'e gidiyordu.)
+        #
+        # `coz`daki "önceden çözülmüş adım" dalı bu alanların burada
+        # korunmasına bağlı; doğrulama önce koştuğu için oraya hiç
+        # ulaşamıyordu.
+        if all(adim.get(k) is not None for k in ("x", "y", "z")):
+            try:
+                temiz.update({"x": float(adim["x"]), "y": float(adim["y"]),
+                              "z": float(adim["z"])})
+            except (TypeError, ValueError):
+                # Sayıya çevrilemeyen koordinat KORUNMUYOR: adı çözülsün,
+                # yarım bir koordinatla makineyi yollamaktansa depodaki
+                # konuma gitmek doğru taraf.
+                pass
+        return temiz
     if tip == "bekle":
         # "$sure" gibi bir değişken referansı olduğu gibi saklanıyor; sayıya
         # çevirme işi diziyi çalıştırırken, değer bilindiğinde yapılıyor.

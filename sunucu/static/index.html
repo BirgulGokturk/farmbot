@@ -676,6 +676,86 @@
         </div>
       </section>
 
+      <!-- FİDELİK TEPSİSİ — gözlü bir dikim alanının gözleri.
+           Koordinatlar burada YAZILMIYOR: tepsi Ayarlar → Dikim
+           alanları'nda bir kez parametrik tanımlanıyor, burası onun
+           gözlerini gösteriyor ve içine bitki koyuyor. -->
+      <section class="bolum" id="bolum-tepsi">
+        <div class="bolum-ust">
+          <button class="bolum-bas" aria-expanded="true">
+            <svg class="ikon ok"><use href="#i-ok"/></svg>
+            <span class="bolum-ad">Fidelik tepsisi</span>
+            <span class="bolum-ozet" id="tepsi-ozet"></span>
+          </button>
+          <button class="yardim" type="button" aria-expanded="false"
+                  aria-controls="yardim-tepsi" aria-label="Açıklama">?</button>
+        </div>
+        <div class="bolum-govde">
+          <p class="yardim-metin gizli" id="yardim-tepsi">
+            Gözlü bir dikim alanının gözleri. Tepsiyi <b>Ayarlar → Dikim
+            alanları</b>'ndan tanımlıyorsunuz: ilk gözün merkezi, gözler
+            arası mesafe, satır × sütun. Kalan bütün koordinatlar
+            hesaplanıyor ve numaralar <b>kalıcı</b> — bir gözü boşaltmak
+            ötekilerin numarasını kaydırmıyor.<br><br>
+            <b>Tepsi kayması.</b> Tepsi hiçbir zaman tam istenen yere
+            oturmuyor. Bir gözü ölçüp "bu göz aslında şurada" deyin,
+            bütün tepsi topluca kayar ve gözlerdeki bitkiler de birlikte
+            taşınır. Tek tek düzeltmek 32 ölçüm demek.<br><br>
+            <b>Renkler:</b> koyu = boş, mavi = planlandı (ekim listesinde
+            ama henüz ekilmedi), yeşil = ekildi, camgöbeği = sulandı.
+            "Sulandı" sulama komutunun gittiği anı gösteriyor — akış
+            sensörü yok, suyun düştüğü ölçülmüyor.
+          </p>
+
+          <div class="satir-8 alt-hizali">
+            <div class="alan esnek-alan">
+              <label for="tepsi-secim">Tepsi</label>
+              <select id="tepsi-secim"></select>
+            </div>
+            <button class="dugme" id="d-tepsi-tazele">Tazele</button>
+          </div>
+          <p class="bos-durum gizli" id="tepsi-yok"></p>
+
+          <div id="tepsi-izgara" class="tepsi-izgara"></div>
+
+          <div class="tepsi-arac gizli" id="tepsi-arac">
+            <div class="satir-8 alt-hizali">
+              <div class="alan esnek-alan">
+                <label for="tepsi-tur">Tür</label>
+                <select id="tepsi-tur"></select>
+              </div>
+              <button class="dugme birincil" id="d-tepsi-ek">Seçilen gözlere koy</button>
+              <button class="dugme tehlike" id="d-tepsi-bosalt">Boşalt</button>
+            </div>
+            <div class="satir-8">
+              <button class="dugme" id="d-tepsi-ekim">Seçilenleri EK</button>
+              <button class="dugme" id="d-tepsi-sula">Seçilenleri sula</button>
+              <button class="dugme" id="d-tepsi-secim-temizle">Seçimi bırak</button>
+            </div>
+          </div>
+
+          <div class="gomulu gizli" id="tepsi-kart"></div>
+
+          <details class="uc-ayar">
+            <summary>Tepsi kayması — bir göz ölç, tepsi hizalansın</summary>
+            <p class="alt-not">Ölçtüğünüz gözü seçin ve makinede okuduğunuz
+              gerçek koordinatı yazın. Fark bütün tepsiye uygulanır; gözlerdeki
+              bitkiler de birlikte taşınır. Hangi gözü ölçtüğünüz fark etmez —
+              tepsi rijit, yalnız tamamı ötelenmiş.</p>
+            <div class="satir-8 alt-hizali">
+              <div class="alan"><label for="tk-goz">Göz</label>
+                <select id="tk-goz"></select></div>
+              <div class="alan"><label for="tk-x">Ölçülen X</label>
+                <input type="number" id="tk-x" step="0.1"></div>
+              <div class="alan"><label for="tk-y">Ölçülen Y</label>
+                <input type="number" id="tk-y" step="0.1"></div>
+              <button class="dugme birincil" id="d-tepsi-kayma">Hizala</button>
+            </div>
+            <div class="alt-not" id="tk-mevcut"></div>
+          </details>
+        </div>
+      </section>
+
       <!-- 3. GELİŞMİŞ — ara sıra açılan işler. Varsayılan KATLI: bir
            ekranda aynı anda en fazla üç ana blok görünsün. -->
       <section class="bolum kapali" id="bolum-gelismis">
@@ -683,18 +763,22 @@
           <button class="bolum-bas" aria-expanded="false">
             <svg class="ikon ok"><use href="#i-ok"/></svg>
             <span class="bolum-ad">Gelişmiş</span>
-            <span class="bolum-not">Ekim noktaları</span>
+            <span class="bolum-not">Düz toprağa nokta</span>
           </button>
         </div>
         <div class="bolum-govde">
-          <h4 class="alt-baslik">Ekim noktaları
+          <h4 class="alt-baslik">Düz toprağa ekim noktası
             <button class="yardim" type="button" aria-expanded="false" aria-label="Açıklama">?</button></h4>
           <p class="yardim-metin gizli">
-            İki yol var. <b>Izgara</b> düzenli bir dizilim üretir: 1 numaralı
-            nokta başlangıçta, sütunlar X'te, satırlar Y'de ilerler;
-            numaralandırma satır-öncelikli (<code>s1, s2, s3…</code>).
-            <b>Koordinat listesi</b> ise tek tek yazdığınız noktaları üretir —
-            her ekim düzenli bir ızgaraya oturmuyor.<br><br>
+            <b>Düz toprak</b> için serbest nokta girme yolu: her satıra bir
+            koordinat yazarsınız, o noktalara bitki kaydedilir.<br><br>
+            <b>Düzenli dizilim artık burada değil.</b> Eskiden bir "ızgara"
+            vardı ve ürettiği noktalar başıboştu: silinince numaralar kayıyor,
+            geriye tepsi diye bir şey kalmıyordu. Onun kalıcı hâli
+            <b>Fidelik tepsisi</b>: alanı bir kez tanımlıyorsunuz, gözler
+            numaralı ve kalıcı oluyor, tepsi kayarsa hepsi birlikte
+            hizalanıyor. Gözlü bir kap için Ayarlar → Dikim alanları'ndan
+            zemini <b>Gözlü fidelik tepsisi</b> yapın.<br><br>
             <b>Tür seçin.</b> Türü yazılı olmayan bir noktayı ekim
             reddediyor ("türü yazılı değil"), çünkü hangi hazneden tohum
             alacağını bilemiyor. Burada seçtiğiniz tür noktalara yazılır ve
@@ -703,40 +787,17 @@
             bir bilgi ve türde duruyor.
           </p>
 
-          <div class="araclar" role="group" aria-label="Üretim biçimi">
-            <button class="ikon-dugme secili iz-kip" data-kip="izgara">Izgara</button>
-            <button class="ikon-dugme iz-kip" data-kip="liste">Koordinat listesi</button>
-          </div>
-
           <div class="alan" style="margin:8px 0">
             <label for="iz-tur">Tür — noktalara yazılacak</label>
             <select id="iz-tur"></select>
           </div>
           <div class="rozet-uyari gizli" id="iz-tur-uyari"></div>
 
-          <div class="izgara-form" id="iz-izgara">
-            <div class="grup">
-              <span class="grup-ad">Başlangıç</span>
-              <div class="alan"><label for="iz-x0">X</label><input type="number" id="iz-x0" step="0.1" value="60"></div>
-              <div class="alan"><label for="iz-y0">Y</label><input type="number" id="iz-y0" step="0.1" value="80"></div>
-            </div>
-            <div class="grup">
-              <span class="grup-ad">Aralık</span>
-              <div class="alan"><label for="iz-dx">X</label><input type="number" id="iz-dx" step="0.1" value="40"></div>
-              <div class="alan"><label for="iz-dy">Y</label><input type="number" id="iz-dy" step="0.1" value="40"></div>
-            </div>
-            <div class="grup">
-              <span class="grup-ad">Boyut</span>
-              <div class="alan"><label for="iz-satir">Satır</label><input type="number" id="iz-satir" min="1" value="3"></div>
-              <div class="alan"><label for="iz-sutun">Sütun</label><input type="number" id="iz-sutun" min="1" value="4"></div>
-            </div>
-          </div>
-
           <!-- Serbest liste. Her satır bir nokta; ayraç virgül ya da boşluk
                olabilir çünkü kullanıcı ikisini de yazıyor. Okunamayan satır
                ATLANMIYOR, sebebiyle reddediliyor — sessizce atlanan bir
                satır, ekilmediği fark edilmeyen bir bitki demek. -->
-          <div class="gizli" id="iz-liste-kutu">
+          <div id="iz-liste-kutu">
             <label for="iz-liste">Koordinatlar — her satıra <b>X, Y</b></label>
             <textarea id="iz-liste" rows="5" spellcheck="false"
                       placeholder="300, 150&#10;340, 150&#10;380, 190"></textarea>

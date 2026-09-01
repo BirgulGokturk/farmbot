@@ -51,6 +51,30 @@ EN_KUCUK_KENAR = 5.0     # mm — sıfır genişlikte alan çizilemez, tıklanam
 # Ekim derinliği toprak yüzeyinden ölçülüyor; bu tavan `turler.SINIR` ile aynı.
 AZAMI_DERINLIK = 200.0
 
+# --------------------------------------------------------------------------- #
+# Alan tipi: düz toprak mı, gözlü fidelik tepsisi mi
+#
+# Aynı yatakta iki farklı şey var: Kap 1 düz toprak, istediğin yere ekersin;
+# Kap 2 32 gözlü bir tepsi, ekim yalnız gözlere olur. Bunu alanın bir
+# ÖZELLİĞİ yaptık, ayrı bir kavram değil — "burası nasıl bir zemin"
+# sorusunun cevabı alanın kendisine ait ve üçüncü bir kap eklendiğinde
+# onun için de aynı yerden seçiliyor.
+#
+# GÖZLER TEK TEK GİRİLMİYOR. 32 gözü elle yazmak hem uzun sürer hem
+# yanlış olur. Tepsi bir kez PARAMETRİK tanımlanıyor (ilk gözün merkezi,
+# gözler arası mesafe, satır × sütun) ve kalan bütün koordinatlar
+# hesaplanıyor.
+#
+# NUMARALAR KALICI, çünkü GEOMETRİK. `p7` "yedinci sıradaki kayıt" değil,
+# "birinci satır yedinci sütundaki göz". Bir gözü boşaltmak ya da bir
+# bitkiyi silmek numaraları kaydırmıyor — kaydırsaydı ekim geçmişi
+# okunamaz olurdu.
+# --------------------------------------------------------------------------- #
+
+TIPLER = ("duz", "tepsi")
+AZAMI_GOZ = 200          # 10x20'lik bir tepsi bile sığar; ötesi panelde okunmaz
+AZAMI_ONEK = 8
+
 
 class DikimHatasi(Exception):
     """Geçersiz alan tanımı."""
@@ -144,7 +168,96 @@ def alan_dogrula(ham: Any, sira: int = 0) -> dict[str, Any]:
     # ayrışıyorlar.
     if ham.get("toprak_z") not in (None, ""):
         alan["toprak_z"] = round(_sayi(ham.get("toprak_z"), "toprak_z"), 1)
+
+    tip = str(ham.get("tip") or "duz").strip()
+    if tip not in TIPLER:
+        raise DikimHatasi(f"'{ad}': bilinmeyen alan tipi '{tip}'")
+    alan["tip"] = tip
+    if tip == "tepsi":
+        alan["tepsi"] = tepsi_dogrula(ham.get("tepsi"), ad)
     return alan
+
+
+def tepsi_dogrula(ham: Any, alan_ad: str = "") -> dict[str, Any]:
+    """Tepsi tanımını normalleştirir.
+
+    `kayma_x/kayma_y` GERÇEĞE HİZALAMA payı. Tepsi hiçbir zaman tam
+    istenen yere oturmuyor; bir gözü ölçüp "aslında şurada" demek bütün
+    tepsiyi topluca kaydırıyor (bkz. `kayma_hesapla`). Tek tek düzeltmek
+    32 ölçüm demek olurdu, oysa tepsi rijit bir parça: bir ölçüm yeter.
+    """
+    if not isinstance(ham, dict):
+        raise DikimHatasi(f"'{alan_ad}': tepsi tanımı eksik")
+    satir = int(_sayi(ham.get("satir"), "satır"))
+    sutun = int(_sayi(ham.get("sutun"), "sütun"))
+    if satir < 1 or sutun < 1:
+        raise DikimHatasi(f"'{alan_ad}': satır ve sütun en az 1 olmalı")
+    if satir * sutun > AZAMI_GOZ:
+        raise DikimHatasi(
+            f"'{alan_ad}': {satir}×{sutun} = {satir * sutun} göz, "
+            f"sınır {AZAMI_GOZ}")
+    dx = _sayi(ham.get("dx"), "X aralığı")
+    dy = _sayi(ham.get("dy"), "Y aralığı")
+    # SIFIR ARALIK sessizce kabul edilmiyor: bütün gözler üst üste
+    # gelirdi ve tepsi tek bir göz gibi davranırdı.
+    if sutun > 1 and abs(dx) < 0.1:
+        raise DikimHatasi(f"'{alan_ad}': birden çok sütun var, X aralığı 0 olamaz")
+    if satir > 1 and abs(dy) < 0.1:
+        raise DikimHatasi(f"'{alan_ad}': birden çok satır var, Y aralığı 0 olamaz")
+    onek = str(ham.get("onek") or "p").strip()[:AZAMI_ONEK] or "p"
+    return {
+        "x0": round(_sayi(ham.get("x0"), "ilk göz X"), 1),
+        "y0": round(_sayi(ham.get("y0"), "ilk göz Y"), 1),
+        "dx": round(dx, 1), "dy": round(dy, 1),
+        "satir": satir, "sutun": sutun, "onek": onek,
+        "kayma_x": round(_sayi(ham.get("kayma_x", 0) or 0, "X kayması"), 1),
+        "kayma_y": round(_sayi(ham.get("kayma_y", 0) or 0, "Y kayması"), 1),
+    }
+
+
+def gozler(alan: dict[str, Any]) -> list[dict[str, Any]]:
+    """Tepsinin bütün gözleri, koordinatlarıyla ve KALICI numaralarıyla.
+
+    Satır öncelikli: p1 ilk satırın ilk sütunu, sonra sağa doğru.
+    Numara geometriden türüyor, listeden değil — bir gözün boşalması
+    ötekilerin numarasını kaydırmıyor.
+    """
+    if (alan or {}).get("tip") != "tepsi":
+        return []
+    t = alan.get("tepsi") or {}
+    onek = str(t.get("onek") or "p")
+    kx, ky = float(t.get("kayma_x") or 0.0), float(t.get("kayma_y") or 0.0)
+    cikti = []
+    no = 0
+    for r in range(int(t.get("satir") or 0)):
+        for c in range(int(t.get("sutun") or 0)):
+            no += 1
+            cikti.append({
+                "goz": f"{onek}{no}",
+                "no": no, "satir": r + 1, "sutun": c + 1,
+                "x": round(float(t.get("x0") or 0) + kx + c * float(t.get("dx") or 0), 1),
+                "y": round(float(t.get("y0") or 0) + ky + r * float(t.get("dy") or 0), 1),
+            })
+    return cikti
+
+
+def goz_bul(alan: dict[str, Any], goz: str) -> dict[str, Any] | None:
+    return next((g for g in gozler(alan) if g["goz"] == str(goz)), None)
+
+
+def kayma_hesapla(alan: dict[str, Any], goz: str,
+                  olculen_x: float, olculen_y: float) -> tuple[float, float]:
+    """"Bu göz aslında şurada" → bütün tepsinin kayması.
+
+    Ölçülen göz hangisi olursa olsun sonuç aynı: tepsi rijit, gözler
+    arası mesafe değişmiyor, yalnız tepsinin tamamı ötelenmiş.
+    """
+    t = (alan or {}).get("tepsi") or {}
+    hedef = goz_bul({**alan, "tepsi": {**t, "kayma_x": 0, "kayma_y": 0}}, goz)
+    if hedef is None:
+        raise DikimHatasi(f"'{goz}' diye bir göz yok")
+    return (round(float(olculen_x) - hedef["x"], 1),
+            round(float(olculen_y) - hedef["y"], 1))
 
 
 def listele() -> list[dict[str, Any]]:

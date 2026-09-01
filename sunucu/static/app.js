@@ -38,6 +38,8 @@ const S = {
   gozDuzenleniyor: false,
   kamCoz: null,         // kamera kutusundaki son çözümleme (null = kutu boş)
   kamMaske: false,      // maske katmanı açık mı
+  tepsiler: [],         // gözlü dikim alanları, gözleriyle
+  tepsiSecim: [],       // seçili göz adları
   ucDurum: null,        // ajandan gelen son uç durumu (uc, dogrulanabilir…)
   ucTeyit: null,        // teyit bekleyen uç işlemi {islem, hedef}
   ekimOnay: null,       // onay bekleyen ekim oturumu (sunucudan)
@@ -282,6 +284,255 @@ async function noktaKaydet() {
   await noktalariYukle();
 }
 
+/* ----------------------------------------------------- fidelik tepsisi
+ *
+ * Gözlü bir dikim alanının gözleri. Koordinatlar BURADA YAZILMIYOR:
+ * tepsi bir kez parametrik tanımlanıyor (ilk göz, aralık, satır×sütun)
+ * ve `dikim.gozler` hesaplıyor. 32 gözü elle yazmak hem uzun sürer hem
+ * yanlış olur.
+ *
+ * Gözdeki bitki SIRADAN BİR BİTKİ: farkı `tepsi` + `goz` alanlarını
+ * taşıması. İkinci bir "göz kaydı" kavramı açmadık — açsaydık ekim,
+ * sulama, eğriler ve 3B sahne ikisini birden bilmek zorunda kalırdı.
+ *
+ * Numaralar GEOMETRİK, yani kalıcı: `p7` "yedinci kayıt" değil, "birinci
+ * satır yedinci sütun". Bir gözü boşaltmak ötekileri kaydırmıyor.
+ */
+const GOZ_RENK = {
+  bos: "gz-bos", planlandi: "gz-plan", ekildi: "gz-ekildi", sulandi: "gz-sulandi",
+};
+const GOZ_ETIKET = {
+  bos: "boş", planlandi: "planlandı", ekildi: "ekildi", sulandi: "sulandı",
+};
+
+function tepsiSecili() {
+  const ad = ($("#tepsi-secim") || {}).value || "";
+  return (S.tepsiler || []).find((t) => t.alan === ad) || (S.tepsiler || [])[0] || null;
+}
+
+function tepsiCiz() {
+  const izgara = $("#tepsi-izgara");
+  const yok = $("#tepsi-yok");
+  const arac = $("#tepsi-arac");
+  const ozet = $("#tepsi-ozet");
+  if (!izgara) return;
+
+  const liste = S.tepsiler || [];
+  // Tepsi seçim listesi — birden çok gözlü kap olabilir.
+  const sec = $("#tepsi-secim");
+  const onceki = sec.value;
+  sec.innerHTML = liste.map((t) =>
+    `<option value="${kacisli(t.alan)}">${kacisli(t.alan)}</option>`).join("");
+  if (onceki && liste.some((t) => t.alan === onceki)) sec.value = onceki;
+
+  if (!liste.length) {
+    izgara.innerHTML = "";
+    arac.classList.add("gizli");
+    if (ozet) ozet.textContent = "tanımsız";
+    yok.innerHTML = "Gözlü tepsi tanımlı değil.<br>"
+      + "Ayarlar → Dikim alanları'ndan bir alanın zeminini "
+      + "<b>Gözlü fidelik tepsisi</b> yapın.";
+    yok.classList.remove("gizli");
+    return;
+  }
+  yok.classList.add("gizli");
+  arac.classList.remove("gizli");
+
+  const t = tepsiSecili();
+  if (ozet) ozet.textContent = `${t.dolu}/${t.toplam} göz dolu`;
+
+  /* GÖZLER YUVARLAK DELİK. Tepsinin kendisi öyle görünüyor ve ekrandaki
+   * dizilim makinedekiyle AYNI: satırlar Y'de, sütunlar X'te. Boş göz
+   * koyu; içinde bitki varsa türün simgesi duruyor, yani göze bakınca
+   * ne ekildiği okunuyor. */
+  const turler = (window.Tarla && Tarla.turler && Tarla.turler()) || {};
+  izgara.style.setProperty("--sutun", t.sutun || 1);
+  izgara.innerHTML = (t.gozler || []).map((g) => {
+    const tur = turler[g.tur] || null;
+    const secili = (S.tepsiSecim || []).includes(g.goz);
+    const ic = g.durum === "bos" ? "" : kacisli((tur && tur.icon) || "🌱");
+    return `<button type="button" class="gz ${GOZ_RENK[g.durum] || "gz-bos"}${
+      secili ? " secili" : ""}" data-goz="${kacisli(g.goz)}"
+      title="${kacisli(g.goz)} · ${GOZ_ETIKET[g.durum]} · X${Math.round(g.x)} Y${Math.round(g.y)}">
+      <span class="gz-ic">${ic}</span>
+      <span class="gz-no">${kacisli(g.goz)}</span>
+    </button>`;
+  }).join("");
+
+  $$("#tepsi-izgara .gz").forEach((d) => {
+    d.onclick = (o) => {
+      const goz = d.dataset.goz;
+      const c = new Set(S.tepsiSecim || []);
+      // Ctrl/Shift olmadan tek seçim: çoklu seçim ısrarla tıklamayı
+      // gerektirseydi 32 gözlük bir tepside sabır sınavı olurdu.
+      if (o.ctrlKey || o.metaKey || o.shiftKey) {
+        if (c.has(goz)) c.delete(goz); else c.add(goz);
+      } else if (c.has(goz) && c.size === 1) {
+        c.clear();
+      } else {
+        c.clear(); c.add(goz);
+      }
+      S.tepsiSecim = [...c];
+      tepsiCiz();
+      tepsiKartYaz();
+    };
+  });
+  tepsiKartYaz();
+  tepsiKaymaYaz();
+}
+
+/** Seçili gözün kartı: ne olduğu, koordinatı ve oraya gitme düğmesi. */
+function tepsiKartYaz() {
+  const kart = $("#tepsi-kart");
+  if (!kart) return;
+  const t = tepsiSecili();
+  const secim = S.tepsiSecim || [];
+  if (!t || !secim.length) { kart.classList.add("gizli"); return; }
+  if (secim.length > 1) {
+    kart.innerHTML = `<b>${secim.length} göz seçili</b>
+      <div class="alt-not">${kacisli(secim.slice(0, 12).join(", "))}${
+        secim.length > 12 ? "…" : ""}</div>`;
+    kart.classList.remove("gizli");
+    return;
+  }
+  const g = (t.gozler || []).find((x) => x.goz === secim[0]);
+  if (!g) { kart.classList.add("gizli"); return; }
+  const turler = (window.Tarla && Tarla.turler && Tarla.turler()) || {};
+  const tur = turler[g.tur];
+  const zaman = (ts) => new Date(ts * 1000).toLocaleString("tr-TR");
+  kart.innerHTML = `<div class="tepsi-kart-bas">
+      <b>${kacisli(g.goz)}</b>
+      <span class="gz-rozet ${GOZ_RENK[g.durum]}">${GOZ_ETIKET[g.durum]}</span>
+      <span class="esnek"></span>
+      <button class="dugme kucuk" id="d-tepsi-git">Git</button>
+    </div>
+    <div class="alt-not">Satır ${g.satir} · sütun ${g.sutun} ·
+      <b>X${g.x.toFixed(1)} Y${g.y.toFixed(1)}</b>${
+      t.toprak_z != null ? ` · yüzey Z${Number(t.toprak_z).toFixed(0)}` : ""}</div>`
+    + (g.bitki
+      ? `<div class="alt-not">${kacisli((tur && tur.icon) || "🌱")}
+           <b>${kacisli((tur && tur.name_tr) || g.tur || "tür belirsiz")}</b>
+           · kayıt: ${kacisli(g.bitki)}</div>`
+        + (g.ekim ? `<div class="alt-not">Ekildi: ${zaman(g.ekim)}</div>`
+                  : `<div class="alt-not">Henüz ekilmedi — ekim listesinde.</div>`)
+        + (g.sulama_ts
+          ? `<div class="alt-not" title="Sulama komutunun gittiği an. Akış sensörü yok; suyun düştüğü ölçülmüyor.">
+               Sulama başlatıldı: ${zaman(g.sulama_ts)}</div>` : "")
+      : `<div class="alt-not">Göz boş.</div>`);
+  kart.classList.remove("gizli");
+  const git = $("#d-tepsi-git");
+  if (git) git.onclick = () => komutGonder("git", { x: g.x, y: g.y });
+}
+
+function tepsiKaymaYaz() {
+  const t = tepsiSecili();
+  const sec = $("#tk-goz");
+  if (!t || !sec) return;
+  const onceki = sec.value;
+  sec.innerHTML = (t.gozler || []).map((g) =>
+    `<option value="${kacisli(g.goz)}">${kacisli(g.goz)}</option>`).join("");
+  if (onceki && (t.gozler || []).some((g) => g.goz === onceki)) sec.value = onceki;
+  const k = t.tepsi || {};
+  const not = $("#tk-mevcut");
+  if (not) {
+    not.textContent = (k.kayma_x || k.kayma_y)
+      ? `Şu anki kayma: X${Number(k.kayma_x || 0).toFixed(1)} `
+        + `Y${Number(k.kayma_y || 0).toFixed(1)} mm`
+      : "Şu anda kayma uygulanmıyor.";
+  }
+}
+
+async function tepsiYukle() {
+  try {
+    const y = await apiIste("/api/tepsi");
+    S.tepsiler = y.tepsiler || [];
+    // Artık var olmayan gözler seçili kalmasın.
+    const t = tepsiSecili();
+    const varOlan = new Set((t ? t.gozler : []).map((g) => g.goz));
+    S.tepsiSecim = (S.tepsiSecim || []).filter((g) => varOlan.has(g));
+    tepsiCiz();
+  } catch (h) { /* parola yoksa sorun değil */ }
+}
+
+/** Seçili gözlere bitki koyar ya da gözleri boşaltır. */
+async function tepsiGozYaz(bosalt) {
+  const t = tepsiSecili();
+  const secim = S.tepsiSecim || [];
+  if (!t) return;
+  if (!secim.length) { gunluk("Önce göz seçin", "uyari"); return; }
+  const tur = ($("#tepsi-tur") || {}).value || "";
+  try {
+    const y = await apiIste("/api/tepsi/goz", {
+      method: "POST",
+      body: JSON.stringify({ alan: t.alan, gozler: secim, tur, bosalt }),
+    });
+    gunluk(bosalt
+      ? `✓ ${y.bosaltilan} göz boşaltıldı`
+      : `✓ ${secim.length} göze kondu (${y.eklendi} yeni, ${y.guncellendi} güncellendi)`,
+      "ok");
+    // Boşaltma bir SİLME: 30 saniyelik geri alma çubuğu burada da
+    // çalışsın — yanlış gözü boşaltmak kolay.
+    if (bosalt && y.geri_al) geriAlGoster(y.geri_al);
+    await tepsiYukle();
+    await noktalariYukle();
+  } catch (h) {
+    gunluk(`✕ ${h.message}`, "hata");
+  }
+}
+
+/** Seçili gözlerdeki bitkilerle toplu işlem — ekim ya da sulama.
+ *  AYNI uç noktayı kullanıyor: gözdeki bitki sıradan bir bitki ve
+ *  mevcut akış (uç al, hazne, onaylar, home) aynen işliyor. */
+async function tepsiTopluIslem(islem) {
+  const t = tepsiSecili();
+  const secim = S.tepsiSecim || [];
+  if (!t || !secim.length) { gunluk("Önce göz seçin", "uyari"); return; }
+  const adlar = (t.gozler || [])
+    .filter((g) => secim.includes(g.goz) && g.bitki).map((g) => g.bitki);
+  if (!adlar.length) {
+    gunluk("Seçili gözlerde bitki yok — önce türü seçip 'gözlere koy' deyin",
+           "uyari");
+    return;
+  }
+  const govde = { islem, noktalar: adlar };
+  if (islem === "sula") govde.saniye = 3;
+  try {
+    const y = await apiIste("/api/toplu", {
+      method: "POST", body: JSON.stringify(govde),
+    });
+    gunluk(y.mesaj || `${adlar.length} göz için başlatıldı`, "iyi");
+    await tepsiYukle();
+  } catch (h) {
+    gunluk(`✕ ${h.message}`, "hata");
+  }
+}
+
+async function tepsiKaymaGonder() {
+  const t = tepsiSecili();
+  if (!t) return;
+  const x = $("#tk-x").value, y = $("#tk-y").value;
+  if (x === "" || y === "") {
+    gunluk("Ölçülen X ve Y gerekiyor", "uyari");
+    return;
+  }
+  try {
+    const s = await apiIste("/api/tepsi/kayma", {
+      method: "POST",
+      body: JSON.stringify({ alan: t.alan, goz: $("#tk-goz").value,
+                             x: Number(x), y: Number(y) }),
+    });
+    gunluk(`✓ '${t.alan}' hizalandı: X${s.kayma_x.toFixed(1)} `
+      + `Y${s.kayma_y.toFixed(1)} mm`
+      + (s.tasinan ? ` · ${s.tasinan} bitki taşındı` : ""), "ok");
+    S.dikim = s.alanlar || S.dikim;
+    dikimCiz(S.dikim);
+    await tepsiYukle();
+    await noktalariYukle();
+  } catch (h) {
+    gunluk(`✕ Hizalama: ${h.message}`, "hata");
+  }
+}
+
 /* ------------------------------------------------------ ekim noktaları
  *
  * İki kip, tek uç nokta. Izgara düzenli dizilim üretiyor; koordinat
@@ -295,31 +546,33 @@ async function noktaKaydet() {
  */
 function izgaraGirdisi() {
   // Z formda yok: tarla tasarımcısındaki bitkilerle aynı kural geçerli —
-  // nokta güvenli taşıma yüksekliğine yazılıyor ki "git" dendiğinde uç toprağa
-  // dalmasın. Ekim derinliği ayrı bir bilgi ve türde duruyor.
-  const ortak = {
-    kip: S.izgaraKip || "izgara",
+  // nokta güvenli taşıma yüksekliğine yazılıyor ki "git" dendiğinde uç
+  // toprağa dalmasın. Ekim derinliği ayrı bir bilgi ve türde duruyor.
+  //
+  // IZGARA KİPİ KALDIRILDI. Düzenli dizilim artık tepsinin işi: ürettiği
+  // noktalar kalıcı, numaralı ve tepsiyle birlikte hizalanıyor. Burada
+  // yalnız DÜZ TOPRAK için serbest koordinat girme kaldı — ikisi
+  // çakışmıyor ve iki paralel mekanizma değil.
+  return {
+    kip: "liste",
     tur: ($("#iz-tur") || {}).value || "",
     z: S.guvenliZ == null ? 340 : S.guvenliZ,
     onek: $("#iz-onek").value.trim() || "s",
-  };
-  if (ortak.kip === "liste") {
     // Satırları OLDUĞU GİBİ gönderiyoruz; ayrıştırma sunucuda, tek
     // yerde. Panelde ikinci bir ayrıştırıcı olsaydı ikisi ayrışabilirdi.
-    ortak.noktalar = ($("#iz-liste").value || "")
-      .split("\n").map((s) => s.trim()).filter(Boolean);
-    return ortak;
-  }
-  return {
-    ...ortak,
-    x0: Number($("#iz-x0").value), y0: Number($("#iz-y0").value),
-    dx: Number($("#iz-dx").value), dy: Number($("#iz-dy").value),
-    satir: Number($("#iz-satir").value), sutun: Number($("#iz-sutun").value),
+    noktalar: ($("#iz-liste").value || "")
+      .split("\n").map((s2) => s2.trim()).filter(Boolean),
   };
 }
 
 /** Tür listesi + "tür seçilmedi" uyarısı. */
 function izgaraTurYaz() {
+  // Tepsinin tür listesi de aynı katalogdan ve aynı anda doluyor.
+  const tsec = $("#tepsi-tur");
+  if (tsec) {
+    const o = tsec.value;
+    tsec.innerHTML = tohumSecenekleri(o);
+  }
   const sec = $("#iz-tur");
   if (!sec) return;
   const onceki = sec.value;
@@ -333,20 +586,6 @@ function izgaraTurYaz() {
              + "değil\" diyerek reddeder. Sonradan da verebilirsiniz.";
     uyari.classList.toggle("gizli", !!sec.value);
   }
-}
-
-function izgaraKipSec(kip) {
-  S.izgaraKip = kip === "liste" ? "liste" : "izgara";
-  $$(".iz-kip").forEach((d) =>
-    d.classList.toggle("secili", d.dataset.kip === S.izgaraKip));
-  const izg = $("#iz-izgara"), lst = $("#iz-liste-kutu");
-  if (izg) izg.classList.toggle("gizli", S.izgaraKip !== "izgara");
-  if (lst) lst.classList.toggle("gizli", S.izgaraKip !== "liste");
-  // Kip değişti: eski önizleme artık başka bir şeyi anlatıyor.
-  const kutu = $("#izgara-onizleme");
-  if (kutu) kutu.classList.add("gizli");
-  const uygula = $("#d-izgara-uygula");
-  if (uygula) uygula.classList.add("gizli");
 }
 
 async function izgaraOnizle() {
@@ -494,7 +733,9 @@ function dikimCiz(alanlar) {
       + 'tamamı toprak sayılıyor ve her nokta kabul ediliyor.</p>';
     return;
   }
-  kutu.innerHTML = alanlar.map((a, i) => `
+  kutu.innerHTML = alanlar.map((a, i) => {
+    const t = a.tepsi || {};
+    return `
     <div class="bolge" data-i="${i}">
       <div class="ust">
         <input class="da-ad" value="${kacisli(a.ad || "")}" placeholder="Alan adı" maxlength="40">
@@ -511,7 +752,51 @@ function dikimCiz(alanlar) {
                  value="${a.toprak_z != null ? a.toprak_z : ""}"></div>
       </div>
       <div class="alt-not">${Math.abs(a.x2 - a.x1).toFixed(0)} × ${Math.abs(a.y2 - a.y1).toFixed(0)} mm</div>
-    </div>`).join("");
+
+      <!-- ZEMİN TİPİ. Kap 1 düz toprak, Kap 2 gözlü tepsi olabiliyor ve
+           bu alanın kendi özelliği: üçüncü bir kap eklenince onun tipi de
+           buradan seçiliyor, ayrı bir kavram öğrenmeye gerek yok. -->
+      <div class="satir-8 alt-hizali">
+        <div class="alan esnek-alan">
+          <label>Zemin</label>
+          <select class="da-tip">
+            <option value="duz"${a.tip === "tepsi" ? "" : " selected"}>Düz toprak</option>
+            <option value="tepsi"${a.tip === "tepsi" ? " selected" : ""}>Gözlü fidelik tepsisi</option>
+          </select>
+        </div>
+      </div>
+      <div class="da-tepsi ${a.tip === "tepsi" ? "" : "gizli"}">
+        <p class="alt-not">Gözler TEK TEK girilmiyor: ilk gözün merkezi,
+          gözler arası mesafe ve satır × sütun yeter, kalanı hesaplanır.
+          Numaralar geometrik ve <b>kalıcı</b> — bir gözü boşaltmak
+          ötekilerin numarasını kaydırmaz.</p>
+        <div class="alan-izgara">
+          <div class="alan"><label>1. göz X</label><input type="number" class="dt-x0" step="0.1" value="${t.x0 != null ? t.x0 : ""}"></div>
+          <div class="alan"><label>1. göz Y</label><input type="number" class="dt-y0" step="0.1" value="${t.y0 != null ? t.y0 : ""}"></div>
+          <div class="alan"><label>X aralığı</label><input type="number" class="dt-dx" step="0.1" value="${t.dx != null ? t.dx : ""}"></div>
+          <div class="alan"><label>Y aralığı</label><input type="number" class="dt-dy" step="0.1" value="${t.dy != null ? t.dy : ""}"></div>
+          <div class="alan"><label>Satır</label><input type="number" class="dt-satir" min="1" value="${t.satir || 4}"></div>
+          <div class="alan"><label>Sütun</label><input type="number" class="dt-sutun" min="1" value="${t.sutun || 8}"></div>
+          <div class="alan"><label>Önek</label><input type="text" class="dt-onek" maxlength="8" value="${kacisli(t.onek || "p")}"></div>
+        </div>
+        <div class="alt-not">${(t.satir || 0) * (t.sutun || 0)} göz ·
+          ${kacisli(t.onek || "p")}1–${kacisli(t.onek || "p")}${(t.satir || 0) * (t.sutun || 0)}
+          ${(t.kayma_x || t.kayma_y)
+            ? `· kayma X${(t.kayma_x || 0).toFixed(1)} Y${(t.kayma_y || 0).toFixed(1)} mm`
+            : "· kayma yok"}<br>
+          <b>Toprak Z</b> burada gözün yüzeyi: ekim derinliği ondan ölçülüyor.</div>
+      </div>
+    </div>`;
+  }).join("");
+
+  // Zemin tipi değişince tepsi alanları görünüp kayboluyor. Yeniden
+  // çizmiyoruz: kullanıcının yazdığı ama kaydetmediği sayılar silinirdi.
+  $$("#dikim-liste .da-tip").forEach((sec) => {
+    sec.onchange = () => {
+      const kutu = sec.closest(".bolge").querySelector(".da-tepsi");
+      if (kutu) kutu.classList.toggle("gizli", sec.value !== "tepsi");
+    };
+  });
 
   $$(".da-sil").forEach((d) => {
     d.onclick = () => {
@@ -534,6 +819,21 @@ function dikimTopla() {
     };
     // Boş metin sıfır DEĞİL: sıfır geçerli bir Z, boş "genel değeri kullan".
     if (z !== "") a.toprak_z = Number(z);
+    a.tip = el.querySelector(".da-tip").value;
+    if (a.tip === "tepsi") {
+      const say = (sinif) => Number(el.querySelector(sinif).value);
+      // KAYMA FORMDA YOK ve olmamalı: tek tek yazılan bir kayma, "bir göz
+      // ölç, tepsi hizalansın" fikrini bozar. Kaydedilen değeri koruyoruz.
+      const eski = (S.dikim || []).find((d) => d.ad === a.ad) || {};
+      const ek = eski.tepsi || {};
+      a.tepsi = {
+        x0: say(".dt-x0"), y0: say(".dt-y0"),
+        dx: say(".dt-dx"), dy: say(".dt-dy"),
+        satir: say(".dt-satir"), sutun: say(".dt-sutun"),
+        onek: el.querySelector(".dt-onek").value.trim() || "p",
+        kayma_x: ek.kayma_x || 0, kayma_y: ek.kayma_y || 0,
+      };
+    }
     return a;
   });
 }
@@ -3421,6 +3721,7 @@ function wsBagla() {
     // olabilir. Soket paketleri yalnız DEĞİŞİMİ taşıyor; o anki hâli
     // uçtan okuyoruz, yoksa makine sizi beklerken ekran boş kalırdı.
     ekimOnayYukle();
+    tepsiYukle();
   };
 
   ws.onmessage = (olay) => {
@@ -3431,6 +3732,9 @@ function wsBagla() {
     else if (m.tip === "kare") kareyiTazele(m.ts);
     else if (m.tip === "canli") kareyiTazele(m.ts, true);
     else if (m.tip === "ekim") ekimOnayYaz(m.ekim);
+    // Göz durumu değişti (ekildi, sulandı, tepsi kaydı). Panel kendi
+    // isteğiyle çekiyor: paket yalnız "değişti" haberi taşıyor.
+    else if (m.tip === "tepsi") tepsiYukle();
     else if (m.tip === "gunluk") gunluk(m.metin, m.seviye === "hata" ? "hata" : "");
   };
 
@@ -4106,7 +4410,16 @@ function olaylariBagla() {
 
   $("#d-izgara-onizle").onclick = izgaraOnizle;
   $("#d-izgara-uygula").onclick = izgaraUygula;
-  $$(".iz-kip").forEach((d) => { d.onclick = () => izgaraKipSec(d.dataset.kip); });
+  const tSec = $("#tepsi-secim");
+  if (tSec) tSec.onchange = () => { S.tepsiSecim = []; tepsiCiz(); };
+  const bagla = (kimlik, is) => { const e = $(kimlik); if (e) e.onclick = is; };
+  bagla("#d-tepsi-tazele", tepsiYukle);
+  bagla("#d-tepsi-ek", () => tepsiGozYaz(false));
+  bagla("#d-tepsi-bosalt", () => tepsiGozYaz(true));
+  bagla("#d-tepsi-ekim", () => tepsiTopluIslem("ek"));
+  bagla("#d-tepsi-sula", () => tepsiTopluIslem("sula"));
+  bagla("#d-tepsi-secim-temizle", () => { S.tepsiSecim = []; tepsiCiz(); });
+  bagla("#d-tepsi-kayma", tepsiKaymaGonder);
   // `addEventListener`, `oninput =` DEĞİL. Bu iki kutuya aşağıda
   // (`details.uc-ayar input`) zaten bir işleyici bağlanıyor ve o işleyici
   // "kullanıcı düzenliyor" bayrağını kaldırıyor — atama yapsaydık onu
@@ -4124,7 +4437,6 @@ function olaylariBagla() {
     $("#izgara-onizleme").classList.add("gizli");
     $("#d-izgara-uygula").classList.add("gizli");
   };
-  izgaraKipSec("izgara");
   // Form değişince eski önizleme yanıltıcı olur; "Uygula" o değerlerle
   // çalışmıyor artık.
   $$(".izgara-form input").forEach((g) => {

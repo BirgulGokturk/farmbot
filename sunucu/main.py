@@ -680,6 +680,18 @@ async def api_toplu(govde: dict[str, Any], jeton: str = Query(default="")):
         # bir yatak, hiç sulanmamış bir yataktan daha kötü.
         await _sulama_on_kontrol(cozum)
         adimlar = cozum["adimlar"]
+        # SULAMA DAMGASI. Panelde gözün "sulandı" rengi buradan geliyor.
+        # DÜRÜST OLMAK GEREKİRSE bu "su düştü" demek değil, "sulama
+        # komutu gitti" demek: akış sensörü yok ve dizi ortada kesilirse
+        # sonraki bitkiler yine damgalı kalır. Panel bunu bu şekilde
+        # yazıyor, "sulandı" kelimesinin altına gerekçesiyle.
+        sulanacak = [o["ad"] for o in cozum["ozet"] if o.get("sulanacak", True)]
+        if sulanacak:
+            simdi = time.time()
+            await asyncio.to_thread(
+                noktalar.alanlari_yaz,
+                {ad: {"sulama_ts": simdi} for ad in sulanacak})
+            await merkez.yayinla({"tip": "tepsi"})
     else:
         adimlar = [{"tip": "nokta", "ad": ad} for ad in adlar]
 
@@ -1229,6 +1241,13 @@ async def _ekim_ilerlet_ic(parca: str) -> None:
     _ekim.pompa_acik = False        # kapatma adımı dizinin içindeydi
     o = _ekim.ozet[_ekim.sira]
     _ekim.ekilen.append(str(o.get("ad") or ""))
+    # EKİM TARİHİ ŞİMDİ. Bu adım gerçekten çalıştı: kafa indi, pompa
+    # kapandı, tohum düştü. Damgayı başlangıçta atsaydık yarıda kesilen
+    # bir ekimde ekilmemiş bitkiler "ekildi" görünürdü. Tarih ayrıca
+    # bitkinin yaşını veriyor — sulama ve yayılım eğrileri buna bakıyor.
+    await asyncio.to_thread(
+        noktalar.alanlari_yaz, {str(o.get("ad")): {"ekim": time.time()}})
+    await merkez.yayinla({"tip": "tepsi"})
     await _ekim_gunluk(
         f"{o.get('ad')} ekildi ({_ekim.sira + 1}/{len(_ekim.ozet)}) — home'a dönülüyor")
     await _ekim_home()
@@ -1628,9 +1647,223 @@ async def api_dikim_kaydet(govde: dict[str, Any], jeton: str = Query(default="")
         alanlar = await asyncio.to_thread(dikim.kaydet, govde.get("alanlar") or [])
     except dikim.DikimHatasi as hata:
         raise HTTPException(status_code=400, detail=str(hata))
+    # Tepsi kaydırıldıysa GÖZLERDEKİ BİTKİLER DE KAYAR. Tepsi rijit bir
+    # parça: fiziksel olarak kaydıysa içindeki bitkiler de kaydı demek.
+    # Yalnız boş gözlerin koordinatını güncelleyip bitkileri yerinde
+    # bırakmak, tepsiyle hizasız duran bir bitki listesi bırakırdı.
+    tasinan = await asyncio.to_thread(_tepsi_bitkilerini_hizala, alanlar)
+    if tasinan:
+        await merkez.yayinla({
+            "tip": "gunluk", "seviye": "bilgi",
+            "metin": f"Tepsi kaydı güncellendi — {tasinan} bitki gözleriyle "
+                     "birlikte taşındı"})
+    await merkez.yayinla({"tip": "tepsi"})
     # Kaydedilmiş hâli geri veriyoruz: köşeler sıralanmış, adlar kırpılmış
     # olabiliyor ve panel kendi yazdığına değil, DEPODAKİNE bakmalı.
-    return {"ok": True, "alanlar": alanlar}
+    return {"ok": True, "alanlar": alanlar, "tasinan": tasinan}
+
+
+# --------------------------------------------------------------------------- #
+# Fidelik tepsisi — gözlü alanlar
+#
+# Bir dikim alanı "tepsi" tipindeyse gözleri PARAMETRİK: koordinatları
+# `dikim.gozler` hesaplıyor, elle girilmiyor. Buradaki iş üç şey:
+#
+#   1. gözlerin DURUMUNU çıkarmak (boş / planlandı / ekildi / sulandı),
+#   2. bir göze bitki koymak ve kaldırmak,
+#   3. tepsi kayınca gözlerdeki bitkileri birlikte taşımak.
+#
+# Bitkinin kendisi `noktalar.py`de duruyor, ayrı bir "göz kaydı" YOK.
+# İkinci bir bitki kavramı açsaydık ekim, sulama, eğriler ve 3B sahne
+# ikisini de bilmek zorunda kalırdı; oysa gözdeki bitki sıradan bir
+# bitki, yalnız koordinatını gözden alıyor.
+# --------------------------------------------------------------------------- #
+
+#: Göz durumları — panelde renkle görünüyor.
+GOZ_DURUM = ("bos", "planlandi", "ekildi", "sulandi")
+
+
+def _tepsi_alanlari(alanlar: list[dict[str, Any]] | None = None
+                    ) -> list[dict[str, Any]]:
+    return [a for a in (alanlar if alanlar is not None else dikim.listele())
+            if a.get("tip") == "tepsi"]
+
+
+def _goz_durum(bitki: dict[str, Any] | None) -> str:
+    """Gözün durumu — bitkinin kendi damgalarından türüyor.
+
+    Ayrı bir durum alanı TUTMUYORUZ: tutsaydık bitki silindiğinde ya da
+    ekim tarihi elle değiştirildiğinde iki kayıt sessizce ayrışırdı.
+    """
+    if not bitki:
+        return "bos"
+    if bitki.get("sulama_ts"):
+        return "sulandi"
+    if bitki.get("ekim"):
+        return "ekildi"
+    return "planlandi"
+
+
+def _tepsi_goruntu(alan: dict[str, Any],
+                   bitkiler: list[dict[str, Any]]) -> dict[str, Any]:
+    """Bir tepsinin gözleri + her gözdeki bitki ve durumu."""
+    ad = alan.get("ad")
+    yerlesik = {b.get("goz"): b for b in bitkiler
+                if b.get("tepsi") == ad and b.get("goz")}
+    gozler = []
+    for g in dikim.gozler(alan):
+        b = yerlesik.get(g["goz"])
+        gozler.append({
+            **g,
+            "durum": _goz_durum(b),
+            "bitki": b.get("ad") if b else "",
+            "tur": (b or {}).get("tur") or "",
+            "ekim": (b or {}).get("ekim"),
+            "sulama_ts": (b or {}).get("sulama_ts"),
+        })
+    t = alan.get("tepsi") or {}
+    return {
+        "alan": ad, "tepsi": t,
+        "satir": t.get("satir"), "sutun": t.get("sutun"),
+        "toprak_z": alan.get("toprak_z"),
+        "gozler": gozler,
+        "dolu": sum(1 for g in gozler if g["durum"] != "bos"),
+        "toplam": len(gozler),
+    }
+
+
+def _tepsi_bitkilerini_hizala(alanlar: list[dict[str, Any]]) -> int:
+    """Gözlerdeki bitkilerin X/Y'sini gözün GÜNCEL koordinatına çeker."""
+    bitkiler = noktalar.hepsi()
+    guncelle: dict[str, dict[str, Any]] = {}
+    for alan in _tepsi_alanlari(alanlar):
+        yer = {g["goz"]: g for g in dikim.gozler(alan)}
+        for b in bitkiler:
+            if b.get("tepsi") != alan.get("ad"):
+                continue
+            g = yer.get(b.get("goz"))
+            if not g:
+                continue
+            if abs(float(b.get("x") or 0) - g["x"]) > 0.05 \
+                    or abs(float(b.get("y") or 0) - g["y"]) > 0.05:
+                guncelle[b["ad"]] = {"x": g["x"], "y": g["y"]}
+    return noktalar.alanlari_yaz(guncelle)
+
+
+@app.get("/api/tepsi")
+async def api_tepsi(jeton: str = Query(default="")):
+    """Bütün tepsiler, gözleriyle ve göz durumlarıyla.
+
+    3B sahne de buradan okuyabilir: hangi alanın tepsi olduğu, gözlerin
+    koordinatı ve hangi gözde ne olduğu burada. Sahneyi çizmek bu
+    oturumun işi değil; veriyi açmak öyle.
+    """
+    _parola_dogrula(jeton)
+    alanlar = await asyncio.to_thread(dikim.listele)
+    bitkiler = await asyncio.to_thread(noktalar.hepsi)
+    return {"tepsiler": [_tepsi_goruntu(a, bitkiler)
+                         for a in _tepsi_alanlari(alanlar)],
+            "durumlar": list(GOZ_DURUM)}
+
+
+@app.post("/api/tepsi/kayma")
+async def api_tepsi_kayma(govde: dict[str, Any], jeton: str = Query(default="")):
+    """"Bu göz aslında şurada" → bütün tepsiyi kaydır.
+
+    Tek ölçümle hizalama: tepsi rijit, gözler arası mesafe değişmiyor,
+    yalnız tamamı ötelenmiş. 32 gözü tek tek düzeltmek yerine bir göz
+    ölçülüyor.
+    """
+    _parola_dogrula(jeton)
+    ad = str(govde.get("alan") or "").strip()
+    goz = str(govde.get("goz") or "").strip()
+    alanlar = await asyncio.to_thread(dikim.listele)
+    alan = next((a for a in alanlar if a.get("ad") == ad), None)
+    if alan is None or alan.get("tip") != "tepsi":
+        raise HTTPException(status_code=404, detail=f"'{ad}' adında bir tepsi yok")
+    try:
+        kx, ky = dikim.kayma_hesapla(
+            alan, goz, float(govde.get("x")), float(govde.get("y")))
+    except (dikim.DikimHatasi, TypeError, ValueError) as hata:
+        raise HTTPException(status_code=400, detail=str(hata))
+
+    yeni = [{**a, "tepsi": {**(a.get("tepsi") or {}), "kayma_x": kx, "kayma_y": ky}}
+            if a.get("ad") == ad else a for a in alanlar]
+    try:
+        kaydedilen = await asyncio.to_thread(dikim.kaydet, yeni)
+    except dikim.DikimHatasi as hata:
+        raise HTTPException(status_code=400, detail=str(hata))
+    tasinan = await asyncio.to_thread(_tepsi_bitkilerini_hizala, kaydedilen)
+    await merkez.yayinla({
+        "tip": "gunluk", "seviye": "bilgi",
+        "metin": f"'{ad}' tepsisi kaydırıldı: X{kx:+.1f} Y{ky:+.1f} mm"
+                 + (f", {tasinan} bitki birlikte taşındı" if tasinan else "")})
+    await merkez.yayinla({"tip": "tepsi"})
+    return {"ok": True, "kayma_x": kx, "kayma_y": ky, "tasinan": tasinan,
+            "alanlar": kaydedilen}
+
+
+@app.post("/api/tepsi/goz")
+async def api_tepsi_goz(govde: dict[str, Any], jeton: str = Query(default="")):
+    """Bir göze bitki koyar ya da gözü boşaltır.
+
+    Bitki sıradan bir nokta; farkı `tepsi` + `goz` alanlarını taşıması ve
+    koordinatını gözden alması. Böylece ekim, sulama, eğriler ve harita
+    hiçbir şey öğrenmeden çalışmaya devam ediyor.
+    """
+    _parola_dogrula(jeton)
+    ad = str(govde.get("alan") or "").strip()
+    istenen = [str(g) for g in (govde.get("gozler") or []) if str(g).strip()]
+    if not istenen:
+        raise HTTPException(status_code=400, detail="Göz seçilmedi")
+    alanlar = await asyncio.to_thread(dikim.listele)
+    alan = next((a for a in alanlar if a.get("ad") == ad), None)
+    if alan is None or alan.get("tip") != "tepsi":
+        raise HTTPException(status_code=404, detail=f"'{ad}' adında bir tepsi yok")
+
+    tur = str(govde.get("tur") or "").strip()
+    bosalt = bool(govde.get("bosalt"))
+    if not bosalt and not tur:
+        raise HTTPException(
+            status_code=400,
+            detail="Tür seçilmedi. Ekim türü olmayan bir bitkiyi "
+                   "reddediyor — hangi hazneden tohum alacağını bilemiyor.")
+
+    yer = {g["goz"]: g for g in dikim.gozler(alan)}
+    bilinmeyen = [g for g in istenen if g not in yer]
+    if bilinmeyen:
+        raise HTTPException(
+            status_code=400,
+            detail=f"'{ad}' tepsisinde şu gözler yok: {', '.join(bilinmeyen[:6])}")
+
+    mevcut = {b.get("goz"): b for b in await asyncio.to_thread(noktalar.hepsi)
+              if b.get("tepsi") == ad and b.get("goz")}
+    guvenli_z = float((merkez.son_durum or {}).get("guvenli_z") or 340.0)
+
+    if bosalt:
+        silinecek = [mevcut[g]["ad"] for g in istenen if g in mevcut]
+        if not silinecek:
+            return {"ok": True, "bosaltilan": 0}
+        silinen = await asyncio.to_thread(noktalar.sil_coklu, silinecek)
+        parti = geri_al.ekle(silinen, f"{len(silinen)} göz boşaltıldı")
+        await merkez.yayinla({"tip": "tepsi"})
+        return {"ok": True, "bosaltilan": len(silinen), "geri_al": parti}
+
+    yeni = []
+    for g in istenen:
+        nokta = yer[g]
+        # AD GÖZ NUMARASINDAN. Tepsi adını da katıyoruz ki ikinci bir
+        # tepside aynı önek kullanılınca adlar çakışmasın.
+        bitki_ad = mevcut[g]["ad"] if g in mevcut else f"{ad}/{g}"
+        yeni.append({"ad": bitki_ad, "x": nokta["x"], "y": nokta["y"],
+                     "z": guvenli_z, "etiket": "ekim",
+                     "tur": tur, "tepsi": ad, "goz": g})
+    try:
+        sonuc = await asyncio.to_thread(noktalar.toplu_ekle, yeni)
+    except noktalar.NoktaHatasi as hata:
+        raise HTTPException(status_code=400, detail=str(hata))
+    await merkez.yayinla({"tip": "tepsi"})
+    return {"ok": True, **sonuc, "bitkiler": [n["ad"] for n in yeni]}
 
 
 # --------------------------------------------------------------------------- #

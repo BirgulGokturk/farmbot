@@ -2273,3 +2273,60 @@ input.hatali {
   flex-direction: column;
   gap: 4px;
 }
+
+/* -------------------------------------------------- fidelik tepsisi
+   Gözler YUVARLAK DELİK: tepsinin kendisi öyle görünüyor ve ekrandaki
+   dizilim makinedekiyle aynı — satırlar Y'de, sütunlar X'te. Göz
+   numarası her zaman görünür, çünkü kullanıcı makinede "p7" diye
+   konuşuyor; rengi durumu, içindeki simge ne ekildiğini söylüyor. */
+.tepsi-izgara {
+  display: grid;
+  grid-template-columns: repeat(var(--sutun, 8), minmax(0, 1fr));
+  gap: 4px;
+  margin: var(--b2) 0;
+}
+.gz {
+  position: relative;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  border: 1px solid var(--cizgi);
+  background: var(--gz-zemin, rgba(255, 255, 255, .05));
+  color: var(--metin);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding: 0;
+  min-width: 0;
+}
+.gz:hover { border-color: var(--metin-2); }
+/* Seçim kalın halka: renk zaten durumu anlatıyor, seçimi renkle
+   göstermek ikisini karıştırırdı. */
+.gz.secili { box-shadow: 0 0 0 2px var(--vurgu, #3987e5); border-color: transparent; }
+.gz-ic { font-size: clamp(10px, 2.2vw, 18px); line-height: 1; }
+/* Numara delikte DEĞİL altında: içine yazsaydık bitki simgesiyle
+   çakışırdı ve ikisi birden okunmazdı. */
+.gz-no {
+  position: absolute;
+  bottom: -1px;
+  font-size: 8px;
+  line-height: 1;
+  color: var(--metin-2);
+  background: var(--yuzen-zemin);
+  padding: 0 2px;
+  border-radius: 3px;
+  font-variant-numeric: tabular-nums;
+}
+/* Boş göz KOYU — tepside boş delik böyle görünüyor. */
+.gz-bos { --gz-zemin: rgba(0, 0, 0, .35); }
+.gz-plan { --gz-zemin: rgba(57, 135, 229, .35); border-color: #3987e5; }
+.gz-ekildi { --gz-zemin: rgba(90, 208, 122, .30); border-color: #5ad07a; }
+.gz-sulandi { --gz-zemin: rgba(56, 189, 208, .32); border-color: #38bdd0; }
+.gz-rozet {
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: var(--yazi-kucuk);
+  background: var(--gz-zemin);
+}
+.tepsi-kart-bas { display: flex; align-items: center; gap: var(--b2); }
+.tepsi-arac { display: flex; flex-direction: column; gap: 6px; }
