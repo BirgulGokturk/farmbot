@@ -489,6 +489,44 @@ class Uclar:
             return None
         return float(uc["x"]) + rdx, float(uc["y"]) + rdy
 
+    def dogrulanabilir_mi(self) -> bool:
+        """Takılı ucu ÖLÇEBİLİYOR muyuz?
+
+        Hayırsa `current_tool` bir ölçüm değil, bir İNANÇ: yazılımın
+        kendisine en son söylenen şeyi hatırlaması. Kilit servosu bağlı
+        değilse (`lock_reg = 0`) servo komutu sessiz geçiyor, varlık
+        sensörü yoksa (`presence_reg = 0`) uç orada mı bilinmiyor. İkisi
+        de yokken inanç gerçekle bir kez ayrıştı mı kendiliğinden
+        düzelmiyor — düzeltecek tek şey operatörün gözü.
+        """
+        return (int(self.ayar.get("lock_reg", 0) or 0) > 0
+                or int(self.ayar.get("presence_reg", 0) or 0) > 0)
+
+    def beyan(self, ad: str | None) -> str:
+        """Kafada GERÇEKTEN ne olduğunu operatör bildiriyor.
+
+        `durumu_temizle`nin eksik bıraktığı yarı: o yalnız "bilmiyorum"
+        diyebiliyordu, bu "elimde tool3 var" diyebiliyor. Sensör yokken
+        inancı gerçeğe eşitlemenin tek yolu bu ve yolun kapalı olması,
+        kullanıcının yazılımı yanlış inançla çalıştırması demekti —
+        tool3 istenirken makinenin tool2'nin yuvasına inmesi gibi.
+
+        HİÇBİR EKSEN HAREKET ETMEZ. Yalnız kayıt değişiyor.
+        """
+        temiz = str(ad or "").strip()
+        if temiz and not self.uc_bul(temiz):
+            raise UcHatasi(f"Bilinmeyen uç: '{temiz}'")
+        onceki = self.ayar.get("current_tool")
+        self.kaydet({"current_tool": temiz or None})
+        # Beyan bir ÖLÇÜM DEĞİL: `dogrulandi` sensörün söylediği şeydi ve
+        # burada sensör yok. Bilinmiyor olarak bırakıyoruz.
+        self.durum.update(hata="", dogrulandi=None, aciklama="", adim=0,
+                          toplam=0, dizi="")
+        if temiz == (onceki or ""):
+            return f"Kayıt zaten '{temiz or 'boş'}' — değişmedi"
+        return (f"Takılı uç kaydı '{onceki or 'boş'}' → '{temiz or 'boş'}' "
+                "olarak düzeltildi (operatör beyanı, ölçüm değil)")
+
     def durumu_temizle(self) -> str:
         """Takılı uç kaydını elle sıfırlar.
 

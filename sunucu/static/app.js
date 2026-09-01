@@ -38,6 +38,8 @@ const S = {
   gozDuzenleniyor: false,
   kamCoz: null,         // kamera kutusundaki son çözümleme (null = kutu boş)
   kamMaske: false,      // maske katmanı açık mı
+  ucDurum: null,        // ajandan gelen son uç durumu (uc, dogrulanabilir…)
+  ucTeyit: null,        // teyit bekleyen uç işlemi {islem, hedef}
   ekimOnay: null,       // onay bekleyen ekim oturumu (sunucudan)
   ekimAyar: {},         // onay anahtarı ve süreler
   programlar: [],
@@ -569,6 +571,26 @@ async function dikimKaydet() {
 function ucGuncelle(u) {
   if (!u) return;
   $("#uc-mevcut").textContent = u.uc || "yok";
+  S.ucDurum = u;
+
+  /* ÖLÇÜM MÜ, İNANÇ MI — bu ayrımı yazmak zorundayız.
+   *
+   * Kilit servosu (`lock_reg`) ve varlık sensörü (`presence_reg`) bağlı
+   * değilken "Takılı uç: tool2" bir ÖLÇÜM DEĞİL; yazılımın kendisine en
+   * son söylenen şeyi hatırlaması. Bir kez gerçekle ayrıştığında
+   * kendiliğinden düzelmiyor: kullanıcı tool3 istiyor, yazılım "önce
+   * tool2'yi bırakayım" diyor ve makine elde olmayan bir ucun yuvasına
+   * iniyor. Sahada tam bu yaşandı ve makine bozuk sanıldı. */
+  const olcum = $("#uc-olcum-uyari");
+  if (olcum) {
+    const dogrulanabilir = u.dogrulanabilir !== false;
+    olcum.innerHTML = dogrulanabilir ? "" :
+      "⚠ Bu bir ölçüm değil, yazılımın <b>hatırladığı</b> şey — kilit "
+      + "servosu ve varlık sensörü bağlı değil. Uç takıp bırakırken "
+      + "doğruluğunu size soruyoruz; sensörler bağlanana kadar bunu "
+      + "doğrulayabilecek tek şey sizin gözünüz.";
+    olcum.classList.toggle("gizli", dogrulanabilir);
+  }
 
   // Uç değiştirme alanı açıkken kullanıcı Z kilidinin kapalı olduğunu
   // bilmeli — sessizce açık kalan bir muafiyet, kilidin kendisinden tehlikeli.
@@ -708,6 +730,96 @@ function ucGuncelle(u) {
 
   // Takılı uç değişince önizleme de değişmeli (al → bırak).
   if (u.uc !== S.sonTakiliUc) { S.sonTakiliUc = u.uc; onizlemeTazele(); }
+}
+
+/* ------------------------------------------- uç durumu teyidi
+ *
+ * KÖK SEBEP. `current_tool` bir ölçüm değil, bir inanç: `lock_reg = 0`
+ * iken servo komutu sessiz geçiyor, `presence_reg = 0` iken uç orada mı
+ * bilinmiyor. Yazılım gerçekten hangi ucun takılı olduğunu HİÇBİR ZAMAN
+ * ölçemiyor, yalnız kendisine en son söyleneni hatırlıyor. Bir kez
+ * gerçekle ayrıştı mı kendiliğinden düzelmiyor ve "Durumu temizle"ye
+ * basılana kadar yanlış davranıyor: tool3 istenirken tool2'nin yuvasına
+ * inmek gibi.
+ *
+ * Yazılım doğrulayamadığını BİLİYOR. O hâlde söylemesi de gerekiyor —
+ * hareketten önce sorup cevabı kullanıcıdan alıyoruz. Sensörler
+ * bağlanana kadar bu bilgiyi doğrulayabilecek tek kaynak o.
+ *
+ * Kilit ya da varlık sensörü bağlıysa (`dogrulanabilir`) soru hiç
+ * sorulmuyor: ölçebilen bir sisteme "emin misin" diye sormak gereksiz
+ * sürtünme.
+ */
+function ucTeyitAc(islem, hedef) {
+  const u = S.ucDurum || {};
+  // Ölçebiliyorsak sormuyoruz — doğrudan hareket.
+  if (u.dogrulanabilir !== false) { ucIslemGonder(islem, hedef); return; }
+
+  S.ucTeyit = { islem, hedef };
+  const kutu = $("#uc-teyit");
+  const takili = u.uc || "";
+  $("#uc-teyit-soru").innerHTML = takili
+    ? `Yazılım kafada <b>${kacisli(takili)}</b> olduğunu sanıyor. Doğru mu?`
+    : "Yazılım kafanın <b>boş</b> olduğunu sanıyor. Doğru mu?";
+
+  // NE OLACAĞINI ÖNCEDEN SÖYLE. Kullanıcı "evet"e basmadan önce
+  // makinenin nereye gideceğini bilmeli — asıl şikâyet buydu.
+  let ne;
+  if (islem === "birak") {
+    ne = takili
+      ? `Devam ederseniz makine <b>${kacisli(takili)}</b> yuvasına gidip ucu bırakacak.`
+      : "Kafa boşsa bırakacak bir şey yok; makine hareket etmeyecek.";
+  } else if (takili && takili !== hedef) {
+    ne = `Devam ederseniz makine <b>önce ${kacisli(takili)} yuvasına gidip onu`
+       + ` bırakacak</b>, sonra ${kacisli(hedef)} almaya gidecek.`;
+  } else if (takili === hedef) {
+    ne = `${kacisli(hedef)} zaten takılı sayılıyor; makine hareket etmeyecek.`;
+  } else {
+    ne = `Devam ederseniz makine doğrudan <b>${kacisli(hedef)}</b> almaya gidecek.`;
+  }
+  $("#uc-teyit-gerekce").innerHTML = ne
+    + " Kafada gerçekte ne olduğunu yazılım ölçemiyor — kilit servosu ve "
+    + "varlık sensörü bağlı değil.";
+
+  // Düzeltme listesi: bilinen uçlar + "boş".
+  const sec = $("#uc-teyit-secim");
+  sec.innerHTML = `<option value="">— kafa boş —</option>`
+    + (S.ucListesi || []).map((a) =>
+        `<option value="${kacisli(a)}"${a === takili ? " selected" : ""}>${kacisli(a)}</option>`).join("");
+  sec.value = takili;
+
+  kutu.classList.remove("gizli");
+}
+
+function ucTeyitKapat() {
+  S.ucTeyit = null;
+  const kutu = $("#uc-teyit");
+  if (kutu) kutu.classList.add("gizli");
+}
+
+async function ucIslemGonder(islem, hedef) {
+  if (islem === "birak") await komutGonder("uc_birak");
+  else await komutGonder("uc_degistir", { ad: hedef });
+}
+
+function ucTeyitOnayla() {
+  const t = S.ucTeyit;
+  ucTeyitKapat();
+  if (t) ucIslemGonder(t.islem, t.hedef);
+}
+
+/** Kayıt düzeltme — HAREKET YOK, yalnız yazılımın inancı düzeliyor.
+ *  Düzeltmeden sonra soru YENİDEN soruluyor: kullanıcı yeni hâli görüp
+ *  onaylasın, "düzelttim" ile "devam et" aynı tuş olmasın. */
+async function ucBeyanGonder() {
+  const t = S.ucTeyit;
+  const ad = ($("#uc-teyit-secim") || {}).value || "";
+  const sonuc = await komutGonder("uc_beyan", { ad });
+  if (!sonuc || !sonuc.ok) return;
+  // Ajanın yeni durumu bir sonraki pakette gelecek; soruyu o gelince
+  // yeniden kuruyoruz ki ekranda eski inanç yazılı kalmasın.
+  if (S.ucDurum) S.ucDurum = { ...S.ucDurum, uc: ad || null };
+  if (t) ucTeyitAc(t.islem, t.hedef);
 }
 
 /* ------------------------------------------------------- uç yuva tablosu
@@ -2148,7 +2260,8 @@ function ekimOnayYaz(e) {
   const kutu = $("#ekim-onay");
   if (!kutu) return;
   S.ekimOnay = e || null;
-  const onay = e && (e.durum === "onay1" || e.durum === "onay2");
+  const onay = e && (e.durum === "onay_uc" || e.durum === "onay1"
+                     || e.durum === "onay2");
   const aktif = !!(e && e.aktif);
 
   /* EKİM AÇIKKEN KUTU HEP GÖRÜNÜR — yalnız onay anlarında değil.
@@ -2169,6 +2282,8 @@ function ekimOnayYaz(e) {
   }
 
   if (!onay) {
+    const d = $("#ekim-uc-duzelt");
+    if (d) d.classList.add("gizli");
     $("#ekim-onay-adim").textContent = "ekim sürüyor";
     $("#ekim-onay-ilerleme").textContent = ekimIlerleme(e);
     // NE YAPTIĞINI YAZ. "Makine ilerliyor" hiçbir şey söylemiyordu;
@@ -2190,10 +2305,27 @@ function ekimOnayYaz(e) {
   $("#d-ekim-onayla").classList.remove("gizli");
 
   $("#ekim-onay-adim").textContent =
-    e.durum === "onay1" ? "1. onay · uç" : "2. onay · tohum";
+    e.durum === "onay_uc" ? "uç durumu"
+      : e.durum === "onay1" ? "1. onay · uç" : "2. onay · tohum";
   $("#ekim-onay-ilerleme").textContent = ekimIlerleme(e);
   $("#ekim-onay-soru").textContent = e.soru || "";
   $("#ekim-onay-gerekce").textContent = e.gerekce || "";
+
+  /* UÇ TEYİDİ: kayıt yanlışsa burada düzeltiliyor. Uç değiştirme
+   * yazılımın inancına bakıp "önce şunu bırakayım" diyor; inanç
+   * yanlışsa makine elde olmayan bir ucun yuvasına iniyor. */
+  const duzelt = $("#ekim-uc-duzelt");
+  if (duzelt) {
+    duzelt.classList.toggle("gizli", !e.uc_teyit);
+    if (e.uc_teyit) {
+      const sec = $("#ekim-uc-secim");
+      const inanc = e.uc_inanc || "";
+      sec.innerHTML = `<option value="">— kafa boş —</option>`
+        + (S.ucListesi || []).map((a) =>
+            `<option value="${kacisli(a)}"${a === inanc ? " selected" : ""}>${kacisli(a)}</option>`).join("");
+      sec.value = inanc;
+    }
+  }
 
   /* NEREDE DURDUĞU. Kullanıcı makineye bakarak onaylayacak ama hangi
    * haznenin ya da hangi bitkinin başında olduğunu bilmeli — hazneler
@@ -2261,6 +2393,14 @@ function ekimOnayBagla() {
     $("#ekim-onay-iptal-secim").classList.remove("gizli");
     $("#ekim-onay-dugmeler").classList.add("gizli");
   };
+  // Kayıt düzeltme HAREKET DEĞİL: yalnız yazılımın inancı değişiyor.
+  // Düzeltmeden sonra soru yeniden çiziliyor ki kullanıcı yeni hâli
+  // görüp onaylasın — "düzelttim" ile "devam et" aynı tuş olmasın.
+  d("#d-ekim-uc-duzelt", async () => {
+    const ad = ($("#ekim-uc-secim") || {}).value || "";
+    const sonuc = await komutGonder("uc_beyan", { ad });
+    if (sonuc && sonuc.ok) ekimOnayYukle();
+  });
   d("#d-ekim-iptal-geri", () => ekimOnayGonder("/api/ekim/iptal", { kip: "geri_koy" }));
   d("#d-ekim-iptal-birak", () => ekimOnayGonder("/api/ekim/iptal", { kip: "birak" }));
   d("#d-ekim-iptal-vazgec", () => {
@@ -3834,8 +3974,13 @@ function olaylariBagla() {
     } catch (hata) { gunluk(`✕ ${hata.message}`, "hata"); }
   };
 
-  $("#d-uc-tak").onclick = () => komutGonder("uc_degistir", { ad: $("#uc-secim").value });
-  $("#d-uc-birak").onclick = () => komutGonder("uc_birak");
+  // TEYİT ÖNCE, HAREKET SONRA. Doğrudan komut göndermiyoruz: yazılımın
+  // takılı uç kaydı bir ölçüm değilse önce onu teyit ettiriyoruz.
+  $("#d-uc-tak").onclick = () => ucTeyitAc("tak", $("#uc-secim").value);
+  $("#d-uc-birak").onclick = () => ucTeyitAc("birak", "");
+  $("#d-uc-teyit-evet").onclick = ucTeyitOnayla;
+  $("#d-uc-teyit-vazgec").onclick = () => ucTeyitKapat();
+  $("#d-uc-teyit-duzelt").onclick = ucBeyanGonder;
   $("#d-uc-dur").onclick = () => komutGonder("dur");
   $("#uc-secim").onchange = onizlemeTazele;
 

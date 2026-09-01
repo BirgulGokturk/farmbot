@@ -437,6 +437,17 @@ class Ajan:
             if ad == "uc_durum_temizle":
                 return {"ok": True, "mesaj": await asyncio.to_thread(self.uclar.durumu_temizle)}
 
+            if ad == "uc_beyan":
+                # Operatör kafada gerçekten ne olduğunu söylüyor. Hiçbir
+                # eksen hareket etmiyor; yalnız yazılımın inancı gerçeğe
+                # eşitleniyor. Sensör bağlanana kadar bunu yapabilecek
+                # tek şey operatörün gözü.
+                try:
+                    return {"ok": True, "mesaj": await asyncio.to_thread(
+                        self.uclar.beyan, arg.get("ad"))}
+                except uc_modulu.UcHatasi as hata:
+                    return {"ok": False, "mesaj": str(hata)}
+
             if ad in ("uc_al", "uc_birak", "uc_degistir"):
                 islem = {"uc_al": "al", "uc_birak": "birak", "uc_degistir": "degistir"}[ad]
                 try:
@@ -597,6 +608,11 @@ class Ajan:
                 # göre kaydırıyor, panel de önizlemede iki noktayı ayrı
                 # çiziyor (su nereye düşüyor / uç nereye gidiyor).
                 "sulama_basligi": self.uclar.sulama_basligi(),
+                # TAKILI UÇ ÖLÇÜLEBİLİYOR MU. `uc` alanı bir ölçüm değil,
+                # yazılımın inancı; bu bayrak olmadan panel ikisini
+                # birbirinden ayıramıyor ve kullanıcı yanlış inancı
+                # gerçek sanıyor.
+                "dogrulanabilir": self.uclar.dogrulanabilir_mi(),
                 "alan": self.uclar.ayar.get("tc_area") or {},
                 "alanda": bool(self.uclar.tc_alani_icinde(
                     (durum.get("konum") or {}).get("x") or 0,

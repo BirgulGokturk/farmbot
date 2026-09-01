@@ -2246,3 +2246,30 @@ input.hatali {
   color: var(--metin);
   resize: vertical;
 }
+
+/* ------------------------------------------------- uç durumu teyidi
+   Uç değiştirmeden ÖNCE soruluyor: kilit servosu ve varlık sensörü
+   bağlı olmadığı için yazılım kafada ne olduğunu ölçemiyor, yalnız
+   hatırlıyor. Kutu düğmelerin hemen altında ve sarı kenarlı — bu bir
+   bekleme durumu, göz ucuyla geçilecek bir not değil. */
+.uc-teyit {
+  margin-top: var(--b2);
+  padding: var(--b2);
+  border-radius: var(--b2);
+  border: 1px solid #e8a33d;
+  background: rgba(232, 163, 61, .07);
+  display: flex;
+  flex-direction: column;
+  gap: var(--b2);
+}
+.uc-teyit-soru { font-weight: 600; line-height: 1.3; }
+.uc-teyit .alt-not { margin: 0; }
+/* Düzeltme ayrı bir bölmede: "devam et" ile "kaydı düzelt" yan yana
+   dursaydı yanlışlıkla biri diğerinin yerine basılırdı. */
+.uc-teyit-duzelt {
+  padding-top: var(--b2);
+  border-top: 1px solid var(--cizgi);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}

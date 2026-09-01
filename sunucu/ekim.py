@@ -295,11 +295,20 @@ def hazne_denetle(hazne: dict[str, Any], sinirlar: dict[str, Any] | None,
 ONAY_SONRASI = {"hazne": "onay1", "tasi": "onay2"}
 
 SORU = {
+    # Soru metni kafadaki inanca göre değiştiği için sunucuda kuruluyor
+    # (bkz. `main.EkimOturumu.goruntu`); burada yalnız yedeği duruyor.
+    "onay_uc": "Kafada şu an ne var?",
     "onay1": "Vakum ucu takılı mı? Tohum alınsın mı?",
     "onay2": "Tohum ucun ucunda görünüyor mu? Ekilsin mi?",
 }
 
 GEREKCE = {
+    "onay_uc": ("Uç değiştirme buradan başlıyor ve yazılım kafada ne "
+                "olduğunu ÖLÇEMİYOR — kilit servosu ve varlık sensörü "
+                "bağlı değil, yalnız kendisine en son söyleneni "
+                "hatırlıyor. Kayıt yanlışsa makine elde olmayan bir ucun "
+                "yuvasına iner. Yanlışsa aşağıdan düzeltin; hiçbir eksen "
+                "hareket etmez."),
     "onay1": ("Kafa haznenin üstünde duruyor, henüz inmedi. Uç kilit "
               "servosu bağlı olmadığı için yazılım ucun takılı olduğunu "
               "doğrulayamıyor — bunu siz doğruluyorsunuz. Uç yoksa kafa "

@@ -993,6 +993,33 @@
             <b id="uc-mevcut">—</b>
             <span id="uc-dogrulama" class="rozet-uyari gizli"></span>
           </div>
+          <!-- ÖLÇÜM MÜ, İNANÇ MI. Kilit servosu ve varlık sensörü bağlı
+               değilken yukarıdaki ad bir ölçüm değil, yazılımın hatırladığı
+               şey. Bunu yazmazsak kullanıcı yanlış bir kaydı gerçek sanıyor
+               ve makinenin bozulduğunu düşünüyor. -->
+          <div class="rozet-uyari gizli" id="uc-olcum-uyari"></div>
+
+          <!-- UÇ DEĞİŞTİRMEDEN ÖNCE TEYİT. Sensör yokken kafada ne olduğunu
+               doğrulayabilecek tek şey operatörün gözü; o yüzden hareketten
+               önce soruluyor ve cevap yanlışsa burada düzeltiliyor. -->
+          <div class="uc-teyit gizli" id="uc-teyit">
+            <div class="uc-teyit-soru" id="uc-teyit-soru"></div>
+            <p class="alt-not" id="uc-teyit-gerekce"></p>
+            <div class="satir-8">
+              <button class="dugme birincil" id="d-uc-teyit-evet">Doğru, devam et</button>
+              <button class="dugme" id="d-uc-teyit-vazgec">Vazgeç</button>
+            </div>
+            <div class="uc-teyit-duzelt">
+              <span class="alt-not">Yanlışsa düzeltin — hiçbir eksen hareket etmez:</span>
+              <div class="satir-8 alt-hizali">
+                <div class="alan esnek-alan">
+                  <label for="uc-teyit-secim">Kafada gerçekte ne var</label>
+                  <select id="uc-teyit-secim"></select>
+                </div>
+                <button class="dugme" id="d-uc-teyit-duzelt">Kaydı düzelt</button>
+              </div>
+            </div>
+          </div>
           <div class="satir-8 alt-hizali">
             <div class="alan esnek-alan"><label for="uc-secim">Uç</label><select id="uc-secim"></select></div>
             <button class="dugme birincil" id="d-uc-tak">Tak</button>
@@ -1575,6 +1602,19 @@
            göz yan yana: hangisinin başında olduğunu bilmeli. -->
       <div class="ekim-onay-yer" id="ekim-onay-yer"></div>
       <p class="ekim-onay-gerekce" id="ekim-onay-gerekce"></p>
+      <!-- UÇ TEYİDİ. Yalnız ekimin başındaki "kafada ne var" sorusunda
+           açılıyor: cevap yanlışsa kullanıcı burada düzeltiyor ve
+           hiçbir eksen hareket etmiyor. -->
+      <div class="uc-teyit-duzelt gizli" id="ekim-uc-duzelt">
+        <span class="alt-not">Yanlışsa düzeltin — hiçbir eksen hareket etmez:</span>
+        <div class="satir-8 alt-hizali">
+          <div class="alan esnek-alan">
+            <label for="ekim-uc-secim">Kafada gerçekte ne var</label>
+            <select id="ekim-uc-secim"></select>
+          </div>
+          <button class="dugme" id="d-ekim-uc-duzelt">Kaydı düzelt</button>
+        </div>
+      </div>
       <div class="ekim-onay-dugmeler" id="ekim-onay-dugmeler">
         <button class="dugme birincil" id="d-ekim-onayla">Onayla, devam et</button>
         <button class="dugme tehlike" id="d-ekim-iptal">İptal</button>

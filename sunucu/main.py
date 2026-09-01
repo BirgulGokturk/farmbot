@@ -83,6 +83,9 @@ IZINLI_KOMUTLAR = {
     "uc_onizle",     # {"islem":"al"|"birak","ad":"tool1"} — yolu koordinatla göster
     "uc_yollari",    # {}                            — HER ucun al/bırak yolu
     "uc_durum_temizle",  # {}                        — takılı uç kaydını sıfırla
+    "uc_beyan",      # {"ad":"tool3"} ya da {"ad":""} — kafada GERÇEKTEN ne var
+                     #   (operatör beyanı; sensör yokken inancı düzeltmenin
+                     #    tek yolu, hiçbir eksen hareket etmiyor)
     "goz_isaretle",  # {"ad":"s1","dolu":false,"tohum":"marul"} — tohumluk gözü
     "nokta_denetle", # {"noktalar":[{x,y,z}…]}      — yasak bölge + sınır ÖN kontrolü
     "dizi_baslat",   # {"ad":…,"adimlar":[…],"tekrar":1} — çözülmüş adımlarla
@@ -966,13 +969,18 @@ class EkimOturumu:
         self.uc_adi = ekim.UC_ADI
         self.bitince_birak = True
         self.onay_istiyor = True
+        # Uç değiştirmeden önce kafada ne olduğu SORULACAK mı, ve o an
+        # yazılımın inancı ne. İnanç bir ölçüm değil: kilit servosu ve
+        # varlık sensörü bağlı değilken yazılım yalnız hatırlıyor.
+        self.uc_teyit_gerek = False
+        self.uc_inanc = ""
         self.basladi_mi = False        # bu parçanın çalıştığını GÖRDÜK mü
         self.ekilen: list[str] = []
 
     # --- görünüm ------------------------------------------------------
     def goruntu(self) -> dict[str, Any]:
         o = self.ozet[self.sira] if self.sira < len(self.ozet) else {}
-        onay = self.durum in ("onay1", "onay2")
+        onay = self.durum in ("onay_uc", "onay1", "onay2")
         return {
             "aktif": self.aktif,
             "durum": self.durum,
@@ -988,13 +996,36 @@ class EkimOturumu:
             # NEREDE DURDUĞU. Kullanıcı makineye bakarak onaylayacak ama
             # hangi haznenin ya da hangi bitkinin başında olduğunu bilmeli.
             "konum": self._konum(),
-            "soru": ekim.SORU.get(self.durum, "") if onay else "",
+            "soru": self._soru() if onay else "",
             "gerekce": ekim.GEREKCE.get(self.durum, "") if onay else "",
+            # Uç teyidi için: yazılımın inancı ve düzeltme gerekip
+            # gerekmediği. Panel düzeltme satırını buna bakarak açıyor.
+            "uc_teyit": self.durum == "onay_uc",
+            "uc_inanc": self._inanc(),
             "pompa_acik": self.pompa_acik,
             "hata": self.hata,
             "mesaj": self.mesaj,
             "ekilen": list(self.ekilen),
         }
+
+    def _inanc(self) -> str:
+        """Yazılımın ŞU ANKİ inancı — anlık, saklanmış değil.
+
+        Kullanıcı teyit ekranından kaydı düzeltebiliyor; saklanmış bir
+        kopya gösterseydik düzeltmeden sonra ekranda eski ad kalır ve
+        kullanıcı düzeltmenin işlemediğini sanardı.
+        """
+        return str(((merkez.son_durum or {}).get("uc") or {}).get("uc") or "")
+
+    def _soru(self) -> str:
+        """Uç teyidinin sorusu İNANCA göre kuruluyor — sabit metin
+        "kafada ne var" derdi, oysa asıl bilgi yazılımın NE SANDIĞI."""
+        if self.durum == "onay_uc":
+            inanc = self._inanc()
+            return (f"Yazılım kafada '{inanc}' olduğunu sanıyor. Doğru mu?"
+                    if inanc
+                    else "Yazılım kafanın boş olduğunu sanıyor. Doğru mu?")
+        return ekim.SORU.get(self.durum, "")
 
     def asama(self) -> str:
         """Panelde tek satırda ne yaptığı — çalışırken de görünsün."""
@@ -1057,6 +1088,22 @@ async def _ekim_baslat(cozum: dict[str, Any]) -> dict[str, Any]:
         + ", ".join(cozum.get("kullanilan_hazneler") or ["?"]))
     # UÇ ÖNCE. Uç takılı değilken hazneye inmek tepsiyi kırar; kilit
     # servosu bunu doğrulayamadığı için sıra da önemli.
+    #
+    # AMA ÖNCE KAFADA NE OLDUĞUNU TEYİT ET. `degistir` yazılımın
+    # inancına bakıp "önce şunu bırakayım" diyor; inanç yanlışsa makine
+    # elde olmayan bir ucun yuvasına iniyor. Yazılım bunu ölçemediğini
+    # biliyor, o hâlde sormalı.
+    uc_d = (merkez.son_durum or {}).get("uc") or {}
+    _ekim.uc_teyit_gerek = uc_d.get("dogrulanabilir") is False
+    _ekim.uc_inanc = str(uc_d.get("uc") or "")
+    if _ekim.uc_teyit_gerek:
+        _ekim.durum = "onay_uc"
+        _ekim.parca = "uc"
+        await _ekim_yayinla()
+        return {"ok": True,
+                "mesaj": f"Ekim başladı — {len(_ekim.ozet)} bitki, "
+                         "önce uç durumu teyidi",
+                "ekim": _ekim.goruntu()}
     await _ekim_parca_baslat("uc", ekim.uc_parcasi(_ekim.uc_adi))
     return {"ok": True,
             "mesaj": f"Ekim başladı — {len(_ekim.ozet)} bitki",
@@ -1282,10 +1329,18 @@ async def api_ekim_onayla(govde: dict[str, Any] | None = None,
     422 vermek, makine beklerken basılan düğmenin çalışmaması demek.
     """
     _parola_dogrula(jeton)
-    if not _ekim.aktif or _ekim.durum not in ("onay1", "onay2"):
+    if not _ekim.aktif or _ekim.durum not in ("onay_uc", "onay1", "onay2"):
         raise HTTPException(
             status_code=409,
             detail=f"Onay beklenmiyor (durum: {_ekim.durum}).")
+    if _ekim.durum == "onay_uc":
+        # Kullanıcı kaydın doğru olduğunu söyledi; uç değiştirme
+        # ARTIK doğru inançla çalışacak.
+        await _ekim_gunluk(
+            f"kafada '{_ekim._inanc() or 'boş'}' olduğu onaylandı — "
+            f"'{_ekim.uc_adi}' takılıyor")
+        await _ekim_parca_baslat("uc", ekim.uc_parcasi(_ekim.uc_adi))
+        return _ekim.goruntu()
     o = _ekim.ozet[_ekim.sira]
     if _ekim.durum == "onay1":
         await _ekim_gunluk(
@@ -1321,6 +1376,16 @@ async def api_ekim_iptal(govde: dict[str, Any] | None = None,
 
     ekildi = len(_ekim.ekilen)
     o = _ekim.ozet[_ekim.sira] if _ekim.sira < len(_ekim.ozet) else {}
+
+    if _ekim.durum == "onay_uc":
+        # Henüz hiçbir şey olmadı: makine kımıldamadı, pompa açılmadı.
+        _ekim.aktif = False
+        _ekim.durum = "iptal"
+        _ekim.mesaj = ("Ekim iptal edildi — makine hiç hareket etmedi. "
+                       "Uç durumu teyit edilmedi.")
+        await _ekim_gunluk(_ekim.mesaj)
+        await _ekim_yayinla()
+        return _ekim.goruntu()
 
     if _ekim.durum not in ("onay1", "onay2"):
         # Hareket sürüyor. Önce durdur, sonra pompayı kapat.
