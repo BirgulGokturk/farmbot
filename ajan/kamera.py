@@ -101,13 +101,48 @@ def _dosya_oku(yol: str) -> str:
         return ""
 
 
+#: Kamera OLMAYAN video düğümlerinin sürücüleri.
+#:
+#: Pi 5'te `/dev/video0..7` CSI alıcısına (`rp1-cfe`), `/dev/video20..35`
+#: ISP arka ucuna (`pispbe`) ait. İkisi de kamera takılı olmasa bile var
+#: oluyor ve `v4l2` yakalama düğümü gibi görünüyorlar. ffmpeg bunlardan
+#: kare almaya kalkınca `ioctl(VIDIOC_STREAMON): Invalid argument` veriyor —
+#: sahada tam bu yaşandı: iki kamera da `/dev/video0`a gitti, ikisi de
+#: "kare alınamıyor" dedi ve sebep hiçbir yerde yazmıyordu.
+#:
+#: Şerit kablolu Pi kamera modülü BU DÜĞÜMLERDEN OKUNMAZ; picamera2 /
+#: rpicam yolundan okunur. O yüzden burası bir "bozuk cihaz" listesi değil,
+#: "ffmpeg ile açılmaz" listesi.
+PLATFORM_SURUCULERI = frozenset({
+    "rp1-cfe",       # Pi 5 CSI alıcısı
+    "pispbe",        # Pi 5 ISP arka ucu
+    "unicam",        # Pi 4 ve öncesi CSI alıcısı
+    "bcm2835-isp",
+    "bcm2835-codec",
+    "rpivid",
+})
+
+
+def _surucu_oku(dugum: str) -> str:
+    """Düğümü hangi sürücü sağlıyor. USB kamerada `uvcvideo` çıkıyor."""
+    try:
+        hedef = os.path.realpath(os.path.join(V4L2_KOK, dugum, "device", "driver"))
+    except OSError:
+        return ""
+    return os.path.basename(hedef) if hedef else ""
+
+
 def v4l2_cihazlar() -> list[dict[str, Any]]:
-    """Sistemdeki video düğümleri — [{"yol","no","ad","index"}].
+    """Sistemdeki video düğümleri — [{"yol","no","ad","index","surucu","alinabilir"}].
 
     `v4l2-ctl` çağırmıyoruz: kurulu olmayabiliyor ve gereken her şey
     sysfs'te zaten yazılı. `index`, aynı kameranın düğümleri arasında
     hangisinin görüntü verdiğini söylüyor (UVC kameralar bir de meta veri
     düğümü açıyor; onun indeksi 0 değil).
+
+    `alinabilir` = ffmpeg/fswebcam ile gerçekten kare alınabilir mi. Pi'nin
+    CSI ve ISP düğümleri kamera gibi görünüp kare vermiyor; bkz.
+    `PLATFORM_SURUCULERI`.
     """
     try:
         adlar = os.listdir(V4L2_KOK)
@@ -122,14 +157,30 @@ def v4l2_cihazlar() -> list[dict[str, Any]]:
         except ValueError:
             continue
         ham_index = _dosya_oku(os.path.join(V4L2_KOK, dugum, "index"))
+        surucu = _surucu_oku(dugum)
         cikti.append({
             "yol": f"/dev/{dugum}",
             "no": no,
             "ad": _dosya_oku(os.path.join(V4L2_KOK, dugum, "name")),
             "index": int(ham_index) if ham_index.isdigit() else 0,
+            "surucu": surucu,
+            "alinabilir": surucu not in PLATFORM_SURUCULERI,
         })
     cikti.sort(key=lambda c: c["no"])
     return cikti
+
+
+def _cihaz_listesi(hepsi: list[dict[str, Any]]) -> str:
+    """Mesajlarda görünen cihaz dökümü — alınamayanlar sebebiyle işaretli."""
+    if not hepsi:
+        return "hiç yok"
+    parca = []
+    for c in hepsi:
+        if c["alinabilir"]:
+            parca.append(f"{c['yol']} ({c['ad']})")
+        else:
+            parca.append(f"{c['yol']} ({c['ad']}, {c['surucu']} — kamera değil)")
+    return ", ".join(parca)
 
 
 def cihaz_bul(cihaz_adi: str, yedek: str = "") -> tuple[str, str]:
@@ -139,27 +190,45 @@ def cihaz_bul(cihaz_adi: str, yedek: str = "") -> tuple[str, str]:
     söylüyor — "kamera hatası" diye içi boş bir mesaj bırakmıyoruz.
     """
     hepsi = v4l2_cihazlar()
+    alinabilir = [c for c in hepsi if c["alinabilir"]]
+    varsa = _cihaz_listesi(hepsi)
+    yerinde = {c["yol"]: c for c in hepsi}
     aranan = str(cihaz_adi or "").strip().casefold()
     if aranan:
         eslesen = [c for c in hepsi if aranan in (c["ad"] or "").casefold()]
         if eslesen:
-            # Görüntü düğümü önce: index 0 olanlar, sonra numara sırası.
-            eslesen.sort(key=lambda c: (c["index"] != 0, c["no"]))
+            # Görüntü düğümü önce: kare verebilenler, sonra index 0, sonra numara.
+            eslesen.sort(key=lambda c: (not c["alinabilir"], c["index"] != 0, c["no"]))
             secili = eslesen[0]
             return secili["yol"], f"'{secili['ad']}' → {secili['yol']}"
-        varsa = ", ".join(f"{c['yol']} ({c['ad']})" for c in hepsi) or "hiç yok"
         if yedek and os.path.exists(yedek):
             return yedek, (f"'{cihaz_adi}' adlı kamera bulunamadı, yedek yol "
                            f"{yedek} kullanılıyor. Sistemdekiler: {varsa}")
         return "", (f"'{cihaz_adi}' adlı kamera bulunamadı. Sistemdekiler: {varsa}")
     if yedek:
         if os.path.exists(yedek):
+            c = yerinde.get(yedek)
+            # ELLE VERİLEN YOL DA YANLIŞ OLABİLİR. Yol var diye kare gelmiyor:
+            # Pi'nin CSI/ISP düğümleri hep duruyor ve ffmpeg onlardan
+            # "Invalid argument" alıyor. Sebebi burada söylüyoruz.
+            if c is not None and not c["alinabilir"]:
+                return "", (f"{yedek} bir kamera değil — {c['ad']} ({c['surucu']}), "
+                            "Pi'nin kendi CSI/ISP düğümü. Şerit kablolu Pi kamerası "
+                            "buradan değil picamera2/rpicam ile okunur; USB kamera "
+                            f"için başka bir yol seçin. Sistemdekiler: {varsa}")
             return yedek, f"{yedek} (elle verilen yol)"
         return "", f"{yedek} yok — kamera çıkarılmış ya da numarası değişmiş olabilir"
-    # Ne ad ne yol verilmiş: görüntü düğümlerinin ilkini alıyoruz.
-    aday = [c for c in hepsi if c["index"] == 0]
+    # Ne ad ne yol verilmiş: KARE VEREBİLEN görüntü düğümlerinin ilkini alıyoruz.
+    aday = [c for c in alinabilir if c["index"] == 0]
     if aday:
         return aday[0]["yol"], f"{aday[0]['yol']} ({aday[0]['ad']}) — kendiliğinden seçildi"
+    if hepsi:
+        # Düğüm var ama hiçbiri kamera değil: en sık hâl bu ve eskiden
+        # sessizce /dev/video0 seçilip anlaşılmaz bir hata veriliyordu.
+        return "", ("Kare verebilen kamera yok. Görünenlerin hepsi Pi'nin kendi "
+                    f"CSI/ISP düğümleri: {varsa}. USB kamera takılı değilse takın "
+                    "(lsusb ile görünmeli); şerit kablolu Pi kamerası "
+                    "kullanacaksanız picamera2/rpicam kurulmalı.")
     return "", "Sistemde hiç video cihazı yok"
 
 
