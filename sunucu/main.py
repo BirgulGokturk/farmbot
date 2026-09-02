@@ -3132,6 +3132,7 @@ def _bahce_veri() -> dict[str, Any]:
     alanlar = dikim.listele()
     sinirlar = durum.get("sinirlar") or {}
 
+    ars = arsiv.ozet()          # arşiv TEK kez taranıyor (ve önbellekli)
     liste = []
     for b in bahce.bitkiler(hepsi):
         tur = tur_indeks.get(str(b.get("tur") or "")) or {}
@@ -3153,7 +3154,7 @@ def _bahce_veri() -> dict[str, Any]:
             "yas_gun": hasat.get("gun"), "olgun_gun": hasat.get("olgun"),
             "olgunluk": hasat.get("oran"),
             "film_kimlik": kimlik,
-            "film_kare": len(arsiv.kareler_listesi(kimlik)),
+            "film_kare": int((ars["filmler"].get(kimlik) or {}).get("adet") or 0),
         })
 
     # Çakışma: iki bitkinin yayılım çemberi kesişiyorsa ikisi de işaretli.
@@ -3168,8 +3169,7 @@ def _bahce_veri() -> dict[str, Any]:
 
     kalib = kalibrasyon.oku("ust")
     baslik = _baslik_oku()
-    gunler = bahce.ilgi_gunleri(
-        hepsi, [k["ts"] for kim in arsiv.filmler() for k in arsiv.kareler_listesi(kim)])
+    gunler = bahce.ilgi_gunleri(hepsi, ars["gunler"])
 
     return {
         "bitkiler": liste,
@@ -3197,7 +3197,7 @@ def _bahce_veri() -> dict[str, Any]:
         "ekim": _bahce_ekim_ozet(),
         "mesgul": _bahce_mesgul(),
         "bagli": bool(durum.get("bagli")),
-        "arsiv_bayt": arsiv.toplam_bayt(),
+        "arsiv_bayt": int(ars["bayt"]),
         "ts": simdi,
     }
 
@@ -3370,6 +3370,68 @@ def _bahce_ad_uret(slug: str) -> str:
         if ad not in var:
             return ad
     raise HTTPException(status_code=409, detail="Boş nokta adı bulunamadı")
+
+
+@app.post("/api/bahce/tasi")
+async def api_bahce_tasi(govde: dict[str, Any], jeton: str = Query(default="")):
+    """Bitkiyi yeni yerine taşır — KAYIT işlemi, makine hareket etmiyor.
+
+    Bitkinin BÜTÜN kaydı okunup geri yazılıyor, yalnız x/y değişiyor.
+    Panelden gelen alanlarla yeniden kurmak, gönderilmeyen her alanı
+    (ekim tarihi, bağlı eğriler, tür ezmeleri) sessizce silerdi — ve
+    silindiği ancak haftalar sonra fark edilirdi.
+    """
+    _parola_dogrula(jeton)
+    ad = str(govde.get("ad") or "").strip()
+    x, y = _sayi_guvenli(govde.get("x")), _sayi_guvenli(govde.get("y"))
+    mevcut = next((n for n in await asyncio.to_thread(noktalar.hepsi)
+                   if str(n.get("ad")) == ad), None)
+    if mevcut is None:
+        raise HTTPException(status_code=404, detail=f"'{ad}' diye bir bitki yok")
+
+    durum = merkez.durum()
+    s = durum.get("sinirlar") or {}
+    sx, sy = s.get("x") or {}, s.get("y") or {}
+    if not (_sayi_guvenli(sx.get("min"), 0) <= x <= _sayi_guvenli(sx.get("max"), 1e9)
+            and _sayi_guvenli(sy.get("min"), 0) <= y <= _sayi_guvenli(sy.get("max"), 1e9)):
+        raise HTTPException(status_code=422,
+                            detail="Orası yatağın dışında kalıyor.")
+    alanlar = await asyncio.to_thread(dikim.listele)
+    if alanlar:
+        kabul, gerekce, _ = dikim.nokta_kabul(x, y, alanlar)
+        if not kabul:
+            raise HTTPException(status_code=422, detail=f"Oraya taşınamıyor — {gerekce}")
+
+    yeni = dict(mevcut)
+    yeni["x"], yeni["y"] = round(x, 1), round(y, 1)
+    ekstra = {k: v for k, v in yeni.items()
+              if k not in ("ad", "x", "y", "z", "etiket", "ts")}
+    kayit = await asyncio.to_thread(
+        noktalar.ekle, ad, yeni["x"], yeni["y"], _sayi_guvenli(yeni.get("z")),
+        True, str(yeni.get("etiket") or "bitki"), ekstra)
+    await merkez.yayinla({"tip": "bahce", "kuyruk": kuyruk.goruntu()})
+    return {"ok": True, "nokta": kayit}
+
+
+@app.post("/api/bahce/yakin")
+async def api_bahce_yakin(govde: dict[str, Any], jeton: str = Query(default="")):
+    """"Yakından bak": makineyi bitkinin üstüne götürür.
+
+    Uç kamerası kafada duruyor; makine oraya gidince kamera bitkiyi
+    yukarıdan yakın görüyor. Bu bir FOTOĞRAF işi değil — çekilen kare
+    büyüme filmine GİRMİYOR. Girseydi filmde iki farklı ölçek karışır ve
+    büyüme yerine zıplama görünürdü; film yalnız üst kameradan.
+    """
+    _parola_dogrula(jeton)
+    ad = str(govde.get("ad") or "").strip()
+    if not any(str(n.get("ad")) == ad for n in await asyncio.to_thread(noktalar.hepsi)):
+        raise HTTPException(status_code=404, detail=f"'{ad}' diye bir bitki yok")
+    try:
+        kuyruk.ekle("gez", f"Yakından bakma · {ad}", [ad], {"yakin": True})
+    except kuyruk_modul.KuyrukDolu as hata:
+        raise HTTPException(status_code=429, detail=str(hata))
+    await merkez.yayinla({"tip": "bahce", "kuyruk": kuyruk.goruntu()})
+    return {"ok": True, "kuyruk": kuyruk.goruntu()}
 
 
 @app.post("/api/bahce/hasat")

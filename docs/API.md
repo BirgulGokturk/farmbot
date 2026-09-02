@@ -179,6 +179,8 @@ yerde tutulmuyor.
 | `POST /api/bahce/hasat` | `{noktalar:[ad]}` — **kayıt işlemi, hareket değil**: makine hasat edemiyor, toplayan kullanıcı. Yeri boşaltır, 30 sn `geri_al` verir. Film SİLİNMEZ |
 | `POST /api/bahce/onay` | Bekleyen ekim onayını geçer (`/api/ekim/onayla`ya iletir) |
 | `POST /api/bahce/foto` | `{noktalar:[ad]}` — üst kameranın son karesinden şimdi kırpar. Makine hareket etmez. Kalibrasyon yoksa 409 ve **sebebini söyler** |
+| `POST /api/bahce/tasi` | `{ad, x, y}` — bitkinin **kaydını** taşır (sürükleyip bırakma). Mevcut kaydı okuyup üstüne yazar: tür, ekim tarihi, sulama damgası ve filmi korunur. Makine HAREKET ETMEZ. Sınırların ya da dikim alanının dışına 422 |
+| `POST /api/bahce/yakin` | `{ad}` — robotu bitkinin üstüne gönderen bir ziyaret işini kuyruğa koyar (`gez`, `yakin:true`); panel uç kamerası şeridini kendiliğinden açar |
 | `GET /api/bahce/film?kimlik=` | O ekimin arşiv kareleri (`damga`, `ts`, `bayt`). `kimlik` boşsa bütün filmler + toplam bayt |
 | `GET /api/bahce/film/kare?kimlik=&damga=` | Tek arşiv karesi (JPEG, bir gün önbelleklenir) |
 

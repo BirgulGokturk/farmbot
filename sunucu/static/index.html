@@ -219,11 +219,28 @@
           <b id="bh-seri-gun">0</b><span class="ikincil">gün üst üste</span>
         </div>
         <span class="esnek"></span>
+        <!-- Çoklu seçim AÇIK BİR KİP. Gizli bir hareketin (uzun basıp
+             sürükleme gibi) arkasına saklamak, kimsenin bulamayacağı bir
+             özellik demek; dokunmatikte keşif yoktur, düğme vardır. -->
+        <button class="bh-ikon" id="bh-sec" type="button" aria-pressed="false"
+                title="Birkaç bitkiyi birden seç">Seç</button>
+        <button class="bh-ikon" id="bh-kamera-ac" type="button" aria-pressed="false"
+                title="Kameraları göster">Kameralar</button>
         <button class="bh-ikon" id="bh-egik" type="button" aria-pressed="true"
                 title="Bahçeye eğik ya da tam tepeden bak">Eğik bak</button>
         <button class="bh-ikon" id="bh-sakin" type="button" aria-pressed="false"
                 title="Bütün hareketi durdurur — küçük bilgisayarda işlemciyi rahatlatır"
                 >Sakin mod</button>
+      </div>
+
+      <!-- Çoklu seçim çubuğu: yalnız seçim varken görünüyor. -->
+      <div class="bh-toplu gizli" id="bh-toplu">
+        <b id="bh-toplu-sayi">0 bitki seçili</b>
+        <span class="esnek"></span>
+        <button class="bh-dugme birincil" data-toplu="sula">💧 Sula</button>
+        <button class="bh-dugme" data-toplu="foto">📷 Fotoğrafla</button>
+        <button class="bh-dugme" data-toplu="hasat">🧺 Hasat</button>
+        <button class="bh-ikon" data-toplu="birak">Vazgeç</button>
       </div>
 
       <div class="bh-kartlar" id="bh-kartlar"></div>
@@ -234,6 +251,13 @@
 
       <div class="bh-tahta-sar">
         <div class="bh-tahta" id="bh-tahta">
+          <!-- YAKINLAŞTIRMA KATMANI. Eğim ve yakınlaştırma AYRI katmanlarda
+               olmak zorunda: ikisi tek `transform` zincirinde olunca
+               yakınlaştırma perspektif izdüşümünden ÖNCE uygulanıyor ve
+               ekranda birebir karşılık gelmiyordu — parmağın altındaki
+               nokta yakınlaştırınca kayıyordu. Perspektif bu katmanda,
+               yani önce düzlem izdüşürülüyor, sonra sonuç büyütülüyor. -->
+          <div class="bh-zum" id="bh-zum">
           <div class="bh-duzlem" id="bh-duzlem">
             <!-- Zemin kabı AYRI: kamera karesi yatağın dışını da görüyor ve
                  taşan kısım kırpılmalı. Kırpma (`overflow`) 3B düzlemi
@@ -250,6 +274,7 @@
                  preserveAspectRatio="none" aria-hidden="true"></svg>
             <div class="bh-bitkiler" id="bh-bitkiler"></div>
             <div class="bh-hayalet" id="bh-hayalet" hidden></div>
+            <div class="bh-secim-kutu" id="bh-secim-kutu" hidden></div>
             <div class="bh-robot" id="bh-robot" hidden><i></i></div>
             <!-- Dört köşe ölçü noktası: ekran koordinatını yatak
                  milimetresine çeviren dönüşüm bunlardan ÖLÇÜLEREK
@@ -259,7 +284,27 @@
             <span class="bh-olcu" data-kose="2"></span>
             <span class="bh-olcu" data-kose="3"></span>
           </div>
+          </div>
           <p class="bh-bos" id="bh-bos" hidden></p>
+          <span class="bh-yakin-rozet" id="bh-zum-rozet" hidden></span>
+        </div>
+
+        <!-- KAMERA ŞERİDİ tahtanın YANINDA (dar ekranda altında). Üst kamera
+             zaten tahtanın zemini; buradaki pencere onu bozulmamış hâliyle
+             (eğimsiz, kırpılmamış) gösteriyor. Uç kamerası kafada duruyor,
+             yani makine bir işe gidince orada ne gördüğü canlı izleniyor —
+             "yakından bak" işinin karşılığı bu.
+             Şerit kapalıyken uç kamerası HİÇ akmıyor: bakılmayan bir akış,
+             ödenmemesi gereken bir bedel. -->
+        <div class="bh-kameralar gizli" id="bh-kameralar">
+          <figure class="bh-kam" data-kam="ust">
+            <img alt="Üst kamera" data-rol="kare">
+            <figcaption><b>Üst kamera</b><span data-rol="not">bahçenin zemini</span></figcaption>
+          </figure>
+          <figure class="bh-kam" data-kam="uc">
+            <img alt="Uç kamerası" data-rol="kare">
+            <figcaption><b>Uç kamerası</b><span data-rol="not">kafanın gördüğü</span></figcaption>
+          </figure>
         </div>
       </div>
 
@@ -311,6 +356,49 @@
          DIŞINDA, çünkü ikisi de sahnenin üstünde duruyor ve tahtanın 3B
          dönüşümünden etkilenmemeleri gerekiyor. -->
     <div class="bh-menu" id="bh-menu" hidden></div>
+
+    <!-- BİTKİ KARTI — uzun basınca. Halka menü "ne yapayım" sorusunun
+         cevabı; bu kart "bu bitki nasıl" sorusunun. İkisi ayrı, çünkü
+         bir bitkiyi sulamak için yaşını bilmek gerekmiyor ve yaşına
+         bakmak için sulama düğmesine basmak gerekmiyor. -->
+    <div class="bh-sayfa-ortu" id="bh-kart" hidden>
+      <section class="bh-bkart" role="dialog" aria-label="Bitki kartı">
+        <header>
+          <span class="bh-bkart-simge" data-rol="simge">🌱</span>
+          <div>
+            <b data-rol="tur">Bitki</b>
+            <span class="ikincil" data-rol="alt"></span>
+          </div>
+          <span class="esnek"></span>
+          <button class="bh-ikon" data-rol="kapat" type="button">Kapat</button>
+        </header>
+
+        <div class="bh-bkart-govde">
+          <div class="bh-bkart-olcu">
+            <div><b data-rol="yas">—</b><span>yaşında</span></div>
+            <div><b data-rol="hasat">—</b><span>hasada</span></div>
+            <div><b data-rol="su">—</b><span>sulandı</span></div>
+            <div><b data-rol="yayilim">—</b><span>yayılım</span></div>
+          </div>
+          <div class="bh-buyume"><i data-rol="cubuk"></i></div>
+          <p class="bh-bkart-not" data-rol="gerekce"></p>
+          <p class="bh-bkart-not uyari gizli" data-rol="cakisma"></p>
+
+          <!-- Film şeridi: kartın içinde küçük, dokununca büyüyor. -->
+          <div class="bh-serit" data-rol="serit"></div>
+        </div>
+
+        <!-- Düğmelerin rolleri `d-` önekli: ölçü kutularıyla aynı adı
+             taşımaları (ikisi de "hasat") `querySelector`ın yanlış öğeyi
+             bulmasına ve düğmenin hiç bağlanmamasına yol açıyordu. -->
+        <div class="bh-bkart-dugmeler">
+          <button class="bh-dugme birincil" data-rol="d-sula">💧 Sula</button>
+          <button class="bh-dugme" data-rol="d-yakin">🔍 Yakından bak</button>
+          <button class="bh-dugme" data-rol="d-film">🎞 Film</button>
+          <button class="bh-dugme" data-rol="d-hasat">🧺 Hasat</button>
+        </div>
+      </section>
+    </div>
     <div class="bh-film-ortu" id="bh-film" hidden>
       <div class="bh-film-kutu" role="dialog" aria-label="Büyüme filmi">
         <header>

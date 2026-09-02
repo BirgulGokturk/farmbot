@@ -842,6 +842,73 @@ bütün kareler aynı kameradan gelmeli.
 
 Toplam arşiv 80 MB'ı aşarsa en eski kareler siliniyor.
 
+### Bitkiye dokunmanın beş yolu
+
+Halka menü (tek dokunuş) tek başına yetmiyordu: bahçede insan bakar,
+karıştırır, taşır. Aynı parmakla yapılan işler:
+
+| Hareket | Ne oluyor | Neden böyle |
+|---|---|---|
+| **Dokun** | Halka menü — su, hasat, fotoğraf | En sık yapılan üç iş, alt sayfa açmadan |
+| **Uzun bas (480 ms)** | Bitki kartı — yaş, hasat günü, son sulama, yayılım, gerekçe, film şeridi, dört düğme | Menüye sığmayan her şey; kartta **ham koordinat yok** |
+| **Sürükle** | Bitkiyi toprakta taşı | Yanlış yere ekilmiş bir fideyi düzeltmenin başka yolu yoktu |
+| **İki parmak / tekerlek** | Yakınlaştır, kaydır | 7" ekranda fide simgesi 20 px; yakınlaşmadan hangi bitkiye dokunulduğu belli olmuyor |
+| **Seçim kipi + kutu** | Çoklu seçim, sonra tek toplu iş | Altı bitkiyi tek tek sulamak altı ayrı iş demekti |
+
+Dört karar burada özellikle önemli:
+
+* **Taşımak makineyi hareket ettirmiyor.** Sürükleme, kaydın x/y'sini
+  düzeltiyor — "burayı yanlış işaretlemişim" demek. Fideyi gerçekten
+  taşımak robotun yapabileceği bir şey değil. Tür ve ekim tarihi
+  korunuyor: `/api/bahce/tasi` mevcut kaydı okuyup **üstüne** yazıyor,
+  yoksa bitkinin filmi kopardı. Dikim alanının ya da sınırların dışına
+  bırakmak 422 ile reddediliyor ve hayalet kırmızıya dönüyor — bırakmadan
+  önce görülüyor.
+* **Vuruş sınaması ekranda değil, toprakta.** Bitkiler eğik 3B düzlemin
+  içinde; oradaki bir öğenin `getBoundingClientRect`i göründüğü yeri
+  vermiyor ve seçim kutusu hiçbir bitki bulamıyordu. Kullanıcının çizdiği
+  dikdörtgenin dört köşesi ölçülen dönüşümle toprağa çevriliyor ve
+  bitkinin toprak koordinatı o **dörtgenin** içinde mi diye bakılıyor.
+  Perspektifte dikdörtgenin izdüşümü dikdörtgen değil.
+* **Yakınlaştırma eğimin dışında.** Eğim düzlemde, büyütme onun
+  dışındaki katmanda (`#bh-zum`). Tek zincirde olsalardı büyütme
+  izdüşümden önce uygulanır ve parmağın altındaki nokta kayardı. Şimdi
+  ölçülüyor: yakınlaşmadan önceki toprak noktası, yakınlaştıktan sonra
+  yeniden ölçülüp kaydırma farkı kadar düzeltiliyor — 1 mm içinde
+  yerinde kalıyor.
+* **Parmak ekrandayken tahta boyu değişmiyor.** Seçim ve sürükleme
+  başladıkları andaki ekran ölçüsüne dayanıyor; tahta ortada büyürse kutu
+  toprakta bambaşka bir yere denk gelir.
+
+### Kameralar bahçenin içinde
+
+Zemin zaten üst kameranın karesi; iki ek yer daha var.
+
+* **Kamera şeridi** — tahtanın altında iki küçük canlı pencere (üst ve
+  uç). Kapalıyken uç kamerası akmıyor; açıkken boşta **1 kare/sn**, bir iş
+  çalışırken **4 kare/sn**. Robot hareket ederken uçtan bakmak, ekranda
+  olanın gerçekten olduğunu doğrulamanın en kısa yolu.
+* **"Yakından bak"** (bitki kartında) — robotu bitkinin üstüne gönderiyor
+  ve şeridi kendiliğinden açıyor. Bu bir ziyaret işi, kuyruğa giriyor;
+  ayrı bir hareket yolu açmıyor.
+
+### Sunucu gidip gelince
+
+`bash guncelle.sh` sunucuyu yeniden başlatıyor. Panel açık kalırsa o
+sırada uçan istek ağ düzeyinde düşüyor ve ekranda `Failed to fetch`
+görülüyordu. Üç şey değişti:
+
+* Not satırı **anahtarlı**: yükleme, işlem ve zemin notları ayrı
+  tutuluyor. Eskiden zemin çizimi saniyede bir `notYaz("")` çağırıyor ve
+  hata uyarısını bir saniye sonra siliyordu — kullanıcı sebebini
+  okuyamıyordu.
+* Sebebe göre ayrı söz: ağ kesintisi ("yeniden başlıyor, kendim yeniden
+  deneyeceğim"), 404 ("sunucu eski, Pi'de `bash guncelle.sh`"), 401
+  ("parola kabul edilmedi"). Arka planda 1,2 → 2,5 → 5 → 8 sn ile yeniden
+  deneniyor ve **ekrandaki bahçe silinmiyor**.
+* WebSocket yeniden bağlanınca sürüm damgası tazeleniyor ve bahçe
+  kendiliğinden yeniden okunuyor.
+
 ### Dokunmatik ve ısınma
 
 Ekran Raspberry'nin 7" dokunmatiğinde parmakla kullanılıyor: dokunulan

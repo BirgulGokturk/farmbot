@@ -129,8 +129,8 @@ def kare_oku(kimlik: str, damga: str) -> bytes | None:
 
 
 def son_damga(kimlik: str) -> float:
-    liste = kareler_listesi(kimlik)
-    return liste[-1]["ts"] if liste else 0.0
+    """Bu filmin en yeni karesinin damgası — özetten, taramadan."""
+    return float((ozet()["filmler"].get(kimlik) or {}).get("son") or 0.0)
 
 
 # --------------------------------------------------------------------------- #
@@ -237,6 +237,7 @@ def yaz(kimlik: str, veri: bytes, ts: float | None = None) -> str:
     yol = _klasor(kimlik, olustur=True)
     with open(os.path.join(yol, f"{damga}.jpg"), "wb") as d:
         d.write(veri)
+    ozet_bosalt()
     _buda_bitki(kimlik)
     _buda_toplam()
     return damga
@@ -259,14 +260,15 @@ def _buda_toplam() -> None:
     Sınır bitki başına değil TOPLAM: otuz bitkinin her biri sınırın
     altında kalıp toplamda diski doldurabilir.
     """
+    o = ozet(zorla=True)
+    if o["bayt"] <= AZAMI_TOPLAM_BAYT:
+        return
     hepsi: list[tuple[float, str, str, int]] = []
     toplam = 0
-    for kimlik in filmler():
+    for kimlik in o["filmler"]:
         for k in kareler_listesi(kimlik):
             hepsi.append((k["ts"], kimlik, k["damga"], k["bayt"]))
             toplam += k["bayt"]
-    if toplam <= AZAMI_TOPLAM_BAYT:
-        return
     hepsi.sort()
     for ts, kimlik, damga, bayt in hepsi:
         if toplam <= AZAMI_TOPLAM_BAYT:
@@ -286,8 +288,67 @@ def filmler() -> list[str]:
         return []
 
 
+# --------------------------------------------------------------------------- #
+# Özet — bahçe ekranının her isteğinde arşivi baştan taramamak için
+# --------------------------------------------------------------------------- #
+# Bahçe ekranı her açılışta arşivi ÜÇ KEZ dolaşıyordu: bitki başına bir
+# `listdir`, seri sayacı için bütün filmler, bir de toplam bayt. Yirmi
+# bitki ve aylarca kare biriktiğinde bu, Pi'nin SD kartında saniyeler
+# demek — ve saniyeler süren bir uç nokta, sunucu yeniden başlarken
+# tarayıcıda "Failed to fetch" olarak görünen şeyin ta kendisi.
+#
+# Tek tarama, kısa ömürlü önbellek. Arşiv günde bir değişiyor; beş
+# saniyelik bir önbellek hiçbir şeyi bayatlatmıyor ama tarama sayısını
+# istek başına üçten sıfıra indiriyor.
+_OZET: dict[str, Any] = {"ts": 0.0, "veri": None}
+OZET_OMUR_SN = 5.0
+
+
+def ozet(zorla: bool = False) -> dict[str, Any]:
+    """{'filmler': {kimlik: {'adet','bayt','son'}}, 'bayt': toplam}."""
+    simdi = time.time()
+    if not zorla and _OZET["veri"] is not None and simdi - _OZET["ts"] < OZET_OMUR_SN:
+        return _OZET["veri"]
+    cikti: dict[str, Any] = {"filmler": {}, "bayt": 0, "gunler": []}
+    kok = _kok()
+    try:
+        klasorler = list(os.scandir(kok))
+    except OSError:
+        klasorler = []
+    for k in klasorler:
+        if not k.is_dir():
+            continue
+        adet, bayt, son = 0, 0, 0.0
+        try:
+            for d in os.scandir(k.path):
+                if not d.name.endswith(".jpg"):
+                    continue
+                try:
+                    ts = float(d.name[:-4])
+                except ValueError:
+                    continue
+                adet += 1
+                try:
+                    bayt += d.stat().st_size
+                except OSError:
+                    pass
+                son = max(son, ts)
+                cikti["gunler"].append(ts)
+        except OSError:
+            continue
+        cikti["filmler"][k.name] = {"adet": adet, "bayt": bayt, "son": son}
+        cikti["bayt"] += bayt
+    _OZET["veri"], _OZET["ts"] = cikti, simdi
+    return cikti
+
+
+def ozet_bosalt() -> None:
+    """Yazma sonrası önbelleği düşürür — yeni kare hemen görünsün."""
+    _OZET["veri"] = None
+
+
 def toplam_bayt() -> int:
-    return sum(k["bayt"] for kimlik in filmler() for k in kareler_listesi(kimlik))
+    return int(ozet()["bayt"])
 
 
 def sil(kimlik: str) -> int:
@@ -303,6 +364,7 @@ def sil(kimlik: str) -> int:
         os.rmdir(yol)
     except OSError:
         pass
+    ozet_bosalt()
     return len(liste)
 
 
