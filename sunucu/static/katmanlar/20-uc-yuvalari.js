@@ -1,6 +1,10 @@
-/* Uç yuvaları, uç profili ve tohumluk gözleri.
+/* Uç profili ve tohumluk gözleri.
  *
- * `durum.uc.tools_konum`, `durum.uc.tohumluk_gozleri` ve `durum.uc.alan`dan
+ * UÇ YUVALARI KALDIRILDI: üç baş Z eksenine kalıcı olarak vidalı,
+ * alınıp bırakılan bir uç yok. Katman artık tohumluğu ve onu taşıyan
+ * profili çiziyor.
+ *
+ * `durum.uc.tohumluk_gozleri`den
  * besleniyor. Alan AÇIKKEN içeride Z güvenlik kilidi devre dışı; bu yüzden
  * alan açıkken haritada da belirgin çiziliyor — kilit kapalıyken bunu
  * bilmemek tehlikeli.
@@ -27,46 +31,32 @@
  */
 Tarla.katman({
   kimlik: "uclar",
-  ad: "Uç yuvaları",
+  ad: "Tohumluk",
   varsayilan: true,
 
   guncelle(o) {
     o.bosalt(o.grup);
     const uc = o.veri.durum.uc || {};
-    const alan = uc.alan || {};
     const R = o.makine.renk;
 
-    if (alan.on && (alan.pts || []).length >= 3) {
-      const nokta = alan.pts.map(([x, y]) => new o.THREE.Vector2(o.sx(x), o.sz(y)));
-      const sekil = new o.THREE.Shape(nokta);
-      const zemin = new o.THREE.Mesh(
-        new o.THREE.ShapeGeometry(sekil),
-        new o.THREE.MeshBasicMaterial({ color: "#3987e5", transparent: true, opacity: 0.14,
-                                        side: o.THREE.DoubleSide, depthWrite: false }));
-      zemin.rotation.x = Math.PI / 2;      // Shape XY düzleminde; yatağa yatırıyoruz
-      zemin.position.y = 0.001;
-      zemin.raycast = () => {};
-      o.grup.add(zemin);
-    }
-
-    const yuvalar = uc.tools_konum || [];
+    // UÇ YUVALARI KALDIRILDI. Üç baş kalıcı olarak vidalı; alınıp
+    // bırakılan bir uç yok, dolayısıyla çizilecek bir yuva da yok.
+    // Katman artık yalnız TOHUMLUĞU çiziyor.
     const gozler = (uc.tohumluk_gozleri || []).filter((g) => g && g.x != null);
-    if (!yuvalar.length && !gozler.length) return;
+    if (!gozler.length) return;
 
     /* --- profil: kapsayan kutu -----------------------------------------
      *
-     * GENİŞLİK yalnız UÇLARDAN geliyor, gözlerden değil. Gözler profilin
-     * ucundaki tepsinin içinde ve X'te yayılıyor (60→180); onları
-     * kapsayan kutuya katmak profili tepsinin genişliğine şişirip
-     * uçların altından kaydırıyordu. Profil uzun ekseninde tepsiye kadar
-     * UZUYOR, ama enini uçlar belirliyor.
+     * Profil artık GÖZLERDEN türetiliyor. Eskiden uç yuvalarının
+     * konumundan çıkıyordu; yuvalar kalkınca elimizde kalan tek
+     * dayanak tohumluğun kendisi.
      */
-    const kaynak = yuvalar.length ? yuvalar : gozler;
+    const kaynak = gozler;
     const xs = kaynak.map((d) => d.x), ys = kaynak.map((d) => d.y);
     const gx = gozler.map((g) => g.x), gy = gozler.map((g) => g.y);
     const xEn = Math.max(...xs) - Math.min(...xs);
     const yEn = Math.max(...ys) - Math.min(...ys);
-    // Uçlar hangi eksen boyunca dizilmişse profil o eksende uzuyor.
+    // Gözler hangi eksen boyunca dizilmişse profil o eksende uzuyor.
     const uzunY = yEn >= xEn;
     // Uçların ucundan taşan pay: profil son yuvada bıçak gibi bitmiyor.
     const PAY = 40;
@@ -136,54 +126,6 @@ Tarla.katman({
      * iniyordu ve makinenin yanında kendine ait bir ayak takımı varmış gibi
      * duruyordu — gerçekte öyle bir şey yok, uç plakası doğrudan profile
      * vidalı. */
-
-    // Yuva DÖRT parçadan kuruluyor. Tek bir turkuaz koni olarak çizildiğinde
-    // sahnede plastik bardak gibi duruyordu: gerçek yuva koyu metal bir
-    // tabana oturan bilezik, ucun kendisi de koyu gövdeli. Turkuaz artık
-    // gövdenin tamamı değil, yalnızca üstteki tanıtıcı bant — böylece hem
-    // metal gibi okunuyor hem uçlar birbirinden ayırt edilebiliyor.
-    yuvalar.forEach((t) => {
-      const g = new o.THREE.Group();
-
-      /* TABAN PLAKASI YOK. Önce her yuvanın altına koyu bir plaka
-       * konuyordu ve yuvalar sahnede kendi ayağı olan ayrı parçalar gibi
-       * duruyordu; gerçekte uçlar doğrudan sigma profilin üstünde oturuyor,
-       * altlarında hiçbir şey yok. Profil zaten taşıyıcı, ikinci bir
-       * taşıyıcı çizmek makineyi olduğundan karmaşık gösteriyordu.
-       */
-
-      // ucun içine oturduğu bilezik — torus, çünkü açık silindirde
-      // arka yüz sorunu çıkıyor ve kenar burada yuvarlak zaten
-      const bilezik = new o.THREE.Mesh(
-        new o.THREE.TorusGeometry(0.028, 0.005, 8, 22),
-        o.malzeme(R.metal_koyu || "#33373c", { metalness: 0.8, roughness: 0.3 }));
-      bilezik.rotation.x = -Math.PI / 2;
-      bilezik.position.y = 0.012;
-      g.add(bilezik);
-
-      // ucun gövdesi — mat koyu, metal değil (plastik/eloksal gövde)
-      const govde = new o.THREE.Mesh(
-        new o.THREE.CylinderGeometry(0.021, 0.0235, 0.044, 18),
-        o.malzeme(R.motor || "#17181b", { metalness: 0.2, roughness: 0.85 }));
-      govde.position.y = 0.034;
-      g.add(govde);
-
-      // tanıtıcı bant — hangi uç olduğunu buradan okuyoruz
-      const bant = new o.THREE.Mesh(
-        new o.THREE.TorusGeometry(0.0215, 0.0035, 8, 20),
-        o.malzeme(R.uc, { metalness: 0.35, roughness: 0.4 }));
-      bant.rotation.x = -Math.PI / 2;
-      bant.position.y = 0.05;
-      g.add(bant);
-
-      /* Yuvalar RAFIN ÜSTÜNE oturuyor, kendi `z` değerlerine değil.
-       * Uçların z'si birkaç milimetre ayrışıyor; onu çizime yansıtmak
-       * yuvaları rafın içine gömüyor ya da havada bırakıyordu. Gerçekte
-       * hepsi aynı profilin üstünde duruyor. */
-      g.position.set(o.sx(t.x), o.sy(ustZ), o.sz(t.y));
-      g.traverse((n) => { n.userData.yuva = t; });
-      o.grup.add(g);
-    });
 
     /* --- tohumluk: gözlerin gerçek koordinatlarında delikli tepsi ------ */
     if (gozler.length) {
@@ -294,30 +236,6 @@ Tarla.katman({
 
   ciz2b(o, c) {
     const uc = o.veri.durum.uc || {};
-    const alan = uc.alan || {};
-    if (alan.on && (alan.pts || []).length >= 3) {
-      c.beginPath();
-      alan.pts.forEach(([x, y], i) => {
-        const p = o.mm2b(x, y);
-        if (i === 0) c.moveTo(p.x, p.y); else c.lineTo(p.x, p.y);
-      });
-      c.closePath();
-      c.fillStyle = "#3987e522";
-      c.fill();
-      c.strokeStyle = "#3987e5";
-      c.stroke();
-    }
-    (uc.tools_konum || []).forEach((t) => {
-      const p = o.mm2b(t.x, t.y);
-      c.beginPath();
-      c.arc(p.x, p.y, 7, 0, Math.PI * 2);
-      c.strokeStyle = o.makine.renk.uc;
-      c.lineWidth = 2;
-      c.stroke();
-      c.fillStyle = "#c3c2b7";
-      c.font = "10px ui-sans-serif, system-ui";
-      c.fillText(t.name || "", p.x + 10, p.y + 3);
-    });
     /* Tohumluk: tepsinin çerçevesi + her göz kendi yerinde. Dolu göz
      * dolu daire, boş göz içi boş — üstten bakınca hangi gözde tohum
      * kaldığı sayılabilsin. */
@@ -408,8 +326,8 @@ Tarla.katman({
       g && g.x != null && Math.hypot(g.x - mm.x, g.y - mm.y) < 18);
     if (goz) return { goz: true, name: goz.ad, x: goz.x, y: goz.y, z: goz.z,
                       tohum: goz.tohum, dolu: goz.dolu };
-    return (uc.tools_konum || []).find((t) =>
-      Math.hypot(t.x - mm.x, t.y - mm.y) < 25) || null;
+    // Uç yuvası vuruş testi kalktı: çizilen bir yuva yok.
+    return null;
   },
 
   kart(o, t) {

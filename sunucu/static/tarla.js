@@ -1032,7 +1032,7 @@
   function hareketVar() {
     const d = VERI.durum || {};
     return !!(d.hareket || (d.jog && d.jog.length) ||
-              (d.dizi && d.dizi.calisiyor) || (d.uc && d.uc.calisiyor));
+              (d.dizi && d.dizi.calisiyor));
   }
 
   function dongu() {
@@ -2177,7 +2177,7 @@
         VERI.konum && [Math.round(VERI.konum.x * 10), Math.round(VERI.konum.y * 10),
                        Math.round(VERI.konum.z * 10)],
         VERI.iz.length,
-        d.bolgeler, (d.uc || {}).uc, (d.uc || {}).tools_konum, (d.uc || {}).calisiyor,
+        d.bolgeler, (d.uc || {}).baslar, (d.tohum_ucu || {}).mm,
         d.acil && d.acil.acik, d.esnetme_acik,
       ]);
       if (imza === T.sonDurumImzasi) return;
@@ -2221,7 +2221,7 @@
                gorunur: T.gorunur, hareket: hareketVar(),
                ham: { hareket: !!d.hareket, jog: (d.jog || []).length,
                       dizi: !!(d.dizi && d.dizi.calisiyor),
-                      uc: !!(d.uc && d.uc.calisiyor) },
+                      uc: false },
                kaynak: { ...T.kirletKaynak },
                // Pi'nin GPU'sunu tahmin eden asıl sayılar: üçgen ve çizim
                // çağrısı. Buradaki yazılım çizicinin kare hızı Pi'yi temsil
@@ -2248,9 +2248,9 @@
      * bakarak karar vermek yerine ölçülebilsin diye var. */
     dikimDurumu() {
       const uc = (VERI.durum && VERI.durum.uc) || {};
-      const yuvalar = uc.tools_konum || [];
+      // Profil artık GÖZLERDEN türetiliyor: uç yuvaları kalktı.
       const gozler = (uc.tohumluk_gozleri || []).filter((g) => g && g.x != null);
-      const dayanak = yuvalar.map((t) => ({ x: t.x, y: t.y, z: t.z }));
+      const dayanak = gozler.map((t) => ({ x: t.x, y: t.y, z: t.z }));
       const profil = dayanak.length ? {
         x: [Math.min(...dayanak.map((d) => d.x)), Math.max(...dayanak.map((d) => d.x))],
         y: [Math.min(...dayanak.map((d) => d.y)), Math.max(...dayanak.map((d) => d.y))],

@@ -6,60 +6,48 @@ Akış
 Bir bitki için makine şunu yapıyor ve her satır bir "parça", yani ayrı
 bir dizi çalıştırması:
 
-    uç tak            tohum alma ucu kafaya takılıyor (bir kez, başta)
-  ┌ hazne↑           türüne uyan haznenin ÜSTÜNE gidiyor      → ONAY 1
-  │ hazne↓           iniyor, hava pompası açılıyor
-  │ taşı             bekliyor, kalkıyor, hedefin ÜSTÜNE       → ONAY 2
-  │ ek               iniyor, pompa kapanıyor, tohum düşüyor, kalkıyor
-  └ home             makine home'a dönüyor
-    uç bırak         bütün bitkiler bitince (isteğe bağlı)
-
-UÇLAR SABİT TAKILIYSA (`ayar.uclar_sabit`, VARSAYILAN) akış kısalıyor:
-
-  ┌ hazne↑           haznenin ÜSTÜNE gidiyor         (soru YOK)
-  │ hazne↓           iniyor, hava pompası açılıyor
-  │ taşı             bekliyor, kalkıyor, hedefin ÜSTÜNE       → ONAY
-  │ ek               iniyor, pompa kapanıyor, tohum düşüyor, kalkıyor
+  ┌ hazne↑           türüne uyan haznenin ÜSTÜNE gidiyor      (soru YOK)
+  │ hazne↓           iniyor, tohum ucu kendi ekseniyle de iniyor,
+  │                  hava pompası açılıyor
+  │ taşı             bekliyor, tohum ucunu ÇEKİYOR, kalkıyor,
+  │                  hedefin ÜSTÜNE gidiyor                   → ONAY
+  │ ek               iniyor, tohum ucu iniyor, pompa kapanıyor,
+  │                  tohum düşüyor, uç çekiliyor, kalkıyor
   └ home             makine home'a dönüyor
 
-"uç tak", ondan önceki uç teyidi, birinci onay ve "uç bırak" HİÇ
-çalışmıyor — yani uç yuvası koordinatlarına giden tek bir hareket
-kalmıyor. Bu makinede uçlar kalıcı olarak takılı duruyor; yuvadan alıp
-bırakma hiç yapılmıyor. O yüzden "kafada ne var" sorusunun da, uç için
-yuvaya gitmenin de karşılığı yok: sorulan soru kullanıcının her
-seferinde "evet" dediği bir soru, yapılan hareket ise boşuna.
+UÇ DEĞİŞTİRME DİYE BİR ŞEY YOK. Z ekseninin ucuna üç baş kalıcı olarak
+vidalı (sulama başlığı, nem probu, tohum ucu); hiçbiri sökülmüyor,
+hiçbiri yuvaya gitmiyor. "Uç tak", uç teyidi, birinci onay ve "uç bırak"
+kaldırıldı — hepsi olmayan bir işi doğruluyordu.
 
-KOD SİLİNMİYOR, YOLDAN ÇIKIYOR. Uç değiştirme mantığı (`uc_parcasi`,
-`uc_birak_parcasi`, teyit akışı, Ayarlar'daki elle tak/bırak) yerinde
-duruyor; anahtar kapatılırsa eski davranış aynen geri geliyor. Bir gün
-gerçekten uç değiştirilirse geri dönüş bir onay kutusu kadar uzakta.
+TOHUM UCUNUN KAYMASI UYGULANIYOR
+--------------------------------
 
-Döngü bitki başına baştan işliyor: al, ek, home. Arada karışmıyor,
-çünkü bir sonraki parça ancak öncekinin bittiği ajanın durum paketinde
-görülünce gönderiliyor.
+Üçü aynı anda takılı olduğu için tohum ucu Z ekseninin merkezinde değil.
+Makine hedefe değil `hedef + tohum ucunun kayması`na gidiyor; kayma
+uygulanmazsa tohum ortadaki başın altına, yani yanlış yere düşer —
+sahada tam bu yaşandı. Kayma `ajan/uclar.json`daki `baslar.tohum`dan
+geliyor ve adımlarda hem MAKİNE koordinatı (`x/y`) hem İŞ koordinatı
+(`is_x/is_y`) taşınıyor: denetimler işin yerine, sınırlar makinenin
+yerine bakıyor.
 
-Neden iki onay
+TOHUM UCUNUN KENDİ DİKEY EKSENİ
+-------------------------------
+
+Ana Z bütün başları birden indirip kaldırıyor; tohum ucu bunun üstüne
+bir de kendi ekseniyle (PLC'de j4) iniyor. Yalnız iki anda: tohumu
+alırken ve tohumu toprağa bırakırken. İkisinin de hemen ardından
+çekiliyor — aşağıdayken yatay hareket yapılmıyor (ajan da reddediyor).
+Eksen kalibre değilse bu adımlar hiç yazılmıyor ve akış bugünkü hâliyle,
+her şeyi ana Z yaparak sürüyor.
+
+Neden bir onay
 --------------
 
-İki sensör bağlı değil ve ikisi de SESSİZCE yanıltıyor:
-
-  `lock_reg = 0`     servo komutu sessiz geçiyor, uç takılı SANILIYOR.
-  `presence_reg = 0` vakumun tohumu tuttuğunu makine BİLEMİYOR.
-
-Onay 1 birincisinin, onay 2 ikincisinin yerini alıyor. Kullanıcı
-makinenin başında duruyor ve gözüyle doğruluyor. Onay açıkken kilit
-şartı kalkıyor — sessizce değil, `uyari` listesinde ve olay günlüğünde.
-Onay kapatılırsa şart geri geliyor: doğrulamayı ya sensör yapar ya
-insan, ikisi de yoksa ekim başlamaz.
-
-UÇLAR SABİT TAKILIYKEN ONAY 1 DE KALKIYOR ve bu bir taviz değil: o
-soru "uç takılı mı" diye soruyordu, çünkü kilit servosu takmanın
-gerçekten olduğunu söyleyemiyordu. Takma diye bir iş yoksa
-doğrulanacak bir şey de yok — uç zaten orada duruyor. Aynı sebeple
-kilit şartı da geçerliliğini yitiriyor: `lock_reg` bir TAKMA işleminin
-tuttuğunu söylüyor, takma yapılmıyorsa söyleyeceği bir şey yok.
-Onay 2 aynen kalıyor; o vakumun tohumu tutup tutmadığını soruyor ve
-bunun uç değiştirmeyle ilgisi yok.
+Tohum sensörü bağlı değil: vakumun tohumu tuttuğunu makine BİLEMİYOR.
+Onay 2 tam olarak bunu soruyor ve kullanıcı gözüyle doğruluyor. Tohum
+yoksa makine yine de iner, pompayı kapatır ve "ekildi" der — geriye boş
+bir çukur kalır ve haftalarca orada bir bitki olduğu sanılır.
 
 HAZNE TÜKENMİYOR
 ----------------
@@ -116,10 +104,6 @@ VAKUM_SANIYE = 1.0
 # kafa hemen kalkarsa tohum uçla birlikte geri gidebiliyor.
 DUSME_SANIYE = 0.5
 
-# Tohum alma ucunun VARSAYILAN adı. Sabit değil: `ayar.uc_adi` ile
-# değişiyor, çünkü başka bir uca geçince kod değişmemeli.
-UC_ADI = "tool3"
-
 # Hazne `z`si haznenin DİBİ, yani vakum ucunun ineceği yer. Tepsinin
 # üstü değil. Bu makinede büyük Z yukarısı: Z'si daha büyük olan hazne
 # daha SIĞ demek.
@@ -149,21 +133,6 @@ AYAR_VARSAYILAN: dict[str, Any] = {
     "onay_iste": True,
     "vakum_sn": VAKUM_SANIYE,
     "dusme_sn": DUSME_SANIYE,
-    # Tohum alma ucunun adı. Sabit yazılmıyor: başka bir uca geçilirse
-    # kod değil bu satır değişsin.
-    "uc_adi": UC_ADI,
-    # Bütün bitkiler ekildikten sonra uç yuvasına bırakılsın mı.
-    # `uclar_sabit` açıkken bu ayarın hiçbir etkisi yok.
-    "bitince_birak": True,
-    # UÇLAR KALICI OLARAK TAKILI MI. Bu makinede öyle: yuvadan alıp
-    # bırakma hiç yapılmıyor. Açıkken ekim akışı uç takmayı, uç teyidini,
-    # birinci onayı ve uç bırakmayı ATLIYOR — uç yuvası koordinatlarına
-    # giden tek bir hareket kalmıyor.
-    #
-    # VARSAYILAN AÇIK, çünkü makinenin bugünkü fiziksel hâli bu. Kapatmak
-    # eski (uç değiştiren) davranışı olduğu gibi geri getiriyor; hiçbir
-    # kod silinmedi.
-    "uclar_sabit": True,
 }
 
 AYAR_SINIR: dict[str, tuple[float, float]] = {
@@ -206,10 +175,6 @@ def ayar_duzelt(veri: dict[str, Any]) -> dict[str, Any]:
     hâli geri döndürüyor ve panel ekranda o değeri gösteriyor."""
     cikti = dict(AYAR_VARSAYILAN)
     cikti["onay_iste"] = bool(veri.get("onay_iste", True))
-    cikti["bitince_birak"] = bool(veri.get("bitince_birak", True))
-    cikti["uclar_sabit"] = bool(veri.get("uclar_sabit", True))
-    uc = str(veri.get("uc_adi") or "").strip()[:40]
-    cikti["uc_adi"] = uc or UC_ADI
     for ad, (alt, ust) in AYAR_SINIR.items():
         cikti[ad] = max(alt, min(ust, _sayi(veri.get(ad), AYAR_VARSAYILAN[ad])))
     return cikti
@@ -332,83 +297,93 @@ def hazne_denetle(hazne: dict[str, Any], sinirlar: dict[str, Any] | None,
 # --------------------------------------------------------------------------- #
 
 #: Onay beklenen parçalar: parça bitince kullanıcıya soruluyor.
-ONAY_SONRASI = {"hazne": "onay1", "tasi": "onay2"}
+# Yalnız İKİNCİ onay kaldı: "tohum gerçekten ucta mı".
+# Birinci onay ("uç takılı mı") uç değiştirmeyle birlikte kalktı.
+ONAY_SONRASI = {"tasi": "onay2"}
 
 SORU = {
     # Soru metni kafadaki inanca göre değiştiği için sunucuda kuruluyor
     # (bkz. `main.EkimOturumu.goruntu`); burada yalnız yedeği duruyor.
-    "onay_uc": "Kafada şu an ne var?",
-    "onay1": "Vakum ucu takılı mı? Tohum alınsın mı?",
     "onay2": "Tohum ucun ucunda görünüyor mu? Ekilsin mi?",
 }
 
 GEREKCE = {
-    "onay_uc": ("Uç değiştirme buradan başlıyor ve yazılım kafada ne "
-                "olduğunu ÖLÇEMİYOR — kilit servosu ve varlık sensörü "
-                "bağlı değil, yalnız kendisine en son söyleneni "
-                "hatırlıyor. Kayıt yanlışsa makine elde olmayan bir ucun "
-                "yuvasına iner. Yanlışsa aşağıdan düzeltin; hiçbir eksen "
-                "hareket etmez."),
-    "onay1": ("Kafa haznenin üstünde duruyor, henüz inmedi. Uç kilit "
-              "servosu bağlı olmadığı için yazılım ucun takılı olduğunu "
-              "doğrulayamıyor — bunu siz doğruluyorsunuz. Uç yoksa kafa "
-              "haznenin içine iner."),
     "onay2": ("Kafa hedefin üstünde, vakum açık ve tohum ucta olmalı. Tohum "
-              "sensörü (presence_reg) bağlı değil: vakumun tohumu gerçekten "
-              "tuttuğunu makine BİLEMİYOR. Tohum yoksa makine yine de iner, "
-              "pompayı kapatır ve 'ekildi' der — geriye boş bir çukur kalır."),
+              "sensörü bağlı değil: vakumun tohumu gerçekten tuttuğunu "
+              "makine BİLEMİYOR. Tohum yoksa makine yine de iner, pompayı "
+              "kapatır ve 'ekildi' der — geriye boş bir çukur kalır."),
 }
 
 
 def parcalar_bir_tohum(hedef: dict[str, Any], hazne: dict[str, Any], *,
                        guvenli_z: float, ekim_z: float,
-                       vakum_sn: float, dusme_sn: float) -> dict[str, Any]:
-    """Tek bitkinin parçaları. Her adım MUTLAK koordinat taşıyor.
+                       vakum_sn: float, dusme_sn: float,
+                       bas: dict[str, float] | None = None,
+                       t_asagi_mm: float | None = None) -> dict[str, Any]:
+    """Tek bitkinin parçaları. Her adım MUTLAK MAKİNE koordinatı taşıyor.
 
     İki nokta arasında HER ZAMAN güvenli Z'de gidiliyor; yalnız hazneye
     ve hedefe iniliyor. Ajanın hareket planı zaten Z'yi kaldırıp
     indiriyor ama adımı açıkça yazmak önizlemeyi dürüst yapıyor:
     ekranda okunan yol, makinenin gittiği yol.
+
+    TOHUM UCUNUN KAYMASI BURADA UYGULANIYOR. Üç baş aynı anda takılı ve
+    tohum ucu Z'nin merkezinde değil; kayma eklenmezse makine merkezi
+    hedefe götürür ve tohum başka bir yere düşer. `x/y` makinenin
+    gideceği yer, `is_x/is_y` tohumun gireceği yer — ikisi ayrı tutuluyor
+    ki önizleme ve denetimler doğru noktaya baksın.
+
+    `t_asagi_mm` verilirse tohum ucu KENDİ dikey ekseniyle de iniyor
+    (alma ve bırakma anlarında) ve hemen sonra çekiliyor. Verilmezse o
+    adımlar hiç yazılmıyor: ana Z'nin bugünkü davranışı sürüyor.
     """
     hx, hy, hz = _sayi(hazne["x"]), _sayi(hazne["y"]), _sayi(hazne["z"])
-    tx, ty = _sayi(hedef["x"]), _sayi(hedef["y"])
+    ix, iy = _sayi(hedef["x"]), _sayi(hedef["y"])
+    dx = _sayi((bas or {}).get("dx"))
+    dy = _sayi((bas or {}).get("dy"))
+    tx, ty = round(ix + dx, 2), round(iy + dy, 2)
     ha = str(hazne.get("ad") or "hazne")
     ta = str(hedef.get("ad") or "hedef")
+
+    def _in() -> list[dict[str, Any]]:
+        return ([] if t_asagi_mm is None
+                else [{"tip": "uc_dikey", "mm": round(_sayi(t_asagi_mm), 2)}])
+
+    def _kalk() -> list[dict[str, Any]]:
+        return [] if t_asagi_mm is None else [{"tip": "uc_dikey", "yukari": True}]
+
     return {
         # Haznenin ÜSTÜ. Burada durup soruyoruz; henüz inmedi.
         "hazne": [
             {"tip": "nokta", "ad": f"{ha}↑", "x": hx, "y": hy, "z": guvenli_z},
         ],
         # İniyor. Pompayı bundan SONRA sunucu açıyor — özgün sıra: önce
-        # in, sonra pompa.
+        # in, sonra pompa. Tohum ucu kendi ekseniyle de son santimi iniyor.
         "al": [
             {"tip": "nokta", "ad": ha, "x": hx, "y": hy, "z": hz},
-        ],
-        # Vakum tutsun diye bekliyor, kalkıyor, hedefin üstüne gidiyor.
-        # Burada durup ikinci kez soruyoruz.
+        ] + _in(),
+        # Vakum tutsun diye bekliyor, ucu çekiyor, kalkıyor, hedefin
+        # üstüne gidiyor. UÇ ÖNCE ÇEKİLİYOR: aşağıdayken yatay hareket
+        # ucu haznenin kenarına sürter (ajan da zaten reddeder).
         "tasi": [
             {"tip": "bekle", "saniye": vakum_sn},
+        ] + _kalk() + [
             {"tip": "nokta", "ad": f"{ha}↑", "x": hx, "y": hy, "z": guvenli_z},
-            {"tip": "nokta", "ad": f"{ta}↑", "x": tx, "y": ty, "z": guvenli_z},
+            {"tip": "nokta", "ad": f"{ta}↑", "x": tx, "y": ty, "z": guvenli_z,
+             "is_x": ix, "is_y": iy},
         ],
-        # İniyor, pompa kapanıyor, tohum düşüyor, kalkıyor.
+        # İniyor, pompa kapanıyor, tohum düşüyor, uç çekiliyor, kalkıyor.
         "ek": [
-            {"tip": "nokta", "ad": ta, "x": tx, "y": ty, "z": ekim_z},
+            {"tip": "nokta", "ad": ta, "x": tx, "y": ty, "z": ekim_z,
+             "is_x": ix, "is_y": iy},
+        ] + _in() + [
             {"tip": "role", "ad": "hava_pompasi", "durum": False},
             {"tip": "bekle", "saniye": dusme_sn},
-            {"tip": "nokta", "ad": f"{ta}↑", "x": tx, "y": ty, "z": guvenli_z},
+        ] + _kalk() + [
+            {"tip": "nokta", "ad": f"{ta}↑", "x": tx, "y": ty, "z": guvenli_z,
+             "is_x": ix, "is_y": iy},
         ],
     }
-
-
-def uc_parcasi(uc_adi: str) -> list[dict[str, Any]]:
-    """Tohum alma ucunu takan tek adım. `dizi.py` `uc` tipini biliyor."""
-    return [{"tip": "uc", "ad": str(uc_adi or UC_ADI)}]
-
-
-def uc_birak_parcasi() -> list[dict[str, Any]]:
-    """Ucu yuvasına bırakan tek adım — `uc` adımında ad boş = bırak."""
-    return [{"tip": "uc", "ad": ""}]
 
 
 def iptal_parcasi(hazne: dict[str, Any], *, guvenli_z: float,
@@ -438,12 +413,12 @@ def iptal_parcasi(hazne: dict[str, Any], *, guvenli_z: float,
 def coz(hedefler: list[dict[str, Any]], gozler: list[dict[str, Any]] | None, *,
         guvenli_z: float, genel_toprak_z: float = 0.0,
         dikim_alanlari: list[dict[str, Any]] | None = None,
-        lock_reg: int = 0, uc_takili: str | None = None,
         vakum_sn: float = VAKUM_SANIYE, dusme_sn: float = DUSME_SANIYE,
         tur_adlari: dict[str, str] | None = None,
         sinirlar: dict[str, Any] | None = None,
-        uc_adi: str = UC_ADI, bitince_birak: bool = True,
-        onay: bool = False, uclar_sabit: bool = True,
+        onay: bool = False,
+        bas: dict[str, float] | None = None,
+        t_asagi_mm: float | None = None,
         ) -> dict[str, Any]:
     """Ekimi çözer: bitki başına parçalar + özet + ret sebepleri.
 
@@ -486,21 +461,14 @@ def coz(hedefler: list[dict[str, Any]], gozler: list[dict[str, Any]] | None, *,
     uyari: list[str] = []
 
     # --- ön koşullar ------------------------------------------------------
-    kilit_yok = int(lock_reg or 0) <= 0
-    if uclar_sabit:
-        # KİLİT ŞARTI GEÇERSİZ. `lock_reg` bir TAKMA işleminin tuttuğunu
-        # söylüyor; uçlar kalıcı olarak takılıysa takma diye bir iş yok ve
-        # doğrulanacak bir şey de yok. Uç orada duruyor, birinin onu
-        # tuttuğunu doğrulamaya gerek yok.
-        uyari.append("Uçlar sabit takılı sayılıyor: uç takma, uç teyidi ve "
-                     "birinci onay atlanıyor, uç yuvalarına gidilmiyor. "
-                     "(Ayarlar → Ekim)")
-    elif kilit_yok and not onay:
-        ret.append("Uç kilit servosu bağlı değil (lock_reg = 0). "
-                   "Kilidi bağlayın ya da Ayarlar → Ekim'den onay adımını açın.")
-    elif kilit_yok:
-        uyari.append("Uç kilidi bağlı değil — takılı olduğunu siz "
-                     "onaylayacaksınız.")
+    # KİLİT ŞARTI KALKTI. `lock_reg` bir TAKMA işleminin tuttuğunu
+    # söylüyordu; üç baş kalıcı olarak vidalı olduğu için takma diye bir
+    # iş yok ve doğrulanacak bir şey de yok.
+    if bas and (_sayi(bas.get("dx")) or _sayi(bas.get("dy"))):
+        uyari.append(
+            f"Tohum ucu kayması uygulanıyor: makine hedefin "
+            f"{_sayi(bas.get('dx')):+.0f}/{_sayi(bas.get('dy')):+.0f} mm "
+            f"ötesine gidiyor ki tohum hedefe düşsün.")
 
     if not hedefler:
         ret.append("Seçim boş — ekilecek nokta yok.")
@@ -579,7 +547,8 @@ def coz(hedefler: list[dict[str, Any]], gozler: list[dict[str, Any]] | None, *,
 
         plan.append(parcalar_bir_tohum(
             hedef, hazne, guvenli_z=guvenli_z, ekim_z=ekim_z,
-            vakum_sn=vakum_sn, dusme_sn=dusme_sn))
+            vakum_sn=vakum_sn, dusme_sn=dusme_sn,
+            bas=bas, t_asagi_mm=t_asagi_mm))
         ozet.append({
             "ad": ad, "x": tx, "y": ty, "z": ekim_z,
             "tur": tur, "tur_ad": _tur_ad(tur),
@@ -619,15 +588,13 @@ def coz(hedefler: list[dict[str, Any]], gozler: list[dict[str, Any]] | None, *,
         "adimlar": [a for p in plan for k in ("hazne", "al", "tasi", "ek")
                     for a in p[k]],
         "onay": bool(onay),
-        "kilit_yok": kilit_yok,
         "tohum_sayisi": len(ozet),
         "kullanilan_hazneler": sorted({o["hazne"] for o in ozet}),
-        "uc_adi": str(uc_adi or UC_ADI),
-        "uc_takili": uc_takili or "",
-        "uclar_sabit": bool(uclar_sabit),
-        # Uçlar sabitken bırakma diye bir iş yok: ayar açık bile olsa
-        # burada kapanıyor ki akış tek bir yerden okunabilsin.
-        "bitince_birak": bool(bitince_birak) and not uclar_sabit,
+        # Tohum ucunun kayması ve kendi dikey ekseninin hedefi — önizleme
+        # ve panel bunları gösteriyor ki makinenin nereye gideceği
+        # ekrandan okunabilsin.
+        "bas": dict(bas or {}),
+        "t_asagi_mm": t_asagi_mm,
         "guvenli_z": guvenli_z,
         "vakum_sn": vakum_sn,
         "dusme_sn": dusme_sn,

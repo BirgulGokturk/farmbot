@@ -866,10 +866,14 @@ window.Bahce = (function () {
                    sayi(b.x2 ?? b.x_max), sayi(b.y2 ?? b.y_max))}"/>`;
     });
 
-    // SUYUN GİDEMEDİĞİ ŞERİT. Sulama başlığı Z ekseninin yanında; makine
-    // hedefin (dx,dy) kadar ötesine gidiyor. Yani hedef sınıra bu kadar
-    // yakınsa makine oraya gidemez ve su o şeride düşemez.
-    const bas = v.sulama_basligi || {};
+    // ERİŞİLEMEYEN ŞERİT — O AN HANGİ İŞ YAPILACAKSA ONUN BAŞINA GÖRE.
+    //
+    // Üç baş da Z ekseninin merkezinde değil ve her birinin kendi kayması
+    // var: makine hedefin (dx,dy) kadar ötesine gidiyor, yani hedef
+    // sınıra bu kadar yakınsa o BAŞ oraya yetişemiyor. Şerit sabit
+    // değil: sulama kabı tutulurken sulama başlığının, tohum
+    // sürüklenirken tohum ucunun, nem ölçümü seçiliyken probun şeridi.
+    const bas = aktifBas();
     const s = yatakSinir();
     const dx = sayi(bas.dx), dy = sayi(bas.dy);
     const seritler = [];
@@ -883,6 +887,19 @@ window.Bahce = (function () {
           + `<polygon class="susuz-cerceve" points="${p}"/>`;
     });
     svg.innerHTML = ic;
+  }
+
+  /** O an hangi başın şeridi çizilmeli.
+   *
+   * Sürüklenen şey ne olduğuna bakıyor: sulama kabı → sulama başlığı,
+   * tohum → tohum ucu, seçili iş nem ölçümü → prob. Hiçbiri yoksa
+   * sulama başlığı, çünkü kenardaki şeridin en sık karşılaşılan hâli o.
+   */
+  function aktifBas() {
+    const hepsi = (B.veri && B.veri.baslar) || {};
+    let kimlik = B.aktifBas || "sulama";
+    if (B.surukle) kimlik = B.surukle.su ? "sulama" : "tohum";
+    return hepsi[kimlik] || {};
   }
 
   /* ------------------------------------------------------------ bitkiler */
@@ -1346,10 +1363,14 @@ window.Bahce = (function () {
     // Menü ekranın dışına taşmasın: yer darsa halka yukarı yerine aşağı
     // açılıyor. Ekran dışında kalan bir düğmeye basılamaz.
     const yukari = my > 190 ? -1 : 1;
+    // NEM ÖLÇÜMÜ MENÜDE. Nem probu artık makinenin üstünde kalıcı:
+    // "bu bitkinin nemini ölç" diyebilmek, kartın dayandığı sayıyı
+    // kullanıcının kendisinin tazeleyebilmesi demek.
     const secenekler = [
       ["💧", "Sula", -84, 46 * yukari, "sula"],
       ["🧺", "Hasat", 84, 46 * yukari, "hasat"],
-      ["📷", "Fotoğraf", 0, 96 * yukari, "foto"],
+      ["🌡️", "Nem ölç", -84, 106 * yukari, "nem"],
+      ["📷", "Fotoğraf", 84, 106 * yukari, "foto"],
     ];
     const ad = document.createElement("span");
     ad.className = "ad";
@@ -1387,6 +1408,12 @@ window.Bahce = (function () {
         gunluk(`🧺 ${bitki.tur_ad} hasat edildi`, "ok");
         if (P().geriAlGoster && y.geri_al) P().geriAlGoster(y.geri_al);
         if (P().noktalariYukle) P().noktalariYukle();
+      } else if (is === "nem") {
+        // NEM ÖLÇÜMÜ GERÇEK BİR HAREKET: makine bitkinin üstüne gidiyor,
+        // probu daldırıyor, okuyor, kaldırıyor. Okunan değer o bitkiye
+        // yazılıyor ve kart bir dahaki sefere "kendi üstünden" diyor.
+        await isEkle("nem", [bitki.ad]);
+        gunluk(`🌡️ ${bitki.tur_ad}: nem ölçümü sıraya girdi`, "ok");
       } else if (is === "foto") {
         // Fotoğraf İKİ İŞ YAPIYOR: şimdi bir kare arşivliyor ve filmi
         // açıyor. Ayrı iki düğme olsaydı kullanıcı "fotoğraf çektim,

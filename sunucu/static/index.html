@@ -246,6 +246,7 @@
         <b id="bh-toplu-sayi">0 bitki seçili</b>
         <span class="esnek"></span>
         <button class="bh-dugme birincil" data-toplu="sula">💧 Sula</button>
+        <button class="bh-dugme" data-toplu="nem">🌡️ Nem ölç</button>
         <button class="bh-dugme" data-toplu="foto">📷 Fotoğrafla</button>
         <button class="bh-dugme" data-toplu="hasat">🧺 Hasat</button>
         <button class="bh-ikon" data-toplu="birak">Vazgeç</button>
@@ -701,6 +702,44 @@
               <div class="jog-z-etiket">Z</div>
               <button class="dugme jog" data-eksen="z" data-yon="-1" title="Z− (aşağı)">Z▼</button>
             </div>
+            <!-- TOHUM UCUNUN KENDİ DİKEY EKSENİ (PLC'de j4). Ana Z bütün
+                 başları birden indiriyor; bu yalnız tohum ucunu indirip
+                 kaldırıyor. Kalibrasyon girilmemişse kilitli ve sebebi
+                 aşağıdaki satırda yazıyor. -->
+            <div class="jog-z" id="jog-t">
+              <button class="dugme jog" data-eksen="t" data-yon="1"
+                      title="Tohum ucu T+">T▲</button>
+              <div class="jog-z-etiket">T</div>
+              <button class="dugme jog" data-eksen="t" data-yon="-1"
+                      title="Tohum ucu T−">T▼</button>
+            </div>
+          </div>
+
+          <!-- ÜÇ BAŞ. Her baş için "bu başı şu noktaya götür": makine
+               noktaya + o başın kayması kadar gidiyor. Hangi başın nereye
+               denk geldiğini okumak yerine görmek için. -->
+          <div class="bas-git" id="bas-git">
+            <span class="alt-not">Başı hedefe götür</span>
+            <div class="satir-8 alt-hizali">
+              <div class="alan"><label for="bg-x">X</label>
+                <input type="number" id="bg-x" step="1"></div>
+              <div class="alan"><label for="bg-y">Y</label>
+                <input type="number" id="bg-y" step="1"></div>
+              <button class="dugme" data-bas="sulama">💧 Sulama başlığı</button>
+              <button class="dugme" data-bas="nem">🌡️ Nem probu</button>
+              <button class="dugme" data-bas="tohum">🌱 Tohum ucu</button>
+            </div>
+            <p class="alt-not" id="bas-git-not"></p>
+          </div>
+
+          <!-- TOHUM UCUNU ELLE İNDİR/KALDIR -->
+          <div class="satir-8 alt-hizali" id="t-eksen">
+            <span class="alt-not">Tohum ucu</span>
+            <div class="alan"><label for="t-mm">T (mm)</label>
+              <input type="number" id="t-mm" step="0.5"></div>
+            <button class="dugme" id="d-t-in">İndir</button>
+            <button class="dugme" id="d-t-kalk">Yukarı çek</button>
+            <span class="alt-not" id="t-eksen-not"></span>
           </div>
 
           <div class="satir-8">
@@ -1462,91 +1501,55 @@
         <div class="bolum-ust">
           <button class="bolum-bas" aria-expanded="false">
             <svg class="ikon ok"><use href="#i-ok"/></svg>
-            <span class="bolum-ad">Uç değiştirme</span>
-            <span class="bolum-not">Yuva konumları ve dizi</span>
+            <span class="bolum-ad">Başlar ve tohumluk</span>
+            <span class="bolum-not">Üç sabit baş, kaymalar, hazneler</span>
           </button>
           <button class="yardim" type="button" aria-expanded="false"
                   aria-controls="yardim-uc" aria-label="Açıklama">?</button>
         </div>
         <div class="bolum-govde">
           <p class="yardim-metin gizli" id="yardim-uc">
-            Yandan yaklaşım: bütün X/Y yolculukları taşıma yüksekliğinde
-            yapılır, alçak Z'deki tek yatay hareket uca girip çıkan kısa
-            kaymadır. Her adımın sonunda konum doğrulanır; varılmadıysa dizi
-            durur. Dizi boyunca yalnızca "yuva" işaretli bölgeler atlanır.<br><br>
-            "Durumu temizle" yalnızca yazılımdaki kaydı sıfırlar; hiçbir eksen
-            hareket etmez.
+            Z ekseninin ucunda <b>üç baş kalıcı olarak vidalı</b> ve yan yana
+            duruyor: soldaki sulama başlığı, ortadaki toprak nemi probu,
+            sağdaki tohum alma ucu. Hiçbiri sökülmüyor, hiçbiri yuvaya
+            gitmiyor — "hangi uç takılı" diye bir soru yok.<br><br>
+            Üçü aynı anda takılı olduğu için <b>hiçbiri Z ekseninin tam
+            merkezinde değil.</b> Her başın merkeze göre kendi X/Y kayması
+            var ve makine bir işi yaparken o başın kaymasını ekliyor: siz
+            bir noktaya "sula" dediğinizde makine o noktaya + sulama
+            kayması kadar gidiyor, "nem ölç" dediğinizde nem probunun
+            kayması kadar, "ek" dediğinizde tohum ucunun kayması kadar.
+            Kayma yanlışsa iş yanlış yere yapılır.<br><br>
+            <b>Tohum ucunun kendi dikey ekseni var</b> (PLC'de j4). Ana Z
+            bütün başları birden indiriyor; tohum ucu bunun üstüne bir de
+            kendi başına iniyor — yalnız tohum alırken ve tohumu toprağa
+            bırakırken. Aşağıdayken X/Y hareketi yapılmıyor.
           </p>
 
-          <!-- Alan açıkken kullanıcı Z kilidinin kapalı olduğunu BİLMELİ -->
-          <div id="tc-uyari" class="uyari-kutu gizli">
-            <b>Uç değiştirme alanı açık</b> — alanın içinde X/Y jog için Z
-            güvenlik kilidi devre dışı. <span id="tc-nerede"></span>
+          <!-- ÜÇ BAŞ. Her birinin kendi kayması, Z tabanı ve iniş
+               derinliği. Tek tabloda duruyorlar çünkü asıl bilgi
+               birbirlerine göre nerede oldukları. -->
+          <div class="bas-tablo" id="bas-tablo"></div>
+          <p class="alt-not"><b>X/Y kayması:</b> baş merkeze göre nerede.
+            Makine <b>hedef + kayma</b> noktasına gidiyor; baş ucun
+            <b>solunda</b> ise X kayması <b>artı</b> (makine sağa kayar,
+            baş hedefin üstüne gelir). <b>Z tabanı:</b> o başın inebileceği
+            en alçak mutlak Z — çarpma sınırı. <b>Derinlik:</b> işini
+            yaparken toprak yüzeyinin ne kadar altına indiği (nem probu
+            toprağa dalıyor, sulama başlığı dalmıyor).</p>
+          <p class="alt-not" id="bas-ornek"></p>
+          <div class="satir-8">
+            <button class="dugme birincil" id="d-bas-kaydet">Başları kaydet</button>
           </div>
 
-          <div class="uc-durum">
-            <span>Takılı uç:</span>
-            <b id="uc-mevcut">—</b>
-            <span id="uc-dogrulama" class="rozet-uyari gizli"></span>
+          <!-- TOHUM UCUNUN KENDİ EKSENİ. Kalibrasyon `gantry_calib.json`
+               dosyasından geliyor (dördüncü satır); girilmemişse eksen
+               kilitli ve sebebi burada yazıyor. -->
+          <div class="uc-durum" id="t-durum">
+            <span>Tohum ucu ekseni (T):</span>
+            <b id="t-hal">—</b>
+            <span id="t-uyari" class="rozet-uyari gizli"></span>
           </div>
-          <!-- ÖLÇÜM MÜ, İNANÇ MI. Kilit servosu ve varlık sensörü bağlı
-               değilken yukarıdaki ad bir ölçüm değil, yazılımın hatırladığı
-               şey. Bunu yazmazsak kullanıcı yanlış bir kaydı gerçek sanıyor
-               ve makinenin bozulduğunu düşünüyor. -->
-          <div class="rozet-uyari gizli" id="uc-olcum-uyari"></div>
-
-          <!-- UÇ DEĞİŞTİRMEDEN ÖNCE TEYİT. Sensör yokken kafada ne olduğunu
-               doğrulayabilecek tek şey operatörün gözü; o yüzden hareketten
-               önce soruluyor ve cevap yanlışsa burada düzeltiliyor. -->
-          <div class="uc-teyit gizli" id="uc-teyit">
-            <div class="uc-teyit-soru" id="uc-teyit-soru"></div>
-            <!-- LİSTE DÜĞMELERDEN ÖNCE. Cevabınız burada; düğme onu
-                 uyguluyor. Ters sırada dururken kullanıcı önce onaya
-                 basıyor, listeyi hiç görmüyordu. -->
-            <div class="uc-teyit-duzelt">
-              <span class="alt-not">Kafada gerçekte ne varsa onu seçin —
-                <b>seçtiğiniz değer "Doğru, devam et"e bastığınızda kayda
-                geçer</b> ve hareket ona göre planlanır:</span>
-              <div class="satir-8 alt-hizali">
-                <div class="alan esnek-alan">
-                  <label for="uc-teyit-secim">Kafada gerçekte ne var</label>
-                  <select id="uc-teyit-secim"></select>
-                </div>
-                <button class="dugme" id="d-uc-teyit-duzelt"
-                        title="Yalnız kaydı düzeltir, hareket başlatmaz">
-                  Yalnız kaydı düzelt</button>
-              </div>
-            </div>
-            <p class="alt-not" id="uc-teyit-gerekce"></p>
-            <div class="satir-8">
-              <button class="dugme birincil" id="d-uc-teyit-evet">Doğru, devam et</button>
-              <button class="dugme" id="d-uc-teyit-vazgec">Vazgeç</button>
-            </div>
-          </div>
-          <div class="satir-8 alt-hizali">
-            <div class="alan esnek-alan"><label for="uc-secim">Uç</label><select id="uc-secim"></select></div>
-            <button class="dugme birincil" id="d-uc-tak">Tak</button>
-            <button class="dugme" id="d-uc-birak">Bırak</button>
-            <button class="dugme tehlike" id="d-uc-dur">Diziyi durdur</button>
-            <button class="dugme" id="d-uc-temizle">Durumu temizle</button>
-          </div>
-
-          <div id="uc-onizleme" class="gomulu gizli"></div>
-          <div id="uc-ilerleme" class="gomulu gizli"></div>
-
-          <details class="uc-ayar">
-            <summary>Uç yuvası koordinatları</summary>
-            <p class="alt-not">Her ucun yuvasının makine koordinatı.
-              <b>Z</b> kavrama yüksekliği: baş bu yükseklikte yandan kayıp
-              ucu kilitliyor. Altındaki satır, o uca giderken izlenecek
-              YOLU koordinat koordinat gösteriyor — sayıyı ajan üretiyor,
-              yani ekranda okuduğunuz yol makinenin gittiği yol.</p>
-            <div id="uc-tablo"></div>
-            <div class="satir-8">
-              <button class="dugme" id="d-uc-satir-ekle">Yuva ekle</button>
-              <button class="dugme birincil" id="d-uc-tablo-kaydet">Koordinatları kaydet</button>
-            </div>
-          </details>
 
           <details class="uc-ayar">
             <summary>Tohum hazneleri</summary>
@@ -1567,9 +1570,9 @@
               Koordinat makine sınırlarının dışındaysa satırın altında
               uyarı çıkıyor — makinenin ulaşamayacağı bir hazne ekimi
               başlatmıyor.<br>
-              3B sahnedeki uç profili uçların ve haznelerin konumundan
-              türetiliyor; elle girilen bir profil ölçüsü yok. Liste boşsa
-              tohumluk tanımsız sayılır ve çizilmez.</p>
+              3B sahnedeki uç profili haznelerin konumundan türetiliyor;
+              elle girilen bir profil ölçüsü yok. Liste boşsa tohumluk
+              tanımsız sayılır ve çizilmez.</p>
             <div id="goz-tablo"></div>
             <div class="satir-8">
               <button class="dugme" id="d-goz-satir-ekle">Göz ekle</button>
@@ -1578,79 +1581,19 @@
           </details>
 
           <details class="uc-ayar">
-            <summary>Uç ayarları ve değiştirme alanı</summary>
+            <summary>Sulama başlığını hizala ve genel ayarlar</summary>
 
             <div class="alan-izgara">
               <div class="alan"><label for="ua-safe_z">safe_z</label><input type="number" id="ua-safe_z" step="1"></div>
-              <div class="alan"><label for="ua-travel_z">travel_z</label><input type="number" id="ua-travel_z" step="1"></div>
-              <div class="alan"><label for="ua-lift">lift</label><input type="number" id="ua-lift" step="1"></div>
-              <div class="alan"><label for="ua-approach">approach</label><input type="number" id="ua-approach" step="1"></div>
-              <div class="alan" title="Çıkış ofseti, kayma ekseninde — boş bırakılırsa approach kullanılır">
-                <label for="ua-retreat">retreat</label><input type="number" id="ua-retreat" step="1" placeholder="approach"></div>
-              <div class="alan"><label for="ua-speed">hız (mm/s)</label><input type="number" id="ua-speed" step="1"></div>
-              <div class="alan"><label for="ua-slide_axis">kayma ekseni</label>
-                <select id="ua-slide_axis"><option>Y</option><option>X</option></select></div>
-              <div class="alan" title="1500 = milisaniye, 1.5 = saniye; ikisi de kabul edilir">
-                <label for="ua-lock_dwell">lock_dwell</label><input type="number" id="ua-lock_dwell" step="1"></div>
+              <div class="alan"><label for="ua-z_safe_reg">z_safe_reg</label><input type="number" id="ua-z_safe_reg" step="1"></div>
             </div>
-
-            <div class="alan-izgara">
-              <div class="alan" title="0 = donanım bağlı değil"><label for="ua-lock_reg">lock_reg</label><input type="number" id="ua-lock_reg" step="1"></div>
-              <div class="alan" title="0 = donanım bağlı değil"><label for="ua-grip_reg">grip_reg</label><input type="number" id="ua-grip_reg" step="1"></div>
-              <div class="alan" title="0 = donanım bağlı değil"><label for="ua-presence_reg">presence_reg</label><input type="number" id="ua-presence_reg" step="1"></div>
-              <div class="alan" title="PLC'deki Z-güvenli biti. 0 ise karar milimetre hesabına kalır">
-                <label for="ua-z_safe_reg">z_safe_reg</label><input type="number" id="ua-z_safe_reg" step="1"></div>
-            </div>
-
-            <p class="alt-not"><b>İki eksenli çıkış ve ayrılma kayması.</b>
-              Normalde uç yuvadan tek eksende çıkar (<i>retreat</i>, boşsa
-              <i>approach</i>) — Gantry Studio ekranındaki davranış budur ve
-              varsayılan budur. Aşağıdaki alanlar iki istisnayı açıyor:
-              <b>çıkış Y/X</b> dolduğunda kayma ekseninden çıktıktan
-              <i>sonra</i> ikinci eksende de uzaklaşılır; <b>ayrılma dx/dy</b>
-              ise servo bıraktıktan hemen sonra, yandan çıkmadan önce
-              uygulanan birkaç milimetrelik hareket. Makinenin
-              <code>gantry_tools.json</code> dosyasında ikisi de yazılı
-              ({x:40, y:20} ve {dx:0, dy:8}) ama referans program onları
-              "legacy, unused" diye işaretleyip hiç okumuyor — yani oradaki
-              sayıların makinede karşılığı yok. Buraya yazarsanız gerçekten
-              uygulanır ve yol önizlemesinde görünür. <b>Boş/sıfır bırakın</b>
-              — ölçmeden girilen bir kayma ucu yuvadan iterek devirebilir.</p>
-            <div class="alan-izgara">
-              <div class="alan" title="Kayma ekseninin DIŞINDAKİ eksende çıkış ofseti. Boş = tek eksenli çıkış.">
-                <label for="ua-retreat-capraz">çıkış (2. eksen)</label>
-                <input type="number" id="ua-retreat-capraz" step="1" placeholder="yok"></div>
-              <div class="alan"><label for="ua-rel-dx">ayrılma dx</label><input type="number" id="ua-rel-dx" step="1" placeholder="0"></div>
-              <div class="alan"><label for="ua-rel-dy">ayrılma dy</label><input type="number" id="ua-rel-dy" step="1" placeholder="0"></div>
-            </div>
-
-            <p class="alt-not"><b>Sulama kayması.</b> Sulama başlığı Z eksenine
-              ayrı takılı ve ucun merkezinden kaymış — makine bitkinin tam
-              üstüne gidince su bitkinin YANINA düşüyor. Buradaki iki sayı
-              makinenin ne kadar kayarak gideceğini söylüyor:
-              makine <b>bitki + (X kayması, Y kayması)</b> noktasına gidiyor,
-              su bitkinin üstüne düşüyor. Başlık ucun <b>solunda</b> ise X
-              kayması <b>artı</b>; makine sağa kayar, başlık bitkinin üstüne
-              gelir.<br>
-              Haritada iki nokta ayrı çiziliyor: halka = suyun düştüğü yer,
-              ince daire = ucun gittiği yer. <b>Z tabanı</b> mutlak alt sınır:
-              yüzey + açıklık bunun altında kalırsa başlık kaba ya da bitkiye
-              sürtüyor.</p>
-            <div class="alan-izgara">
-              <div class="alan"><label for="ua-sb-dx">sulama X kayması (mm)</label><input type="number" id="ua-sb-dx" step="0.1"></div>
-              <div class="alan"><label for="ua-sb-dy">sulama Y kayması (mm)</label><input type="number" id="ua-sb-dy" step="0.1"></div>
-              <div class="alan"><label for="ua-sb-zmin">sulama Z tabanı</label><input type="number" id="ua-sb-zmin" step="1"></div>
-            </div>
-            <!-- SAYININ NE YAPTIĞI, YAZILDIĞI ANDA. İşaretin yönünü
-                 anlatan bir cümle okumak yerine örneği görmek daha hızlı:
-                 kullanıcı 50 yazınca makinenin nereye gideceğini görüyor. -->
+            <p class="alt-not"><b>safe_z</b>: X/Y hareketinin yapılabildiği
+              en düşük Z — üç baş da bu yükseklikte yatağın üstünden
+              geçiyor. <b>z_safe_reg</b>: PLC'deki "Z güvenli yükseklikte"
+              biti; 0 = bağlı değil, karar milimetre karşılaştırmasına
+              kalıyor.</p>
             <p class="alt-not" id="ua-sb-ornek"></p>
 
-            <!-- HİZALAMA: TAHMİNLE DEĞİL ÖLÇEREK.
-                 Kaymanın işaretini elle vermek kolayca ters gidiyor ve
-                 sonucu ancak toprağa bakınca görünüyor. Burada makine
-                 bilinen bir noktayı suluyor, kullanıcı sapmayı ölçüyor,
-                 doğru kaymayı sistem hesaplıyor. -->
             <details class="uc-ayar" id="sh-kutu">
               <summary>Başlığı hizala — bir kez sula, sapmayı ölç</summary>
               <p class="alt-not"><b>1.</b> Boş bir yere hedef verin ve
@@ -1687,17 +1630,6 @@
               <div class="alt-not" id="sh-sonuc"></div>
             </details>
 
-            <label class="onay"><input type="checkbox" id="ua-alan-acik"> Uç değiştirme alanını aç</label>
-            <div class="alan-izgara">
-              <div class="alan"><label for="ua-k0x">K1 X</label><input type="number" id="ua-k0x" step="1"></div>
-              <div class="alan"><label for="ua-k0y">K1 Y</label><input type="number" id="ua-k0y" step="1"></div>
-              <div class="alan"><label for="ua-k1x">K2 X</label><input type="number" id="ua-k1x" step="1"></div>
-              <div class="alan"><label for="ua-k1y">K2 Y</label><input type="number" id="ua-k1y" step="1"></div>
-              <div class="alan"><label for="ua-k2x">K3 X</label><input type="number" id="ua-k2x" step="1"></div>
-              <div class="alan"><label for="ua-k2y">K3 Y</label><input type="number" id="ua-k2y" step="1"></div>
-              <div class="alan"><label for="ua-k3x">K4 X</label><input type="number" id="ua-k3x" step="1"></div>
-              <div class="alan"><label for="ua-k3y">K4 Y</label><input type="number" id="ua-k3y" step="1"></div>
-            </div>
 
             <div class="satir-8">
               <button class="dugme birincil" id="d-uc-ayar-kaydet">Ayarları kaydet</button>
@@ -1765,15 +1697,6 @@
             doğrulamayı kimin yapacağını seçiyor.
           </p>
 
-          <!-- UÇLAR SABİT TAKILI. En üstte, çünkü altındaki iki ayarın
-               ne anlama geldiğini bu belirliyor. -->
-          <label class="anahtar">
-            <input type="checkbox" id="a-ekim-uclar-sabit" checked>
-            <span class="yuva"></span>
-            <span class="ikincil">Uçlar sabit takılı — uç hareketi yok</span>
-          </label>
-          <p class="alt-not" id="ekim-uclar-sabit-not"></p>
-
           <label class="anahtar">
             <input type="checkbox" id="a-ekim-onay" checked>
             <span class="yuva"></span>
@@ -1781,17 +1704,7 @@
           </label>
           <div class="rozet-uyari gizli" id="ekim-onay-uyari"></div>
 
-          <label class="anahtar">
-            <input type="checkbox" id="a-ekim-birak" checked>
-            <span class="yuva"></span>
-            <span class="ikincil">Bitince ucu yuvasına bırak</span>
-          </label>
-
           <div class="alan-izgara">
-            <div class="alan">
-              <label for="ekim-uc">Tohum alma ucu</label>
-              <input type="text" id="ekim-uc" maxlength="40" placeholder="tool3">
-            </div>
             <div class="alan">
               <label for="ekim-vakum">Vakum tutma (sn)</label>
               <input type="number" id="ekim-vakum" step="0.1" min="0.1" max="10">
@@ -1801,11 +1714,7 @@
               <input type="number" id="ekim-dusme" step="0.1" min="0.1" max="10">
             </div>
           </div>
-          <p class="alt-not"><b>Tohum alma ucu:</b> ekim başlarken takılacak
-            ucun adı — Uç değiştirme bölümündeki yuva adlarından biri.
-            Kodda sabit değil: başka bir uca geçerseniz burayı
-            değiştirmeniz yeterli.<br>
-            <b>Vakum tutma:</b> haznenin dibinde, pompa açıldıktan sonra
+          <p class="alt-not"><b>Vakum tutma:</b> haznenin dibinde, pompa açıldıktan sonra
             beklenen süre. Hava pompasının hattı boşaltması anlık değil;
             kısa olursa tohum haznede kalır.
             <b>Düşme bekleme:</b> hedefte pompa kapandıktan sonra
@@ -2121,30 +2030,6 @@
            göz yan yana: hangisinin başında olduğunu bilmeli. -->
       <div class="ekim-onay-yer" id="ekim-onay-yer"></div>
       <p class="ekim-onay-gerekce" id="ekim-onay-gerekce"></p>
-      <!-- UÇ TEYİDİ. Yalnız ekimin başındaki "kafada ne var" sorusunda
-           açılıyor: cevap yanlışsa kullanıcı burada düzeltiyor ve
-           hiçbir eksen hareket etmiyor. -->
-      <div class="uc-teyit-duzelt gizli" id="ekim-uc-duzelt">
-        <span class="alt-not">Kafada gerçekte ne varsa onu seçin —
-          <b>seçtiğiniz değer "Onayla, devam et"e bastığınızda kayda geçer</b>
-          ve hareket ona göre planlanır:</span>
-        <div class="satir-8 alt-hizali">
-          <div class="alan esnek-alan">
-            <label for="ekim-uc-secim">Kafada gerçekte ne var</label>
-            <select id="ekim-uc-secim"></select>
-          </div>
-          <!-- Yalnız kaydı düzeltmek isteyenler için ayrı kalıyor (hiçbir
-               işlev silinmiyor) ama artık onaya GEREK OLMAYAN bir kısayol:
-               adı da bunu söylüyor. Asıl yol yukarıdaki listedir. -->
-          <button class="dugme" id="d-ekim-uc-duzelt"
-                  title="Yalnız kaydı düzeltir, ekime devam etmez">
-            Yalnız kaydı düzelt</button>
-        </div>
-        <!-- NE OLACAĞI, SEÇİME GÖRE, ÖNCEDEN. Liste değiştikçe bu satır
-             yeniden yazılıyor: kullanıcı Onayla'ya basmadan makinenin ne
-             yapacağını okuyor. -->
-        <p class="ekim-uc-plan" id="ekim-uc-plan"></p>
-      </div>
       <!-- Seçimde olup EKİLMEYECEKLER. İlk onaydan önce görünüyor: makine
            daha hiç kımıldamamışken kullanıcı neyin atlandığını bilsin. -->
       <p class="alt-not gizli" id="ekim-onay-atlanan"></p>

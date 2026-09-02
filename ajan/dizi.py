@@ -13,7 +13,8 @@ Adım tipleri
     {"tip": "nokta",  "ad": "s1", "x":…, "y":…, "z":…}
     {"tip": "bekle",  "saniye": 5}
     {"tip": "role",   "ad": "su_pompasi", "durum": true}
-    {"tip": "uc",     "ad": "tool1"}      # uç değiştir (birak için ad boş)
+    {"tip": "uc_dikey", "yukari": true}   # tohum ucunun KENDİ dikey ekseni
+    {"tip": "uc_dikey", "mm": 12.5}       # (PLC'de j4) — ana Z'den ayrı
     {"tip": "goz",    "ad": "s2", "dolu": false}   # tohumluk gözünü işaretle
 
 `goz` adımı HAREKET ETMİYOR; yalnız tohumluk gözünün dolu/boş durumunu
@@ -32,6 +33,13 @@ from typing import Any, Callable
 
 AZAMI_BEKLEME = 600.0        # tek adımda en fazla 10 dakika
 AZAMI_TEKRAR = 1000          # sonsuz döngü yok; bkz. `tekrar` doğrulaması
+
+
+def _sayi(deger, varsayilan=0.0):
+    try:
+        return float(deger)
+    except (TypeError, ValueError):
+        return varsayilan
 
 
 class DiziHatasi(Exception):
@@ -107,14 +115,25 @@ class Dizi:
             self._asili_goz = None if dolu else ad
             return f"'{ad}' gözü {'dolu' if dolu else 'BOŞ'} işaretlendi"
 
-
-        if tip == "uc":
-            ad = str(adim.get("ad", "") or "")
-            if ad:
-                self.uclar.degistir(ad)
-                return f"'{ad}' takıldı"
-            self.uclar.birak()
-            return "uç bırakıldı"
+        if tip == "uc_dikey":
+            # TOHUM UCUNUN KENDİ DİKEY EKSENİ (PLC'de j4). Ana Z bütün
+            # başları birden indiriyor; bu adım yalnız tohum ucunu indirip
+            # kaldırıyor — tohum alırken ve tohumu toprağa bırakırken.
+            #
+            # EKSEN KALİBRE DEĞİLSE ADIM ATLANIYOR, dizi kırılmıyor.
+            # Kalibrasyon girilmeden sürmek "yanlış mesafe gitmek" demek;
+            # atlamak ise makinenin bugünkü davranışı (her şeyi ana Z
+            # yapıyor). Sessiz değil: günlükte sebebi yazıyor.
+            if not self.plc.t_kalibre_mi():
+                return "tohum ucu ekseni kalibre değil — adım atlandı"
+            if adim.get("yukari"):
+                self.plc.t_git(yukari=True)
+                return "tohum ucu yukarı"
+            mm = adim.get("mm")
+            if mm in (None, ""):
+                raise DiziHatasi("uc_dikey adımında mm ya da yukari gerekiyor")
+            self.plc.t_git(float(mm))
+            return f"tohum ucu {float(mm):.1f} mm"
 
         raise DiziHatasi(f"Bilinmeyen adım tipi: '{tip}'")
 
@@ -189,10 +208,11 @@ class Dizi:
             return f"{adim.get('saniye', 0)} sn bekle"
         if tip == "role":
             return f"{adim.get('ad')} {'aç' if adim.get('durum') else 'kapat'}"
-        if tip == "uc":
-            return f"uç: {adim.get('ad') or 'bırak'}"
         if tip == "goz":
             return f"göz {adim.get('ad')}: {'dolu' if adim.get('dolu') else 'boş'}"
+        if tip == "uc_dikey":
+            return ("tohum ucu yukarı" if adim.get("yukari")
+                    else f"tohum ucu {_sayi(adim.get('mm')):.1f} mm")
         return str(tip)
 
     def baslat(self, ad: str, adimlar: list[dict[str, Any]], tekrar: int = 1,

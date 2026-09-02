@@ -129,8 +129,13 @@ def bul(ad: str) -> dict[str, Any] | None:
 # depoya yazılıyor: "şu noktaya git", program adımı ve sınır denetimi bir
 # bitki için de aynen çalışsın diye. Paralel bir nokta kavramı öğrenmek
 # gerekmiyor; bitki, tür bilgisi taşıyan bir noktadan ibaret.
+# NEM ALANLARI: nem probu artık makinenin üstünde kalıcı ve her bitkinin
+# kendi üstüne gidip ölçebiliyor. Okunan değer O BİTKİYE yazılıyor —
+# "yakınlarda bir yerde alınmış okuma" ile "bu bitkinin ölçümü" aynı şey
+# değil ve bahçe kartı ikincisini kullanıyor.
 BITKI_ALANLARI = ("tur", "ekim", "egri_su", "egri_yayilim", "egri_yukseklik",
-                  "ozel", "tepsi", "goz", "sulama_ts")
+                  "ozel", "tepsi", "goz", "sulama_ts",
+                  "nem_yuzde", "nem_ham", "nem_ts")
 
 # Eğri alanları bir eğrinin ADINI tutuyor, değerini değil: eğri düzenlenince
 # ona bağlı bütün bitkiler kendiliğinden yeni değeri kullanıyor. Eğri
@@ -184,6 +189,16 @@ def _ekstra_suz(kaynak: dict[str, Any]) -> dict[str, Any]:
             cikti["sulama_ts"] = float(kaynak["sulama_ts"])
         except (TypeError, ValueError):
             pass
+    # NEM ÖLÇÜMÜ — bu bitkinin KENDİ üstünden alınmış okuma. Üçü birden
+    # yazılıyor: yüzde (kalibre edilmiş), ham sayım (kalibrasyon sonradan
+    # değişirse yeniden hesaplanabilsin) ve zamanı (eskiyen ölçüme
+    # güvenmemek için).
+    for alan in ("nem_yuzde", "nem_ham", "nem_ts"):
+        if kaynak.get(alan) is not None:
+            try:
+                cikti[alan] = float(kaynak[alan])
+            except (TypeError, ValueError):
+                pass
     for alan in EGRI_ALANLARI:
         # Boş metin "eğri bağlı değil" demek; alanı hiç yazmıyoruz.
         if kaynak.get(alan):

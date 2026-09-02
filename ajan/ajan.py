@@ -162,13 +162,13 @@ class Ajan:
         self.plc = plc_modulu.olustur(
             ayar["plc"], gunluk_cb=self._gunluk_gonder,
             bolgeler=self.bolgeler, baglam_saglayici=self._kosul_baglami)
-        # Uç değiştirme: bölge esnetmesini ve konum doğrulamasını yönetiyor.
+        # Üç sabit başın kaymaları ve tohumluk gözleri burada.
         self.uclar = uc_modulu.Uclar(ayar.get("plc", {}), self.plc,
-                                     bolgeler=self.bolgeler, gunluk_cb=self._gunluk_gonder)
-        # Z güvenlik kararının iki kaynağı uç modülünde: PLC'deki Z-güvenli
-        # biti ve uç değiştirme alanı. PLC sürücüsü bunları buradan soruyor.
+                                     gunluk_cb=self._gunluk_gonder)
+        # PLC'deki "Z güvenli yükseklikte" biti. Uç değiştirme alanı
+        # muafiyeti KALDIRILDI: uç takıp çıkarmak diye bir şey kalmadı,
+        # muafiyetin de sebebi kalmadı — Z kilidi artık koşulsuz.
         self.plc.z_guvenli_kaynagi = self.uclar.z_guvenli_reg_oku
-        self.plc.tc_alani = self.uclar.tc_alani_icinde
         ard = ayar["arduino"]
         # Medyan penceresi: kaç örneğin ortancası gösterilsin. 5 örnek,
         # 2 sn'lik okuma aralığında 10 saniyelik bir pencere demek — tek
@@ -263,13 +263,11 @@ class Ajan:
         kişinin bugün de `prox` ve `tool` kullanabilmesi demek — sonuç
         değişmiyor ama ifade geçersiz olmuyor.
         """
-        uclar = getattr(self, "uclar", None)
-        if uclar is None:
-            return {"prox": False, "tool": ""}
-        varlik = uclar.varlik_oku()
-        # Sensör bağlı değilken `prox` False: "uç yok" değil, "doğrulanamıyor".
-        # Koşullarda fail-closed tarafta kalmak için doğrusu bu.
-        return {"prox": bool(varlik), "tool": uclar.ayar.get("current_tool") or ""}
+        # `prox` ve `tool` uç değiştirmeyle birlikte kalktı. Anahtarlar
+        # DURUYOR: kaydedilmiş bir bölge koşulu bunları kullanıyor olabilir
+        # ve ifadeyi geçersiz kılmak, bölgeyi sessizce devre dışı bırakmak
+        # olurdu. Değerleri artık sabit.
+        return {"prox": False, "tool": ""}
 
     # --- başka iş parçacıklarından gelen olaylar -------------------------
     def _konum_ekle(self, veri: dict[str, Any]) -> dict[str, Any]:
@@ -401,14 +399,17 @@ class Ajan:
 
             if ad == "uc_listele":
                 return {"ok": True, "mesaj": "", "sessiz": True,
-                        "veri": {"ayar": self.uclar.ayar, "durum": self.uclar.durum}}
+                        "veri": {"ayar": self.uclar.ayar,
+                                 "baslar": self.uclar.baslar()}}
 
             if ad == "uc_kaydet":
                 gelen = arg.get("ayar")
                 if not isinstance(gelen, dict):
                     return {"ok": False, "mesaj": "ayar bir nesne olmalı"}
                 yeni = await asyncio.to_thread(self.uclar.kaydet, gelen)
-                return {"ok": True, "mesaj": "Uç ayarları kaydedildi", "veri": {"ayar": yeni}}
+                return {"ok": True, "mesaj": "Kafa ayarları kaydedildi",
+                        "veri": {"ayar": yeni,
+                                 "baslar": self.uclar.baslar()}}
 
             if ad == "goz_isaretle":
                 # Tohumluğu ELLE doldurup boşaltmanın yolu. Bütün uç
@@ -425,19 +426,6 @@ class Ajan:
                         "mesaj": f"'{hedef}' gözü {'dolu' if sonuc['dolu'] else 'boş'} işaretlendi",
                         "veri": {"goz": sonuc,
                                  "gozler": self.uclar.tohumluk_gozleri()}}
-
-            if ad == "uc_yollari":
-                # Panelin uç tablosunun altına yazdığı yol satırları.
-                # Tek çağrıda hepsi ve yolu AJAN hesaplıyor: panelde ikinci
-                # bir hesap olsaydı ekranda okunan yol ile makinenin
-                # gittiği yol ayrışabilirdi.
-                return {"ok": True, "mesaj": "", "sessiz": True,
-                        "veri": {"yollar": self.uclar.yollar()}}
-
-            if ad == "uc_onizle":
-                return {"ok": True, "mesaj": "", "sessiz": True,
-                        "veri": self.uclar.yol_onizleme(str(arg.get("islem", "al")),
-                                                        str(arg.get("ad", "")))}
 
             if ad == "nokta_denetle":
                 # ÖN KONTROL. Sunucu, bir diziyi başlatmadan önce
@@ -476,26 +464,26 @@ class Ajan:
                         "veri": {"noktalar": sonuc,
                                  "engelli": sum(1 for s in sonuc if s["engel"])}}
 
-            if ad == "uc_durum_temizle":
-                return {"ok": True, "mesaj": await asyncio.to_thread(self.uclar.durumu_temizle)}
-
-            if ad == "uc_beyan":
-                # Operatör kafada gerçekten ne olduğunu söylüyor. Hiçbir
-                # eksen hareket etmiyor; yalnız yazılımın inancı gerçeğe
-                # eşitleniyor. Sensör bağlanana kadar bunu yapabilecek
-                # tek şey operatörün gözü.
+            if ad == "tohum_ucu":
+                # TOHUM UCUNUN KENDİ DİKEY EKSENİ (PLC'de j4). Ana Z bütün
+                # başları birden indiriyor; bu yalnız tohum ucunu indirip
+                # kaldırıyor. Sür ekranındaki elle iniş/kalkış ve ekim
+                # akışındaki iki an aynı komuttan geçiyor.
                 try:
-                    return {"ok": True, "mesaj": await asyncio.to_thread(
-                        self.uclar.beyan, arg.get("ad"))}
-                except uc_modulu.UcHatasi as hata:
+                    if arg.get("yukari"):
+                        mesaj_metni = await asyncio.to_thread(
+                            self.plc.t_git, None, None, True)
+                    else:
+                        mm = arg.get("mm")
+                        if mm in (None, ""):
+                            return {"ok": False,
+                                    "mesaj": "mm ya da yukari:true gerekiyor"}
+                        mesaj_metni = await asyncio.to_thread(
+                            self.plc.t_git, float(mm))
+                except plc_modulu.PLCHatasi as hata:
                     return {"ok": False, "mesaj": str(hata)}
-
-            if ad in ("uc_al", "uc_birak", "uc_degistir"):
-                islem = {"uc_al": "al", "uc_birak": "birak", "uc_degistir": "degistir"}[ad]
-                try:
-                    mesaj_metni = self.uclar.dizi_baslat(islem, str(arg.get("ad", "")))
-                except uc_modulu.UcHatasi as hata:
-                    return {"ok": False, "mesaj": str(hata)}
+                except (TypeError, ValueError):
+                    return {"ok": False, "mesaj": "mm sayı olmalı"}
                 return {"ok": True, "mesaj": mesaj_metni}
 
             if ad == "dizi_baslat":
@@ -682,45 +670,29 @@ class Ajan:
             # büyükse ya cihaz yavaşladı ya kilitlendi.
             durum["hailo"] = self.hailo.durum()
             durum["dizi"] = dict(self.dizi.durum)
+            # ÜÇ SABİT BAŞ. "Hangi uç takılı", uç yuvaları, kilit servosu
+            # ve varlık sensörü kaldırıldı: hiçbiri sökülmüyor, takılı
+            # olmayan bir baş yok. Anahtar adı `uc` kalıyor — bu paketi
+            # okuyan onlarca yer var ve hepsini yeniden adlandırmak
+            # değişikliğin işine hiçbir şey katmadan riski büyütürdü.
             durum["uc"] = {
-                **self.uclar.durum,
-                "uclar": [t.get("name") for t in self.uclar.ayar.get("tools", [])],
-                # Yuvaların koordinatları: tarla haritasının "uç yuvaları"
-                # katmanı bunları çiziyor. Ad listesi yeterli değil — harita
-                # nerede olduklarını sormak zorunda.
-                "tools_konum": [
-                    {"name": t.get("name"), "x": t.get("x"), "y": t.get("y"), "z": t.get("z")}
-                    for t in self.uclar.ayar.get("tools", [])
-                    if t.get("x") is not None
-                ],
-                "sensor_var": int(self.uclar.ayar.get("presence_reg", 0) or 0) > 0,
-                "travel_z": self.uclar.ayar.get("travel_z"),
-                "slide_axis": self.uclar.ayar.get("slide_axis"),
+                "calisiyor": False,
+                # ÜÇ BAŞIN KAYMALARI. Sunucu bir işi hangi başın yapacağını
+                # bilip o başın kaymasını uyguluyor; panel de erişilemeyen
+                # şeridi başa göre çiziyor.
+                "baslar": self.uclar.baslar(),
+                "bas_bilgi": uc_modulu.BAS_BILGI,
                 # Tohumluk: harita profili bu noktadan türetiyor, adı yetmiyor.
                 "tohumluk": self.uclar.tohumluk() or {},
                 # Gözlerin tamamı — panel tabloyu ve haritayı buradan
                 # kuruyor, ekim dizisi de hangi gözün dolu olduğunu
                 # buradan öğreniyor. `tohumluk` yalnız ilk gözün konumu.
                 "tohumluk_gozleri": self.uclar.tohumluk_gozleri(),
-                # Sulama başlığı kayması — sunucu sulama noktasını buna
-                # göre kaydırıyor, panel de önizlemede iki noktayı ayrı
-                # çiziyor (su nereye düşüyor / uç nereye gidiyor).
+                # Sulama başlığı kayması — sulama akışı ve panel bu adla
+                # okuyor; içerik `baslar.sulama`dan geliyor.
                 "sulama_basligi": self.uclar.sulama_basligi(),
-                # TAKILI UÇ ÖLÇÜLEBİLİYOR MU. `uc` alanı bir ölçüm değil,
-                # yazılımın inancı; bu bayrak olmadan panel ikisini
-                # birbirinden ayıramıyor ve kullanıcı yanlış inancı
-                # gerçek sanıyor.
-                "dogrulanabilir": self.uclar.dogrulanabilir_mi(),
-                "alan": self.uclar.ayar.get("tc_area") or {},
-                "alanda": bool(self.uclar.tc_alani_icinde(
-                    (durum.get("konum") or {}).get("x") or 0,
-                    (durum.get("konum") or {}).get("y") or 0)),
                 "z_safe_reg": int(self.uclar.ayar.get("z_safe_reg", 0) or 0),
-                "ayar": {k: self.uclar.ayar.get(k) for k in
-                         ("safe_z", "travel_z", "lift", "approach", "retreat",
-                          "release", "speed", "slide_axis", "lock_dwell",
-                          "lock_reg", "grip_reg", "presence_reg")},
-                "tools": self.uclar.ayar.get("tools", []),
+                "ayar": {"safe_z": self.uclar.ayar.get("safe_z")},
             }
 
             if durum != self._son_durum and self.ws is not None:

@@ -123,10 +123,9 @@ aşımı.
 | `jog` / `jog_dur` | REST yerine WebSocket'ten gönderin (aşağı bakın) |
 | `bolge_listele` | `{}` — ajandaki yasak bölgeler |
 | `bolge_kaydet` | `{"bolgeler":[{ad,x1,y1,x2,y2,izin_kosulu,yuva,aktif}]}` |
-| `uc_listele` | `{}` — uç ayarları ve dizi durumu |
-| `uc_kaydet` | `{"ayar": {...}}` — `gantry_tools.json` yapısı |
-| `uc_al` / `uc_degistir` | `{"ad":"tool1"}` — yandan yaklaşımlı dizi |
-| `uc_birak` | `{}` |
+| `uc_listele` | `{}` — kafa ayarları: üç baş ve tohumluk |
+| `uc_kaydet` | `{"ayar":{"baslar":{…},"tohumluk":{…},"safe_z":…}}` — başların kayması/derinliği ve tohumluk gözleri. Baş başına birleştiriyor: tek başın `dx`ini yollamak ötekileri silmiyor |
+| `tohum_ucu` | `{"yukari":true}` ya da `{"mm":12.5}` — tohum ucunun KENDİ dikey ekseni (PLC'de j4, kodda T). Kalibre değilse reddediyor |
 | `dizi_baslat` | `{"ad":…,"adimlar":[…],"tekrar":1}` — adımlar ÇÖZÜLMÜŞ olmalı |
 | `dizi_durdur` | `{}` — sert duruş, hedefleri nötrler |
 
@@ -458,33 +457,38 @@ Canlı akış. Bağlanınca ilk paket anlık görüntü, sonrası olay bazlı:
 | `kare` | `{ts, kamera}` — o kameradan yeni kare var; görüntü `GET /api/kare/son?kamera=…` ile alınır |
 | `canli` | `{ts, kamera}` — canlı akıştan yeni kare; `GET /api/kare/canli?kamera=…` |
 
-**`uclar_sabit`** (`/api/ekim/ayar`, VARSAYILAN `true`) uç değiştirmeyi
-ekim akışının yolundan çıkarıyor: bu makinede uçlar kalıcı olarak takılı,
-yuvadan alıp bırakma hiç yapılmıyor. Açıkken "uç tak" parçası, ondan önceki
-uç teyidi (`onay_uc`), birinci onay (`onay1`, "uç takılı mı") ve "uç bırak"
-HİÇ çalışmıyor; akış doğrudan `hazne` ile başlıyor ve home'dan sonra
-kapanıyor. Uç yuvası koordinatlarına giden hiçbir adım üretilmiyor. Kilit
-şartı da geçersiz: `lock_reg` bir TAKMA işleminin tuttuğunu söyler, takma
-yapılmıyorsa söyleyeceği bir şey yoktur. `onay2` ("tohum ucta mı") aynen
-kalıyor — o vakumu soruyor, uç değiştirmeyi değil.
+**UÇ DEĞİŞTİRME KALKTI.** Z ekseninin ucunda üç baş kalıcı olarak vidalı
+(sulama başlığı, nem probu, tohum ucu); alınıp bırakılan bir uç yok. Şunlar
+kaldırıldı: `uc_al` / `uc_birak` / `uc_degistir` / `uc_beyan` / `uc_onizle` /
+`uc_yollari` / `uc_durum_temizle` komutları, `uc` adım tipi, uç yuvaları
+(`tools`, `tools_konum`), uç değiştirme alanı (`tc_area`), kilit servosu
+(`lock_reg`), varlık sensörü (`presence_reg`), uç teyidi (`onay_uc`),
+birinci onay (`onay1`) ve `uclar_sabit` / `uc_adi` / `bitince_birak`
+ayarları. Ekim akışı doğrudan `hazne` ile başlıyor. `onay2` ("tohum ucta
+mı") kalıyor — o vakumu soruyor, uç değiştirmeyi değil.
 
-Kod silinmedi: `uc_parcasi`, `uc_birak_parcasi`, teyit akışı ve elle
-tak/bırak yerinde duruyor; anahtar kapatılınca eski davranış aynen geri
-geliyor. Anahtar açıkken elle `uc_degistir`/`uc_birak` komutu gelirse
-sunucu olay günlüğüne uyarı yazıyor (engellemiyor) ve panel harekete
-geçmeden önce onay soruyor.
+**BAŞ BAŞINA KAYMA.** Üçü aynı anda takılı olduğu için hiçbiri Z'nin
+merkezinde değil; makine `hedef + o başın kayması`na gidiyor. `durum.uc.baslar`
+üç başı taşıyor (`dx`, `dy`, `z_min`, `derinlik_mm`, tohum ucunda ayrıca
+`t_asagi_mm`) ve `GET /api/bahce` her başın **erişebildiği** dikdörtgenini
+de veriyor. Adımlar hem MAKİNE koordinatını (`x`/`y`) hem İŞ koordinatını
+(`is_x`/`is_y`) taşıyor: dikim alanı ve yasak bölge denetimi işin yerine,
+yumuşak sınır denetimi makinenin yerine bakıyor.
 
-**`POST /api/ekim/onayla`** gövdesi uç teyidinde önemli: `{"uc": "tool3"}`
-kullanıcının kafada gerçekte ne olduğunu SÖYLEDİĞİ değer. Alan varsa ve
-yazılımın inancından farklıysa önce `uc_beyan` ile kayıt düzeltiliyor, sonra
-hareket ona göre planlanıyor. Alanın hiç olmaması ("söylemedi") ile boş dize
-("kafa boş") FARKLI şeyler. Kilit servosu ve varlık sensörü bağlı değilken
-kafada ne olduğunu doğrulayabilen tek kaynak kullanıcı; cevabının gerçekten
-işlemesi gerekiyor. Oturum ayrıca `uc_gereken` (ekimin istediği uç) ve
-`uc_inanc` (yazılımın sandığı) alanlarını veriyor.
+**TOHUM UCUNUN KENDİ DİKEY EKSENİ** (`durum.tohum_ucu`, PLC'de j4, kodda T):
+`{kalibre, mm, yukari_mm, yukarida}`. `gantry_calib.json`a dördüncü satır
+girilmeden eksen kilitli ve her hareket sebebiyle reddediliyor. **Uç
+aşağıdayken X/Y hareketi yapılmıyor** — jog, koordinat hareketi ve dizi
+adımı, üçü de reddediyor; Z serbest kalıyor (kaçış yolu).
+
+**`POST /api/toplu` `{"islem":"nem","noktalar":[…]}`** — nem probunu
+bitkilerin üstüne götürüp toprağa daldırıyor ve okunan değeri **o bitkiye**
+yazıyor (`nem_yuzde`, `nem_ham`, `nem_ts`). Bahçe kartı önce bu ölçüme
+bakıyor ("kendi üstünden"), yoksa 100 mm yarıçaptaki en taze okumaya düşüyor.
+Bahçe kuyruğunda `tip: "nem"` olarak da veriliyor.
 
 `durum` paketine eklenen alanlar: `bolgeler`, `esnetme_acik`, `islem`,
-`uc` (dizi ilerlemesi + takılı uç), `dizi` (program ilerlemesi),
+`uc` (üç baş + tohumluk), `tohum_ucu` (T ekseni), `dizi` (program ilerlemesi),
 `kameralar` (sıralı kamera künyeleri: `ad`, `etiket`, `hareketli`, `cihaz`,
 `acik`, `aktif`, `yontem`, `aralik_sn`, `canli`, `canli_var`, `hata`).
 `kamera` tekili hâlâ var ve ilk kameranın hâlini taşıyor — tek kameraya göre

@@ -16,8 +16,12 @@ Tarla.katman({
   guncelle(o) {
     const M = o.makine, MM = o.MM;
     const w = o.genislikM, d = o.derinlikM, rayY = M.ray_yuksekligi * MM;
-    const sbi = (o.veri.durum.uc && o.veri.durum.uc.sulama_basligi) || {};
-    const imza = `${w}|${d}|${rayY}|${sbi.dx}|${sbi.dy}`;
+    // ÜÇ BAŞIN KAYMASI İMZADA. Ayar değişince sahne yeniden kuruluyor:
+    // başların yeri artık ayardan geliyor ve eski geometri yanlış yerde
+    // kalırdı.
+    const bsl = (o.veri.durum.uc && o.veri.durum.uc.baslar) || {};
+    const imza = `${w}|${d}|${rayY}|` + ["sulama", "nem", "tohum"]
+      .map((k) => `${(bsl[k] || {}).dx},${(bsl[k] || {}).dy}`).join("|");
 
     // Katman kapatılınca çekirdek grubu boşaltıp geometriyi atıyor; grup
     // boşsa imza aynı olsa da yeniden kurmak gerekiyor.
@@ -27,10 +31,11 @@ Tarla.katman({
       // Sulama başlığının ofseti uclar.json'dan; sulama hesabıyla AYNI
       // sayı. Ayrı yazsaydık sahnede su bir yere, gerçekte başka yere
       // düşerdi ve hangisinin doğru olduğu anlaşılmazdı.
-      const sb = (o.veri.durum.uc && o.veri.durum.uc.sulama_basligi) || {};
       const makine = window.FarmbotMakine.kur(o.THREE, {
         w: w, d: d, rayY: rayY, parca: "hareketli",
-        sulamaOfset: { dx: Number(sb.dx) || 0, dy: Number(sb.dy) || 0 },
+        // ÜÇ BAŞ GERÇEK KAYMALARIYLA. Sahnedeki aralık makinedeki
+        // aralık; ayarı değiştirince sahnede de kayıyorlar.
+        baslar: bsl, mmP: MM,
       });
       this._p = makine;
       // Makineye tıklamak bitki seçmek/taşımak değil — ışın testinden çıksın.
@@ -59,6 +64,16 @@ Tarla.katman({
     const toprakZ = Number(o.veri.durum.toprak_z) || 0;
     const ucY = o.kis(z - toprakZ, 0, (o.sinir.z.max || 550) - toprakZ) * MM;
     p.ucKafa.position.set(0, ucY + 0.04, 0);
+    /* TOHUM UCUNUN KENDİ DİKEY HAREKETİ. Ana Z bütün başları birden
+     * indiriyor; bu grup onun ÜSTÜNE binen kendi hareketi. İndiğinde
+     * sahnede de iniyor — süsleme değil, ölçülen T konumu. */
+    const tu = p.ucKafa.userData && p.ucKafa.userData.tohumUcu;
+    if (tu) {
+      const t = o.veri.durum.tohum_ucu || {};
+      const dus = (t.kalibre && Number.isFinite(Number(t.mm)))
+        ? Math.abs(Number(t.mm) - Number(t.yukari_mm || 0)) * MM : 0;
+      tu.position.y = (p.ucKafa.userData.tohumUcuY || 0) - dus;
+    }
     // Z kılavuzu birim yükseklikte kuruluyor, stroka göre uzatılıyor.
     const boy = Math.max(0.05, rayY - 0.045 - (ucY + 0.08));
     p.sutun.scale.y = boy;

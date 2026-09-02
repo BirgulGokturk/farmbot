@@ -41,7 +41,17 @@ import tani
 logger = logging.getLogger("ajan.plc")
 
 # --------------------------------------------------------------------------- #
-# Register haritası — X=Axis_1, Y=Axis_2, Z=Axis_3 (temizlenmiş ladder ile aynı)
+# Register haritası — X=Axis_1, Y=Axis_2, Z=Axis_3, T=Axis_4
+#
+# T (tohum ucunun KENDİ dikey ekseni) ladder'da j4 adıyla duruyor ve
+# adresleri Y/Z ile aynı deseni izliyor: blok başı + 0/1/2/3 bitleri, +4
+# hedef, +6 hız, +8 hızlanma, +10 yavaşlama, +12 konum. Adresler makinenin
+# PLC projesinden okundu (hmi_jogf_j4 = D1090 … poz_4 = D1102).
+#
+# ÜÇ BAŞ KALICI, T BİR BAŞ DEĞİL. Z eksenine üç baş birden vidalı (sulama,
+# nem probu, tohum ucu) ve hiçbiri sökülmüyor. T yalnızca tohum ucunun ana
+# Z'nin ÜSTÜNE binen kendi dikey hareketi: tohum alırken ve tohumu toprağa
+# bırakırken iniyor, başka hiçbir zaman aşağıda kalmıyor.
 # --------------------------------------------------------------------------- #
 EKSENLER = [
     {"ad": "X", "jogf": 1020, "jogb": 1021, "go": 1022, "home": 1023,
@@ -50,10 +60,24 @@ EKSENLER = [
      "hedef": 1034, "hiz": 1036, "ivme": 1038, "yavaslama": 1040, "konum": 1042},
     {"ad": "Z", "jogf": 1050, "jogb": 1051, "go": 1052, "home": 1053,
      "hedef": 1054, "hiz": 1056, "ivme": 1058, "yavaslama": 1060, "konum": 1062},
+    {"ad": "T", "jogf": 1090, "jogb": 1091, "go": 1092, "home": 1093,
+     "hedef": 1094, "hiz": 1096, "ivme": 1098, "yavaslama": 1100, "konum": 1102},
 ]
-N = 3
+N = len(EKSENLER)
 ENABLE_REG = 1010
-EKSEN_INDEKS = {"x": 0, "y": 1, "z": 2}
+EKSEN_INDEKS = {"x": 0, "y": 1, "z": 2, "t": 3}
+
+# Tohum ucu ekseninin indeksi — koda sabit sayı yazmamak için.
+T = 3
+
+# T KALİBRE DEĞİLKEN HAREKET ETMİYOR.
+#
+# cpm (sayım/mm), yön, home ve yumuşak sınırlar makineden ölçülerek
+# girilir; tahmin edilen bir cpm ile sürmek "yanlış MESAFE gitmek" demek
+# ve o, yanlış sınırdan tehlikeli. Kalibrasyon dosyasında dördüncü satır
+# yoksa eksen kilitli kalıyor ve panel sebebini yazıyor.
+T_KALIBRESIZ = {"cpm": 0.0, "dir": 1, "home": 0.0, "min": 0.0, "max": 0.0,
+                "kalibresiz": True}
 
 # Jog kirası. Gantry Studio 0.7 sn kullanıyor; panel artık buluttan geldiği için
 # gidiş-dönüş gecikmesine pay bırakıyoruz. Yine de bir saniyenin biraz üstünde:
@@ -71,10 +95,34 @@ JOG_TICK = 0.1
 # cpm değerleri de güncellendi: yanlış cpm ile yedek devreye girmek, yanlış
 # MESAFE gitmek demek ve o, yanlış sınırdan daha tehlikeli.
 VARSAYILAN_KALIB = [
-    {"cpm": 17.1782, "dir": 1, "home": 0.0, "min": 0.0, "max": 535.0},    # X
+    {"cpm": 17.1782, "dir": 1, "home": 0.0, "min": 0.0, "max": 540.1},    # X
     {"cpm": 4.2686, "dir": 1, "home": 0.0, "min": 0.0, "max": 645.1},    # Y
     {"cpm": 37.074, "dir": -1, "home": 426.1, "min": 120.0, "max": 414.23},  # Z
+    dict(T_KALIBRESIZ),                                                   # T
 ]
+
+
+def kalib_tamamla(gelen: Any) -> list[dict[str, Any]]:
+    """Kalibrasyon listesini N eksene tamamlar.
+
+    Sahadaki `gantry_calib.json` üç eksenli (Gantry Studio öyle yazıyor).
+    Dördüncü satır yoksa T KALİBRESİZ sayılıyor — uydurulmuş bir cpm ile
+    sürmektense hiç sürmemek doğru: yanlış cpm, yanlış MESAFE demek.
+    """
+    liste = [dict(k) for k in (gelen or []) if isinstance(k, dict)]
+    if not liste:
+        liste = [dict(k) for k in VARSAYILAN_KALIB[:3]]
+    while len(liste) < N:
+        liste.append(dict(VARSAYILAN_KALIB[len(liste)]))
+    return liste[:N]
+
+
+def kalibresiz_mi(k: dict[str, Any]) -> bool:
+    """Bu eksen sürülebilir mi? cpm sıfırsa hiçbir mesafe hesaplanamaz."""
+    try:
+        return bool(k.get("kalibresiz")) or float(k.get("cpm") or 0.0) <= 0.0
+    except (TypeError, ValueError):
+        return True
 
 
 class PLCHatasi(Exception):
@@ -218,10 +266,12 @@ class SahteModbus(Modbus):
         super().__init__("sahte", 0, 1)
         self._kalib = kalib
         self._reg: dict[int, int] = {}
-        self._konum = [0.0, 0.0, 0.0]   # ham count
-        self._hedef = [0.0, 0.0, 0.0]
-        self._git_aktif = [False, False, False]
-        self._home_aktif = [False, False, False]
+        # DÖRT EKSEN. Uzunluk `EKSENLER`den geliyor, elle yazılmıyor:
+        # T eklenince üç elemanlı listeler döngünün ortasında patlıyordu.
+        self._konum = [0.0] * N          # ham count
+        self._hedef = [0.0] * N
+        self._git_aktif = [False] * N
+        self._home_aktif = [False] * N
         self._son = time.time()
         # Z'yi güvenli yükseklikte başlatıyoruz; aksi halde simülasyonda ilk
         # X/Y denemesi Z kilidine takılıyor ve panel "bozuk" görünüyor.
@@ -321,7 +371,7 @@ class Gantry:
         #   tc_alani(x, y)      -> bool             (uç değiştirme alanı içinde mi)
         self.z_guvenli_kaynagi: Callable[[], bool | None] | None = None
         self.tc_alani: Callable[[float, float], bool] | None = None
-        self.kalib = ayar.get("kalibrasyon") or VARSAYILAN_KALIB
+        self.kalib = kalib_tamamla(ayar.get("kalibrasyon"))
         # Panelden kaydedince nereye yazılacağı. Ajan dosyayı okurken bu
         # yolu da geçiriyor; yoksa kayıt yalnızca bellekte kalır.
         self.kalib_yolu = ayar.get("kalibrasyon_tam_yol")
@@ -389,14 +439,27 @@ class Gantry:
 
     # --- okuma -----------------------------------------------------------
     def konum_mm(self) -> list[float]:
-        """Üç eksenin konumu — TEK Modbus işleminde.
+        """X, Y, Z — ÜÇ eleman.
+
+        T bilerek burada değil: bu listeyi okuyan onlarca yer (bölge
+        denetimi, adım planı, yol kontrolü) üç eksenlik bir dünya
+        varsayıyor ve dördüncüyü listeye eklemek hepsini sessizce
+        kaydırırdı. T'nin konumu `konum4_mm()[3]` ile alınıyor ve aynı
+        Modbus okumasından geliyor — fazladan gidiş-dönüş yok.
+        """
+        return self.konum4_mm()[:3]
+
+    def konum4_mm(self) -> list[float]:
+        """Dört eksenin konumu — TEK Modbus işleminde.
 
         Eksen başına ayrı okuma yapmak üç gidiş-dönüş demekti. Hareket
         sırasında bekleme döngüsü saniyede 20 kez konum sorduğu için bu trafik
         Modbus kilidini doldurup panelin konum göstergesini geciktiriyordu.
-        Konum register'ları 1026 ile 1063 arasına dağılmış; aralığın tamamını
-        (38 register) tek istekte alıp diliyoruz — Modbus'ın 125 register
-        sınırının çok altında.
+        Konum register'ları 1026 ile 1103 arasına dağılmış; aralığın tamamını
+        (78 register) tek istekte alıp diliyoruz — Modbus'ın 125 register
+        sınırının altında. T eklenince aralık büyüdü ama okuma sayısı
+        değişmedi: eksen başına ayrı istek, hareket sırasında saniyede 20
+        kez konum soran bekleme döngüsünde Modbus kilidini dolduruyordu.
         """
         bas = EKSENLER[0]["konum"]
         son = EKSENLER[N - 1]["konum"] + 1
@@ -415,6 +478,46 @@ class Gantry:
     def eksen_konum_mm(self, i: int) -> float:
         """Tek eksenin konumu — bekleme döngüsü üçünü birden okumasın diye."""
         return round(self.ham_dan_mm(i, self.mb.float_oku(EKSENLER[i]["konum"])), 2)
+
+    # --- tohum ucunun kendi ekseni (T) ----------------------------------- #
+    def t_kalibre_mi(self) -> bool:
+        """T sürülebilir mi? Kalibrasyon girilmemişse hayır."""
+        return not kalibresiz_mi(self.kalib[T])
+
+    def t_yukari_mm(self) -> float:
+        """T'nin 'tamamen yukarıda' saydığımız değeri = home.
+
+        Ayrı bir 'üst' ayarı uydurmuyoruz: eksenin referansı zaten üst uç
+        ve kalibrasyonun `home` alanı orayı söylüyor.
+        """
+        return float(self.kalib[T].get("home", 0.0))
+
+    def t_yukarida_mi(self, tolerans: float = 1.5) -> bool:
+        """Tohum ucu çekilmiş mi?
+
+        Okunamıyorsa "yukarıda değil" diyoruz: hata anında yatay hareketi
+        serbest bırakmak, ucu toprağa sürtmenin en kolay yolu. Eksen
+        kalibre değilse hiç sürülemediği için hep yukarıda sayılıyor —
+        yoksa kurulmamış bir eksen bütün makineyi kilitlerdi.
+        """
+        if not self.t_kalibre_mi():
+            return True
+        try:
+            return abs(self.eksen_konum_mm(T) - self.t_yukari_mm()) <= tolerans
+        except Exception:
+            return False
+
+    def t_yatay_engel(self) -> str:
+        """X/Y hareketini engelleyen bir sebep varsa metni, yoksa ''.
+
+        TOHUM UCU AŞAĞIDAYKEN YATAY HAREKET YOK. Ana Z yukarıda olsa bile
+        tohum ucu kendi ekseniyle inmiş olabiliyor; o hâlde X ya da Y
+        sürmek ucu toprağa ya da kabın kenarına sürtmek demek.
+        """
+        if self.t_yukarida_mi():
+            return ""
+        return ("Tohum ucu aşağıda — önce yukarı çekilmeli. "
+                "X/Y hareketi tohum ucu inmişken yapılmıyor.")
 
     def z_guvenli_mi(self) -> bool:
         """Z yukarıda mı?
@@ -440,7 +543,7 @@ class Gantry:
 
     def durum(self) -> dict[str, Any]:
         try:
-            konum = self.konum_mm()
+            konum = self.konum4_mm()
             enable = bool(self.mb.oku(ENABLE_REG, 1)[0])
             self._enable_son = enable
             with self._jog_kilit:
@@ -448,7 +551,18 @@ class Gantry:
             self.son_hata = None
             return {
                 "plc": "bagli",
-                "konum": {"x": konum[0], "y": konum[1], "z": konum[2]},
+                "konum": {"x": konum[0], "y": konum[1], "z": konum[2],
+                          "t": konum[3]},
+                # TOHUM UCU: kendi ekseni, kendi hâli. Panel ve 3B sahne
+                # buradan okuyor; "aşağıda mı" sorusunun cevabı ölçülen
+                # konumdan geliyor, hatırlanan bir bayraktan değil.
+                "tohum_ucu": {
+                    "kalibre": self.t_kalibre_mi(),
+                    "mm": konum[3],
+                    "yukari_mm": self.t_yukari_mm(),
+                    "yukarida": abs(konum[3] - self.t_yukari_mm()) <= 1.5
+                                if self.t_kalibre_mi() else True,
+                },
                 "enable": enable,
                 "hareket": self.hareket_ediyor or bool(jog_acik),
                 "jog": jog_acik,
@@ -659,25 +773,27 @@ class Gantry:
             # açık kalıyor ve eksenin nereye gideceği belirsizleşiyor.
             if self._hareket_ip and self._hareket_ip.is_alive():
                 raise PLCHatasi(f"{self._islem_ad or 'Hareket'} sürüyor — jog için önce durdurun")
+            if i == T and not self.t_kalibre_mi():
+                self.jog_hepsini_birak()
+                raise PLCHatasi(
+                    "Tohum ucu ekseni (T) kalibre edilmedi — sayım/mm, yön, "
+                    "home ve sınırlar girilmeden sürülmüyor. Ayarlar → "
+                    "Eksen kalibrasyonu.")
             # Z yukarıda değilken X/Y kilitli. Bu kontrol her yenilemede
             # tekrarlanıyor: jog sırasında Z düşerse hareket kendiliğinden durur.
             if i in (0, 1) and not self.z_guvenli_mi():
-                # Uç değiştirme alanı: yalnızca bu alanın İÇİNDE ve alan
-                # AÇIKKEN Z şartı düşüyor. Uçlar alçak Z'de takılıp
-                # çıkarılabilsin diye var; alan kapalıyken hiçbir muafiyet yok
-                # ve muafiyetin kapsamı alanın dışına taşmıyor.
-                alanda = False
-                if self.tc_alani is not None:
-                    try:
-                        simdi = self.konum_mm()
-                        alanda = bool(self.tc_alani(simdi[0], simdi[1]))
-                    except Exception:
-                        alanda = False
-                if not alanda:
+                self.jog_hepsini_birak()
+                raise PLCHatasi(
+                    f"{EKSENLER[i]['ad']} hareket edemez — Z güvenli yükseklikte değil "
+                    f"(≥ {self.guvenli_z:.0f} mm gerekiyor). Önce Z'yi kaldırın.")
+            # TOHUM UCU AŞAĞIDAYKEN YATAY HAREKET YOK — ana Z yukarıda olsa
+            # bile. Uç kendi ekseniyle inmişken X/Y sürmek, ucu toprağa ya da
+            # kabın kenarına sürtmek demek.
+            if i in (0, 1):
+                engel = self.t_yatay_engel()
+                if engel:
                     self.jog_hepsini_birak()
-                    raise PLCHatasi(
-                        f"{EKSENLER[i]['ad']} hareket edemez — Z güvenli yükseklikte değil "
-                        f"(≥ {self.guvenli_z:.0f} mm gerekiyor). Önce Z'yi kaldırın.")
+                    raise PLCHatasi(f"{EKSENLER[i]['ad']} hareket edemez — {engel}")
 
             # Bölge denetimi: mevcut konuma değil, İLERİYE bakıyoruz. Sadece
             # bulunduğumuz noktaya baksaydık eksen bölgeye girdikten sonra
@@ -808,7 +924,10 @@ class Gantry:
             simdiki[1] if y is None else float(y),
             simdiki[2] if z is None else float(z),
         ]
-        for i in range(N):
+        # X/Y/Z: `hedef` üç elemanlı. T bu yolla sürülmüyor — kendi
+        # komutu var (`t_git`), çünkü koordinat hareketiyle birlikte
+        # inmesi gereken tek an ekim dizisinin içinde.
+        for i in range(3):
             if not self.sinir_icinde(i, hedef[i]):
                 raise PLCHatasi(
                     f"{EKSENLER[i]['ad']} hedefi sınır dışı: {hedef[i]:.1f} mm "
@@ -816,6 +935,10 @@ class Gantry:
 
         # X/Y yer değiştirecekse yol Z güvenli yükseklikten geçmeli.
         yatay_var = abs(hedef[0] - simdiki[0]) > 0.2 or abs(hedef[1] - simdiki[1]) > 0.2
+        if yatay_var:
+            engel = self.t_yatay_engel()
+            if engel:
+                raise PLCHatasi(engel)
         adimlar = self._adim_plani(simdiki, hedef, yatay_var)
 
         # Yasak bölge denetimi hareket BAŞLAMADAN, planın tamamı üzerinde
@@ -834,6 +957,40 @@ class Gantry:
         self._hareket_ip.start()
         return f"Hedefe gidiliyor: X{hedef[0]:.1f} Y{hedef[1]:.1f} Z{hedef[2]:.1f}"
 
+    def t_git(self, mm: float | None = None, hiz: float | None = None,
+              yukari: bool = False) -> str:
+        """Tohum ucunu kendi ekseninde götür. SENKRON — dizinin içinde çağrılıyor.
+
+        `yukari=True` verilince hedef kalibrasyonun home'u: "tamamen
+        çekilmiş" için ayrı bir sayı uydurmuyoruz, eksenin referansı zaten
+        orası.
+        """
+        if not self.t_kalibre_mi():
+            raise PLCHatasi(
+                "Tohum ucu ekseni (T) kalibre edilmedi — sayım/mm, yön, home "
+                "ve sınırlar girilmeden sürülmüyor. Ayarlar → Eksen "
+                "kalibrasyonu → T.")
+        hedef = self.t_yukari_mm() if yukari else float(mm if mm is not None else 0.0)
+        # BÖLGE DENETİMİ YOK VE OLMAMALI. Yasak bölgeler X/Y/Z hacimleri;
+        # T ekseni yatakta yer değiştirmiyor, yalnız tohum ucunu kendi
+        # milimini indiriyor. Denetime sokmak, üç eksenlik bir dünyaya
+        # dördüncü bir sayı vermek demekti (ve veriyordu: liste taşması).
+        self.eksen_git_dogrula(T, hedef, hiz=hiz, bolge_denetle=False)
+        return f"Tohum ucu {hedef:.1f} mm"
+
+    def t_yukari_cek(self, hiz: float | None = None) -> str:
+        """Tohum ucunu yukarı çek. Kalibre değilse SESSİZ geçiyor.
+
+        Sessizlik burada doğru: kalibre olmayan eksen zaten hiç inmedi,
+        yani çekilecek bir şey yok. Hata atmak, ekseni hiç kurmamış bir
+        kullanıcının ekim akışını kilitlemek olurdu.
+        """
+        if not self.t_kalibre_mi():
+            return ""
+        if self.t_yukarida_mi():
+            return ""
+        return self.t_git(yukari=True, hiz=hiz)
+
     def git_senkron(self, x: float | None, y: float | None, z: float | None,
                     hiz: float | None = None) -> None:
         """`git` ile AYNI yolu izler ama bitene kadar döner değil — dizi
@@ -850,12 +1007,16 @@ class Gantry:
         hedef = [simdiki[0] if x is None else float(x),
                  simdiki[1] if y is None else float(y),
                  simdiki[2] if z is None else float(z)]
-        for i in range(N):
+        for i in range(3):
             if not self.sinir_icinde(i, hedef[i]):
                 raise PLCHatasi(
                     f"{EKSENLER[i]['ad']} hedefi sınır dışı: {hedef[i]:.1f} mm "
                     f"[{self.kalib[i]['min']:.0f}, {self.kalib[i]['max']:.0f}]")
         yatay_var = abs(hedef[0] - simdiki[0]) > 0.2 or abs(hedef[1] - simdiki[1]) > 0.2
+        if yatay_var:
+            engel = self.t_yatay_engel()
+            if engel:
+                raise PLCHatasi(engel)
         adimlar = self._adim_plani(simdiki, hedef, yatay_var)
         self._bolge_plani_denetle(simdiki, adimlar)
         for i, deger, etiket in adimlar:
@@ -900,9 +1061,11 @@ class Gantry:
         # sürüklenme (asıl tehlikeli olan) engelli kalıyor.
         bas_ihlal = self.bolgeler.ihlal(simdiki[0], simdiki[1], simdiki[2], baglam)
         if bas_ihlal:
+            # T (i == 3) buraya hiç gelmiyor (`bolge_denetle=False`); yine de
+            # indeks taşmasına karşı üç eksenle sınırlıyoruz.
             yalniz_z_yukari = all(
                 i == 2 and deger > simdiki[2] + 0.2 for i, deger, _ in adimlar
-                if abs(deger - simdiki[{0: 0, 1: 1, 2: 2}[i]]) > 0.2)
+                if i < 3 and abs(deger - simdiki[i]) > 0.2)
             if not yalniz_z_yukari:
                 raise PLCHatasi(
                     f"Makine şu anda bölge ihlali hâlinde ({bas_ihlal}). "
@@ -1011,18 +1174,31 @@ class Gantry:
         if self.acil_mandal["acik"]:
             raise PLCHatasi("ACİL DURDURMA mandallı")
         self._surucu_dogrula()
+        if i == T and not self.t_kalibre_mi():
+            raise PLCHatasi(
+                "Tohum ucu ekseni (T) kalibre edilmedi — sayım/mm, yön, home "
+                "ve sınırlar girilmeden sürülmüyor.")
         if not self.sinir_icinde(i, mm):
             raise PLCHatasi(
                 f"{EKSENLER[i]['ad']} hedefi sınır dışı: {mm:.1f} mm "
                 f"[{self.kalib[i]['min']:.0f}, {self.kalib[i]['max']:.0f}]")
+        # TOHUM UCU AŞAĞIDAYKEN YATAY HAREKET YOK — dizi içinde de geçerli.
+        if i in (0, 1):
+            engel = self.t_yatay_engel()
+            if engel:
+                raise PLCHatasi(engel)
 
+        # `konum_mm()` üç eleman (X/Y/Z); T dördüncü sırada ve kendi
+        # okumasından geliyor. Üç elemanlı listeye dördüncü indeksle
+        # bakmak, T sürüldüğü anda taşıyordu.
         simdiki = self.konum_mm()
         if bolge_denetle:
-            # Dizi sürerken de bölge denetimi geçerli. Yalnızca 'yuva'
-            # işaretli bölgeler, yalnızca esnetme açıkken atlanıyor.
+            # Dizi sürerken de bölge denetimi geçerli ve KOŞULSUZ: uç
+            # değiştirmeyle birlikte bölge esnetmesi de kalktı.
             self._bolge_plani_denetle(simdiki, [(i, mm, EKSENLER[i]["ad"])])
 
-        if abs(simdiki[i] - mm) < 0.2:
+        simdi_mm = simdiki[i] if i < len(simdiki) else self.eksen_konum_mm(i)
+        if abs(simdi_mm - mm) < 0.2:
             return
         eh = self.eksen_hizi(i, hiz)
         self._eksen_git(i, mm, eh)
@@ -1218,8 +1394,12 @@ class Gantry:
         Dosyaya da yazıyor: ayar yalnızca bellekte kalsaydı ajan yeniden
         başlayınca eski değere dönerdi ve kullanıcı sebebini aramazdı.
         """
-        if not isinstance(yeni, list) or len(yeni) != N:
-            raise PLCHatasi(f"Kalibrasyon {N} eksen içermeli")
+        # ÜÇ EKSENLİK KAYIT DA KABUL EDİLİYOR. Sahadaki `gantry_calib.json`
+        # ve eski paneller üç eksen gönderiyor; dördüncüyü zorunlu kılmak,
+        # T'yi hiç kurmamış bir kullanıcının X/Y/Z kalibrasyonunu
+        # kaydedememesi demekti.
+        if not isinstance(yeni, list) or not 3 <= len(yeni) <= N:
+            raise PLCHatasi(f"Kalibrasyon 3 ya da {N} eksen içermeli")
         temiz = [dict(k) for k in self.kalib]
         for i, gelen in enumerate(yeni):
             if not isinstance(gelen, dict):
@@ -1234,6 +1414,11 @@ class Gantry:
                 if not -10000.0 <= deger <= 10000.0:
                     raise PLCHatasi(f"{EKSENLER[i]['ad']} {alan} makul aralıkta değil")
                 temiz[i][alan] = round(deger, 2)
+            # KALİBRESİZ EKSEN DOĞRULAMADAN MUAF. T kurulmamışken min=max=0
+            # duruyor; aşağıdaki "min < max" kuralı bu hâli reddedip
+            # X/Y/Z kaydını da düşürürdü.
+            if kalibresiz_mi(temiz[i]):
+                continue
             # Sınırların sırası bozulursa her hedef reddedilir ve sebebi
             # görünmez; burada yakalıyoruz.
             if float(temiz[i]["min"]) >= float(temiz[i]["max"]):
@@ -1265,8 +1450,9 @@ class Gantry:
         self.kalib = temiz
         self._kalib_dosyaya_yaz(temiz)
         return " · ".join(
-            f"{EKSENLER[i]['ad']} home {temiz[i]['home']:g} "
-            f"({temiz[i]['min']:g}–{temiz[i]['max']:g})" for i in range(N))
+            (f"{EKSENLER[i]['ad']} kurulmadı" if kalibresiz_mi(temiz[i]) else
+             f"{EKSENLER[i]['ad']} home {temiz[i]['home']:g} "
+             f"({temiz[i]['min']:g}–{temiz[i]['max']:g})") for i in range(N))
 
     def _kalib_dosyaya_yaz(self, kalib: list[dict[str, Any]]) -> None:
         yol = self.kalib_yolu

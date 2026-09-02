@@ -611,12 +611,70 @@
       v.position.set(P * 1.5 + ix * P * 1.4, P * 0.3, iz * P * 0.85);
       ucKafa.add(v);
     });
-    // Uç: ince, koyu, hafif konik. Turkuaz gitti — fotoğrafta uç siyah.
+    /* --- ÜÇ BAŞ YAN YANA ---------------------------------------------------
+     * Makinede Z ekseninin ucunda üç baş KALICI olarak vidalı: soldaki
+     * sulama başlığı, ortadaki toprak nemi probu, sağdaki tohum alma ucu.
+     * Eskiden burada tek bir koni vardı ve "takılı uç" onu temsil
+     * ediyordu; artık üçü birden çiziliyor.
+     *
+     * YERLERİ GERÇEK KAYMADAN GELİYOR. `opt.baslar` durum paketindeki
+     * `dx/dy`yi taşıyor ve baş o kadar KAYMIŞ çiziliyor — ekranda
+     * gördüğünüz aralık makinedeki aralık. Kayma yoksa varsayılan bir
+     * dizilim kullanılıyor (üçü birbirine değmesin diye), ama o zaman da
+     * ayarların girilmediği belli oluyor.
+     */
+    const nemProbu = new THREE.Group();
+    // Prob gövdesi: kısa siyah blok, altında ince paslanmaz çubuk.
+    nemProbu.add(kutu(THREE, [P * 0.5, P * 0.7, P * 0.5], [0, -P * 0.25, 0],
+                      { color: "#1a1d20", metalness: 0.1, roughness: 0.7 }));
+    const cubuk = new THREE.Mesh(
+      new THREE.CylinderGeometry(P * 0.05, P * 0.04, P * 1.4, 8),
+      mal(THREE, { color: "#c9ced3", metalness: 0.9, roughness: 0.25 }));
+    cubuk.position.set(0, -P * 1.3, 0);
+    nemProbu.add(cubuk);
+    ucKafa.add(nemProbu);
+
+    /* TOHUM UCU KENDİ GRUBUNDA: kendi dikey ekseni var (PLC'de j4) ve
+     * indiğinde SAHNEDE de iniyor. Grubu ayrı olmasaydı ana Z ile
+     * birlikte hareket eder, kendi hareketi görünmezdi. */
+    const tohumUcu = new THREE.Group();
+    // Kırmızı taşıyıcı ve üstündeki motor — fotoğraftaki gibi.
+    tohumUcu.add(kutu(THREE, [P * 0.55, P * 1.5, P * 0.6], [0, P * 0.5, 0],
+                      { color: "#b6382c", metalness: 0.05, roughness: 0.75 }));
+    tohumUcu.add(kutu(THREE, [P * 0.7, P * 0.7, P * 0.7], [0, P * 1.6, 0],
+                      { color: "#2b2f33", metalness: 0.5, roughness: 0.4 }));
     const uc = new THREE.Mesh(
-      new THREE.CylinderGeometry(P * 0.16, P * 0.09, P * 1.5, 12),
+      new THREE.CylinderGeometry(P * 0.12, P * 0.06, P * 1.6, 12),
       mal(THREE, { color: "#2a2e31", metalness: 0.35, roughness: 0.5 }));
-    uc.position.set(P * 2.4, -P * 0.7, 0);
-    ucKafa.add(uc);
+    uc.position.set(0, -P * 0.9, 0);
+    tohumUcu.add(uc);
+    ucKafa.add(tohumUcu);
+
+    // Kaymaları uygula. `mmP` bir milimetrenin sahnedeki karşılığı.
+    const bslr = opt.baslar || {};
+    const mmP = opt.mmP || 1;
+    const yerlestir = (grup, kimlik, yedekX) => {
+      const b = bslr[kimlik];
+      const varMi = b && (Number(b.dx) || Number(b.dy));
+      grup.position.x = varMi ? -Number(b.dx || 0) * mmP : yedekX;
+      grup.position.z = varMi ? -Number(b.dy || 0) * mmP : 0;
+    };
+    // İŞARET TERS: `dx` "makine bu kadar kayarak gider" demek, yani baş
+    // merkezin TERS yönünde duruyor. Sahnede kaymayı olduğu gibi
+    // uygulasaydık başlar gerçekte oldukları yerin aynasında görünürdü.
+    yerlestir(nemProbu, "nem", 0);
+    yerlestir(tohumUcu, "tohum", P * 2.4);
+    // Merkez işareti: Z ekseninin gerçek merkezi. Üç baş da bunun
+    // etrafında duruyor ve hiçbiri tam ortada değil — bunu göstermek
+    // kaymaların neden var olduğunu anlatan tek şey.
+    const merkezIsaret = new THREE.Mesh(
+      new THREE.CylinderGeometry(P * 0.03, P * 0.03, P * 0.5, 6),
+      mal(THREE, { color: "#6f7a80", metalness: 0.3, roughness: 0.6 }));
+    merkezIsaret.position.set(0, -P * 0.2, 0);
+    ucKafa.add(merkezIsaret);
+    ucKafa.userData.nemProbu = nemProbu;
+    ucKafa.userData.tohumUcu = tohumUcu;
+    ucKafa.userData.tohumUcuY = tohumUcu.position.y;
 
     /* --- SULAMA BAŞLIĞI ----------------------------------------------------
      * Z eksenine KALICI olarak bağlı: uç değişse de o duruyor. Fotoğrafta
@@ -636,11 +694,20 @@
      *
      * Doğru yer burası: kafanın alt plakasından aşağı sarkıyor, tıpkı
      * vakum ucu gibi. İkisi yan yana, ikisi de aşağı bakıyor, ikisi de
-     * Z ile birlikte iniyor. Ayar sulama HESABINA ait; görsel ondan
-     * bağımsız, çünkü başlık makineye kalıcı takılı. */
+     * Z ile birlikte iniyor.
+     *
+     * ARTIK YERİ AYARDAN GELİYOR. Önce sabit bir noktadaydı ve "başlık
+     * 60 mm solda" ayarı ekranda görünmüyordu; üç baş birden çizilirken
+     * bu tutarsızlık göze batar hâle geldi. Kayma girilmemişse eski
+     * sabit yer kullanılıyor. */
     const basY = -P * 0.62;
     const baslik = new THREE.Group();
-    baslik.position.set(P * 0.6, basY, 0);
+    const sb = (opt.baslar || {}).sulama;
+    const sbVar = sb && (Number(sb.dx) || Number(sb.dy));
+    baslik.position.set(
+      sbVar ? -Number(sb.dx || 0) * (opt.mmP || 1) : P * 0.6,
+      basY,
+      sbVar ? -Number(sb.dy || 0) * (opt.mmP || 1) : 0);
     /* Başlık gövdesi — KISA ve GENİŞ silindir, altı delikli.
      *
      * Önce ince bir silindirdi ve sahnede uç kafasının gölgesinde

@@ -106,8 +106,6 @@ class Bolgeler:
         self.gunluk_cb = gunluk_cb or (lambda m, s="bilgi": None)
         self._kilit = threading.RLock()
         self.liste: list[dict[str, Any]] = []
-        # Uç değiştirme dizisi sürerken açılan dar kapsamlı esnetme.
-        self._yuva_esnetme = 0
         self.yukle()
 
     # --- dosya ---
@@ -135,18 +133,11 @@ class Bolgeler:
             self.liste = dogrulanmis
         return dogrulanmis
 
-    # --- esnetme ---
-    def yuva_esnetmesi_ac(self) -> None:
-        with self._kilit:
-            self._yuva_esnetme += 1
-
-    def yuva_esnetmesi_kapat(self) -> None:
-        with self._kilit:
-            self._yuva_esnetme = max(0, self._yuva_esnetme - 1)
-
-    @property
-    def esnetme_acik(self) -> bool:
-        return self._yuva_esnetme > 0
+    # ESNETME KALDIRILDI. Uç değiştirme dizisi sürerken `yuva: true`
+    # işaretli bölgeler atlanıyordu; uç takıp çıkarmak diye bir şey
+    # kalmadığı için atlanacak bir şey de kalmadı. Bölge denetimi artık
+    # koşulsuz — hiçbir dizi onu gevşetemiyor.
+    esnetme_acik = False
 
     # --- denetim ---
     def _icinde(self, bolge: dict[str, Any], x: float, y: float) -> bool:
@@ -156,8 +147,6 @@ class Bolgeler:
         for bolge in self.liste:
             if not bolge.get("aktif", True):
                 continue
-            if bolge.get("yuva") and self.esnetme_acik:
-                continue     # uç değiştirme dizisi sürüyor, yuva bölgesi atlanıyor
             if not self._icinde(bolge, x, y):
                 continue
             degiskenler = {

@@ -249,7 +249,27 @@ def susama_durumu(bitki: dict[str, Any], tur: dict[str, Any] | None,
     ayar = sulama.ayar_coz(bitki, tur)
     esik = _sayi(ayar.get("sulama_nem_esigi"), 100.0)
     bx, by = _sayi(bitki.get("x")), _sayi(bitki.get("y"))
-    yuzde, uzak, yas = sulama.en_yakin_nem(bx, by, okumalar, simdi, toprak_kalib)
+
+    # BİTKİNİN KENDİ ÖLÇÜMÜ VARSA O KAZANIR.
+    #
+    # Nem probu artık makinenin üstünde kalıcı ve "nemini ölç" dendiğinde
+    # makine o bitkinin üstüne gidip probu daldırıyor; okunan değer
+    # noktanın kaydına yazılıyor (`nem_yuzde`, `nem_ts`). Bu ölçüm
+    # bitkinin TAM YERİNDEN ve o bitki için alınmış — 90 mm ötede
+    # gezinirken alınmış bir okumadan her zaman iyi. Eskisi (yarıçap
+    # içindeki en taze okuma) yedek olarak duruyor: prob henüz o bitkiye
+    # gitmediyse elimizdeki tek şey o.
+    kendi = bitki.get("nem_yuzde")
+    kendi_ts = _sayi(bitki.get("nem_ts"), 0.0)
+    kendi_yas = simdi - kendi_ts if kendi_ts else None
+    if (kendi not in (None, "") and kendi_yas is not None
+            and 0 <= kendi_yas <= sulama.NEM_AZAMI_YAS_SN):
+        yuzde, uzak, yas = _sayi(kendi), 0.0, kendi_yas
+        kendi_olcum = True
+    else:
+        yuzde, uzak, yas = sulama.en_yakin_nem(
+            bx, by, okumalar, simdi, toprak_kalib)
+        kendi_olcum = False
 
     # ÖLÇÜMÜN KÜNYESİ HER ZAMAN DÖNÜYOR — karar ona dayanmasa bile. Kart
     # "ölçülen toprak nemi" derken sayıyı göstermiyordu; kullanıcı kaç
@@ -268,6 +288,10 @@ def susama_durumu(bitki: dict[str, Any], tur: dict[str, Any] | None,
     olcum = {
         "var": yuzde is not None,
         "bayat": bayat,
+        # Bu okuma BİTKİNİN KENDİ ölçümü mü, yoksa yakınlarda alınmış bir
+        # okuma mı. Kart bunu yazıyor: "kendi üstünden" ile "90 mm ötede"
+        # aynı güvenilirlikte değil.
+        "kendi": kendi_olcum,
         "yuzde": None if yuzde is None else round(float(yuzde), 1),
         "uzak_mm": None if uzak is None else round(float(uzak), 1),
         "yas_sn": None if yas is None else round(float(yas), 1),
@@ -282,11 +306,12 @@ def susama_durumu(bitki: dict[str, Any], tur: dict[str, Any] | None,
         return {
             "susadi": susadi, "kanit": "olculen", "nem_yuzde": yuzde,
             "nem_esigi": esik, "olcum": olcum, "tahmin": False,
-            "gerekce": (f"toprak nemi %{yuzde:.0f} < eşik %{esik:.0f} "
-                        f"({uzak:.0f} mm ötede, {yas / 60:.0f} dk önce)"
-                        if susadi else
-                        f"toprak nemi %{yuzde:.0f} ≥ eşik %{esik:.0f} "
-                        f"({uzak:.0f} mm ötede, {yas / 60:.0f} dk önce)"),
+            "gerekce": (
+                f"toprak nemi %{yuzde:.0f} "
+                f"{'<' if susadi else '≥'} eşik %{esik:.0f} ("
+                + (f"kendi üstünden, {yas / 60:.0f} dk önce" if kendi_olcum
+                   else f"{uzak:.0f} mm ötede, {yas / 60:.0f} dk önce")
+                + ")"),
         }
 
     # Ölçüm yok ya da eşik kapalı: geçen güne bakıyoruz. BU BİR TAHMİN ve

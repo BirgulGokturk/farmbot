@@ -354,7 +354,7 @@ kendisi. Ayrı tutsalardı hangisinin doğru olduğunu kimse bilemezdi.
   görünür: bağlı olmayan bir sensör için boş eksen çizilmez. İşaret yapışkan,
   yani DHT'nin ara sıra atladığı bir okuma kartı gözden kaybettirmez.
 * **Kontrol** — jog paneli, konuma git, hız, sürücü aç/kapa, röleler
-  (düğme kartın bildirdiği gerçek durumu gösterir), kayıtlı noktalar, tohum ızgarası, yasak bölgeler, uç değiştirme,
+  (düğme kartın bildirdiği gerçek durumu gösterir), kayıtlı noktalar, tohum ızgarası, yasak bölgeler, başlar ve tohumluk,
   programlar.
 * **Tarla** — yatağın 3B görünümü: bitki ekleme, sürükleyerek taşıma,
   yayılım daireleri ve çakışma uyarıları (aşağıda).
@@ -444,7 +444,7 @@ Güvenlik yanıta değil, ajandaki kira bekçisine dayanıyor.
 Yeni komut eklemek için üç yer: `sunucu/main.py → IZINLI_KOMUTLAR`,
 `ajan/ajan.py → komut_isle`, arayüzde bir düğme.
 
-## Nokta deposu, ızgara, bölgeler, uç değiştirme, programlar
+## Nokta deposu, ızgara, bölgeler, başlar, programlar
 
 ### Kayıtlı noktalar
 Bulunulan konum isimle kaydedilir; listeden "Git" mevcut `git` komutunu
@@ -497,59 +497,96 @@ engellenir. Güvenlikte şüphe izin verme yönünde çözülmez.
   kilitlerdi. Bu durumda yalnızca **Z'yi yukarı almaya** izin veriliyor —
   açıklığı ancak artırabilecek tek hareket. Yanlamasına sürüklenme engelli.
 
-### Uç değiştirme
-Yandan yaklaşımlı kilit dizisi (`ajan/uclar.py`, ayarlar `ajan/uclar.json`).
-Bütün X/Y yolculukları `travel_z` yüksekliğinde; alçak Z'deki tek yatay
-hareket uca girip çıkan kısa kayma.
+### Üç sabit baş
 
-**Her adımın sonunda konum doğrulanıyor**; varılmadıysa dizi durur ve sonraki
-adıma geçmez. (Referansta bazı adımların dönüşü denetlenmiyor.)
+Z ekseninin ucuna **üç baş kalıcı olarak vidalı** ve yan yana duruyorlar:
+soldaki sulama başlığı, ortadaki toprak nemi probu, sağdaki tohum alma
+ucu. Hiçbiri sökülmüyor, hiçbiri yuvaya gitmiyor. **"Hangi uç takılı"
+diye bir soru yok** — uç değiştirme dizisi, uç yuvaları, kilit servosu,
+varlık sensörü, uç teyidi ve birinci onay kaldırıldı; hepsi olmayan bir
+işi doğruluyordu.
 
-**Bölge esnetmesi — açıkça:** yuvalar bölgelerin içinde yaşadığı için dizi
-boyunca yalnızca `yuva: true` işaretli bölgeler atlanıyor. Diğer bölgeler
-dizinin ortasında da engelliyor; esnetme dizi bitince, hata verince ya da acil
-durdurmada anında kapanıyor ve panelde "⚠ Yuva esnetmesi açık" rozetiyle
-görünüyor. (Referans dizinin tamamında bütün bölge denetimlerini kapatıyor.)
+#### Kayma bir tercih değil, geometrinin kendisi
 
-`lock_reg` / `grip_reg` / `presence_reg` **0** olduğu sürece donanım bağlı
-değil demektir: dizi çalışır ama sonunda "başarılı" değil
-**"doğrulanamadı"** der.
+Üçü aynı anda takılı olduğu için **hiçbiri Z ekseninin tam merkezinde
+değil**. Her başın merkeze göre kendi X/Y kayması var ve makine bir işi
+yaparken o başın kaymasını eklemek zorunda:
 
-**Uç değiştirme alanı (`tc_area`).** 4 köşeli bir alan; içinde X/Y jog için Z
-güvenlik şartı devre dışı — uçları alçak Z'de takıp çıkarabilmek için.
-Kapalıyken **hiçbir muafiyet yok** ve muafiyet alanın dışına taşmıyor. Alan
-açıkken panelde sarı bir uyarı duruyor ve makinenin şu anda alanın içinde mi
-dışında mı olduğunu yazıyor — sessizce açık kalan bir muafiyet, kilidin
-kendisinden tehlikeli.
+| İş | Baş | Makine nereye gider |
+|---|---|---|
+| Sula | sulama başlığı | hedef + sulama kayması |
+| Nem ölç | nem probu | hedef + prob kayması |
+| Ek | tohum ucu | hedef + tohum ucu kayması |
 
-**`z_safe_reg`.** PLC'deki "Z güvenli yükseklikte" biti. Tanımlıysa milimetre
-hesabının önüne geçer: gerçek bir switch, hesaptan güvenilirdir. 0 ise
-kullanılmaz. Okuma hata verirse "güvenli değil" sayılır.
+Aynı `X300 Y200` noktasına bu makinede sulama `X360 Y260`'a, ekim
+`X230 Y200`'e gidiyor — aralarında 130 mm var. Kayma uygulanmazsa iş
+ortadaki başla değil başka bir başla yapılır: sahada tam bu yaşandı,
+ekim tohum ucunun kayması uygulanmadığı için yanlış yere düşüyordu.
 
-**`retreat`.** `approach`ın çıkış karşılığı: girişte ucun altına kayarken
-izlenen yol ile çıkarken izlenen yol farklı olabilir. Boş bırakılırsa
-`approach` kullanılır.
+Kaymalar `ajan/uclar.json`daki `baslar` bloğunda, Ayarlar → **Başlar ve
+tohumluk** bölümünden düzenleniyor. Her başın ayrıca **Z tabanı** (o
+başın inebileceği en alçak mutlak Z — çarpma sınırı) ve **derinliği**
+(işini yaparken yüzeyin ne kadar altına indiği; nem probu toprağa
+dalıyor, sulama başlığı dalmıyor) var. Sürüm geçişinde eski
+`sulama_basligi` değeri sulama başına taşınıyor: sahada ölçülmüş +60/+60
+kaybolmuyor.
 
-**Hareket önizlemesi.** Tak/Bırak'a basmadan önce izlenecek yol koordinat
-koordinat panelde yazıyor, `travel_z` ile uç yüksekliği tutarsızsa uyarı
-veriyor. Makinenin kendine çarpma riski en yüksek hareketi bu; "başlat"a
-basıp ne olacağını izlemek yerine önce okunabilmesi gerekiyor.
+Hesap tek yerde (`sunucu/baslar.py`) ve sulama, nem ölçümü, ekim üçü de
+oradan geçiyor. Her akış kendi hesabını yapsaydı üçü birbirinden
+ayrışırdı.
 
-**"Durumu temizle".** Dizi ortasında kesilen bir uç değiştirmeden sonra
-yazılımın kaydı ile gerçek durum ayrışabiliyor. Bu düğme **yalnızca kaydı**
-sıfırlar; hiçbir eksen hareket etmez. Otomatik kurtarma denemek, bilinmeyen
-bir durumda kör hareket demek olurdu.
+**Erişilebilir alan da başa göre.** Makine `hedef + kayma`ya gittiği ve
+kendisi yumuşak sınırların dışına çıkamadığı için pozitif kaymalı bir
+baş yatağın uzak kenarına yetişemiyor. Sulama başlığı için sağ ve üst
+kenarda suyun gidemediği bir şerit vardı; artık her başın kendi şeridi
+var ve bahçedeki taralı gölge **o an hangi iş yapılacaksa ona göre**
+çiziliyor.
 
-Sahadan gelen gerçek değerler `ajan/uclar.json` içinde: `safe_z` 280,
-`travel_z` 280, `lift` 80, `approach` −55, `lock_dwell` 1500, `speed` 20,
-`slide_axis` Y; uçlar tool1 (10, 70.5, 150), tool2 (5, 150, 200),
-tool3 (5, 250, 250). `lock_dwell` milisaniye — 50'nin altındaki değerler
-saniye kabul edilir (referans program 1.5 kullanıyordu; 1500'ü saniye sanmak
-kilit servosu komutundan sonra 25 dakika donmak demekti). Bu servo
-PLC register'ından sürülüyor, Arduino'yla ilgisi yok.
+#### Tohum ucunun kendi dikey ekseni (T / PLC'de j4)
 
-### Programlar
-Adım tipleri: noktaya git · bekle · röle aç/kapa · uç değiştir.
+Ana Z bütün başları birden indirip kaldırıyor; tohum ucu bunun üstüne
+bir de **kendi ekseniyle** iniyor. Yalnız iki anda: tohumu alırken ve
+tohumu toprağa bırakırken. İkisinin de hemen ardından çekiliyor.
+
+Register haritası X/Y/Z ile aynı deseni izliyor (`ajan/plc.py`):
+
+| | jogf | jogb | go | home | hedef | hız | hızlanma | yavaşlama | konum |
+|---|---|---|---|---|---|---|---|---|---|
+| T | 1090 | 1091 | 1092 | 1093 | 1094 | 1096 | 1098 | 1100 | 1102 |
+
+**Kalibrasyon girilmeden eksen kilitli.** `gantry_calib.json` üç eksenli
+(Gantry Studio öyle yazıyor); T için dördüncü satır (`cpm`, `dir`,
+`home`, `min`, `max`) eklenene kadar hiçbir T hareketi yapılmıyor ve
+panel sebebini yazıyor. Uydurulmuş bir `cpm` "gitmeyi reddetmek" değil
+**yanlış mesafe gitmek** demek. Kalibre değilken ekim akışı da bugünkü
+hâliyle, her şeyi ana Z yaparak sürüyor — T adımları hiç yazılmıyor.
+
+**Uç aşağıdayken X/Y hareketi yok.** Ana Z yukarıda olsa bile tohum ucu
+kendi ekseniyle inmiş olabiliyor; o hâlde X ya da Y sürmek ucu toprağa
+ya da kabın kenarına sürtmek demek. Kural jog'da da, koordinat
+hareketinde de, dizi içinde de geçerli. Z hareketi serbest kalıyor:
+kaçış yolunu kapatmak makineyi kilitler.
+
+#### Nem ölçümü — bitki başına, probun kendisiyle
+
+Nem probu artık makinenin üstünde kalıcı olduğu için her bitkinin kendi
+üstüne gidip ölçebiliyoruz. Bahçede bir bitkiye **"Nem ölç"** dendiğinde
+makine o bitkinin üstüne (+ prob kayması) gidiyor, probu toprağa
+daldırıyor (derinlik ayardan), okuyor, kaldırıyor; okunan değer **o
+bitkinin kaydına** yazılıyor (`nem_yuzde`, `nem_ham`, `nem_ts`).
+
+Bahçe kartı artık önce bu ölçüme bakıyor ve gerekçesinde *"kendi
+üstünden"* yazıyor. Bitkinin kendi ölçümü yoksa (ya da 24 saatten
+eskiyse) eski kanıta düşüyor: 100 mm yarıçapta alınmış en taze okuma,
+gerekçede *"90 mm ötede"* diye. Şimdiye kadar "4 bitki susadı" derken
+dördü için de aynı tek okumaya bakılıyordu.
+
+Prob toprakta 4 saniye bekliyor ve bu süre **sensörün ölçüm aralığından
+uzun olmak zorunda**: 2 saniyeyle denendi, prob aşağıdayken tek bir okuma
+bile gelmedi ve ölçüm sessizce boşa gitti.
+
+### Programlar### Programlar
+Adım tipleri: noktaya git · bekle · röle aç/kapa · tohum ucunu indir/kaldır.
 Hepsi mevcut komutları çağırır. Dizi **ajanda** yürür (panel kapansa da acil
 durdurma keser). Nokta adları sunucuda koordinata çevrilip ajana öyle gider;
 çözülemeyen bir nokta varsa dizi **hiç başlamaz**. Bir adım hata verirse dizi
@@ -566,7 +603,7 @@ altında tek bir dosya ve tek tek açılıp kapanabiliyor. Tercih tarayıcıda
 |---|---|---|
 | Yatak ve çerçeve | toprak, karıklar, direkler, raylar | açık |
 | Yasak bölgeler | ajandaki bölgeler, koşulu hatalıysa kırmızı | açık |
-| Uç yuvaları | uçların yerleri + uç değiştirme alanı | açık |
+| Tohumluk | tohum haznelerinin yerleri ve profili | açık |
 | Yayılma çapı | tür yayılımı ve çakışma hesabı | açık |
 | Bitkiler | gövde + yapraklar, yaşa göre büyüyen | açık |
 | Kayıtlı noktalar | bitki olmayan noktalar (ızgara, referans) | açık |
@@ -1026,7 +1063,7 @@ Sekme arkaya alınınca (`visibilitychange`) canlandırma da duruyor.
 - [x] Nokta deposu ve "şu noktaya git"
 - [x] Tohum ızgarası
 - [x] Yasak bölgeler (`allow_if` koşullu)
-- [x] Uç değiştirme dizisi
+- [x] Üç sabit baş, baş başına kayma, tohum ucunun kendi ekseni
 - [x] Kayıtlı program çalıştırma
 - [x] Kamera görüntüsü
 - [x] 3B tarla tasarımcısı (bitki yerleşimi, yayılım çakışması)

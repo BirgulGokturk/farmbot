@@ -916,6 +916,25 @@ button.dugme.basili { background: var(--vurgu); border-color: var(--vurgu); colo
 .bolge .rozet-uyari { white-space: normal; }
 
 /* -------------------------------------------------------------- uç değiştirme */
+/* ---------------------------------------------------------------- başlar
+   Üç sabit baş tek tabloda: asıl bilgi bir başın kayması değil, üçünün
+   BİRBİRİNE GÖRE nerede olduğu. */
+.bas-tablo { display: flex; flex-direction: column; gap: 4px; margin: 8px 0; }
+.bas-baslik, .bas-satir {
+  display: grid; grid-template-columns: minmax(150px, 1.4fr) repeat(4, 1fr);
+  gap: 6px; align-items: center;
+}
+.bas-baslik { font-size: 12px; color: var(--metin-3); }
+.bas-satir.tek { grid-template-columns: minmax(150px, 1.4fr) 1fr; }
+.bas-satir input { min-width: 0; }
+.bas-ad { font-weight: 600; font-size: 13px; }
+.bas-git { margin: 8px 0; }
+@media (max-width: 720px) {
+  .bas-baslik { display: none; }
+  .bas-satir { grid-template-columns: 1fr 1fr; }
+  .bas-satir .bas-ad { grid-column: 1 / -1; }
+}
+
 .uc-durum { display: flex; align-items: center; gap: var(--b2); flex-wrap: wrap;
              font-size: var(--yazi-govde); color: var(--metin-2); }
 .uc-durum b { color: var(--metin); font-size: var(--yazi-baslik); }

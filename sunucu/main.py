@@ -33,6 +33,7 @@ from fastapi.staticfiles import StaticFiles
 
 import arsiv
 import bahce
+import baslar
 import depo
 import etiket
 import dikim
@@ -80,17 +81,10 @@ IZINLI_KOMUTLAR = {
     "kalibrasyon_kaydet",  # {"eksenler":[{home,min,max}x3]} — cpm/dir hariç
     "bolge_listele", # {}                            — ajandaki yasak bölgeler
     "bolge_kaydet",  # {"bolgeler":[…]}              — doğrular, dosyaya yazar
-    "uc_listele",    # {}                            — uç ayarları ve dizi durumu
-    "uc_kaydet",     # {"ayar":{…}}
-    "uc_al",         # {"ad":"tool1"}                — yandan yaklaşımlı alma dizisi
-    "uc_birak",      # {}
-    "uc_degistir",   # {"ad":"tool3"}
-    "uc_onizle",     # {"islem":"al"|"birak","ad":"tool1"} — yolu koordinatla göster
-    "uc_yollari",    # {}                            — HER ucun al/bırak yolu
-    "uc_durum_temizle",  # {}                        — takılı uç kaydını sıfırla
-    "uc_beyan",      # {"ad":"tool3"} ya da {"ad":""} — kafada GERÇEKTEN ne var
-                     #   (operatör beyanı; sensör yokken inancı düzeltmenin
-                     #    tek yolu, hiçbir eksen hareket etmiyor)
+    "uc_listele",    # {}                            — kafa ayarları
+    "uc_kaydet",     # {"ayar":{…}}                  — başlar + tohumluk
+    "tohum_ucu",     # {"yukari":true} ya da {"mm":12.5} — tohum ucunun KENDİ
+                     #   dikey ekseni (PLC'de j4). Ana Z'den ayrı.
     "goz_isaretle",  # {"ad":"s1","dolu":false,"tohum":"marul"} — tohumluk gözü
     "nokta_denetle", # {"noktalar":[{x,y,z}…]}      — yasak bölge + sınır ÖN kontrolü
     "dizi_baslat",   # {"ad":…,"adimlar":[…],"tekrar":1} — çözülmüş adımlarla
@@ -470,25 +464,6 @@ async def api_komut(govde: dict[str, Any], jeton: str = Query(default="")):
     arg = govde.get("arg") or {}
     if not isinstance(arg, dict):
         raise HTTPException(status_code=400, detail="arg bir nesne olmalı")
-    # UÇ HAREKETİ, "uçlar sabit takılı" AÇIKKEN. Engellemiyoruz —
-    # kullanıcı gerçekten uç değiştirmek isteyebilir ve elle tak/bırak
-    # düğmeleri bunun için duruyor. Ama sessiz de geçmiyor: ayar
-    # makinede uçların hiç sökülmediğini söylüyorsa, bir ucun yuvasına
-    # inmek beklenmedik bir harekettir ve günlükte görünmeli.
-    if ad in ("uc_degistir", "uc_birak"):
-        try:
-            if bool((await asyncio.to_thread(ekim.ayar_oku))["uclar_sabit"]):
-                await merkez.yayinla({
-                    "tip": "gunluk", "seviye": "uyari",
-                    "metin": ("UYARI: 'Uçlar sabit takılı' ayarı AÇIK ama bir uç "
-                              f"hareketi istendi ({ad}). Makine uç yuvasına "
-                              "gidecek. Gerçekten uç değiştiriyorsanız ayarı "
-                              "kapatın (Ayarlar → Ekim)."),
-                })
-        except Exception:
-            # Ayar okunamadıysa komut yine de gitmeli: uyarı bir kolaylık,
-            # güvenlik katmanı değil.
-            pass
     if ad in HIZLI_KOMUTLAR:
         await merkez.komut_yolla(ad, arg)
         return {"ok": True, "mesaj": "", "sessiz": True}
@@ -757,6 +732,9 @@ async def api_toplu(govde: dict[str, Any], jeton: str = Query(default="")):
         # demek olurdu.
         return await _ekim_baslat(cozum)
 
+    if islem == "nem":
+        return await _nem_olc_baslat(adlar)
+
     if islem not in ("sula", "gez"):
         raise HTTPException(status_code=400, detail=f"Bilinmeyen toplu işlem: {islem!r}")
 
@@ -813,6 +791,177 @@ async def api_toplu(govde: dict[str, Any], jeton: str = Query(default="")):
         "ad": gecici["ad"], "adimlar": cozulmus, "tekrar": 1,
         "hiz": govde.get("hiz"),
     })
+
+
+# --------------------------------------------------------------------------- #
+# Nem ölçümü — bitki başına, PROBUN KENDİSİYLE
+#
+# Şimdiye kadar toprak nemi tek bir yerden okunuyordu: prob makinenin
+# gittiği yerde ne görüyorsa o. Bahçe ekranı "4 bitki susadı" derken
+# aslında hepsi için AYNI okumaya bakıyordu ve okuma bitkiden 90 mm
+# ötede olabiliyordu. Nem probu artık kalıcı olarak makinenin üstünde;
+# her bitkinin kendi üstüne gidip ölçebiliyoruz.
+#
+# ÖLÇÜM BİTKİYE YAZILIYOR. Okunan değer noktanın kaydına düşüyor
+# (`nem_yuzde`, `nem_ts`) ve bahçe kartları onu kullanıyor — artık
+# "en yakın okuma" değil, O BİTKİNİN ölçümü.
+# --------------------------------------------------------------------------- #
+async def _nem_olc_baslat(adlar: list[str]) -> dict[str, Any]:
+    """Seçili bitkilerin üstüne gidip nem probunu daldırır ve okur."""
+    durum = merkez.durum()
+    if not durum.get("bagli"):
+        raise HTTPException(status_code=409, detail="Robot bağlı değil")
+    b = baslar.bas(merkez.son_durum or {}, "nem")
+    sinirlar = durum.get("sinirlar") or {}
+    alanlar = await asyncio.to_thread(dikim.listele)
+    kayitli = {n.get("ad"): n for n in await asyncio.to_thread(noktalar.hepsi)}
+    guvenli_z = _sayi_guvenli(durum.get("guvenli_z"), 340.0)
+
+    adimlar: list[dict[str, Any]] = []
+    hedefler: list[dict[str, Any]] = []
+    ret: list[str] = []
+    for ad in adlar:
+        n = kayitli.get(ad)
+        if n is None:
+            ret.append(f"{ad}: nokta bulunamadı")
+            continue
+        ix, iy = _sayi_guvenli(n.get("x")), _sayi_guvenli(n.get("y"))
+        # ULAŞILABİLİR Mİ — probun kaymasıyla birlikte. Yarıda çarpıp
+        # durmaktansa hiç başlamamak doğru.
+        olur, sebep = baslar.ulasilir_mi(ix, iy, b, sinirlar)
+        if not olur:
+            ret.append(f"{ad}: {sebep}")
+            continue
+        mx, my = baslar.kaydir(ix, iy, b)
+        yuzey = dikim.toprak_yuzeyi(
+            ix, iy, _sayi_guvenli(durum.get("toprak_z")), alanlar)
+        olc_z = baslar.inis_z(b, yuzey)
+        if olc_z >= guvenli_z:
+            ret.append(f"{ad}: ölçüm Z{olc_z:.0f} güvenli Z{guvenli_z:.0f} "
+                       f"altında değil — prob toprağa dalmaz")
+            continue
+        adimlar += [
+            {"tip": "nokta", "ad": f"{ad}↑", "x": mx, "y": my, "z": guvenli_z},
+            {"tip": "nokta", "ad": ad, "x": mx, "y": my, "z": olc_z},
+            # Prob toprakta: okumanın oturması için kısa bir bekleme.
+            # Ölçüm anını AJANIN durum paketinden alıyoruz; ayrı bir
+            # "oku" adımı yok, çünkü prob sürekli okuyor.
+            {"tip": "bekle", "saniye": NEM_BEKLEME_SN},
+            {"tip": "nokta", "ad": f"{ad}↑", "x": mx, "y": my, "z": guvenli_z},
+        ]
+        hedefler.append({"ad": ad, "x": ix, "y": iy, "mx": mx, "my": my,
+                         "z": olc_z})
+    if ret:
+        raise HTTPException(status_code=422,
+                            detail="Nem ölçümü başlatılmadı — " + " · ".join(ret))
+    if not adimlar:
+        raise HTTPException(status_code=400, detail="Ölçülecek bitki yok")
+
+    await _adim_on_kontrol(adimlar, "Nem ölçümü")
+    await merkez.yayinla({
+        "tip": "gunluk", "seviye": "bilgi",
+        "metin": (f"Nem ölçümü: {len(hedefler)} bitki · prob kayması "
+                  f"{_sayi_guvenli(b.get('dx')):+.0f}/"
+                  f"{_sayi_guvenli(b.get('dy')):+.0f} mm · derinlik "
+                  f"{_sayi_guvenli(b.get('derinlik_mm')):.0f} mm")})
+    sonuc = await merkez.komut_gonder("dizi_baslat", {
+        "ad": f"Nem ölçümü · {len(hedefler)} bitki",
+        "adimlar": adimlar, "tekrar": 1})
+    # ÖLÇÜMÜ TOPLAYAN GÖREV. Dizi sürerken makine her bitkinin üstünde
+    # duruyor; o anlarda probun okuduğunu bitkiye yazıyoruz.
+    #
+    # GÖREVE GÜÇLÜ REFERANS TUTULUYOR. `asyncio.create_task`in dönüşünü
+    # bir yerde tutmazsanız görev çöp toplayıcıya yem oluyor ve İŞİN
+    # ORTASINDA sessizce kayboluyor. Tam bu oldu: prob toprağa iniyordu,
+    # okuma geliyordu, ama görev inişin ortasında yok olduğu için hiçbir
+    # şey kaydedilmiyordu — hata da yoktu, çünkü hata değildi.
+    gorev = asyncio.create_task(_nem_topla(hedefler))
+    _NEM_GOREVLERI.add(gorev)
+    gorev.add_done_callback(_NEM_GOREVLERI.discard)
+    return sonuc
+
+
+#: Süren nem ölçümü görevleri — referans tutulmazsa görev kayboluyor.
+_NEM_GOREVLERI: set[Any] = set()
+
+#: Prob toprağa daldıktan sonra beklenen süre.
+#:
+#: SENSÖRÜN ÖLÇÜM ARALIĞINDAN UZUN OLMAK ZORUNDA. Arduino ölçümü kendi
+#: temposuyla gönderiyor (bu kurulumda ~2 sn); prob daha kısa süre
+#: toprakta kalırsa aşağıdayken tek bir okuma bile gelmiyor ve kaydedilecek
+#: bir sayı olmuyor — ölçüm sessizce boşa gidiyor. Ölçtük: 2 sn ile hiçbir
+#: okuma yakalanmadı, 4 sn ile her seferinde yakalandı.
+NEM_BEKLEME_SN = 4.0
+
+#: Ölçümün bitkiye ait sayılması için makinenin ona ne kadar yaklaşması
+#: gerektiği. Kayma uygulandığı için makine tam üstünde değil, ama
+#: prob orada.
+NEM_YAKINLIK_MM = 25.0
+
+
+async def _nem_topla(hedefler: list[dict[str, Any]]) -> None:
+    """Dizi sürerken her bitkinin üstündeki okumayı o bitkiye yazar.
+
+    Ayrı bir "oku" adımı yok: prob sürekli okuyor ve ajan her durum
+    paketinde konumla birlikte gönderiyor. Bizim işimiz doğru ANI
+    yakalamak — makine o bitkinin üstünde ve aşağıda.
+    """
+    kalan = {h["ad"]: h for h in hedefler}
+    bitis = time.time() + 900.0
+    yazilan: dict[str, dict[str, Any]] = {}
+    try:
+        while kalan and time.time() < bitis:
+            await asyncio.sleep(0.25)
+            d = merkez.son_durum or {}
+            # OKUMA `son_olcum`DAN, KONUM O OKUMANIN KENDİSİNDEN. Ajan her
+            # ölçüme o anki eksen konumunu ekliyor (`_konum_ekle`); durum
+            # paketinin konumunu kullanmak, iki ayrı andan bir çift
+            # uydurmak olurdu — makine ölçümden sonra kalkmış olabilir.
+            olcum = merkez.son_olcum or {}
+            ham = olcum.get("toprak_nem")
+            if ham in (None, ""):
+                continue
+            kx = _sayi_guvenli(olcum.get("konum_x"), 1e9)
+            ky = _sayi_guvenli(olcum.get("konum_y"), 1e9)
+            kz = _sayi_guvenli(olcum.get("konum_z"),
+                               _sayi_guvenli((d.get("konum") or {}).get("z")))
+            for ad, h in list(kalan.items()):
+                # MAKİNE O BİTKİNİN ÖLÇÜM NOKTASINDA MI. Yakınlık hem
+                # X/Y hem Z: prob toprakta değilken alınan okuma havanın
+                # okuması olur ve onu bitkiye yazmak yalan söylemektir.
+                if (abs(kx - h["mx"]) > NEM_YAKINLIK_MM
+                        or abs(ky - h["my"]) > NEM_YAKINLIK_MM
+                        # Z TOLERANSI DAR VE DAR KALMALI: prob toprakta
+                        # değilken alınan okuma havanın okumasıdır ve onu
+                        # bitkiye yazmak yalan söylemektir.
+                        or abs(kz - h["z"]) > 6.0):
+                    continue
+                yuzde = sulama.nem_yuzde(ham, d.get("toprak_kalib") or {})
+                if yuzde is None:
+                    continue
+                yazilan[ad] = {"nem_yuzde": round(float(yuzde), 1),
+                               "nem_ham": _sayi_guvenli(ham),
+                               "nem_ts": time.time()}
+                kalan.pop(ad, None)
+            if not (d.get("dizi") or {}).get("calisiyor") and yazilan:
+                break
+        if yazilan:
+            await asyncio.to_thread(noktalar.alanlari_yaz, yazilan)
+            await merkez.yayinla({"tip": "tepsi"})
+            await merkez.yayinla({"tip": "bahce", "kuyruk": kuyruk.goruntu(),
+                                  "tazele": True})
+            ozet = " · ".join(f"{a} %{v['nem_yuzde']:.0f}"
+                              for a, v in list(yazilan.items())[:6])
+            await merkez.yayinla({
+                "tip": "gunluk", "seviye": "bilgi",
+                "metin": f"Nem ölçüldü ({len(yazilan)}): {ozet}"})
+        if kalan:
+            await merkez.yayinla({
+                "tip": "gunluk", "seviye": "uyari",
+                "metin": ("Nem okunamadı: " + ", ".join(sorted(kalan))
+                          + " — prob o noktada okuma vermedi.")})
+    except Exception:
+        logger.exception("Nem ölçümü toplanamadı")
 
 
 # --------------------------------------------------------------------------- #
@@ -1121,6 +1270,26 @@ async def api_sulama_onizle(govde: dict[str, Any], jeton: str = Query(default=""
 # --------------------------------------------------------------------------- #
 
 
+def _t_asagi_mm(durum: dict[str, Any]) -> float | None:
+    """Tohum ucunun KENDİ ekseninde ineceği mutlak T değeri.
+
+    Eksen kalibre değilse None: adımlar hiç yazılmıyor ve akış bugünkü
+    hâliyle, her şeyi ana Z yaparak sürüyor. Uydurulmuş bir hedefe
+    sürmek "yanlış MESAFE gitmek" demek.
+    """
+    t = (durum or {}).get("tohum_ucu") or {}
+    if not t.get("kalibre"):
+        return None
+    b = baslar.bas(durum, "tohum")
+    asagi = b.get("t_asagi_mm")
+    if asagi in (None, ""):
+        return None
+    try:
+        return round(float(asagi), 2)
+    except (TypeError, ValueError):
+        return None
+
+
 def _ekim_coz(adlar: list[str]) -> dict[str, Any]:
     """Seçili noktalar için ekim adımlarını üretir."""
     kayitli = {n.get("ad"): n for n in noktalar.hepsi()}
@@ -1154,16 +1323,15 @@ def _ekim_coz(adlar: list[str]) -> dict[str, Any]:
     cozum = ekim.coz(
         hedefler, uc.get("tohumluk_gozleri") or [],
         guvenli_z=guvenli_z, genel_toprak_z=toprak_z, dikim_alanlari=alanlar,
-        lock_reg=int((uc.get("ayar") or {}).get("lock_reg") or 0),
-        uc_takili=uc.get("uc"),
         # Süreler ve onay anahtarı panelden ayarlanıyor; kodda sabit
         # değildi ama kutusu da yoktu.
         vakum_sn=ayar["vakum_sn"], dusme_sn=ayar["dusme_sn"],
         onay=bool(ayar["onay_iste"]),
-        uc_adi=ayar["uc_adi"], bitince_birak=bool(ayar["bitince_birak"]),
-        # Uçlar kalıcı takılıysa uç takma/teyit/birinci onay/uç bırakma
-        # akıştan tamamen çıkıyor (bkz. `ekim.py` başı).
-        uclar_sabit=bool(ayar["uclar_sabit"]),
+        # TOHUM UCUNUN KAYMASI. Üç baş aynı anda takılı; kayma
+        # uygulanmazsa makine merkezi hedefe götürür ve tohum yanlış yere
+        # düşer. Kendi dikey ekseninin hedefi de buradan geçiyor.
+        bas=baslar.bas(durum, "tohum"),
+        t_asagi_mm=_t_asagi_mm(durum),
         # Hazne koordinatları makine sınırlarının içinde mi. Bunu ekim
         # başlarken öğrenmek geç ve kullanıcıyı bugün üç kez durdurdu;
         # panel aynı denetimi koordinat girilirken de yapıyor.
@@ -1185,25 +1353,22 @@ def _ekim_coz(adlar: list[str]) -> dict[str, Any]:
 #
 # Akış (her satır ayrı bir dizi çalıştırması, arada burası bekliyor):
 #
-#     uç tak                         tohum alma ucu (ayar.uc_adi)
-#   ┌ hazne↑   haznenin üstü         → ONAY 1: "uç takılı mı?"
-#   │ al       iniyor                → burası pompayı AÇIYOR
-#   │ taşı     bekle, kalk, hedefe   → ONAY 2: "tohum ucta mı?"
-#   │ ek       in, pompa kapat, kalk
+#   ┌ hazne↑   haznenin üstü         (soru YOK)
+#   │ al       iniyor, tohum ucu kendi ekseniyle de iniyor
+#   │          → burası pompayı AÇIYOR
+#   │ taşı     bekle, tohum ucunu ÇEK, kalk, hedefe → ONAY: "tohum ucta mı?"
+#   │ ek       in, tohum ucu in, pompa kapat, uç çek, kalk
 #   └ (sıradaki bitkiye doğrudan geçiliyor)
 #     home     hepsi bitince, bir kez
-#     uç bırak (ayar.bitince_birak)
 #
-# UÇLAR SABİT TAKILIYKEN (`ayar.uclar_sabit`, VARSAYILAN) yıldızlı
-# satırların HİÇBİRİ çalışmıyor: "uç tak", ondan önceki uç teyidi
-# (`onay_uc`), ONAY 1 ve "uç bırak". Akış doğrudan `hazne` ile başlıyor,
-# `hazne` bitince soru sormadan `al`a geçiyor, home'dan sonra oturum
-# kapanıyor. Uç yuvası koordinatlarına giden tek bir hareket kalmıyor.
+# UÇ DEĞİŞTİRME YOK. Üç baş (sulama başlığı, nem probu, tohum ucu) Z
+# ekseninin ucuna kalıcı olarak vidalı; "uç tak", uç teyidi, birinci onay
+# ve "uç bırak" kaldırıldı. Hepsi olmayan bir işi doğruluyordu ve uç
+# yuvası koordinatlarına giden tek bir hareket kalmadı.
 #
-# Sebep: bu makinede uçlar kalıcı olarak takılı, yuvadan alıp bırakma
-# hiç yapılmıyor. Sorulan soru her seferinde "evet" cevaplanan bir soru,
-# yapılan hareket ise boşuna. Kod silinmedi, yalnız akışın yolundan
-# çıkarıldı — anahtar kapatılırsa eski davranış aynen geri geliyor.
+# TOHUM UCUNUN KAYMASI HER ADIMDA. Üçü aynı anda takılı olduğu için
+# tohum ucu Z'nin merkezinde değil: makine `hedef + kayma`ya gidiyor.
+# Kayma uygulanmazsa tohum ortadaki başın altına düşer.
 #
 # Döngü bitki başına baştan işliyor ve KARIŞMIYOR: bir sonraki parça
 # ancak öncekinin bittiği ajanın durum paketinde görülünce gönderiliyor.
@@ -1212,13 +1377,12 @@ def _ekim_coz(adlar: list[str]) -> dict[str, Any]:
 # için yatağın bir ucundan öbürüne iki fazladan yolculuk demek ve sahada
 # zaman kaybettirdi.
 #
-# İKİ ONAYIN SEBEBİ. `lock_reg` ve `presence_reg` bağlı değil; ikisi de
-# makinenin BİLEMEDİĞİ bir şeyi soruyor. Özellikle ikincisi: vakum
-# tohumu tutamazsa ya da yolda düşürürse yazılım fark etmiyor, iniyor,
-# pompayı kapatıyor ve "ekildi" diyor.
+# TEK ONAYIN SEBEBİ. Tohum sensörü bağlı değil: vakum tohumu tutamazsa
+# ya da yolda düşürürse yazılım fark etmiyor, iniyor, pompayı kapatıyor
+# ve "ekildi" diyor — geriye boş bir çukur kalıyor.
 #
-# YÜRÜTÜCÜ DEĞİŞMİYOR. `ajan/dizi.py`ye yeni adım tipi eklenmedi; aynı
-# adımlar parçalara bölünüp mevcut `dizi_baslat` ile koşuluyor.
+# YÜRÜTÜCÜYE TEK ADIM TİPİ EKLENDİ: `uc_dikey`, tohum ucunun kendi
+# dikey ekseni için. Başka her şey aynı `dizi_baslat` ile koşuyor.
 #
 # POMPAYI BURASI AÇIYOR. `dizi._roleleri_kapat` bir dizinin açtığı
 # röleyi dizi biterken kapatıyor; pompa dizinin içinde açılsaydı "al"
@@ -1244,24 +1408,14 @@ class EkimOturumu:
         self.ozet: list[dict[str, Any]] = []
         self.plan: list[dict[str, Any]] = []
         self.sira = 0                  # kaçıncı bitki
-        self.parca = ""                # uc | hazne | al | tasi | ek | iptal | birak
-        self.durum = "bos"             # bos|calisiyor|onay1|onay2|bitti|iptal|hata
+        self.parca = ""                # hazne | al | tasi | ek | iptal
+        self.durum = "bos"             # bos|calisiyor|onay2|bitti|iptal|hata
         self.hata = ""
         self.mesaj = ""
         self.pompa_acik = False
         self.guvenli_z = 0.0
         self.dusme_sn = ekim.DUSME_SANIYE
-        self.uc_adi = ekim.UC_ADI
-        self.bitince_birak = True
         self.onay_istiyor = True
-        # Uçlar kalıcı takılı mı. Açıkken uç takma, uç teyidi, birinci
-        # onay ve uç bırakma akışta HİÇ yer almıyor.
-        self.uclar_sabit = True
-        # Uç değiştirmeden önce kafada ne olduğu SORULACAK mı, ve o an
-        # yazılımın inancı ne. İnanç bir ölçüm değil: kilit servosu ve
-        # varlık sensörü bağlı değilken yazılım yalnız hatırlıyor.
-        self.uc_teyit_gerek = False
-        self.uc_inanc = ""
         self.basladi_mi = False        # bu parçanın çalıştığını GÖRDÜK mü
         self.ekilen: list[str] = []
         # Seçimde olup EKİLMEYECEKLER (türsüz noktalar). Onay kutusunda
@@ -1272,7 +1426,7 @@ class EkimOturumu:
     # --- görünüm ------------------------------------------------------
     def goruntu(self) -> dict[str, Any]:
         o = self.ozet[self.sira] if self.sira < len(self.ozet) else {}
-        onay = self.durum in ("onay_uc", "onay1", "onay2")
+        onay = self.durum == "onay2"
         return {
             "aktif": self.aktif,
             "durum": self.durum,
@@ -1284,20 +1438,11 @@ class EkimOturumu:
             "tur": o.get("tur", ""),
             "tur_ad": o.get("tur_ad", ""),
             "hazne": o.get("hazne", ""),
-            "uc_adi": self.uc_adi,
             # NEREDE DURDUĞU. Kullanıcı makineye bakarak onaylayacak ama
             # hangi haznenin ya da hangi bitkinin başında olduğunu bilmeli.
             "konum": self._konum(),
             "soru": self._soru() if onay else "",
             "gerekce": ekim.GEREKCE.get(self.durum, "") if onay else "",
-            # Uç teyidi için: yazılımın inancı ve düzeltme gerekip
-            # gerekmediği. Panel düzeltme satırını buna bakarak açıyor.
-            "uc_teyit": self.durum == "onay_uc",
-            "uc_inanc": self._inanc(),
-            # Ekim hangi ucu istiyor — kullanıcı onaylamadan önce
-            # "kafada tool2 var, ekim tool3 istiyor" diyebilelim.
-            "uc_gereken": self.uc_adi,
-            "uclar_sabit": self.uclar_sabit,
             "atlanan": list(self.atlanan),
             "pompa_acik": self.pompa_acik,
             "hata": self.hata,
@@ -1305,36 +1450,18 @@ class EkimOturumu:
             "ekilen": list(self.ekilen),
         }
 
-    def _inanc(self) -> str:
-        """Yazılımın ŞU ANKİ inancı — anlık, saklanmış değil.
-
-        Kullanıcı teyit ekranından kaydı düzeltebiliyor; saklanmış bir
-        kopya gösterseydik düzeltmeden sonra ekranda eski ad kalır ve
-        kullanıcı düzeltmenin işlemediğini sanardı.
-        """
-        return str(((merkez.son_durum or {}).get("uc") or {}).get("uc") or "")
-
     def _soru(self) -> str:
-        """Uç teyidinin sorusu İNANCA göre kuruluyor — sabit metin
-        "kafada ne var" derdi, oysa asıl bilgi yazılımın NE SANDIĞI."""
-        if self.durum == "onay_uc":
-            inanc = self._inanc()
-            return (f"Yazılım kafada '{inanc}' olduğunu sanıyor. Doğru mu?"
-                    if inanc
-                    else "Yazılım kafanın boş olduğunu sanıyor. Doğru mu?")
         return ekim.SORU.get(self.durum, "")
 
     def asama(self) -> str:
         """Panelde tek satırda ne yaptığı — çalışırken de görünsün."""
         return {
-            "uc": f"'{self.uc_adi}' ucu takılıyor",
             "hazne": "haznenin üstüne gidiyor",
-            "al": "hazneye iniyor",
+            "al": "hazneye iniyor, tohum ucu kendi ekseniyle iniyor",
             "tasi": "tohumu hedefe taşıyor",
             "ek": "tohumu bırakıyor",
             "home": "home'a dönüyor",
             "iptal": "tohum hazneye geri konuyor",
-            "birak": "uç yuvasına bırakılıyor",
         }.get(self.parca, "")
 
     def _konum(self) -> dict[str, Any]:
@@ -1370,21 +1497,8 @@ async def _ekim_baslat(cozum: dict[str, Any]) -> dict[str, Any]:
     _ekim.plan = cozum["plan"]
     _ekim.guvenli_z = float(cozum.get("guvenli_z") or 0.0)
     _ekim.dusme_sn = float(cozum.get("dusme_sn") or ekim.DUSME_SANIYE)
-    _ekim.uc_adi = str(cozum.get("uc_adi") or ekim.UC_ADI)
-    _ekim.bitince_birak = bool(cozum.get("bitince_birak"))
     _ekim.onay_istiyor = bool(cozum.get("onay"))
-    _ekim.uclar_sabit = bool(cozum.get("uclar_sabit"))
 
-    if cozum.get("kilit_yok") and not _ekim.uclar_sabit:
-        # GÜVENLİK DENETİMİ İNSAN ONAYIYLA DEĞİŞTİ — günlüğe yazılıyor.
-        await _ekim_gunluk(
-            "uç kilidi bağlı değil (lock_reg = 0); şart onay adımıyla "
-            "değiştirildi — ucun takılı olduğunu kullanıcı doğrulayacak.",
-            "uyari")
-    # ATLANANLAR SESSİZ GEÇMİYOR. Seçimde türsüz nokta varsa ekim artık
-    # durmuyor ama kullanıcı neyin ekilip neyin atlandığını görmeli:
-    # "6 bitki ekilecek, 6 türsüz nokta atlanacak".
-    _ekim.atlanan = list(cozum.get("atlanan") or [])
     if _ekim.atlanan:
         await _ekim_gunluk(
             f"{len(_ekim.atlanan)} türsüz nokta atlandı "
@@ -1396,38 +1510,19 @@ async def _ekim_baslat(cozum: dict[str, Any]) -> dict[str, Any]:
         f"ekim başladı — {len(_ekim.ozet)} bitki, hazne: "
         + ", ".join(cozum.get("kullanilan_hazneler") or ["?"]))
 
-    # UÇLAR SABİT TAKILIYSA UÇ İŞİ HİÇ YOK: ne teyit, ne takma, ne
-    # birinci onay. Doğrudan ilk bitkinin haznesinin üstüne gidiliyor.
-    # Uç yuvası koordinatlarına giden hiçbir hareket üretilmiyor.
-    if _ekim.uclar_sabit:
+    # UÇ İŞİ YOK. Üç baş kalıcı olarak vidalı; takma, teyit ve birinci
+    # onay kaldırıldı. Doğrudan ilk bitkinin haznesinin üstüne gidiliyor
+    # ve uç yuvası koordinatlarına giden hiçbir hareket üretilmiyor.
+    bas_ = cozum.get("bas") or {}
+    if bas_.get("dx") or bas_.get("dy"):
         await _ekim_gunluk(
-            "uçlar sabit takılı — uç takma, uç teyidi ve birinci onay "
-            "atlandı; doğrudan hazneye gidiliyor")
-        await _ekim_parca_baslat("hazne")
-        return {"ok": True,
-                "mesaj": f"Ekim başladı — {len(_ekim.ozet)} bitki, "
-                         "doğrudan hazneye gidiliyor",
-                "ekim": _ekim.goruntu()}
-
-    # UÇ ÖNCE. Uç takılı değilken hazneye inmek tepsiyi kırar; kilit
-    # servosu bunu doğrulayamadığı için sıra da önemli.
-    #
-    # AMA ÖNCE KAFADA NE OLDUĞUNU TEYİT ET. `degistir` yazılımın
-    # inancına bakıp "önce şunu bırakayım" diyor; inanç yanlışsa makine
-    # elde olmayan bir ucun yuvasına iniyor. Yazılım bunu ölçemediğini
-    # biliyor, o hâlde sormalı.
-    uc_d = (merkez.son_durum or {}).get("uc") or {}
-    _ekim.uc_teyit_gerek = uc_d.get("dogrulanabilir") is False
-    _ekim.uc_inanc = str(uc_d.get("uc") or "")
-    if _ekim.uc_teyit_gerek:
-        _ekim.durum = "onay_uc"
-        _ekim.parca = "uc"
-        await _ekim_yayinla()
-        return {"ok": True,
-                "mesaj": f"Ekim başladı — {len(_ekim.ozet)} bitki, "
-                         "önce uç durumu teyidi",
-                "ekim": _ekim.goruntu()}
-    await _ekim_parca_baslat("uc", ekim.uc_parcasi(_ekim.uc_adi))
+            f"tohum ucu kayması uygulanıyor: {_sayi_guvenli(bas_.get('dx')):+.0f}"
+            f"/{_sayi_guvenli(bas_.get('dy')):+.0f} mm")
+    if cozum.get("t_asagi_mm") is not None:
+        await _ekim_gunluk(
+            f"tohum ucu kendi ekseniyle de inecek "
+            f"(T {_sayi_guvenli(cozum.get('t_asagi_mm')):.1f} mm)")
+    await _ekim_parca_baslat("hazne")
     return {"ok": True,
             "mesaj": f"Ekim başladı — {len(_ekim.ozet)} bitki",
             "ekim": _ekim.goruntu()}
@@ -1496,20 +1591,10 @@ async def _ekim_ilerlet() -> None:
 
 
 async def _ekim_ilerlet_ic(parca: str) -> None:
-    if parca == "uc":
-        # Uç takıldı; ilk bitkinin haznesine gidiliyor.
-        await _ekim_parca_baslat("hazne")
-        return
-
     if parca == "hazne":
-        # BİRİNCİ ONAY "uç takılı mı" diye soruyor. Uçlar sabit takılıysa
-        # takma diye bir iş yok ve doğrulanacak bir şey de yok: uç zaten
-        # orada. Onay kapalıysa da durmadan devam — aynı döngü, soru yok.
-        if not _ekim.onay_istiyor or _ekim.uclar_sabit:
-            await _ekim_parca_baslat("al")
-            return
-        _ekim.durum = "onay1"
-        await _ekim_yayinla()
+        # BİRİNCİ ONAY KALDIRILDI: "uç takılı mı" diye soruyordu ve takma
+        # diye bir iş kalmadı. Doğrudan hazneye iniliyor.
+        await _ekim_parca_baslat("al")
         return
 
     if parca == "al":
@@ -1589,18 +1674,7 @@ async def _ekim_bitir(durum: str) -> None:
     if durum == "bitti":
         _ekim.mesaj = f"{ekildi} tohum ekildi."
         await _ekim_gunluk(_ekim.mesaj)
-    # UÇLAR SABİTKEN BIRAKMA YOK: makine home'da olduğu yerde kalıyor.
-    # `cozum` zaten `bitince_birak`ı kapatıyor; burada ikinci kez
-    # bakmak, ayarın sonradan değişmesi hâlinde de akışın tek anlamı
-    # olmasını sağlıyor.
-    if _ekim.bitince_birak and not _ekim.uclar_sabit:
-        # Uç bırakma da bir dizi: bitişini izleyip oturumu ondan sonra
-        # kapatıyoruz, yoksa panel "bitti" derken makine hâlâ hareket
-        # hâlinde olurdu.
-        _ekim.durum = durum
-        await _ekim_gunluk(f"'{_ekim.uc_adi}' ucu yuvasına bırakılıyor")
-        await _ekim_parca_baslat("birak", ekim.uc_birak_parcasi())
-        return
+    # UÇ BIRAKMA YOK: uçlar kalıcı olarak vidalı, makine home'da kalıyor.
     _ekim.durum = durum
     _ekim.aktif = False
     await _ekim_yayinla()
@@ -1681,61 +1755,14 @@ async def api_ekim_onayla(govde: dict[str, Any] | None = None,
     çalışmaması demek.
     """
     _parola_dogrula(jeton)
-    if not _ekim.aktif or _ekim.durum not in ("onay_uc", "onay1", "onay2"):
+    if not _ekim.aktif or _ekim.durum != "onay2":
         raise HTTPException(
             status_code=409,
             detail=f"Onay beklenmiyor (durum: {_ekim.durum}).")
-    if _ekim.durum == "onay_uc":
-        # BEYAN VARSA ÖNCE O. `None` = kullanıcı bir şey söylemedi
-        # (eski panel, ya da liste hiç açılmadı); "" = "kafa boş" demek.
-        # İkisini ayırt etmek şart: boş dizeyi "söylenmedi" saysaydık
-        # "kafa boş" cevabı hiç işlemezdi.
-        beyan = (govde or {}).get("uc")
-        if beyan is not None:
-            beyan = str(beyan).strip()
-            onceki = _ekim._inanc()
-            if beyan != onceki:
-                sonuc = await merkez.komut_gonder("uc_beyan", {"ad": beyan})
-                if not sonuc.get("ok"):
-                    raise HTTPException(
-                        status_code=422,
-                        detail=("Uç kaydı düzeltilemedi: "
-                                + str(sonuc.get("mesaj") or "ajan reddetti")))
-                # Ajanın yeni durumu bir sonraki pakette gelecek; onay
-                # kararını beklemeden veriyoruz ama inancı da hemen
-                # güncelliyoruz ki günlük doğru yazsın.
-                uc_d = dict((merkez.son_durum or {}).get("uc") or {})
-                uc_d["uc"] = beyan or None
-                merkez.son_durum["uc"] = uc_d
-                await _ekim_gunluk(
-                    f"uç kaydı kullanıcı beyanıyla düzeltildi: "
-                    f"'{onceki or 'boş'}' → '{beyan or 'boş'}' — "
-                    "hiçbir eksen hareket etmedi.", "uyari")
-        # Kullanıcı kaydın doğru olduğunu söyledi; uç değiştirme
-        # ARTIK doğru inançla çalışacak.
-        inanc = _ekim._inanc()
-        # NE YAPILACAĞI GÜNLÜĞE: kullanıcı onayladıktan sonra makinenin
-        # ne yapacağı, onaydan önce söylenenle aynı olmalı.
-        if inanc == _ekim.uc_adi:
-            ne = f"'{_ekim.uc_adi}' zaten takılı sayılıyor — uç için hareket yok"
-        elif inanc:
-            ne = (f"önce '{inanc}' yuvasına bırakılacak, sonra "
-                  f"'{_ekim.uc_adi}' alınacak")
-        else:
-            ne = f"doğrudan '{_ekim.uc_adi}' alınacak"
-        await _ekim_gunluk(
-            f"kafada '{inanc or 'boş'}' olduğu onaylandı — {ne}")
-        await _ekim_parca_baslat("uc", ekim.uc_parcasi(_ekim.uc_adi))
-        return _ekim.goruntu()
     o = _ekim.ozet[_ekim.sira]
-    if _ekim.durum == "onay1":
-        await _ekim_gunluk(
-            f"uç takılı onaylandı — '{o.get('hazne')}' haznesine iniliyor")
-        await _ekim_parca_baslat("al")
-    else:
-        await _ekim_gunluk(
-            f"tohum ucta onaylandı — {o.get('ad')} noktasına ekiliyor")
-        await _ekim_parca_baslat("ek")
+    await _ekim_gunluk(
+        f"tohum ucta onaylandı — {o.get('ad')} noktasına ekiliyor")
+    await _ekim_parca_baslat("ek")
     return _ekim.goruntu()
 
 
@@ -1763,17 +1790,7 @@ async def api_ekim_iptal(govde: dict[str, Any] | None = None,
     ekildi = len(_ekim.ekilen)
     o = _ekim.ozet[_ekim.sira] if _ekim.sira < len(_ekim.ozet) else {}
 
-    if _ekim.durum == "onay_uc":
-        # Henüz hiçbir şey olmadı: makine kımıldamadı, pompa açılmadı.
-        _ekim.aktif = False
-        _ekim.durum = "iptal"
-        _ekim.mesaj = ("Ekim iptal edildi — makine hiç hareket etmedi. "
-                       "Uç durumu teyit edilmedi.")
-        await _ekim_gunluk(_ekim.mesaj)
-        await _ekim_yayinla()
-        return _ekim.goruntu()
-
-    if _ekim.durum not in ("onay1", "onay2"):
+    if _ekim.durum != "onay2":
         # Hareket sürüyor. Önce durdur, sonra pompayı kapat.
         _ekim.aktif = False
         try:
@@ -1785,16 +1802,6 @@ async def api_ekim_iptal(govde: dict[str, Any] | None = None,
         _ekim.mesaj = (f"Ekim durduruldu ({_ekim.asama() or _ekim.parca}). "
                        f"{ekildi} tohum ekilmişti.")
         await _ekim_gunluk(_ekim.mesaj, "uyari")
-        await _ekim_yayinla()
-        return _ekim.goruntu()
-
-    if _ekim.durum == "onay1":
-        _ekim.aktif = False
-        _ekim.durum = "iptal"
-        _ekim.mesaj = (
-            f"İptal edildi — hiçbir şey yapılmadı. Kafa '{o.get('hazne')}' "
-            f"haznesinin üstünde, pompa hiç açılmadı. {ekildi} tohum ekilmişti.")
-        await _ekim_gunluk(_ekim.mesaj)
         await _ekim_yayinla()
         return _ekim.goruntu()
 
@@ -1879,7 +1886,12 @@ async def api_ekim_onizle(govde: dict[str, Any], jeton: str = Query(default=""))
             # Hangi hazneler kullanılacak. "Boşalacak göz" yok artık:
             # hazne tükenmiyor, aynı hazne bütün marullara hizmet ediyor.
             "kullanilan_hazneler": cozum["kullanilan_hazneler"],
-            "uc_adi": cozum["uc_adi"], "uc_takili": cozum["uc_takili"],
+            # TOHUM UCUNUN KAYMASI VE KENDİ EKSENİ. Önizlemenin işi
+            # makinenin NEREYE gideceğini söylemek; kayma uygulanıyorsa
+            # ekranda okunan koordinat da kaymış olmalı.
+            "bas": cozum.get("bas") or {},
+            "t_asagi_mm": cozum.get("t_asagi_mm"),
+            "adimlar": cozum["adimlar"][:80],
             # Seçimde olup ekilmeyecekler. Panel "6 bitki ekilecek,
             # 6 türsüz nokta atlanacak" diyebilsin diye ayrı alan.
             "atlanan": cozum["atlanan"],
@@ -3209,6 +3221,17 @@ def _bahce_veri() -> dict[str, Any]:
         "alanlar": alanlar,
         "sinirlar": sinirlar,
         "sulama_basligi": baslik,
+        # ÜÇ BAŞ VE HER BİRİNİN ERİŞEBİLDİĞİ ALAN. Bahçedeki taralı gölge
+        # o an hangi işin yapılacağına göre çiziliyor: sulama başlığı
+        # 60 mm yanda olduğu için kenarda suyun gidemediği bir şerit var
+        # ve her başın kendi şeridi.
+        "baslar": {
+            k: {**v,
+                "ad": baslar.BAS_ADI.get(k, k),
+                "erisim": baslar.erisim(v, sinirlar)}
+            for k, v in baslar.hepsi(merkez.son_durum or {}).items()},
+        "is_basi": baslar.IS_BASI,
+        "tohum_ucu": (merkez.son_durum or {}).get("tohum_ucu") or {},
         "bolgeler": durum.get("bolgeler") or [],
         "konum": durum.get("konum") or {},
         "ekim": _bahce_ekim_ozet(),
@@ -3252,8 +3275,6 @@ def _bahce_ekim_ozet() -> dict[str, Any]:
         return {"aktif": False, "onay": "", "soru": "", "sira": 0, "toplam": 0}
     soru = {
         "onay2": "Robot tohumu aldı. Ucunda duruyorsa devam ettirin.",
-        "onay1": "Uç takılı mı?",
-        "onay_uc": "Kafada hangi uç var?",
     }.get(str(g.get("durum") or ""), "")
     return {
         "aktif": True,
@@ -3304,7 +3325,7 @@ async def api_bahce_is(govde: dict[str, Any], jeton: str = Query(default="")):
     _parola_dogrula(jeton)
     tip = str(govde.get("tip") or "")
     adlar = [str(a) for a in (govde.get("noktalar") or []) if str(a).strip()]
-    if tip not in ("sula", "ek", "gez", "foto"):
+    if tip not in ("sula", "ek", "gez", "foto", "nem"):
         raise HTTPException(status_code=400, detail=f"Bilinmeyen iş: {tip!r}")
     if not adlar:
         raise HTTPException(status_code=400, detail="İş için nokta gerekiyor")
@@ -3312,7 +3333,7 @@ async def api_bahce_is(govde: dict[str, Any], jeton: str = Query(default="")):
         raise HTTPException(status_code=400,
                             detail=f"Tek işte en fazla {AZAMI_SECIM} bitki olabilir")
     etiketler = {"sula": "Sulama", "ek": "Ekim", "gez": "Ziyaret",
-                 "foto": "Fotoğraf"}
+                 "foto": "Fotoğraf", "nem": "Nem ölçümü"}
     try:
         kayit = kuyruk.ekle(tip, f"{etiketler[tip]} · {len(adlar)} bitki", adlar,
                             {"saniye": govde.get("saniye")})
@@ -3729,7 +3750,8 @@ async def _kuyruk_calistir(is_: dict[str, Any]) -> str:
     await api_toplu(govde, jeton=PANEL_PAROLA)
     # Dizi başladı; bitmesini bekliyoruz ki sıradaki iş üstüne binmesin.
     await _dizi_bitmesini_bekle()
-    return {"sula": "sulandı", "ek": "ekildi", "gez": "gidildi"}.get(tip, "bitti")
+    return {"sula": "sulandı", "ek": "ekildi", "gez": "gidildi",
+            "nem": "nem ölçüldü"}.get(tip, "bitti")
 
 
 async def _dizi_bitmesini_bekle(azami_sn: float = 900.0) -> None:
