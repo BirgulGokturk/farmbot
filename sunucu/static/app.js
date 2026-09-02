@@ -4630,7 +4630,7 @@ function roleDurumSenkron(o) {
 function eksenHizYaz(d) {
   const ozet = $("#eksen-hiz-ozet");
   const genel = d.hiz != null ? Math.round(Number(d.hiz)) : null;
-  ["x", "y", "z"].forEach((e) => {
+  ["x", "y", "z", "t"].forEach((e) => {
     const el = $("#hiz-" + e);
     if (!el || document.activeElement === el) return;
     const v = d["hiz_" + e];
@@ -4639,7 +4639,7 @@ function eksenHizYaz(d) {
   if (ozet) {
     const yaz = (e) => (d["hiz_" + e] == null ? "genel" : Math.round(Number(d["hiz_" + e])));
     ozet.textContent = d.hiz == null ? "—"
-      : `X ${yaz("x")} · Y ${yaz("y")} · Z ${yaz("z")}  (genel ${genel})`;
+      : `X ${yaz("x")} · Y ${yaz("y")} · Z ${yaz("z")} · T ${yaz("t")}  (genel ${genel})`;
   }
 }
 
@@ -5080,10 +5080,12 @@ function olaylariBagla() {
     hizKaydet.onclick = () => {
       // Boş alan "bu eksende genel hız geçerli" demek — sıfır değil null.
       const oku = (e) => {
-        const v = $("#hiz-" + e).value.trim();
+        const el = $("#hiz-" + e);
+        const v = el ? el.value.trim() : "";
         return v === "" ? null : Number(v);
       };
-      komutGonder("hiz_eksen", { x: oku("x"), y: oku("y"), z: oku("z") });
+      komutGonder("hiz_eksen",
+        { x: oku("x"), y: oku("y"), z: oku("z"), t: oku("t") });
     };
   }
 

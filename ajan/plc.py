@@ -391,11 +391,16 @@ class Gantry:
         # EKSEN BAŞINA HIZ. Z dikey ve yük altında; X/Y ile aynı hızda
         # sürülmesi için bir sebep yok. Girilmemiş eksen genel `hiz`e
         # düşüyor, yani ayar dosyasına dokunmayan kurulumda davranış
-        # değişmiyor. Sıra [X, Y, Z].
+        # değişmiyor. Sıra [X, Y, Z, T].
+        #
+        # T (tohum ucunun kendi dikey ekseni) kısa stroklu ve toprağa
+        # giriyor; genel X/Y hızıyla sürülmesi için sebep yok, bu yüzden
+        # varsayılanı Z gibi ayrı veriliyor.
         self.hiz_eksen: list[float | None] = [
             self._hiz_oku(ayar, "hiz_x"),
             self._hiz_oku(ayar, "hiz_y"),
             self._hiz_oku(ayar, "hiz_z"),
+            self._hiz_oku(ayar, "hiz_t"),
         ]
         self.ivme = float(ayar.get("ivme", 100.0))
         self.yavaslama = float(ayar.get("yavaslama", 100.0))
@@ -598,6 +603,8 @@ class Gantry:
                 "hiz_x": self.hiz_eksen[0],
                 "hiz_y": self.hiz_eksen[1],
                 "hiz_z": self.hiz_eksen[2],
+                "hiz_t": (self.hiz_eksen[3]
+                          if len(self.hiz_eksen) > T else None),
                 "bolgeler": (self.bolgeler.liste if self.bolgeler else []),
                 "esnetme_acik": bool(self.bolgeler and self.bolgeler.esnetme_acik),
                 "islem": self._islem_ad if self.hareket_ediyor else "",

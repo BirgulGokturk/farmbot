@@ -1833,7 +1833,11 @@
             Değişiklik <b>o an</b> geçerli olur, ajan yeniden başlayınca
             sıfırlanır. Kalıcı olması için Pi'de <code>ajan/ayarlar.json</code>
             içindeki <code>plc</code> bölümüne <code>hiz_x</code>,
-            <code>hiz_y</code>, <code>hiz_z</code> yazın.
+            <code>hiz_y</code>, <code>hiz_z</code>, <code>hiz_t</code>
+            yazın.<br><br>
+            <b>T</b>, tohum ucunun kendi dikey ekseni — ana Z değil.
+            Stroku kısa (0–55 mm) ve toprağa giriyor; varsayılanı
+            Z gibi 10 mm/s.
           </p>
           <div class="satir-8">
             <div class="alan">
@@ -1847,6 +1851,12 @@
             <div class="alan">
               <label for="hiz-z">Z <span class="ikincil">mm/s</span></label>
               <input type="number" id="hiz-z" min="1" max="200" step="1" placeholder="genel">
+            </div>
+            <div class="alan">
+              <label for="hiz-t" title="Tohum ucunun kendi dikey ekseni">T
+                <span class="ikincil">mm/s</span></label>
+              <input type="number" id="hiz-t" min="1" max="200" step="1" placeholder="genel"
+                     title="Tohum ucunun kendi dikey ekseni — ana Z değil">
             </div>
           </div>
           <button class="dugme birincil" id="d-eksen-hiz-kaydet">Uygula</button>

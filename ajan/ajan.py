@@ -86,6 +86,9 @@ VARSAYILAN_AYAR = {
         "hiz_x": 20.0,
         "hiz_y": 20.0,
         "hiz_z": 10.0,
+        # T = tohum ucunun kendi dikey ekseni. Toplam stroku 55 mm ve
+        # toprağa giriyor; X/Y hızında sürülmesi için sebep yok.
+        "hiz_t": 10.0,
         "ivme": 100.0,
         "yavaslama": 100.0,
         "kalibrasyon_dosyasi": "gantry_calib.json",
@@ -596,7 +599,7 @@ class Ajan:
                 # düzenlenir — ajanın o dosyayı kendi yeniden yazması, içinde
                 # jeton ve PLC adresi de olduğu için istenmiyor.
                 yeni_hiz = []
-                for eksen in ("x", "y", "z"):
+                for eksen in ("x", "y", "z", "t"):
                     deger = arg.get(eksen)
                     if deger in (None, ""):
                         yeni_hiz.append(None)
@@ -612,7 +615,7 @@ class Ajan:
                 self.plc.hiz_eksen = yeni_hiz
                 yazi = " · ".join(
                     f"{ad_}{'genel' if h is None else f'{h:.0f}'}"
-                    for ad_, h in zip(("X", "Y", "Z"), yeni_hiz))
+                    for ad_, h in zip(("X", "Y", "Z", "T"), yeni_hiz))
                 return {"ok": True, "mesaj": f"Eksen hızları: {yazi}"}
 
             if ad == "role":

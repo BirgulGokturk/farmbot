@@ -77,7 +77,7 @@ IZINLI_KOMUTLAR = {
     "acil_temizle",  # {}                            — mandalı temizle
     "enable",        # {"deger": true|false}         — sürücü torku
     "hiz",           # {"mm_s": 20}
-    "hiz_eksen",     # {"x":60,"y":null,"z":8} — eksen başına; null = genel hız
+    "hiz_eksen",     # {"x":60,"y":null,"z":8,"t":10} — eksen başına; null = genel
     "kalibrasyon_kaydet",  # {"eksenler":[{home,min,max}x3]} — cpm/dir hariç
     "bolge_listele", # {}                            — ajandaki yasak bölgeler
     "bolge_kaydet",  # {"bolgeler":[…]}              — doğrular, dosyaya yazar
