@@ -4712,7 +4712,11 @@ function durumGuncelle(d) {
     if (!Number.isFinite(n)) return "—";
     return Number.isInteger(n) ? sayi(n, 0) : sayi(n, 2);
   };
-  ["x", "y", "z"].forEach((eksen) => {
+  // T DE BURADA. Tohum ucunun kendi ekseni; nerede durduğunu görmeden
+  // "uç yukarıda mı" sorusunun cevabı yok ve yatay kilit tam o sayıya
+  // bakıyor. Kutu yoksa (eski sayfa) sessizce atlanıyor.
+  ["x", "y", "z", "t"].forEach((eksen) => {
+    if (!$(`#k-${eksen}`)) return;
     $(`#k-${eksen}`).innerHTML = birimli(k[eksen]);
     const sinir = (d.sinirlar || {})[eksen];
     $(`#s-${eksen}`).textContent = sinir
