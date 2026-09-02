@@ -710,12 +710,17 @@
                  başları birden indiriyor; bu yalnız tohum ucunu indirip
                  kaldırıyor. Kalibrasyon girilmemişse kilitli ve sebebi
                  aşağıdaki satırda yazıyor. -->
+            <!-- OKLAR TERS: T bir UZAMA ekseni, milimetre AŞAĞI doğru
+                 büyüyor (0 mm = uç tamamen yukarıda). X/Y/Z'de yukarı ok
+                 "milimetre artsın" demek; burada aynısını yapmak yukarı
+                 okuyla ucu toprağa indirmek olurdu. Ok fiziksel yönü
+                 gösteriyor, sayının yönünü değil. -->
             <div class="jog-z" id="jog-t">
-              <button class="dugme jog" data-eksen="t" data-yon="1"
-                      title="Tohum ucu T+">T▲</button>
-              <div class="jog-z-etiket">T</div>
               <button class="dugme jog" data-eksen="t" data-yon="-1"
-                      title="Tohum ucu T−">T▼</button>
+                      title="Tohum ucunu kaldır (T azalır)">T▲</button>
+              <div class="jog-z-etiket">T</div>
+              <button class="dugme jog" data-eksen="t" data-yon="1"
+                      title="Tohum ucunu indir (T artar)">T▼</button>
             </div>
           </div>
 
