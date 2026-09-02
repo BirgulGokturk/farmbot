@@ -1875,7 +1875,10 @@ async def api_ekim_iptal(govde: dict[str, Any] | None = None,
                    f"{ekildi} tohum ekilmişti.")
     await _ekim_gunluk(_ekim.mesaj)
     await _ekim_parca_baslat("iptal", ekim.iptal_parcasi(
-        hazne, guvenli_z=_ekim.guvenli_z, dusme_sn=_ekim.dusme_sn))
+        hazne, guvenli_z=_ekim.guvenli_z, dusme_sn=_ekim.dusme_sn,
+        # Geri koyarken de tohum ucunun kayması geçerli — hazneye giderken
+        # hangi kayma kullanıldıysa dönerken de aynısı.
+        bas=baslar.bas(merkez.son_durum, "tohum")))
     return _ekim.goruntu()
 
 

@@ -243,7 +243,8 @@ def hazne_bul(tur: str, gozler: list[dict[str, Any]] | None
 
 
 def hazne_denetle(hazne: dict[str, Any], sinirlar: dict[str, Any] | None,
-                  guvenli_z: float | None = None) -> list[str]:
+                  guvenli_z: float | None = None,
+                  bas: dict[str, float] | None = None) -> list[str]:
     """Bir hazne koordinatının SORUNLARI — koordinat girilirken.
 
     Bunu ekim başlarken söylemek geç: kullanıcı Y645'e bir hazne
@@ -256,6 +257,14 @@ def hazne_denetle(hazne: dict[str, Any], sinirlar: dict[str, Any] | None,
     """
     sorun: list[str] = []
     s = sinirlar or {}
+    # SINIR MAKİNENİN GİDECEĞİ YERE BAKIYOR, haznenin kendisine değil.
+    #
+    # Hazne koordinatı "tohum ucunun gireceği yer"; makine oraya + ucun
+    # kayması kadar gidiyor. Ham koordinatı denetlemek, ulaşılamayan bir
+    # hazneyi geçerli göstermek demekti — sorun ancak ekim başlayınca
+    # ortaya çıkardı ve orada geç.
+    kayma = {"x": _sayi((bas or {}).get("dx")), "y": _sayi((bas or {}).get("dy")),
+             "z": 0.0}
     for eksen in ("x", "y", "z"):
         deger = hazne.get(eksen)
         if deger is None:
@@ -265,11 +274,14 @@ def hazne_denetle(hazne: dict[str, Any], sinirlar: dict[str, Any] | None,
         alt, ust = sinir.get("min"), sinir.get("max")
         if alt is None or ust is None:
             continue
-        d = _sayi(deger)
+        d = _sayi(deger) + kayma[eksen]
         if d < float(alt) - 0.5 or d > float(ust) + 0.5:
+            ek = ("" if not kayma[eksen] else
+                  f" (hazne {_sayi(deger):.0f} + tohum ucu kayması "
+                  f"{kayma[eksen]:+.0f})")
             sorun.append(
-                f"{eksen.upper()}{d:.0f} makine sınırının dışında "
-                f"({float(alt):.0f}–{float(ust):.0f}) — makine oraya ulaşamaz")
+                f"Makine {eksen.upper()}{d:.0f}'a gitmeli{ek}; sınır "
+                f"{float(alt):.0f}–{float(ust):.0f} — oraya ulaşamaz")
     if guvenli_z is not None and hazne.get("z") is not None:
         gz = _sayi(hazne.get("z"))
         if gz >= float(guvenli_z):
@@ -343,6 +355,18 @@ def parcalar_bir_tohum(hedef: dict[str, Any], hazne: dict[str, Any], *,
     dx = _sayi((bas or {}).get("dx"))
     dy = _sayi((bas or {}).get("dy"))
     tx, ty = round(ix + dx, 2), round(iy + dy, 2)
+    # KAYMA HAZNEYE DE UYGULANIYOR.
+    #
+    # Eskiden yalnız hedefe uygulanıyordu ve hazneye ham koordinatla
+    # gidiliyordu. Sonuç: makine REFERANS noktasını haznenin üstüne
+    # getiriyor, tohum ucu ise kayması kadar yanda kalıyor — sahada
+    # haznenin üstüne nem probu (kayması 0/0, yani referansın kendisi)
+    # iniyordu ve tohum hiç alınmıyordu.
+    #
+    # Hazne koordinatı da bir İŞ koordinatı: "tohum ucunun gireceği yer".
+    # Hedefle aynı kuraldan geçmeli, yoksa aynı sayı iki farklı anlama
+    # gelir ve hangisinin ne olduğu kimsenin aklında kalmaz.
+    mhx, mhy = round(hx + dx, 2), round(hy + dy, 2)
     ha = str(hazne.get("ad") or "hazne")
     ta = str(hedef.get("ad") or "hedef")
 
@@ -368,12 +392,14 @@ def parcalar_bir_tohum(hedef: dict[str, Any], hazne: dict[str, Any], *,
     return {
         # Haznenin ÜSTÜ. Burada durup soruyoruz; henüz inmedi.
         "hazne": [
-            {"tip": "nokta", "ad": f"{ha}↑", "x": hx, "y": hy, "z": guvenli_z},
+            {"tip": "nokta", "ad": f"{ha}↑", "x": mhx, "y": mhy, "z": guvenli_z,
+             "is_x": hx, "is_y": hy},
         ],
         # İniyor. Pompayı bundan SONRA sunucu açıyor — özgün sıra: önce
         # in, sonra pompa. Tohum ucu kendi ekseniyle de son santimi iniyor.
         "al": [
-            {"tip": "nokta", "ad": ha, "x": hx, "y": hy, "z": hz},
+            {"tip": "nokta", "ad": ha, "x": mhx, "y": mhy, "z": hz,
+             "is_x": hx, "is_y": hy},
         ] + _inis(haz_t),
         # Vakum tutsun diye bekliyor, ucu çekiyor, kalkıyor, hedefin
         # üstüne gidiyor. UÇ ÖNCE ÇEKİLİYOR: aşağıdayken yatay hareket
@@ -381,7 +407,8 @@ def parcalar_bir_tohum(hedef: dict[str, Any], hazne: dict[str, Any], *,
         "tasi": [
             {"tip": "bekle", "saniye": vakum_sn},
         ] + _kalk() + [
-            {"tip": "nokta", "ad": f"{ha}↑", "x": hx, "y": hy, "z": guvenli_z},
+            {"tip": "nokta", "ad": f"{ha}↑", "x": mhx, "y": mhy, "z": guvenli_z,
+             "is_x": hx, "is_y": hy},
             {"tip": "nokta", "ad": f"{ta}↑", "x": tx, "y": ty, "z": guvenli_z,
              "is_x": ix, "is_y": iy},
         ],
@@ -400,7 +427,8 @@ def parcalar_bir_tohum(hedef: dict[str, Any], hazne: dict[str, Any], *,
 
 
 def iptal_parcasi(hazne: dict[str, Any], *, guvenli_z: float,
-                  dusme_sn: float = DUSME_SANIYE) -> list[dict[str, Any]]:
+                  dusme_sn: float = DUSME_SANIYE,
+                  bas: dict[str, float] | None = None) -> list[dict[str, Any]]:
     """İkinci onayda "tohumu hazneye geri koy" denirse çalışacak adımlar.
 
     Kafa ikinci onayda HEDEFİN üstünde ve pompa açık. Geri koymak
@@ -409,13 +437,20 @@ def iptal_parcasi(hazne: dict[str, Any], *, guvenli_z: float,
     tükenmeyen bir kaynağa bir tohum geri koymak onu değiştirmiyor.
     """
     hx, hy, hz = _sayi(hazne.get("x")), _sayi(hazne.get("y")), _sayi(hazne.get("z"))
+    # Geri koyarken de tohum ucunun kayması geçerli: aynı hazneye aynı
+    # yoldan dönülmeli, yoksa tohum haznenin yanına düşer.
+    mhx = round(hx + _sayi((bas or {}).get("dx")), 2)
+    mhy = round(hy + _sayi((bas or {}).get("dy")), 2)
     ad = str(hazne.get("ad") or "hazne")
     return [
-        {"tip": "nokta", "ad": f"{ad}↑", "x": hx, "y": hy, "z": float(guvenli_z)},
-        {"tip": "nokta", "ad": ad, "x": hx, "y": hy, "z": hz},
+        {"tip": "nokta", "ad": f"{ad}↑", "x": mhx, "y": mhy, "z": float(guvenli_z),
+         "is_x": hx, "is_y": hy},
+        {"tip": "nokta", "ad": ad, "x": mhx, "y": mhy, "z": hz,
+         "is_x": hx, "is_y": hy},
         {"tip": "role", "ad": "hava_pompasi", "durum": False},
         {"tip": "bekle", "saniye": float(dusme_sn)},
-        {"tip": "nokta", "ad": f"{ad}↑", "x": hx, "y": hy, "z": float(guvenli_z)},
+        {"tip": "nokta", "ad": f"{ad}↑", "x": mhx, "y": mhy, "z": float(guvenli_z),
+         "is_x": hx, "is_y": hy},
     ]
 
 
