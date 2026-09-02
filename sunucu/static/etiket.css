@@ -1,0 +1,94 @@
+/* AprilTag kalibrasyon bölümü.
+ *
+ * AYRI DOSYA: `stil.css` başka bir oturumda da düzenleniyor ve iki tarafın
+ * dosya sonuna eklediği bloklar her yamada çakışıyordu. Buradaki her kural
+ * `etiket-` ile başlıyor, hiçbir mevcut sınıfı ezmiyor.
+ *
+ * Renkler stil.css'in değişkenlerinden geliyor; kendi paletini kurmuyor ki
+ * panelin geri kalanıyla aynı görünsün. */
+
+.etiket-blok {
+  margin-top: 14px;
+  border: 1px solid var(--cizgi, #2c3a30);
+  border-radius: 12px;
+  padding: 12px 14px;
+  background: var(--kart-2, rgba(255, 255, 255, .02));
+}
+
+.etiket-blok > summary {
+  cursor: pointer;
+  font-weight: 700;
+  list-style: none;
+  min-height: 32px;
+  display: flex;
+  align-items: center;
+}
+
+.etiket-blok > summary::before {
+  content: "▸";
+  margin-right: 8px;
+  transition: transform .15s ease;
+  display: inline-block;
+}
+
+.etiket-blok[open] > summary::before { transform: rotate(90deg); }
+.etiket-blok > summary::-webkit-details-marker { display: none; }
+
+/* Sonuç satırları: solda ad, sağda değer. Uyarı satırı sarı kenarla
+   ayrılıyor — göz "bir şey ters" diye tarayabilsin. */
+.etiket-satir {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--cizgi-yumusak, rgba(255, 255, 255, .06));
+  font-size: 13.5px;
+}
+
+.etiket-satir:last-child { border-bottom: 0; }
+.etiket-satir > span:first-child { color: var(--metin-silik, #8a9a8c); flex: none; }
+.etiket-satir > span:last-child { text-align: right; }
+
+.etiket-satir.uyari {
+  border-left: 3px solid var(--uyari, #e8a33c);
+  padding-left: 9px;
+  margin-left: -12px;
+}
+
+/* Kayıtlı kimlik yeşil, kayıtsız turuncu: turuncu olan yerleşim hesabına
+   giremez ve bunun sebebini aramak zaman kaybıydı. */
+.etiket-var { color: var(--iyi, #4caf50); }
+.etiket-yok { color: var(--uyari, #e8a33c); }
+
+.etiket-iz {
+  color: var(--iyi, #4caf50);
+  font-size: 13px;
+  align-self: center;
+}
+
+/* Önizleme: kare ve üstündeki köşe çizimi tam üst üste durmalı, yoksa
+   kutular etiketin yanına düşer ve doğrulama işe yaramaz. */
+.etiket-onizleme {
+  position: relative;
+  margin-top: 12px;
+  border-radius: 10px;
+  overflow: hidden;
+  max-width: 640px;
+}
+
+.etiket-onizleme img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.etiket-onizleme canvas {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+#etiket-govde input {
+  width: 100%;
+  min-width: 72px;
+}

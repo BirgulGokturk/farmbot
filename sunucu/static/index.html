@@ -7,6 +7,7 @@
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌱</text></svg>">
 <link rel="stylesheet" href="/statik/stil.css">
 <link rel="stylesheet" href="/statik/bahce.css">
+<link rel="stylesheet" href="/statik/etiket.css">
 <!-- Kütüphaneler proje içinde duruyor (CDN değil): panel internetsiz bir yerel
      ağda da açılsın ve dış bir servisin kesintisi paneli düşürmesin. -->
 <script src="/statik/chart.umd.js"></script>
@@ -1147,6 +1148,10 @@
             <button class="dugme" id="d-kalib-olcek-temizle">Sıfırla</button>
           </div>
           <div id="kalib-sonuc" class="gomulu gizli"></div>
+          <!-- AprilTag bolumu kendi dosyasinda kuruluyor (etiket.js);
+               burada yalniz kabi duruyor ki bu dosyada catisma yuzeyi
+               uc satirda kalsin. -->
+          <div id="etiket-bolum"></div>
         </div>
       </section>
       </div>
@@ -2285,5 +2290,6 @@
 <script src="/statik/profil.js"></script>
 <script src="/statik/bahce.js"></script>
 <script src="/statik/app.js"></script>
+<script src="/statik/etiket.js"></script>
 </body>
 </html>
