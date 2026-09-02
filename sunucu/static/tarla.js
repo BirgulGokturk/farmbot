@@ -1576,7 +1576,10 @@
     // olduğunu göstermiyor. Silme uygulanıyor, 30 saniye geri alınabiliyor.
     const govde = { islem, noktalar: adlar };
     if (islem === "sula") {
-      govde.saniye = SULAMA_SANIYE;
+      /* SÜRE ARTIK GÖNDERİLMİYOR. Panel herkese aynı 3 saniyeyi
+       * dayatıyordu ve o sayı hiçbir yerden ayarlanamıyordu; sunucu
+       * şimdi her bitkinin kendi `sulama_saniye` ayarını çözüyor
+       * (bitkinin özeli > tür ezmesi > varsayılan). */
       /* ÖNİZLEME. Sulama geri alınamıyor: su döküldü mü döküldü. Desen
        * açıkken bir bitki birden çok noktaya gidiyor, yani "12 bitki
        * sulanacak" ile "12 bitki, 48 nokta, 3 tanesi reddedilecek"

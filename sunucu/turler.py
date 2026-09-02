@@ -34,7 +34,7 @@ _KILIT = threading.RLock()
 # doğru yol olur.
 DUZENLENEBILIR = ("spread_mm", "sow_depth_mm", "days_to_harvest", "water_ml_per_day",
                   "sulama_deseni", "sulama_oran", "sulama_aci", "sulama_nokta",
-                  "sulama_aciklik_mm", "sulama_nem_esigi")
+                  "sulama_aciklik_mm", "sulama_nem_esigi", "sulama_saniye")
 
 # SULAMA OFSETİ — bitkinin tam üstüne akıtmak her tür için doğru değil.
 # Besleyici kökler kanopinin kenarında (damlama hattı); fideye 80 mm uzağa
@@ -76,6 +76,13 @@ VARSAYILAN = {
     "sulama_nokta": 4.0,
     "sulama_aciklik_mm": 50.0,
     "sulama_nem_esigi": 100.0,
+    # POMPANIN NE KADAR AÇIK KALACAĞI. Panelde sabit 3 saniyeydi ve
+    # kullanıcının onu değiştirmesinin hiçbir yolu yoktu; oysa fide ile
+    # olgun bir marul aynı suyu istemiyor. Diğer sulama ayarlarıyla aynı
+    # ezme zincirinden geçiyor: bitkinin `ozel` alanı > tür ezmesi >
+    # buradaki varsayılan. Desen açıkken bu süre noktalara BÖLÜNÜYOR,
+    # yani toplam su aynı kalıyor.
+    "sulama_saniye": 3.0,
 }
 
 # Hangi alan hangi desende anlamlı — panel gereksiz alanı gizliyor.
@@ -90,6 +97,9 @@ KOSUL = {
 # günden olgun mesafe veriliyor. Bunu bilmeden oran açan kullanıcı,
 # fidenin suyunu 10 cm ötesine döktüğünü fark etmez.
 NOT = {
+    "sulama_saniye": ("Pompanın bu bitki için toplam ne kadar açık kalacağı. "
+                      "Desen açıkken bu süre noktalara bölünüyor — toplam su "
+                      "değişmiyor, yalnız dağılıyor."),
     "sulama_oran": ("Bitkinin O ANKİ yarıçapının kaçta kaçı. 0 = tam üst. "
                     "0,8 tipik: damlama hattının hemen içi. "
                     "DİKKAT: bitkiye yayılım eğrisi (egri_yayilim) bağlı "
@@ -136,6 +146,9 @@ SINIR = {
     # 100 = "nem bakılmaz, her zaman sula" ve VARSAYILAN bu: güncelleme
     # sonrası hiçbir kurulumun sulaması sessizce durmuyor.
     "sulama_nem_esigi": (0.0, 100.0),
+    # Üst sınır 60: bir noktada bir dakikadan uzun su, kaptan taşmak
+    # demek. Alt sınır 0,5 — röle daha kısasını anlamlı biçimde açamıyor.
+    "sulama_saniye": (0.5, 60.0),
 }
 
 BIRIM = {
@@ -149,6 +162,7 @@ BIRIM = {
     "sulama_nokta": "nokta",
     "sulama_aciklik_mm": "mm",
     "sulama_nem_esigi": "% nem",
+    "sulama_saniye": "sn",
 }
 
 BASLIK = {
@@ -162,6 +176,7 @@ BASLIK = {
     "sulama_nokta": "Çember noktası",
     "sulama_aciklik_mm": "Uç açıklığı",
     "sulama_nem_esigi": "Sulama nem eşiği",
+    "sulama_saniye": "Sulama süresi",
 }
 
 

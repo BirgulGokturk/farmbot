@@ -740,7 +740,7 @@ async def api_toplu(govde: dict[str, Any], jeton: str = Query(default="")):
 
     # Sulama süresi: makul bir aralıkta tutuluyor, panelden gelen sayıya
     # körlemesine güvenilmiyor.
-    saniye = max(1.0, min(60.0, float(govde.get("saniye", 3) or 3)))
+    saniye = _istek_saniye(govde)
 
     if islem == "sula":
         cozum = await asyncio.to_thread(_sulama_coz, adlar, saniye)
@@ -977,7 +977,23 @@ async def _nem_topla(hedefler: list[dict[str, Any]]) -> None:
 # --------------------------------------------------------------------------- #
 
 
-def _sulama_coz(adlar: list[str], saniye: float) -> dict[str, Any]:
+def _istek_saniye(govde: dict[str, Any] | None) -> float | None:
+    """İstekteki sulama süresi; verilmemişse None (tür ayarı geçerli).
+
+    BOŞ İLE SIFIR AYRI. Alan hiç gelmediyse "sen karar ver" demek ve her
+    bitki kendi ayarından çözülüyor; bir sayı geldiyse o seferlik hepsini
+    eziyor (tek atımlık deneme için).
+    """
+    ham = (govde or {}).get("saniye")
+    if ham in (None, ""):
+        return None
+    try:
+        return max(0.5, min(60.0, float(ham)))
+    except (TypeError, ValueError):
+        return None
+
+
+def _sulama_coz(adlar: list[str], saniye: float | None) -> dict[str, Any]:
     """Seçili bitkiler için sulama noktalarını ve adım listesini üretir.
 
     Eşzamanlı çağrılmıyor; `asyncio.to_thread` ile tek seferde koşuyor,
@@ -1013,8 +1029,16 @@ def _sulama_coz(adlar: list[str], saniye: float) -> dict[str, Any]:
             adimlar.append({"tip": "nokta", "ad": ad})
             continue
         tur = tur_indeks.get(bitki.get("tur"))
+        # SÜRE BİTKİ BAŞINA ÇÖZÜLÜYOR. Panel herkese aynı sabit 3 saniyeyi
+        # gönderiyordu ve o sayı hiçbir yerden ayarlanamıyordu; oysa fide
+        # ile olgun bir marul aynı suyu istemiyor. İstek açık bir süre
+        # verdiyse o eziyor, vermediyse tür zinciri geçerli.
+        bitki_sn = saniye
+        if bitki_sn is None:
+            bitki_sn = float(sulama.ayar_coz(bitki, tur).get(
+                "sulama_saniye", turler.VARSAYILAN["sulama_saniye"]))
         c = sulama.noktalar(
-            bitki, tur, toplam_saniye=saniye, simdi=simdi, guvenli_z=guvenli_z,
+            bitki, tur, toplam_saniye=bitki_sn, simdi=simdi, guvenli_z=guvenli_z,
             genel_toprak_z=toprak_z, egri_listesi=egri_listesi,
             dikim_alanlari=alanlar, baslik=baslik, okumalar=okumalar,
             toprak_kalib=kalib)
@@ -1251,7 +1275,7 @@ async def api_sulama_onizle(govde: dict[str, Any], jeton: str = Query(default=""
             status_code=400,
             detail=f"Tek seferde en fazla {AZAMI_SECIM} nokta işlenebilir "
                    f"(seçili: {len(adlar)})")
-    saniye = max(1.0, min(60.0, float(govde.get("saniye", 3) or 3)))
+    saniye = _istek_saniye(govde)
     cozum = await asyncio.to_thread(_sulama_coz, adlar, saniye)
     return {"ozet": cozum["ozet"], "ret": cozum["ret"], "uyari": cozum["uyari"],
             "adim": len(cozum["adimlar"]),
