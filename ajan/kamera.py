@@ -82,6 +82,13 @@ VARSAYILAN = {
     # sensöre söylemek. `v4l2-ctl --list-ctrls` neyin ayarlanabildiğini
     # yazıyor ve kameradan kameraya değişiyor, o yüzden serbest sözlük.
     "denetimler": {},
+    # ŞERİT KABLOLU Pi KAMERASININ AYARLARI. `denetimler` UVC (USB) yolunda
+    # `v4l2-ctl` ile yazılıyor; rpicam/libcamera o denetimleri HİÇ tanımıyor,
+    # kendi komut satırı seçeneklerini istiyor ve ölçekleri de farklı
+    # (parlaklık burada -1..1, UVC'de -64..64). Aynı alanda toplamak,
+    # kullanıcının bir kamerada işleyen sayıyı diğerine yazıp sessizce
+    # sonuç alamaması demekti.
+    "pi_secenekleri": {},
     "sahte": False,
     # CİHAZ YOLU SABİT YAZILMIYOR. USB kamera bugün /dev/video8'de ama
     # çıkarılıp takılınca numara değişiyor. `cihaz_adi` doluysa her açılışta
@@ -132,6 +139,46 @@ PLATFORM_SURUCULERI = frozenset({
     "bcm2835-codec",
     "rpivid",
 })
+
+
+#: rpicam-vid / rpicam-still seçenekleri: ad -> (en az, en cok).
+#: Sayısal olanlar; değer aralık dışındaysa kırpılıyor.
+PI_SAYISAL = {
+    "brightness": (-1.0, 1.0),      # 0 varsayılan; +0.1 hafif açar
+    "contrast":   (0.0, 15.0),      # 1.0 varsayılan
+    "saturation": (0.0, 15.0),      # 1.0 varsayılan; 1.4 canlı
+    "sharpness":  (0.0, 15.0),      # 1.0 varsayılan
+    "ev":         (-10.0, 10.0),    # pozlama telafisi — KARANLIK SAHNENİN İLACI
+    "gain":       (0.0, 64.0),      # analog kazanç; yükseği gürültülü
+    "shutter":    (0.0, 200000.0),  # mikrosaniye; 0 = otomatik
+}
+
+#: Değeri sayı değil, sabit bir listeden gelen seçenekler.
+PI_METIN = {
+    "awb": {"auto", "incandescent", "tungsten", "fluorescent", "indoor",
+            "daylight", "cloudy", "custom"},
+    "metering": {"centre", "spot", "average", "custom"},
+    "denoise": {"auto", "off", "cdn_off", "cdn_fast", "cdn_hq"},
+    "exposure": {"normal", "sport", "long"},
+}
+
+
+def pi_secenek_listesi(ayar: dict[str, Any]) -> list[str]:
+    """`pi_secenekleri` sözlüğünü rpicam komut satırı parçalarına çevirir.
+
+    Doğrulama `tanim_dogrula`da yapılıyor; burada yalnız biçimlendirme var.
+    Sayılar `%g` ile yazılıyor: "1.0" yerine "1", "1.4" yerine "1.4".
+    """
+    secenek = ayar.get("pi_secenekleri")
+    if not isinstance(secenek, dict):
+        return []
+    parca: list[str] = []
+    for ad, deger in secenek.items():
+        if ad in PI_SAYISAL:
+            parca += [f"--{ad}", f"{float(deger):g}"]
+        elif ad in PI_METIN:
+            parca += [f"--{ad}", str(deger)]
+    return parca
 
 
 def _surucu_oku(dugum: str) -> str:
@@ -526,7 +573,7 @@ class Kamera:
         arac = "rpicam-vid" if shutil.which("rpicam-vid") else "libcamera-vid"
         return [arac, "-n", "-t", "0", "--codec", "mjpeg",
                 "--width", str(genislik), "--height", str(yukseklik),
-                "-q", str(int(self.ayar["kalite"])), "-o", "-"]
+                "-q", str(int(self.ayar["kalite"]))]             + pi_secenek_listesi(self.ayar) + ["-o", "-"]
 
     def _canli_rpicam(self):
         """rpicam-vid / libcamera-vid / ffmpeg ile sürekli MJPEG."""
@@ -680,7 +727,7 @@ class Kamera:
                 arac = "rpicam-still" if self._yontem == "rpicam" else "libcamera-still"
                 komut = [arac, "-n", "-t", "800", "--width", str(genislik),
                          "--height", str(yukseklik),
-                         "-q", str(int(self.ayar["kalite"])), "-o", gecici.name]
+                         "-q", str(int(self.ayar["kalite"]))]                     + pi_secenek_listesi(self.ayar) + ["-o", gecici.name]
             elif self._yontem == "ffmpeg":
                 cihaz = self.cihaz_coz()
                 if not cihaz:
@@ -818,6 +865,7 @@ class Kamera:
             "genislik": int(self.ayar.get("genislik", 640)),
             "cozunurluk": str(self.ayar.get("cozunurluk") or ""),
             "denetimler": dict(self.ayar.get("denetimler") or {}),
+            "pi_secenekleri": dict(self.ayar.get("pi_secenekleri") or {}),
             "yol": str(self.ayar.get("yol") or "oto"),
             "sahte": bool(self.ayar.get("sahte")),
             # AÇILIŞTA kendiliğinden çalışsın mı — `acik` ile karıştırılmasın:
@@ -1004,7 +1052,7 @@ VARSAYILAN_KAMERALAR: list[dict[str, Any]] = [
 #: anahtar sessizce saklanıp sonra "neden çalışmıyor" sorusuna dönüşmesin.
 DUZENLENEBILIR = ("etiket", "hareketli", "aralik_sn", "genislik", "kalite",
                   "cihaz", "cihaz_adi", "yol", "sahte", "aktif",
-                  "cozunurluk", "denetimler")
+                  "cozunurluk", "denetimler", "pi_secenekleri")
 
 #: Kamera denetimlerinde kabul edilen ad biçimi — `v4l2-ctl --list-ctrls`
 #: adları harf, rakam ve alt çizgiden ibaret. Kabuk enjeksiyonuna kapı
@@ -1105,6 +1153,43 @@ def tanim_dogrula(ham: dict[str, Any], sira: int = 0) -> dict[str, Any]:
     elif ham_den not in (None, ""):
         raise KameraAyarHatasi(f"'{temiz['etiket']}' denetimleri bir nesne olmalı")
     temiz["denetimler"] = denet
+
+    # PI KAMERASI SEÇENEKLERİ. Adlar beyaz listeden; sayısal olanlar aralığa
+    # kırpılıyor, metin olanlar sabit kümeden. Bu değerler doğrudan komut
+    # satırına gidiyor, o yüzden serbest metin kabul edilmiyor.
+    ham_pi = ham.get("pi_secenekleri")
+    pi: dict[str, Any] = {}
+    if isinstance(ham_pi, dict):
+        for anahtar, deger in ham_pi.items():
+            ad_p = str(anahtar).strip().lower().lstrip("-")
+            if deger in (None, ""):
+                continue
+            if ad_p in PI_SAYISAL:
+                try:
+                    sayi = float(deger)
+                except (TypeError, ValueError):
+                    raise KameraAyarHatasi(
+                        f"'{temiz['etiket']}' için {ad_p} sayı olmalı "
+                        f"(verilen: {deger!r})") from None
+                alt, ust = PI_SAYISAL[ad_p]
+                pi[ad_p] = max(alt, min(ust, sayi))
+            elif ad_p in PI_METIN:
+                metin = str(deger).strip().lower()
+                if metin not in PI_METIN[ad_p]:
+                    raise KameraAyarHatasi(
+                        f"'{temiz['etiket']}' için {ad_p} şunlardan biri olmalı: "
+                        + ", ".join(sorted(PI_METIN[ad_p]))
+                        + f" (verilen: {deger!r})")
+                pi[ad_p] = metin
+            else:
+                raise KameraAyarHatasi(
+                    f"'{temiz['etiket']}' için bilinmeyen Pi kamerası seçeneği: "
+                    f"{anahtar!r}. Kabul edilenler: "
+                    + ", ".join(sorted(list(PI_SAYISAL) + list(PI_METIN))))
+    elif ham_pi not in (None, ""):
+        raise KameraAyarHatasi(
+            f"'{temiz['etiket']}' Pi kamerası seçenekleri bir nesne olmalı")
+    temiz["pi_secenekleri"] = pi
 
     cihaz = str(ham.get("cihaz") or "").strip()
     if cihaz and not cihaz.startswith("/dev/"):
