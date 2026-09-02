@@ -34,6 +34,7 @@ from fastapi.staticfiles import StaticFiles
 import arsiv
 import bahce
 import depo
+import etiket
 import dikim
 import egriler
 import ekim
@@ -2912,6 +2913,12 @@ async def api_kalibrasyon_olcek(govde: dict[str, Any], jeton: str = Query(defaul
             "yontem": "olcek", "guncelleme": time.time(),
         }, kam)
     return {"ok": True, "sonuc": sonuc, "kalibrasyon": veri, "kamera": kam}
+
+
+# AprilTag ile kalibrasyon AYRI BİR DOSYADA ve kendi yönlendiricisinde
+# (`etiket.py`). Uç noktalarını buraya yazmak, `main.py` sürekli değiştiği
+# için her yamada çakışma demekti; tek satırla bağlanıyor.
+app.include_router(etiket.yonlendirici_kur(_parola_dogrula))
 
 
 # --------------------------------------------------------------------------- #
