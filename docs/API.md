@@ -172,13 +172,16 @@ yerde tutulmuyor.
 
 | Uç | Ne yapar |
 |---|---|
-| `GET /api/bahce` | Ekranın **bütün** anlık görüntüsü tek çağrıda: `bitkiler` (susama/hasat hâli ve gerekçesi, yarıçap, çakışma, film künyesi), `kartlar`, `seri`, `kuyruk`, `ekim`, `turler`, `kamera` (kalibrasyon dâhil), `alanlar`, `sinirlar`, `sulama_basligi`, `bolgeler`, `konum`, `mesgul`, `bagli` |
+| `GET /api/bahce` | Ekranın **bütün** anlık görüntüsü tek çağrıda: `bitkiler` (susama/hasat hâli ve gerekçesi, `su_olcum` = ölçülen nem künyesi, `su_tahmin`, yarıçap, çakışma, film künyesi), `kartlar`, `ertelenmis`, `seri`, `kuyruk`, `ekim`, `turler`, `kamera` (kalibrasyon dâhil), `alanlar`, `sinirlar`, `sulama_basligi`, `bolgeler`, `konum`, `mesgul`, `bagli`. Susama ve hasat hâli **bir kez** hesaplanıp hem bitki listesine hem kartlara veriliyor: kart "4 bitki susadı" diyorsa tahtada tam o dört damla var |
 | `POST /api/bahce/is` | `{tip: sula\|ek\|gez\|foto, noktalar:[ad], saniye?}` — kuyruğa koyar ve **hemen döner**. Kullanıcı beklemiyor |
 | `POST /api/bahce/is/iptal` | `{kimlik}` ya da `{kimlik:"hepsi"}`. Yalnız BEKLEYEN iş iptal edilir; çalışanı durdurmanın yolu teknik paneldeki Dur |
 | `POST /api/bahce/ek` | `{tur, x, y}` ya da `{tur, yerler:[{x,y}]}` — noktayı yaratır (`etiket:"bitki"`, `tur`, `ekim`) ve ekimi kuyruğa koyar. Dikim alanı dışına 422 |
 | `POST /api/bahce/hasat` | `{noktalar:[ad]}` — **kayıt işlemi, hareket değil**: makine hasat edemiyor, toplayan kullanıcı. Yeri boşaltır, 30 sn `geri_al` verir. Film SİLİNMEZ |
 | `POST /api/bahce/onay` | Bekleyen ekim onayını geçer (`/api/ekim/onayla`ya iletir) |
 | `POST /api/bahce/foto` | `{noktalar:[ad]}` — üst kameranın son karesinden şimdi kırpar. Makine hareket etmez. Kalibrasyon yoksa 409 ve **sebebini söyler** |
+| `GET /api/bahce/bos-yer?tur=` | Seçilen TÜRE göre boş yer sayısı ve yerleri: `{adet, sinirda, yayilim_mm, hazne, yerler}`. Sayı türün yayılım çapından geliyor — havuç (100 mm) beş, marul (250 mm) sıfır. Yayılımı yazılı olmayan türde 422 |
+| `POST /api/bahce/ertele` | `{kimlik}` kartı **yarın 07:00'ye** erteler, `{kimlik, iptal:true}` geri alır. SQLite'ta duruyor: sayfa yenilenince kart geri gelmiyor |
+| `POST /api/bahce/esik` | `{turler:[slug], yuzde}` — sulama nem eşiğini bahçeden değiştirir. Yeni bir ayar değil: `turler.kaydet` ile **tür ezmesine** yazıyor. Cevapta `kendi_esigi_olan`: kendi `ozel.sulama_nem_esigi` değeri yüzünden bu yazımdan etkilenmeyen bitkiler |
 | `POST /api/bahce/tasi` | `{ad, x, y}` — bitkinin **kaydını** taşır (sürükleyip bırakma). Mevcut kaydı okuyup üstüne yazar: tür, ekim tarihi, sulama damgası ve filmi korunur. Makine HAREKET ETMEZ. Sınırların ya da dikim alanının dışına 422 |
 | `POST /api/bahce/yakin` | `{ad}` — robotu bitkinin üstüne gönderen bir ziyaret işini kuyruğa koyar (`gez`, `yakin:true`); panel uç kamerası şeridini kendiliğinden açar |
 | `GET /api/bahce/film?kimlik=` | O ekimin arşiv kareleri (`damga`, `ts`, `bayt`). `kimlik` boşsa bütün filmler + toplam bayt |

@@ -223,7 +223,7 @@
              sürükleme gibi) arkasına saklamak, kimsenin bulamayacağı bir
              özellik demek; dokunmatikte keşif yoktur, düğme vardır. -->
         <button class="bh-ikon" id="bh-sec" type="button" aria-pressed="false"
-                title="Birkaç bitkiyi birden seç">Seç</button>
+                title="Bir kutu çizin, içindeki bitkiler seçilsin">Birkaç bitki seç</button>
         <button class="bh-ikon" id="bh-kamera-ac" type="button" aria-pressed="false"
                 title="Kameraları göster">Kameralar</button>
         <button class="bh-ikon" id="bh-egik" type="button" aria-pressed="true"
@@ -232,6 +232,13 @@
                 title="Bütün hareketi durdurur — küçük bilgisayarda işlemciyi rahatlatır"
                 >Sakin mod</button>
       </div>
+
+      <!-- Seçim kipi açıkken NE YAPILACAĞI yazıyor. Düğmenin adı ne
+           yaptığını söylüyor, bu satır nasıl yapıldığını: dokunmatikte
+           kimse kutu çizmeyi kendiliğinden denemez. -->
+      <p class="bh-ipucu gizli" id="bh-sec-ipucu">
+        Bir kutu çizin, içindeki bitkiler seçilsin — ya da tek tek dokunun.
+      </p>
 
       <!-- Çoklu seçim çubuğu: yalnız seçim varken görünüyor. -->
       <div class="bh-toplu gizli" id="bh-toplu">
@@ -244,6 +251,10 @@
       </div>
 
       <div class="bh-kartlar" id="bh-kartlar"></div>
+
+      <!-- Ertelenen kartlar: "Sonra" dedikten sonra kart kaybolmuyor, bir
+           söze dönüşüyor. Kullanıcı erteledi mi iptal mi etti bilmiyordu. -->
+      <p class="bh-ertelenmis gizli" id="bh-ertelenmis"></p>
 
       <!-- Uyarı satırı: kalibrasyon yok, kamera yok, ajan yok gibi hâller.
            Ekran BUNLARA RAĞMEN çalışıyor; satır sebebini söylüyor. -->
@@ -343,10 +354,28 @@
             <h3 data-rol="baslik"></h3>
             <p data-rol="aciklama"></p>
             <p class="bh-kanit" data-rol="kanit"></p>
+            <!-- SULAMA KANITI: hangi bitkide kaç ölçüldü, eşik kaç, ölçüm
+                 ne kadar yakında ve ne kadar önce alındı. "Ölçüt: ölçülen
+                 toprak nemi" yazıp sayıyı göstermemek, gerekçe
+                 göstermemekle aynı şeydi. -->
+            <ul class="bh-olcum" data-rol="olcum" hidden></ul>
+            <p class="bh-tahmin" data-rol="tahmin" hidden></p>
+            <div class="bh-esik" data-rol="esik-kutu" hidden>
+              <label>Nem eşiği
+                <input type="number" min="0" max="100" step="1" data-rol="esik">
+                <span>%</span>
+              </label>
+              <button class="bh-dugme kucuk" data-rol="esik-kaydet">Kaydet</button>
+              <small data-rol="esik-not"></small>
+            </div>
+            <!-- BOŞ YER: türü kullanıcı seçiyor. Seçilene kadar Ek kapalı;
+                 seçilince sayı o türün yayılım çapından yeniden
+                 hesaplanıyor (marul 250 mm, roka 150 mm — sayı değişiyor). -->
+            <div class="bh-turler" data-rol="turler" hidden></div>
           </div>
           <div class="bh-kart-dugmeler">
             <button class="bh-dugme birincil" data-rol="evet"></button>
-            <button class="bh-dugme" data-rol="sonra">Sonra</button>
+            <button class="bh-dugme" data-rol="sonra">Yarın sor</button>
           </div>
         </article>
       </template>

@@ -76,6 +76,8 @@ window.Bahce = (function () {
     secili: {},           // ad -> seçili mi (çoklu seçim)
     menuSecili: "",       // halka menüsü açık olan bitki
     kartAd: "",           // açık bitki kartının bitkisi
+    kartTur: "",          // boş yer kartında SEÇİLEN tür (biz seçmiyoruz)
+    kartMesgul: false,    // bir kart uçuyor: şeridi yeniden kurma
     kameraSerit: false,
     yakinIs: "",          // "yakından bak" işi çalışıyor mu
     zum: { o: 1, x: 0, y: 0 },
@@ -520,6 +522,16 @@ window.Bahce = (function () {
     document.querySelectorAll("#bh-bitkiler .bh-bitki").forEach((el) => {
       el.classList.toggle("isaretli", !!B.secili[el.dataset.ad]);
     });
+    // DÜĞMENİN ADI NE YAPTIĞINI, BU SATIR NASIL YAPILDIĞINI SÖYLÜYOR.
+    // "Seç" tek başına hiçbir şey anlatmıyordu ve dokunmatikte kimse kutu
+    // çizmeyi kendiliğinden denemez.
+    const ipucu = $("#bh-sec-ipucu");
+    if (ipucu) {
+      ipucu.classList.toggle("gizli", !B.secimKipi);
+      ipucu.textContent = adlar.length
+        ? `${adlar.length} bitki seçili — kutuyu büyütebilir ya da tek tek dokunabilirsin.`
+        : "Bir kutu çizin, içindeki bitkiler seçilsin — ya da tek tek dokunun.";
+    }
     const cubuk = $("#bh-toplu");
     if (cubuk) {
       const gizliydi = cubuk.classList.contains("gizli");
@@ -532,7 +544,11 @@ window.Bahce = (function () {
     const sayi = $("#bh-toplu-sayi");
     if (sayi) sayi.textContent = `${adlar.length} bitki seçili`;
     const d = $("#bh-sec");
-    if (d) d.setAttribute("aria-pressed", B.secimKipi ? "true" : "false");
+    if (d) {
+      d.setAttribute("aria-pressed", B.secimKipi ? "true" : "false");
+      d.textContent = adlar.length ? `${adlar.length} bitki seçili`
+        : (B.secimKipi ? "Seçimi bitir" : "Birkaç bitki seç");
+    }
     const tahta = $("#bh-tahta");
     if (tahta) tahta.classList.toggle("secim-kipi", B.secimKipi);
   }
@@ -959,40 +975,266 @@ window.Bahce = (function () {
   }
 
   /* ------------------------------------------------------------- kartlar */
+  /** Ölçümün yaşını insanın söyleyeceği gibi yazar. */
+  function yasKisa(sn) {
+    const s = sayi(sn, 0);
+    if (s < 90) return "az önce";
+    if (s < 3600) return `${Math.round(s / 60)} dk önce`;
+    if (s < 86400) return `${Math.round(s / 3600)} saat önce`;
+    return `${Math.round(s / 86400)} gün önce`;
+  }
+
   function kartlariYaz() {
     const kap = $("#bh-kartlar");
     const sablon = $("#bh-kart-sablon");
     if (!kap || !sablon) return;
     const kartlar = ((B.veri && B.veri.kartlar) || [])
-      .filter((k) => !B.ertelenen[k.kimlik]);
+      .filter((k) => !k.ertelendi && !B.ertelenen[k.kimlik]);
+    // KARTLAR DEĞİŞMEDİYSE YENİDEN KURULMUYOR. Çizim saniyede bir
+    // çalışıyor; her seferinde `innerHTML` yazmak kullanıcının kart
+    // içinde yaptığı seçimi (hangi türü seçtiğini, eşik kutusuna
+    // yazdığını) siliyordu. Bir de boşuna DOM işi.
+    const imza = JSON.stringify(kartlar) + "|"
+      + JSON.stringify((B.veri && B.veri.ertelenmis) || []);
+    // Uçmakta olan bir kartın altından şeridi çekmiyoruz: erteleme
+    // sunucuya yazılıyor, sunucu "bahçe değişti" diyor, panel yeniden
+    // okuyor — ve kullanıcı "yarın 07:00'de soracağım" yazısını
+    // okuyamadan kart siliniyordu.
+    if (B.kartMesgul) return;
+    if (kap.dataset.imza === imza) return;
+    kap.dataset.imza = imza;
     kap.innerHTML = "";
     kartlar.forEach((k) => {
       const el = sablon.content.firstElementChild.cloneNode(true);
+      const rol = (r) => el.querySelector(`[data-rol="${r}"]`);
       el.dataset.kimlik = k.kimlik;
-      el.querySelector('[data-rol="simge"]').textContent = k.simge || "🌱";
-      el.querySelector('[data-rol="baslik"]').textContent = k.baslik;
-      el.querySelector('[data-rol="aciklama"]').textContent = k.aciklama;
-      el.querySelector('[data-rol="kanit"]').textContent = `Ölçüt: ${k.kanit}`;
+      rol("simge").textContent = k.simge || "🌱";
+      rol("baslik").textContent = k.baslik;
+      rol("aciklama").textContent = k.aciklama;
+      rol("kanit").textContent = `Ölçüt: ${k.kanit}`;
       // Dar/alçak ekranda açıklama ve ölçüt gizleniyor — kaybolmasınlar
       // diye ikisi de başlıkta duruyor.
       el.title = `${k.aciklama}\nÖlçüt: ${k.kanit}`
         + (k.gerekce && k.gerekce.length ? `\n· ${k.gerekce.join("\n· ")}` : "");
-      const evet = el.querySelector('[data-rol="evet"]');
+      if (k.kimlik === "sula") sulaKartiYaz(el, rol, k);
+      if (k.kimlik === "bos-yer") bosYerKartiYaz(el, rol, k);
+      const evet = rol("evet");
       evet.textContent = k.evet;
       evet.onclick = () => kartCevap(el, k, true);
-      el.querySelector('[data-rol="sonra"]').onclick = () => kartCevap(el, k, false);
+      const sonra = rol("sonra");
+      sonra.title = "Bu kartı yarın sabah yeniden sor";
+      sonra.onclick = () => kartCevap(el, k, false);
       kap.appendChild(el);
+    });
+    ertelenmisYaz();
+  }
+
+  /* --------------------------------------------------- sulama kartı: kanıt */
+  /** SAYIYI GÖSTERİYORUZ, "ölçüt: nem" demekle yetinmiyoruz.
+   *
+   * Kart eskiden "Ölçüt: ölçülen toprak nemi" yazıp sayıyı saklıyordu.
+   * Kullanıcı kaç ölçüldüğünü, eşiğin kaç olduğunu, okumanın bitkiye ne
+   * kadar yakın ve ne kadar taze olduğunu göremiyordu — yani gerekçeyi
+   * göremiyordu. Ölçüm yoksa da bunu açıkça yazıyoruz: karar tahmine
+   * dayanıyorsa kullanıcı bunu bilmeli. */
+  function sulaKartiYaz(el, rol, k) {
+    const liste = rol("olcum");
+    const tumu = (k.olcumler || []);
+    // Dört satırdan fazlası kartı bir yazı kulesine çeviriyor ve tahtayı
+    // ekrandan itiyordu. Kalanı sayıyla söylüyoruz; hepsi `title`da.
+    const satirlar = tumu.slice(0, 4);
+    liste.innerHTML = satirlar.map((o) => {
+      const olculdu = o.kanit === "olculen";
+      const sol = `<b>${kacisli(o.tur_ad || o.ad)}</b>`;
+      if (olculdu) {
+        return `<li class="olculen" title="${kacisli(o.ad)}: ${kacisli(o.gerekce)}">${sol}
+          <span class="bh-olcum-deger">%${Math.round(sayi(o.yuzde))}</span>
+          <span class="bh-olcum-karsi">&lt; eşik %${Math.round(sayi(o.esik))}</span>
+          <small>${Math.round(sayi(o.uzak_mm))} mm · ${
+            kacisli(yasKisa(o.yas_sn))}</small></li>`;
+      }
+      const olcum = o.bayat
+        ? `%${Math.round(sayi(o.yuzde))} sulamadan önce ölçülmüş`
+        : (o.var ? `%${Math.round(sayi(o.yuzde))} ölçüldü, eşik kapalı`
+          : "ölçüm yok — tahmin");
+      return `<li class="tahmini" title="${kacisli(o.ad)}: ${kacisli(o.gerekce)}">${sol}
+        <span class="bh-olcum-deger">${o.gecen_gun != null
+          ? `${Math.round(sayi(o.gecen_gun))} gün` : "—"}</span>
+        <span class="bh-olcum-karsi">geçti</span>
+        <small>${kacisli(olcum)}</small></li>`;
+    }).join("");
+    if (tumu.length > satirlar.length) {
+      liste.innerHTML += `<li class="bh-olcum-daha">+${
+        tumu.length - satirlar.length} bitki daha</li>`;
+    }
+    liste.hidden = !satirlar.length;
+
+    const uyari = rol("tahmin");
+    if (k.tahmin) {
+      uyari.textContent = k.olculen_adet
+        ? `${k.tahmin_adet} bitkide ölçüm kullanılamadı — o kadarı tahmin.`
+        : "Bu karar ÖLÇÜME değil, son sulamadan geçen güne dayanıyor.";
+      uyari.hidden = false;
+    } else {
+      uyari.hidden = true;
+    }
+
+    // Eşik bahçeden değiştirilebiliyor. Aynı yere yazıyoruz: tür ezmesi.
+    const kutu = rol("esik-kutu");
+    const girdi = rol("esik");
+    const not = rol("esik-not");
+    kutu.hidden = false;
+    girdi.value = k.esik == null ? "" : String(Math.round(k.esik));
+    girdi.placeholder = k.esik == null ? "farklı" : "";
+    not.textContent = k.esik == null
+      ? "Bu karttaki türlerin eşikleri farklı — yazdığın sayı hepsine geçer."
+      : (k.esik >= 100
+        ? "%100 = kapalı: ölçülen nem kullanılmıyor. Bir sayı yaz, ölçüme geçsin."
+        : `${(k.turler || []).length} tür için: ${(k.turler || []).join(", ")}`);
+    rol("esik-kaydet").onclick = () => esikKaydet(k, sayi(girdi.value, NaN), not);
+  }
+
+  async function esikKaydet(kart, yuzde, not) {
+    if (!Number.isFinite(yuzde) || yuzde < 0 || yuzde > 100) {
+      not.textContent = "Eşik %0 ile %100 arasında bir sayı olmalı.";
+      return;
+    }
+    try {
+      const y = await gonder("/api/bahce/esik",
+        { turler: kart.turler || [], yuzde });
+      gunluk(`✓ Nem eşiği %${Math.round(y.yuzde)} — ${y.turler.join(", ")}`, "ok");
+      // KENDİ EŞİĞİ OLAN BİTKİYİ SAKLAMIYORUZ: tür ezmesi onları yenmiyor
+      // ve kullanıcı değişmeyen bir sayıyı değişmiş sanırdı.
+      if (y.kendi_esigi_olan && y.kendi_esigi_olan.length) {
+        notYaz("islem", `${y.kendi_esigi_olan.join(", ")} kendi eşiğini `
+          + "kullanıyor, tür eşiği onları etkilemedi.");
+      }
+      await yukle();
+    } catch (hata) {
+      not.textContent = hata.message;
+    }
+  }
+
+  /* ------------------------------------------------- boş yer kartı: tür seç */
+  /** TÜRÜ KULLANICI SEÇİYOR.
+   *
+   * Kart eskiden "en son ekilen tür"ü kendi seçip "12 tane daha maydanoz
+   * sığıyor" diyordu — maydanozu kullanıcı seçmemişti. Şimdi seçenekler
+   * ekranda; seçilince sayı o türün KENDİ yayılım çapından yeniden
+   * hesaplanıyor (marul 250 mm → 6, roka 150 mm → 12). Seçilmeden Ek
+   * çalışmıyor. */
+  function bosYerKartiYaz(el, rol, k) {
+    const kutu = rol("turler");
+    kutu.hidden = false;
+    kutu.innerHTML = (k.secenekler || []).map((t) => `
+      <button type="button" class="bh-tur-sec${t.hazne ? "" : " hazne-yok"}"
+        data-tur="${kacisli(t.slug)}"
+        title="${kacisli(t.ad)} · yayılım ${Math.round(t.yayilim_mm)} mm${
+          t.hazne ? "" : " · haznede tohumu yok"}">
+        <span>${kacisli(t.simge)}</span>${kacisli(t.ad)}</button>`).join("");
+    const evet = rol("evet");
+    const aciklama = rol("aciklama");
+    evet.disabled = true;
+    evet.title = "Önce ne ekeceğini seç";
+
+    async function turSec(slug) {
+      kutu.querySelectorAll(".bh-tur-sec").forEach(
+        (x) => x.classList.toggle("secili", x.dataset.tur === slug));
+      aciklama.textContent = "Sayıyor…";
+      try {
+        const y = await api(`/api/bahce/bos-yer?tur=${encodeURIComponent(slug)}`);
+        k.tur = y.tur;
+        k.yerler = y.yerler;
+        B.kartTur = slug;              // yeniden kurulunca hatırlansın
+        rol("baslik").textContent = y.adet
+          ? `${y.adet}${y.sinirda ? "+" : ""} ${y.ad} sığıyor`
+          : `${y.ad} sığmıyor`;
+        aciklama.textContent = y.adet
+          ? `Yayılım ${Math.round(y.yayilim_mm)} mm.`
+            + (y.hazne ? "" : " Haznede bu tohum yok — ekim reddedilir.")
+          : `Yayılım ${Math.round(y.yayilim_mm)} mm — bu kadar yer kalmamış.`;
+        evet.disabled = !y.adet || !y.hazne;
+        evet.title = !y.adet ? "Bu türe yer yok"
+          : (!y.hazne ? "Haznede bu tohum yok" : `${y.adet} tane ek`);
+        evet.textContent = y.adet ? `${y.adet} tane ek` : "Ek";
+      } catch (hata) {
+        aciklama.textContent = hata.message;
+        evet.disabled = true;
+      }
+    }
+
+    kutu.querySelectorAll(".bh-tur-sec").forEach((d) => {
+      d.onclick = () => turSec(d.dataset.tur);
+    });
+    // Kart yeniden kurulduysa (bahçe değişti) seçim KAYBOLMUYOR: sayıyı
+    // yeniden soruyoruz, çünkü aradaki değişiklik boş yeri de değiştirmiş
+    // olabilir. Eski sayıyı olduğu gibi geri koymak yalan olurdu.
+    if (B.kartTur && (k.secenekler || []).some((t) => t.slug === B.kartTur)) {
+      turSec(B.kartTur);
+    }
+  }
+
+  /* ------------------------------------------------------------ erteleme */
+  function ertelenmisYaz() {
+    const el = $("#bh-ertelenmis");
+    if (!el) return;
+    const liste = (B.veri && B.veri.ertelenmis) || [];
+    el.classList.toggle("gizli", !liste.length);
+    if (!liste.length) return;
+    const adlar = { sula: "Sulama", hasat: "Hasat", "bos-yer": "Boş yer" };
+    el.innerHTML = liste.map((e) => `
+      <span class="bh-ert">${kacisli(adlar[e.kimlik] || e.kimlik)} kartı
+        <b>${kacisli(e.yazi)}</b> geri gelecek
+        <button type="button" class="bh-ikon kucuk"
+          data-ert="${kacisli(e.kimlik)}">Şimdi göster</button></span>`).join("");
+    el.querySelectorAll("[data-ert]").forEach((d) => {
+      d.onclick = async () => {
+        try {
+          await gonder("/api/bahce/ertele", { kimlik: d.dataset.ert, iptal: true });
+          delete B.ertelenen[d.dataset.ert];
+          await yukle();
+        } catch (hata) { gunluk(`✕ ${hata.message}`, "hata"); }
+      };
     });
   }
 
   async function kartCevap(el, kart, evet) {
-    el.classList.add(evet ? "ucdu" : "erteledi");
-    B.ertelenen[kart.kimlik] = true;
-    setTimeout(() => { el.remove(); tahtaBoyu(); }, 380);
     if (!evet) {
-      gunluk(`${kart.baslik} — sonraya bırakıldı`);
+      // ERTELEME BİR SÖZ VERİYOR. Eskiden kart yalnız ekrandan siliniyordu
+      // ve sayfa yenilenince geri geliyordu; kullanıcı erteledi mi iptal
+      // mi etti bilmiyordu. Ne zaman geri geleceğini kartın üstüne yazıp
+      // öyle uçuruyoruz.
+      B.kartMesgul = true;
+      try {
+        const y = await gonder("/api/bahce/ertele", { kimlik: kart.kimlik });
+        const b = el.querySelector('[data-rol="aciklama"]');
+        if (b) b.textContent = `${y.yazi} yeniden soracağım.`;
+        gunluk(`${kart.baslik} — ${y.yazi} yeniden sorulacak`);
+        // Önce SÖZ okunur, sonra kart uçar. Ters sırada kullanıcı ne
+        // dediğimizi görmüyor.
+        setTimeout(() => el.classList.add("erteledi"), 700);
+        setTimeout(() => {
+          B.kartMesgul = false;
+          el.remove(); tahtaBoyu(); yukle();
+        }, 1200);
+      } catch (hata) {
+        B.kartMesgul = false;
+        gunluk(`✕ ${hata.message}`, "hata");
+        notYaz(hata.message);
+      }
       return;
     }
+    if (kart.tip === "ek" && !kart.tur) {
+      notYaz("Önce ne ekeceğini seç.");
+      return;
+    }
+    el.classList.add("ucdu");
+    B.ertelenen[kart.kimlik] = true;
+    B.kartMesgul = true;
+    setTimeout(() => {
+      B.kartMesgul = false;
+      el.remove(); tahtaBoyu();
+    }, 380);
     try {
       if (kart.tip === "sula") {
         await isEkle("sula", kart.noktalar, { saniye: SULAMA_SN });
@@ -1002,8 +1244,12 @@ window.Bahce = (function () {
         await gonder("/api/bahce/ek", { tur: kart.tur, yerler: kart.yerler });
         gunluk(`✓ ${kart.yerler.length} tohum sıraya girdi`, "ok");
       }
+      // Bayrak DURUYOR: iş kuyrukta, bitki hâlâ susuz. Kartı hemen geri
+      // getirmek "yaptım" dediğim işi yapılmamış gibi göstermek olurdu.
+      // Kuyruk boşalınca `kuyrukDegisti` bayrağı kaldırıyor.
       await yukle();
     } catch (hata) {
+      delete B.ertelenen[kart.kimlik];
       gunluk(`✕ ${hata.message}`, "hata");
       notYaz(hata.message);
     }
@@ -1014,32 +1260,6 @@ window.Bahce = (function () {
     const yazi = $("#bh-kuyruk-yazi");
     const serit = $("#bh-kuyruk");
     const iptal = $("#bh-kuyruk-iptal");
-    // --- yeni denetimler ---
-    tahtaBagla();
-    const secD = $("#bh-sec");
-    if (secD) {
-      secD.onclick = () => {
-        B.secimKipi = !B.secimKipi;
-        if (!B.secimKipi) secimBirak(); else secimYaz();
-        menuKapat();
-      };
-    }
-    const kamD = $("#bh-kamera-ac");
-    if (kamD) {
-      try { B.kameraSerit = localStorage.getItem("farmbot_bahce_kamera") === "1"; }
-      catch { /* boş */ }
-      kamD.onclick = () => kameraSerit(!B.kameraSerit);
-    }
-    const toplu = $("#bh-toplu");
-    if (toplu) {
-      toplu.querySelectorAll("[data-toplu]").forEach((d) => {
-        d.onclick = () => (d.dataset.toplu === "birak"
-          ? secimBirak() : topluIs(d.dataset.toplu));
-      });
-    }
-    const kartOrtu = $("#bh-kart");
-    if (kartOrtu) kartOrtu.onclick = (o) => { if (o.target === kartOrtu) kartKapat(); };
-
     const onayD = $("#bh-onay");
     if (!yazi || !serit) return;
     const k = (B.veri && B.veri.kuyruk) || { isler: [], bekleyen: 0 };
@@ -1846,13 +2066,15 @@ window.Bahce = (function () {
     kuyrukYaz();
   }
 
-  function kuyrukDegisti(k) {
+  function kuyrukDegisti(k, tazele) {
     if (!B.veri) return;
     B.veri.kuyruk = k;
     kuyrukYaz();
     // İş bitti: bahçenin hâli değişmiş olabilir (sulama damgası, yeni
-    // bitki). Tek bir tazeleme, kartları da yeniliyor.
-    if (B.acik && !k.calisan && !k.bekleyen) yukle();
+    // bitki). Tek bir tazeleme, kartları da yeniliyor. `tazele` ise
+    // başka bir panel bahçeyi değiştirmiş (erteleme, eşik) — hemen oku.
+    if (!k.calisan && !k.bekleyen) B.ertelenen = {};
+    if (B.acik && (tazele || (!k.calisan && !k.bekleyen))) yukle();
   }
 
   /* ==================================================================== *
@@ -1985,7 +2207,8 @@ window.Bahce = (function () {
       zum: Math.round(B.zum.o * 100) / 100,
       secimKipi: B.secimKipi,
       secili: Object.keys(B.secili).filter((a) => B.secili[a]),
-      kartAd: B.kartAd, kameraSerit: B.kameraSerit, ucFps: B.ucFps || 0,
+      kartAd: B.kartAd, kartTur: B.kartTur,
+      kameraSerit: B.kameraSerit, ucFps: B.ucFps || 0,
       kart: ((B.veri || {}).kartlar || []).length,
       kuyruk: (B.veri || {}).kuyruk || null,
       sayac: Object.assign({}, B.sayac),

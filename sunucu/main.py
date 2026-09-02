@@ -3131,13 +3131,19 @@ def _bahce_veri() -> dict[str, Any]:
     toprak_kalib = durum.get("toprak_kalib") or {}
     alanlar = dikim.listele()
     sinirlar = durum.get("sinirlar") or {}
+    ertelenmis = bahce.ertelemeler(simdi)
 
     ars = arsiv.ozet()          # arşiv TEK kez taranıyor (ve önbellekli)
+    # SUSAMA VE HASAT BİR KEZ HESAPLANIYOR. Tahtadaki damla ile kartın
+    # saydığı bitkiler aynı sözlükten okunuyor; ikisi ayrı hesaplandığında
+    # "4 bitki susadı" yazarken tahtada üç damla olması işten bile değil.
+    durumlar: dict[str, dict[str, Any]] = {}
     liste = []
     for b in bahce.bitkiler(hepsi):
         tur = tur_indeks.get(str(b.get("tur") or "")) or {}
         su = bahce.susama_durumu(b, tur, okumalar, toprak_kalib, simdi)
         hasat = bahce.hasat_durumu(b, tur, simdi)
+        durumlar[str(b.get("ad"))] = {"su": su, "hasat": hasat}
         kimlik = arsiv.film_kimlik(b)
         liste.append({
             "ad": b.get("ad"), "x": b.get("x"), "y": b.get("y"), "z": b.get("z"),
@@ -3150,6 +3156,7 @@ def _bahce_veri() -> dict[str, Any]:
             "yayilim_mm": _sayi_guvenli(tur.get("spread_mm")),
             "susadi": su["susadi"], "su_gerekce": su["gerekce"],
             "su_kanit": su["kanit"], "nem_yuzde": su.get("nem_yuzde"),
+            "su_olcum": su.get("olcum"), "su_tahmin": bool(su.get("tahmin")),
             "hasat": hasat["hazir"], "hasat_gerekce": hasat["gerekce"],
             "yas_gun": hasat.get("gun"), "olgun_gun": hasat.get("olgun"),
             "olgunluk": hasat.get("oran"),
@@ -3173,8 +3180,11 @@ def _bahce_veri() -> dict[str, Any]:
 
     return {
         "bitkiler": liste,
-        "kartlar": bahce.kartlar(hepsi, tur_indeks, yaricaplar, okumalar,
-                                 toprak_kalib, alanlar, sinirlar, simdi),
+        "kartlar": bahce.kartlar(hepsi, tur_indeks, yaricaplar, alanlar,
+                                 durumlar, _bahce_hazne_turleri(),
+                                 sinirlar, simdi, ertelenmis),
+        "ertelenmis": [{"kimlik": k, "kadar": v, "yazi": bahce.saat_yaz(v)}
+                       for k, v in sorted(ertelenmis.items(), key=lambda p: p[1])],
         "seri": bahce.seri(gunler, simdi),
         "kuyruk": kuyruk.goruntu(),
         "turler": [{"slug": t.get("slug"), "ad": t.get("name_tr"),
@@ -3200,6 +3210,24 @@ def _bahce_veri() -> dict[str, Any]:
         "arsiv_bayt": int(ars["bayt"]),
         "ts": simdi,
     }
+
+
+def _bahce_hazne_turleri() -> list[str]:
+    """Haznede TOHUMU OLAN türler — ekim akışının kendi gözlerinden.
+
+    Ayrı bir liste tutmuyoruz: ekim reddini doğuran veri neyse, kartın
+    "bu tür haznede var" demesini sağlayan veri de o. İkisi ayrışsaydı kart
+    "ek" der, makine "bu türe ayrılmış hazne yok" derdi.
+    """
+    gozler = ((merkez.son_durum or {}).get("uc") or {}).get("tohumluk_gozleri") or []
+    cikti: list[str] = []
+    for g in (gozler or []):
+        if not isinstance(g, dict) or not g.get("dolu"):
+            continue
+        s = str(g.get("tohum") or "").strip()
+        if s and s not in cikti:
+            cikti.append(s)
+    return cikti
 
 
 def _bahce_ekim_ozet() -> dict[str, Any]:
@@ -3370,6 +3398,124 @@ def _bahce_ad_uret(slug: str) -> str:
         if ad not in var:
             return ad
     raise HTTPException(status_code=409, detail="Boş nokta adı bulunamadı")
+
+
+async def _bahce_yayinla() -> None:
+    """Bahçenin değiştiğini bütün panellere duyur.
+
+    Paket "değişti" haberinden ibaret; panel kendi çekiyor. İki tarayıcı
+    açıksa birinde ertelenen kart ötekinde de kalkıyor — aynı bahçe.
+    """
+    await merkez.yayinla({"tip": "bahce", "kuyruk": kuyruk.goruntu(),
+                          "tazele": True})
+
+
+@app.get("/api/bahce/bos-yer")
+async def api_bahce_bos_yer(tur: str = Query(default=""), jeton: str = Query(default="")):
+    """Seçilen TÜRE göre kaç boş yer var — türü kullanıcı seçiyor.
+
+    Sayı türe göre gerçekten değişiyor: marulun yayılımı 250 mm, rokanınki
+    150 mm; aynı yatakta biri altı, öteki on iki tane alıyor. Bu ucu ayrı
+    tuttuk ki tür değiştikçe bütün bahçe görüntüsünü yeniden çekmeyelim.
+    """
+    _parola_dogrula(jeton)
+    slug = str(tur or "").strip()
+    if not slug:
+        raise HTTPException(status_code=400, detail="Tür gerekiyor")
+
+    def _hesapla() -> dict[str, Any]:
+        tur_indeks = _bahce_tur_indeks()
+        t = tur_indeks.get(slug)
+        if not t:
+            raise HTTPException(status_code=404, detail=f"'{slug}' diye bir tür yok")
+        yayilim = _sayi_guvenli(t.get("spread_mm"), 0.0)
+        if yayilim <= 0:
+            raise HTTPException(
+                status_code=422,
+                detail=f"{t.get('name_tr') or slug} için yayılım çapı yazılı değil — "
+                       f"kaç tane sığdığını hesaplayamam")
+        hepsi = noktalar.hepsi()
+        yaricaplar, _ = _yaricaplar(bahce.bitkiler(hepsi))
+        durum = merkez.durum()
+        yerler = bahce.bos_yerler(hepsi, yaricaplar, dikim.listele(), yayilim,
+                                  durum.get("sinirlar") or {})
+        return {
+            "tur": slug,
+            "ad": t.get("name_tr") or slug,
+            "simge": t.get("icon") or "🌱",
+            "yayilim_mm": round(yayilim, 1),
+            "adet": len(yerler),
+            "sinirda": len(yerler) >= bahce.AZAMI_ONERI,
+            "hazne": slug in _bahce_hazne_turleri(),
+            "yerler": yerler,
+        }
+
+    return await asyncio.to_thread(_hesapla)
+
+
+@app.post("/api/bahce/ertele")
+async def api_bahce_ertele(govde: dict[str, Any], jeton: str = Query(default="")):
+    """Kartı yarın sabaha ertele ya da ertelemeyi geri al.
+
+    Eski "Sonra" düğmesi kartı yalnız ekrandan siliyordu ve sayfa
+    yenilenince geri geliyordu: kullanıcı erteledi mi, iptal mi etti,
+    bir daha sorulacak mı bilmiyordu. Şimdi net bir sözü var.
+    """
+    _parola_dogrula(jeton)
+    kimlik = str(govde.get("kimlik") or "").strip()
+    if not kimlik:
+        raise HTTPException(status_code=400, detail="Kart kimliği gerekiyor")
+    if govde.get("iptal"):
+        await asyncio.to_thread(bahce.erteleme_kaldir, kimlik)
+        await _bahce_yayinla()
+        return {"kimlik": kimlik, "ertelendi": None, "yazi": ""}
+    kadar = await asyncio.to_thread(bahce.ertele, kimlik, None)
+    await _bahce_yayinla()
+    return {"kimlik": kimlik, "ertelendi": kadar, "yazi": bahce.saat_yaz(kadar)}
+
+
+@app.post("/api/bahce/esik")
+async def api_bahce_esik(govde: dict[str, Any], jeton: str = Query(default="")):
+    """Sulama nem eşiğini bahçeden değiştir — TÜR EZMESİ olarak.
+
+    Yeni bir ayar mekanizması kurmuyoruz: eşik zaten tür ezmelerinde
+    (`tur_ezme.json`) duruyor ve teknik panelden de oradan düzenleniyor.
+    Bahçe aynı yere yazıyor, yoksa iki yerde iki farklı eşik olurdu.
+
+    Bitkinin KENDİ `ozel.sulama_nem_esigi` değeri tür ezmesini yener; böyle
+    bitkiler varsa cevapta adlarıyla dönüyorlar. Sessizce yazıp "oldu"
+    demek, kullanıcıya değişmeyen bir sayıyı değişmiş gibi göstermek olurdu.
+    """
+    _parola_dogrula(jeton)
+    yuzde = _sayi_guvenli(govde.get("yuzde"), -1.0)
+    if not 0.0 <= yuzde <= 100.0:
+        raise HTTPException(status_code=400,
+                            detail="Eşik %0 ile %100 arasında olmalı (100 = kapalı)")
+    slugler = [str(s).strip() for s in (govde.get("turler") or []) if str(s).strip()]
+    if not slugler:
+        raise HTTPException(status_code=400, detail="En az bir tür gerekiyor")
+
+    def _yaz() -> dict[str, Any]:
+        yazilan, hata = [], []
+        for slug in slugler:
+            try:
+                turler.kaydet(slug, {"sulama_nem_esigi": yuzde})
+                yazilan.append(slug)
+            except turler.TurHatasi as h:
+                hata.append(f"{slug}: {h}")
+        # Kendi eşiği olan bitkiler tür ezmesinden etkilenmiyor.
+        kendi = [str(n.get("ad")) for n in bahce.bitkiler(noktalar.hepsi())
+                 if str(n.get("tur") or "") in slugler
+                 and (n.get("ozel") or {}).get("sulama_nem_esigi") not in (None, "")]
+        return {"turler": yazilan, "hata": hata, "kendi_esigi_olan": kendi,
+                "yuzde": yuzde}
+
+    sonuc = await asyncio.to_thread(_yaz)
+    if not sonuc["turler"]:
+        raise HTTPException(status_code=422,
+                            detail="Eşik yazılamadı — " + "; ".join(sonuc["hata"]))
+    await _bahce_yayinla()
+    return sonuc
 
 
 @app.post("/api/bahce/tasi")

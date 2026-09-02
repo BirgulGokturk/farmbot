@@ -5252,7 +5252,7 @@ function wsBagla() {
       if (window.Bahce) window.Bahce.ekimDegisti(m.ekim);
     }
     else if (m.tip === "bahce") {
-      if (window.Bahce) window.Bahce.kuyrukDegisti(m.kuyruk);
+      if (window.Bahce) window.Bahce.kuyrukDegisti(m.kuyruk, m.tazele);
     }
     // Göz durumu değişti (ekildi, sulandı, tepsi kaydı). Panel kendi
     // isteğiyle çekiyor: paket yalnız "değişti" haberi taşıyor.

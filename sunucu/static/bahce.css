@@ -140,6 +140,85 @@ nav.sekmeler button.bahce-sekme { color: var(--bh-yesil); }
    istemek olurdu. */
 .bh-kanit { color: var(--metin-3) !important; font-size: var(--yazi-kucuk); }
 .bh-kart-dugmeler { display: flex; gap: 6px; flex: none; }
+
+/* ---------------------------------------------- sulama kartının kanıtı
+   Sayı, eşik, uzaklık ve tazelik: kartın "ölçülen toprak nemi" derken
+   NEYİ ölçtüğü. Ölçüt yazıp sayıyı saklamak, gerekçe göstermemekti. */
+.bh-olcum {
+  margin: 4px 0 0; padding: 0; list-style: none;
+  display: flex; flex-direction: column; gap: 2px;
+  font-size: var(--yazi-kucuk); line-height: 1.35;
+}
+.bh-olcum li {
+  display: flex; align-items: baseline; gap: 6px;
+  padding: 2px 8px; border-radius: 8px; background: var(--yuzey-2);
+  border-left: 3px solid var(--cizgi-2);
+}
+.bh-olcum li.olculen { border-left-color: var(--bh-su); }
+/* Tahmine dayanan satır GÖRÜNÜR biçimde farklı: kullanıcı hangi bitkide
+   ölçüm olduğunu, hangisinde tahmin yürüttüğümüzü bir bakışta görsün. */
+.bh-olcum li.tahmini { border-left-color: var(--uyari); }
+/* Sınıf adları `bh-` önekli: panelin genel `.deger` sınıfı 28 pikselik
+   bir sensör rakamı ve kartın içinde dev gibi duruyordu. */
+.bh-olcum b { font-weight: 600; flex: none; }
+.bh-olcum .bh-olcum-deger {
+  font-weight: 700; font-variant-numeric: tabular-nums; flex: none;
+}
+.bh-olcum .bh-olcum-karsi { color: var(--metin-2); flex: none; }
+.bh-olcum small {
+  color: var(--metin-3); margin-left: auto; text-align: right;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+/* Uzun listeler kartı bir kuleye çeviriyordu: dördüncü satırdan sonrası
+   katlanıyor, sayısı yazıyor. Bütün gerekçeler kartın `title`ında. */
+.bh-olcum-daha {
+  margin: 2px 0 0 !important; color: var(--metin-3) !important;
+  font-size: var(--yazi-kucuk);
+}
+.bh-tahmin {
+  color: var(--uyari, #d9a441) !important; font-size: var(--yazi-kucuk);
+  margin-top: 2px !important;
+}
+
+/* Nem eşiği kartın içinde: ayarın dibinde saklıydı ve bahçeden
+   görünmüyordu. Aynı yere yazıyor (tür ezmesi), yeni bir ayar değil. */
+.bh-esik {
+  display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+  margin-top: 4px; font-size: var(--yazi-kucuk); color: var(--metin-2);
+}
+.bh-esik label { display: flex; align-items: center; gap: 4px; white-space: nowrap; }
+.bh-esik input {
+  width: 64px; min-height: 34px; padding: 0 8px; font: inherit;
+  border-radius: 8px; border: 1px solid var(--cizgi-2);
+  background: var(--yuzey-2); color: var(--metin);
+}
+.bh-esik small { flex-basis: 100%; color: var(--metin-3); }
+.bh-dugme.kucuk, .bh-ikon.kucuk { min-height: 34px; padding: 0 12px; font-size: 13px; }
+
+/* Boş yer kartı: türü KULLANICI seçiyor. Seçilene kadar Ek kapalı. */
+.bh-turler {
+  display: flex; gap: 4px; flex-wrap: wrap; margin-top: 4px;
+  max-height: 76px; overflow-y: auto;
+}
+.bh-tur-sec {
+  font: inherit; font-size: var(--yazi-kucuk); min-height: 34px;
+  padding: 0 10px; display: inline-flex; align-items: center; gap: 4px;
+  border-radius: 999px; border: 1px solid var(--cizgi-2);
+  background: var(--yuzey-2); color: var(--metin); cursor: pointer;
+}
+.bh-tur-sec.secili { border-color: var(--bh-yesil); color: var(--bh-yesil); }
+/* Haznede tohumu olmayan tür SİLİK ama gizli değil: yok saymak
+   "neden listede yok" sorusunu doğururdu. */
+.bh-tur-sec.hazne-yok { opacity: .5; }
+.bh-dugme[disabled] { opacity: .45; cursor: not-allowed; }
+
+/* Ertelenen kartlar ve seçim ipucu — ikisi de tek satır. */
+.bh-ertelenmis, .bh-ipucu {
+  margin: 0; font-size: var(--yazi-kucuk); color: var(--metin-2);
+  display: flex; gap: 12px; flex-wrap: wrap; align-items: center;
+}
+.bh-ipucu { color: var(--bh-yesil); }
+.bh-ert { display: inline-flex; align-items: center; gap: 6px; }
 .bh-kart.ucdu { transform: translateY(-24px) rotate(-2deg) scale(.96); opacity: 0; }
 .bh-kart.erteledi { transform: translateX(60%) rotate(4deg); opacity: 0; }
 
@@ -454,7 +533,10 @@ nav.sekmeler button.bahce-sekme { color: var(--bh-yesil); }
   .bh-kart { display: flex; align-items: center; flex: none; width: auto;
     padding: 5px 10px; gap: 8px; }
   .bh-kart-dugmeler .bh-dugme { flex: none; }
-  .bh-kart p { display: none; }
+  .bh-kart p, .bh-olcum, .bh-esik { display: none; }
+  /* Tür seçimi dar ekranda da DURUYOR: kart bir soru soruyor, cevap
+     verilecek yer gizlenemez. */
+  .bh-turler { max-height: 40px; flex-wrap: nowrap; overflow-x: auto; }
   .bh-kart h3 { white-space: nowrap; font-size: 14px; }
   .bh-kart-simge { width: 32px; height: 32px; font-size: 18px; border-radius: 8px; }
   .bh-dugme { min-height: 38px; padding: 0 13px; }

@@ -795,17 +795,97 @@ doğduğunu yazıyor**. Uydurma görev yok; ölçüt yoksa kart da yok.
 |---|---|
 | Sulama | Tür eşiği açıksa (`sulama_nem_esigi` < %100) ve bitkinin 100 mm yakınında son 24 saatte toprak nemi okuması varsa **ölçülen nem**; yoksa **son sulamadan geçen gün**. Hangisi kullanıldıysa kartta yazıyor. |
 | Hasat | Ekim tarihi **bilinen** bitkilerde `days_to_harvest` doldu mu. Tarih yoksa kart yok — "hasadın geldi" demek uydurma olurdu. |
-| Boş yer | Dikim alanının içinde, yumuşak sınırların içinde ve hiçbir bitkinin yayılım çemberine girmeyen yerler. Önerilen tür, **en son ekilen** tür. |
+| Boş yer | Dikim alanının içinde, yumuşak sınırların içinde ve hiçbir bitkinin yayılım çemberine girmeyen yerler. **Türü kullanıcı seçiyor** (aşağıya bakın). |
 
 Nem kanıtı sulama akışının kullandığının aynısı (`sulama.en_yakin_nem`) —
 kopyalanmıyor, çağrılıyor. İkisi ayrışsaydı bahçe "susadı" derken sulama
 "atlandı" derdi.
+
+#### Kart sayıyı gösteriyor, ölçütü değil
+
+"Ölçüt: ölçülen toprak nemi" yazıp sayıyı saklamak, gerekçe göstermemekle
+aynı şeydi. Kart artık her bitki için tek satır yazıyor:
+
+```
+Marul   %32  < eşik %40      0 mm · 17 dk önce
+```
+
+Yani kaç ölçülmüş, eşik kaç, okuma bitkiye **ne kadar yakın** alınmış ve
+**ne kadar taze**. Dördüncü satırdan sonrası "+2 bitki daha"ya katlanıyor;
+hepsi kartın `title`ında duruyor.
+
+**Tahmin saklanmıyor.** Ölçüm yoksa ya da eşik kapalıysa karar son
+sulamadan geçen güne dayanıyor ve kart bunu açıkça yazıyor — satır sarı
+kenarlı ve altında *"Bu karar ÖLÇÜME değil, son sulamadan geçen güne
+dayanıyor"* duruyor. Kimi bitkide ölçüm varken kimisinde yoksa ölçüt
+*"kimi ölçülen nem, kimi geçen gün"* olarak yazılıyor ve kaç tanesinin
+tahmin olduğu söyleniyor. Bir kararın neye dayandığını gizlemek, o karara
+güvenilip güvenilmeyeceğini kullanıcıdan saklamaktır.
+
+**Eşik kartın içinde.** Nem eşiği tür ayarlarının dibinde duruyordu ve
+bahçeden görünmüyordu — hâlbuki kartın söylediği her şeyi belirleyen sayı
+o. Kutuya bir sayı yazmak, kartta adı geçen türlerin **tür ezmesini**
+yazıyor (`POST /api/bahce/esik` → `turler.kaydet`); yeni bir ayar
+mekanizması yok, teknik panelin yazdığı yerin aynısı. %100 "kapalı"
+demek ve kutu bunu söylüyor. Bir bitkinin kendi `ozel.sulama_nem_esigi`
+değeri tür ezmesini yeniyor; öyle bitkiler varsa **adlarıyla** bildiriliyor
+— sessizce yazıp "oldu" demek, değişmeyen bir sayıyı değişmiş gibi
+göstermek olurdu.
 
 **Seri sayacı** da uydurma değil ve yeni bir dosya tutmuyor: ekim tarihi,
 sulama damgası ve arşivdeki fotoğrafın tarihi zaten kayıtlı; "o gün
 bahçeye dokunuldu" bu üçünün birleşimi. Bugün henüz bir şey yapılmadıysa
 seri hemen bozulmuyor — saat dokuzda "serin bitti" demek günün kalanını
 yok saymak olurdu.
+
+#### Türü kullanıcı seçiyor, biz seçmiyoruz
+
+Kart eskiden "en son ekilen tür"ü kendi seçip *"dikim alanında 12 tane
+daha maydanoz sığıyor"* diyordu. Maydanozu kullanıcı seçmemişti; ekranın
+kendi kendine bir tür seçip onu öneriyor olması, kullanıcının kararını
+ekranın vermesiydi.
+
+Şimdi kart *"5 boş yer var — ne ekelim?"* diyor ve tohum rafındaki türleri
+sıralıyor. Bir tür seçilince sayı **o türün yayılım çapından** yeniden
+hesaplanıyor (`GET /api/bahce/bos-yer?tur=`): aynı yatakta havuç (100 mm)
+beş tane alıyor, roka (150 mm) iki, marul (250 mm) hiç. **Seçilmeden `Ek`
+çalışmıyor.**
+
+Başlıktaki ilk sayının da bir tabanı olmak zorunda — yayılım bilinmeden
+kaç tane sığdığı hesaplanamaz. Taban, **haznedeki en dar yayılımlı tohum**;
+yani "en iyi ihtimalle bu kadar". Kart bunu saklamıyor, taban türü adıyla
+gerekçesinde yazıyor. Haznede tohumu olmayan türler listede **silik**
+duruyor ve seçilirse *"haznede bu tohum yok — ekim reddedilir"* yazıyor:
+listeden çıkarmak "neden yok" sorusunu doğururdu, sessizce kabul etmek de
+makinenin reddedeceği bir işi sıraya sokmak olurdu.
+
+#### "Yarın sor" — erteleme bir söz veriyor
+
+Eski "Sonra" düğmesi kartı yalnız **ekrandan** siliyordu: sayfa
+yenilenince geri geliyordu ve kullanıcı erteledi mi, iptal mi etti, bir
+daha sorulacak mı bilmiyordu. Şimdi düğmenin adı ne yaptığını söylüyor ve
+basılınca kartın üstünde *"yarın 07:00 yeniden soracağım"* yazıyor; kart
+ancak o okunacak kadar bekledikten sonra uçuyor. Şeritte tek satır
+kalıyor: *"Hasat kartı yarın 07:00 geri gelecek · Şimdi göster"*.
+
+Sabit bir saat, "24 saat sonra"dan iyi: kart gece yarısı geri gelmiyor ve
+ne zaman geleceği tam olarak biliniyor.
+
+Erteleme **yazılıyor** — bahçe katmanının kendi verisini tutmama kuralının
+tek istisnası. Bir erteleme ölçümden türetilemez, o bir karardır. Yeni bir
+dosya açmıyoruz: zaten var olan SQLite'a tek satırlık bir tabloya
+(`bahce_erteleme`) yazıyoruz ve yazılamazsa belleğe düşüyoruz — erteleme
+kaybolabilir ama kartlar çalışmaya devam eder.
+
+#### Kart şeridi ile tahta aynı hesaptan besleniyor
+
+Kart "4 bitki susadı" diyorsa tahtada **tam o dört bitkinin** üstünde
+damla var. Susama ve hasat hâli artık bir kez hesaplanıyor
+(`_bahce_veri` → `durumlar`) ve hem bitki listesine hem `bahce.kartlar()`a
+aynı sözlükten veriliyor. Eskiden ikisi ayrı ayrı çağırıyordu; aynı
+girdilerle aynı sonucu verdikleri için pratikte tutuyorlardı ama bu bir
+tesadüftü — biri değiştiğinde ekranda "4 bitki susadı" yazarken tahtada üç
+damla olurdu ve hangisinin doğru olduğu belli olmazdı.
 
 ### Büyüme filmi
 
@@ -853,7 +933,13 @@ karıştırır, taşır. Aynı parmakla yapılan işler:
 | **Uzun bas (480 ms)** | Bitki kartı — yaş, hasat günü, son sulama, yayılım, gerekçe, film şeridi, dört düğme | Menüye sığmayan her şey; kartta **ham koordinat yok** |
 | **Sürükle** | Bitkiyi toprakta taşı | Yanlış yere ekilmiş bir fideyi düzeltmenin başka yolu yoktu |
 | **İki parmak / tekerlek** | Yakınlaştır, kaydır | 7" ekranda fide simgesi 20 px; yakınlaşmadan hangi bitkiye dokunulduğu belli olmuyor |
-| **Seçim kipi + kutu** | Çoklu seçim, sonra tek toplu iş | Altı bitkiyi tek tek sulamak altı ayrı iş demekti |
+| **"Birkaç bitki seç" + kutu** | Çoklu seçim, sonra tek toplu iş | Altı bitkiyi tek tek sulamak altı ayrı iş demekti |
+
+Düğmenin adı **ne yaptığını**, altındaki satır **nasıl yapıldığını**
+söylüyor: *"Bir kutu çizin, içindeki bitkiler seçilsin — ya da tek tek
+dokunun."* "Seç" tek başına hiçbir şey anlatmıyordu ve dokunmatikte kimse
+kutu çizmeyi kendiliğinden denemez. Seçim varken düğme *"3 bitki seçili"*
+yazıyor, kapatan hâli *"Seçimi bitir"*.
 
 Dört karar burada özellikle önemli:
 
