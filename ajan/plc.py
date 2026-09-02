@@ -98,7 +98,8 @@ VARSAYILAN_KALIB = [
     {"cpm": 17.1782, "dir": 1, "home": 0.0, "min": 0.0, "max": 540.1},    # X
     {"cpm": 4.2686, "dir": 1, "home": 0.0, "min": 0.0, "max": 645.1},    # Y
     {"cpm": 37.074, "dir": -1, "home": 426.1, "min": 120.0, "max": 414.23},  # Z
-    dict(T_KALIBRESIZ),                                                   # T
+    # T — tohum ucunun kendi dikey ekseni. Sahadan ölçülen değerler.
+    {"cpm": 87.0, "dir": 1, "home": 0.0, "min": 0.0, "max": 55.0},         # T
 ]
 
 
@@ -484,12 +485,18 @@ class Gantry:
         """T sürülebilir mi? Kalibrasyon girilmemişse hayır."""
         return not kalibresiz_mi(self.kalib[T])
 
-    def t_yukari_mm(self) -> float:
-        """T'nin 'tamamen yukarıda' saydığımız değeri = home.
+    #: T'nin "tamamen çekilmiş" değeri. `None` iken kalibrasyonun `home`u
+    #: kullanılıyor: eksen referansa gittiğinde uç yukarıda olur, normal
+    #: kurulum bu. Ama HANGİ UCUN yukarı olduğunu yazılım ölçemiyor —
+    #: makinede ters bağlıysa güvenlik kuralı tersine döner ve uç
+    #: aşağıdayken X/Y serbest kalır. O yüzden ayardan ezilebiliyor
+    #: (`baslar.tohum.t_yukari_mm`) ve panelde ne varsayıldığı yazıyor.
+    t_yukari_ezme: float | None = None
 
-        Ayrı bir 'üst' ayarı uydurmuyoruz: eksenin referansı zaten üst uç
-        ve kalibrasyonun `home` alanı orayı söylüyor.
-        """
+    def t_yukari_mm(self) -> float:
+        """T'nin 'tamamen yukarıda' saydığımız değeri."""
+        if self.t_yukari_ezme is not None:
+            return float(self.t_yukari_ezme)
         return float(self.kalib[T].get("home", 0.0))
 
     def t_yukarida_mi(self, tolerans: float = 1.5) -> bool:

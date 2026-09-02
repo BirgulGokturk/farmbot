@@ -52,7 +52,7 @@ VARSAYILAN = {"dx": 0.0, "dy": 0.0, "z_min": 0.0, "derinlik_mm": 0.0}
 #: Sayıya çevrilmeyen, "girilmedi"si olan alanlar. `t_asagi_mm` için
 #: sıfır geçerli bir T konumu; boşla karıştırmak kurulmamış bir ekseni
 #: sıfıra sürmek olurdu.
-ISTEGE_BAGLI = ("t_asagi_mm",)
+ISTEGE_BAGLI = ("t_asagi_mm", "t_yukari_mm")
 
 
 def _sayi(deger: Any, varsayilan: float = 0.0) -> float:

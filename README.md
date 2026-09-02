@@ -554,12 +554,26 @@ Register haritası X/Y/Z ile aynı deseni izliyor (`ajan/plc.py`):
 |---|---|---|---|---|---|---|---|---|---|
 | T | 1090 | 1091 | 1092 | 1093 | 1094 | 1096 | 1098 | 1100 | 1102 |
 
-**Kalibrasyon girilmeden eksen kilitli.** `gantry_calib.json` üç eksenli
-(Gantry Studio öyle yazıyor); T için dördüncü satır (`cpm`, `dir`,
-`home`, `min`, `max`) eklenene kadar hiçbir T hareketi yapılmıyor ve
-panel sebebini yazıyor. Uydurulmuş bir `cpm` "gitmeyi reddetmek" değil
-**yanlış mesafe gitmek** demek. Kalibre değilken ekim akışı da bugünkü
+Sahadan ölçülen kalibrasyon `gantry_calib.json`ın dördüncü satırında ve
+Ayarlar → Kalibrasyon tablosunda T satırı olarak duruyor:
+
+| | cpm | dir | home | min | max |
+|---|---|---|---|---|---|
+| T | 87 | +1 | 0 | 0 | 55 |
+
+`cpm` ve `dir` — X/Y/Z'de olduğu gibi — panelden düzenlenmiyor: yanlış
+`cpm` "gitmeyi reddetmek" değil **yanlış mesafe gitmek** demek.
+
+**Kurulmamış bir eksen kilitli kalıyor.** `cpm` sıfırsa hiçbir T
+hareketi yapılmıyor, panel sebebini yazıyor ve ekim akışı bugünkü
 hâliyle, her şeyi ana Z yaparak sürüyor — T adımları hiç yazılmıyor.
+
+**Hangi ucun "yukarı" olduğunu yazılım ÖLÇEMİYOR.** Kalibrasyonun
+`home`unu (bu makinede T 0) çekilmiş kabul ediyoruz — eksen referansa
+gittiğinde uç yukarıdadır, normal kurulum bu. Ters bağlıysa güvenlik
+kuralı tersine döner ve uç aşağıdayken X/Y serbest kalır; o yüzden
+varsayım gizli değil: Sür ekranında *"Yukarı = T 0.0 mm"* yazıyor ve
+Ayarlar → Başlar'daki **yukarı T** kutusundan değiştiriliyor.
 
 **Uç aşağıdayken X/Y hareketi yok.** Ana Z yukarıda olsa bile tohum ucu
 kendi ekseniyle inmiş olabiliyor; o hâlde X ya da Y sürmek ucu toprağa

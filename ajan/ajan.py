@@ -169,6 +169,9 @@ class Ajan:
         # muafiyeti KALDIRILDI: uç takıp çıkarmak diye bir şey kalmadı,
         # muafiyetin de sebebi kalmadı — Z kilidi artık koşulsuz.
         self.plc.z_guvenli_kaynagi = self.uclar.z_guvenli_reg_oku
+        # Tohum ucunun "tam çekilmiş" T değeri ayardan gelebiliyor; boşken
+        # kalibrasyonun `home`u geçerli (bkz. `plc.t_yukari_mm`).
+        self._t_yukari_uygula()
         ard = ayar["arduino"]
         # Medyan penceresi: kaç örneğin ortancası gösterilsin. 5 örnek,
         # 2 sn'lik okuma aralığında 10 saniyelik bir pencere demek — tek
@@ -254,6 +257,13 @@ class Ajan:
                     "yeniden ölçün.", kuru, islak, abs(kuru - islak))
             return {"kuru": 1023.0, "islak": 0.0}
         return {"kuru": kuru, "islak": islak}
+
+    def _t_yukari_uygula(self) -> None:
+        """`baslar.tohum.t_yukari_mm` ayarını PLC sürücüsüne taşır."""
+        try:
+            self.plc.t_yukari_ezme = self.uclar.bas("tohum").get("t_yukari_mm")
+        except Exception:                                    # noqa: BLE001
+            self.plc.t_yukari_ezme = None
 
     def _kosul_baglami(self) -> dict[str, Any]:
         """Bölge koşullarında kullanılan makine durumu.
@@ -407,6 +417,7 @@ class Ajan:
                 if not isinstance(gelen, dict):
                     return {"ok": False, "mesaj": "ayar bir nesne olmalı"}
                 yeni = await asyncio.to_thread(self.uclar.kaydet, gelen)
+                self._t_yukari_uygula()
                 return {"ok": True, "mesaj": "Kafa ayarları kaydedildi",
                         "veri": {"ayar": yeni,
                                  "baslar": self.uclar.baslar()}}

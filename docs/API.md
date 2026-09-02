@@ -476,8 +476,11 @@ de veriyor. Adımlar hem MAKİNE koordinatını (`x`/`y`) hem İŞ koordinatın�
 yumuşak sınır denetimi makinenin yerine bakıyor.
 
 **TOHUM UCUNUN KENDİ DİKEY EKSENİ** (`durum.tohum_ucu`, PLC'de j4, kodda T):
-`{kalibre, mm, yukari_mm, yukarida}`. `gantry_calib.json`a dördüncü satır
-girilmeden eksen kilitli ve her hareket sebebiyle reddediliyor. **Uç
+`{kalibre, mm, yukari_mm, yukarida}`. Kalibrasyon `gantry_calib.json`ın
+dördüncü satırında (bu makinede `cpm 87 · dir +1 · home 0 · 0–55`) ve
+panelin kalibrasyon tablosunda T satırı olarak görünüyor; `cpm` sıfırsa
+eksen kilitli ve her hareket sebebiyle reddediliyor. "Yukarı" ucu
+`home` sayılıyor, `baslar.tohum.t_yukari_mm` ile eziliyor. **Uç
 aşağıdayken X/Y hareketi yapılmıyor** — jog, koordinat hareketi ve dizi
 adımı, üçü de reddediyor; Z serbest kalıyor (kaçış yolu).
 

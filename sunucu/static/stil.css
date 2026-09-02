@@ -925,7 +925,7 @@ button.dugme.basili { background: var(--vurgu); border-color: var(--vurgu); colo
   gap: 6px; align-items: center;
 }
 .bas-baslik { font-size: 12px; color: var(--metin-3); }
-.bas-satir.tek { grid-template-columns: minmax(150px, 1.4fr) 1fr; }
+
 .bas-satir input { min-width: 0; }
 .bas-ad { font-weight: 600; font-size: 13px; }
 .bas-git { margin: 8px 0; }

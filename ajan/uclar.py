@@ -56,7 +56,12 @@ BAS_VARSAYILAN = {"dx": 0.0, "dy": 0.0, "z_min": 0.0, "derinlik_mm": 0.0}
 #: yönünü (`dir`) uydurmuyoruz — kullanıcı ucu elle indirip panelde okunan
 #: sayıyı yazıyor. Girilmemişse (None) tohum ucu kendi ekseniyle hiç
 #: inmiyor ve ekim bugünkü hâliyle, her şeyi ana Z yaparak sürüyor.
-BAS_ISTEGE_BAGLI = ("t_asagi_mm",)
+#: `t_yukari_mm`: ucun TAM ÇEKİLMİŞ olduğu T değeri. Boşken kalibrasyonun
+#: `home`u kullanılıyor (eksen referansa gittiğinde uç yukarıdadır — normal
+#: kurulum). Makinede ters bağlıysa buraya öteki uç yazılıyor; yanlış
+#: varsayım "uç aşağıdayken X/Y serbest" demek olurdu ve o, ucu toprağa
+#: sürtmenin en kolay yolu.
+BAS_ISTEGE_BAGLI = ("t_asagi_mm", "t_yukari_mm")
 
 VARSAYILAN = {
     # X/Y hareketinin yapılabildiği en düşük Z. Üç baş da bu yükseklikte

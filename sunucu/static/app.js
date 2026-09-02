@@ -1008,6 +1008,10 @@ function ucGuncelle(u) {
  * kapalı — sebebi burada yazıyor.
  */
 function tohumUcuYaz(d) {
+  // T'nin "yukarı" ucu ne varsayılıyor — panelde YAZILI duruyor.
+  // Yazılım hangi ucun çekilmiş olduğunu ÖLÇEMİYOR; kalibrasyonun
+  // home'unu yukarı sayıyor. Ters bağlıysa güvenlik kuralı tersine döner
+  // ve uç aşağıdayken X/Y serbest kalır — bu yüzden varsayım gizli değil.
   const t = (d && d.tohum_ucu) || {};
   const hal = $("#t-hal");
   const uyari = $("#t-uyari");
@@ -1026,7 +1030,9 @@ function tohumUcuYaz(d) {
   if (not) {
     not.textContent = kilit
       ? "T ekseni kalibre edilmedi — indirme/kaldırma kapalı."
-      : (t.yukarida ? "Uç yukarıda." : "Uç aşağıda — X/Y kilitli.");
+      : `${t.yukarida ? "Uç yukarıda." : "Uç AŞAĞIDA — X/Y kilitli."}`
+        + ` Yukarı = T ${Number(t.yukari_mm || 0).toFixed(1)} mm`
+        + " (ters ise Ayarlar → Başlar'dan değiştirin).";
   }
   ["#d-t-in", "#d-t-kalk", "#t-mm"].forEach((sec) => {
     const el = $(sec);
@@ -1068,12 +1074,17 @@ function basTablosuCiz(baslar, bilgi) {
     // TOHUM UCUNUN KENDİ EKSENİ yalnız onun satırının altında: öteki iki
     // başın böyle bir ekseni yok ve boş bir kutu göstermek "burada da var
     // ama girilmemiş" demek olurdu.
-    + `<div class="bas-satir tek" data-bas="tohum">
+    + `<div class="bas-satir" data-bas="tohum">
          <span class="bas-ad">🌱 Tohum ucu — kendi ekseni (T)</span>
          <input type="number" step="0.5" data-alan="t_asagi_mm"
            placeholder="aşağı T (mm)"
            value="${(baslar.tohum || {}).t_asagi_mm == null
                     ? "" : baslar.tohum.t_asagi_mm}">
+         <input type="number" step="0.5" data-alan="t_yukari_mm"
+           placeholder="yukarı T (mm)"
+           value="${(baslar.tohum || {}).t_yukari_mm == null
+                    ? "" : baslar.tohum.t_yukari_mm}">
+         <span></span><span></span>
        </div>`;
   kap.querySelectorAll("input").forEach((el) => {
     el.oninput = () => { S.ucAyarDuzenleniyor = true; basOrnekYaz(); };
@@ -5547,7 +5558,7 @@ function kalibrasyonCiz(d) {
   }
   // cpm ve dir metin, home/min/max girdi. Ayrım bilinçli: yanlış cpm
   // yanlış MESAFE gitmek demek ve panelden yanlışlıkla değiştirilmemeli.
-  govde.innerHTML = ["x", "y", "z"].map((e) => {
+  govde.innerHTML = ["x", "y", "z", "t"].map((e) => {
     const c = k[e] || {}, s = sn[e] || {};
     /* METİN girdi, `number` DEĞİL.
      *
@@ -5565,7 +5576,14 @@ function kalibrasyonCiz(d) {
       `<td><input type="text" inputmode="decimal" class="kalib-girdi" `
       + `data-eksen="${e}" data-alan="${alan}" `
       + `value="${deger == null ? "" : deger}"></td>`;
-    return `<tr><td><b>${e.toUpperCase()}</b></td>
+    // T KURULMAMIŞSA SATIR YİNE DURUYOR ve "kurulmadı" diyor: gizlemek,
+    // dördüncü eksenin varlığını saklamak olurdu.
+    const kurulmamis = !(sayi(c.cpm, 4) > 0);
+    // Etiket TEK HARF: ilk sütun dar ve "T tohum ucu" cpm sütununun
+    // üstüne biniyordu. Ne olduğu `title`da ve yardım metninde.
+    return `<tr${kurulmamis ? ' class="etkisiz"' : ""}><td${
+      e === "t" ? ' title="Tohum ucunun kendi dikey ekseni (PLC\'de j4)"' : ""
+    }><b>${e.toUpperCase()}</b></td>
       <td>${sayi(c.cpm, 4)}</td><td>${c.dir > 0 ? "+1" : "−1"}</td>
       ${kutu("home", c.home)}${kutu("min", s.min)}${kutu("max", s.max)}</tr>`;
   }).join("");
@@ -5605,7 +5623,7 @@ async function eksenKalibGonder() {
   if (_kalibGonderiliyor) return;
   _kalibGonderiliyor = true;
   try {
-    const eksenler = ["x", "y", "z"].map((e) => {
+    const eksenler = ["x", "y", "z", "t"].map((e) => {
       const al = (alan) => {
         const el = document.querySelector(
           `.kalib-girdi[data-eksen="${e}"][data-alan="${alan}"]`);
