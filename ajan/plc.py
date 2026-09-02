@@ -382,6 +382,18 @@ class Gantry:
         # ve yüzey sıfırdan epey yukarıda. Ekim derinliği, uç açıklığı
         # ve 3B sahnedeki toprak düzlemi bu değere göre yerleşiyor.
         self.toprak_z = float(ayar.get("toprak_z", 0.0))
+        # GÜVENLİ T — `guvenli_z`nin T karşılığı. X/Y hareketi tohum ucunun
+        # çekilmiş olmasına bağlı ve "çekilmiş" bir NOKTA değil bir PAY:
+        # eksen hedefe tam oturmuyor, servo birkaç sayım şaşıyor. Eskiden
+        # bu pay koda gömülü 1,5 mm'ydi; makineden makineye değişen bir
+        # sayının kodda sabit durması, kullanıcının onu düzeltememesi
+        # demekti. Çekilmiş değere bu kadar mm yaklaşmışsa güvenli sayılıyor.
+        self.guvenli_t = float(ayar.get("guvenli_t", 1.5))
+        # TOPRAK YÜZEYİNİN T KARŞILIĞI. Yüzey Z cinsinden tanımlı ama
+        # tohumu bırakan artık T. Ekim derinliğinin doğru çıkması için
+        # yüzeye denk gelen T uzamasını da bilmek gerekiyor: bırakma
+        # derinliği = toprak_t + türün ekim derinliği.
+        self.toprak_t = float(ayar.get("toprak_t", 0.0))
         # NOT: `home_bekleme_sn`, `home_azami_sn`, `home_tolerans_mm` ve
         # `home_kimilda_sn` ayarları ARTIK KULLANILMIYOR. Home, PLC'nin
         # referans arama darbesi değil sıradan bir koordinat hareketi;
@@ -504,7 +516,7 @@ class Gantry:
             return float(self.t_yukari_ezme)
         return float(self.kalib[T].get("home", 0.0))
 
-    def t_yukarida_mi(self, tolerans: float = 1.5) -> bool:
+    def t_yukarida_mi(self, tolerans: float | None = None) -> bool:
         """Tohum ucu çekilmiş mi?
 
         Okunamıyorsa "yukarıda değil" diyoruz: hata anında yatay hareketi
@@ -514,8 +526,9 @@ class Gantry:
         """
         if not self.t_kalibre_mi():
             return True
+        pay = self.guvenli_t if tolerans is None else float(tolerans)
         try:
-            return abs(self.eksen_konum_mm(T) - self.t_yukari_mm()) <= tolerans
+            return abs(self.eksen_konum_mm(T) - self.t_yukari_mm()) <= max(0.0, pay)
         except Exception:
             return False
 
@@ -581,6 +594,8 @@ class Gantry:
                 "z_guvenli": konum[2] >= self.guvenli_z - 1.0,
                 "guvenli_z": self.guvenli_z,
                 "toprak_z": self.toprak_z,
+                "toprak_t": self.toprak_t,
+                "guvenli_t": self.guvenli_t,
                 "acil": dict(self.acil_mandal),
                 "sinirlar": {
                     e: {"min": self.kalib[i].get("min"), "max": self.kalib[i].get("max")}
@@ -621,6 +636,8 @@ class Gantry:
             # koptuğunda 3B sahneyi sıfır yüzeyle yeniden kurardı.
             return {"plc": "kopuk", "konum": {"x": None, "y": None, "z": None},
                     "toprak_z": self.toprak_z,
+                "toprak_t": self.toprak_t,
+                "guvenli_t": self.guvenli_t,
                     "acil": dict(self.acil_mandal), "hata": str(hata), "tani": t}
 
     # --- düşük seviye hareket -------------------------------------------
@@ -929,7 +946,8 @@ class Gantry:
         self._iptal.clear()
         self.gunluk_cb("Önceki hareket iptal edildi", "bilgi")
 
-    def git(self, x: float | None, y: float | None, z: float | None, hiz: float | None = None) -> str:
+    def git(self, x: float | None, y: float | None, z: float | None,
+            hiz: float | None = None, t: float | None = None) -> str:
         """Hedefe git. Sıra Z → Y → X, her eksen bitmeden diğeri başlamaz.
 
         Hareket arka planda yürüyor: bulut komutu 45 saniye bekletemez, panelin
@@ -963,6 +981,30 @@ class Gantry:
                 raise PLCHatasi(engel)
         adimlar = self._adim_plani(simdiki, hedef, yatay_var)
 
+        # T DE VERİLEBİLİR — ama SIRASI ÖNEMLİ.
+        #
+        # Tohum ucu aşağıdayken X/Y sürülmüyor. O yüzden uç ÇEKİLİYORSA bu
+        # adım en başa, UZUYORSA en sona giriyor: önce yatay yolu aç, en son
+        # in. Ters sırada, ya hareket "uç aşağıda" diye reddedilirdi ya da
+        # uç inmiş hâlde yatay sürülürdü — ikincisi ucu toprağa sürtmek.
+        if t is not None and self.t_kalibre_mi():
+            t_hedef = float(t)
+            if not self.sinir_icinde(T, t_hedef):
+                raise PLCHatasi(
+                    f"T hedefi sınır dışı: {t_hedef:.1f} mm "
+                    f"[{self.kalib[T]['min']:.0f}, {self.kalib[T]['max']:.0f}]")
+            simdi_t = self.eksen_konum_mm(T)
+            yukari_mm = self.t_yukari_mm()
+            cekiliyor = abs(t_hedef - yukari_mm) < abs(simdi_t - yukari_mm)
+            if cekiliyor:
+                adimlar.insert(0, (T, t_hedef, "Tohum ucu çekiliyor"))
+            else:
+                adimlar.append((T, t_hedef, "Tohum ucu iniyor"))
+        elif t is not None:
+            raise PLCHatasi(
+                "Tohum ucu ekseni (T) kalibre edilmedi — T hedefi verilemez. "
+                "Ayarlar → Eksen kalibrasyonu → T.")
+
         # Yasak bölge denetimi hareket BAŞLAMADAN, planın tamamı üzerinde
         # yapılıyor. Adım adım denetleseydik makine iki adım gidip üçüncüde
         # dururdu — yarım kalmış bir hareket, hiç başlamamış olandan kötü.
@@ -977,7 +1019,8 @@ class Gantry:
         self._hareket_ip = threading.Thread(
             target=self._git_isci, args=(adimlar, hiz_mm_s), daemon=True)
         self._hareket_ip.start()
-        return f"Hedefe gidiliyor: X{hedef[0]:.1f} Y{hedef[1]:.1f} Z{hedef[2]:.1f}"
+        metin = f"Hedefe gidiliyor: X{hedef[0]:.1f} Y{hedef[1]:.1f} Z{hedef[2]:.1f}"
+        return metin + (f" T{float(t):.1f}" if t is not None else "")
 
     def t_git(self, mm: float | None = None, hiz: float | None = None,
               yukari: bool = False) -> str:

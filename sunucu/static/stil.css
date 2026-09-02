@@ -1916,7 +1916,10 @@ button.dugme.role.acik:hover:not(:disabled) { background: rgba(74, 168, 96, .24)
    görünmüyordu. Kırpılmış koordinat yanlış okunan koordinattır. */
 .goz-baslik, .goz-hucreler {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 58px 58px 58px;
+  /* T sutunu eklendi: hazne basina tohum ucunun inecegi mesafe. Ad
+     sutunu daralıyor, sayilar 52 piksele oturuyor — 380 piksellik yan
+     panelde bes sutunun sigdigi tek olcu bu. */
+  grid-template-columns: minmax(0, 1fr) 52px 52px 52px 52px;
   gap: 5px;
   align-items: center;
 }

@@ -103,7 +103,7 @@ def _goz_dogrula(ham: Any, sira: int, kullanilan: set[str]) -> dict[str, Any] | 
     if not isinstance(ham, dict):
         return None
     konum: dict[str, Any] = {}
-    for eksen in ("x", "y", "z"):
+    for eksen in ("x", "y", "z", "t"):
         deger = ham.get(eksen)
         if deger in (None, ""):
             konum[eksen] = None
@@ -119,6 +119,10 @@ def _goz_dogrula(ham: Any, sira: int, kullanilan: set[str]) -> dict[str, Any] | 
         konum["y"] = 0.0
     if konum["z"] is None:
         konum["z"] = 0.0
+    # T BOŞ KALABİLİR ve boş "bu gözde T kullanma" demek — sıfır DEĞİL.
+    # Sıfır geçerli bir T değeri (uç tamamen çekilmiş); boşu sıfıra
+    # çevirmek, T'si girilmemiş her gözde ucu çekili tutmaya çalışmak
+    # olurdu. Haznelerin derinliği aynı olmadığı için T göz başına.
 
     ad = str(ham.get("ad") or "").strip()[:24] or f"s{sira}"
     # Ad ÇAKIŞMASI sessiz geçilmiyor: ekim dizisi gözü adıyla buluyor,
@@ -132,7 +136,7 @@ def _goz_dogrula(ham: Any, sira: int, kullanilan: set[str]) -> dict[str, Any] | 
 
     return {
         "ad": ad,
-        "x": konum["x"], "y": konum["y"], "z": konum["z"],
+        "x": konum["x"], "y": konum["y"], "z": konum["z"], "t": konum["t"],
         "tohum": str(ham.get("tohum") or "").strip()[:40],
         # Belirtilmemişse DOLU sayılıyor: yeni tanımlanan bir göze
         # kullanıcı tohum koyuyor demektir, boş varsaymak ekim dizisini
@@ -154,7 +158,8 @@ def _tohumluk_dogrula(ham: Any) -> dict[str, Any]:
     liste = ham.get("gozler")
     if liste is None and ("x" in ham or "y" in ham or "z" in ham):
         liste = [{"ad": "s1", "x": ham.get("x"), "y": ham.get("y"),
-                  "z": ham.get("z"), "tohum": "", "dolu": True}]
+                  "z": ham.get("z"), "t": ham.get("t"),
+                  "tohum": "", "dolu": True}]
     if not isinstance(liste, list):
         liste = []
 
@@ -349,7 +354,7 @@ class Uclar:
         if not gozler:
             return None
         g = gozler[0]
-        return {"x": g["x"], "y": g["y"], "z": g["z"]}
+        return {"x": g["x"], "y": g["y"], "z": g["z"], "t": g.get("t")}
 
     def goz_bul(self, ad: str) -> dict[str, Any] | None:
         return next((g for g in self.tohumluk_gozleri() if g["ad"] == ad), None)

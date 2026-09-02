@@ -74,6 +74,14 @@ VARSAYILAN_AYAR = {
         # sıfırını toprak sanması demekti.
         # Ölçmek için: python3 toprak-olc.py
         "toprak_z": 170.0,
+        # Toprak yüzeyinin T karşılığı: tohum ucu kendi ekseniyle bu kadar
+        # uzayınca yüzeye değiyor. Ekim derinliği bunun üstüne biniyor.
+        # Ölçülmeden 0 kalır ve o hâlde ekim ana Z ile sürer.
+        "toprak_t": 0.0,
+        # Tohum ucu "çekilmiş" sayılmak için hedefe bu kadar mm yaklaşmalı.
+        # X/Y hareketi buna bağlı. Kodda 1,5 mm sabitti; servo payı
+        # makineden makineye değiştiği için ayara alındı.
+        "guvenli_t": 1.5,
         "hiz": 20.0,
         # Eksen başına hız. Sahada seçilen değerler VARSAYILAN oldu:
         # X ve Y 20, Z 10.
@@ -366,7 +374,8 @@ class Ajan:
 
             if ad == "git":
                 mesaj_metni = await asyncio.to_thread(
-                    self.plc.git, arg.get("x"), arg.get("y"), arg.get("z"), arg.get("hiz"))
+                    self.plc.git, arg.get("x"), arg.get("y"), arg.get("z"),
+                    arg.get("hiz"), arg.get("t"))
                 return {"ok": True, "mesaj": mesaj_metni}
 
             if ad == "home":

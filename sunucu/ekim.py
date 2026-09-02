@@ -319,7 +319,8 @@ def parcalar_bir_tohum(hedef: dict[str, Any], hazne: dict[str, Any], *,
                        guvenli_z: float, ekim_z: float,
                        vakum_sn: float, dusme_sn: float,
                        bas: dict[str, float] | None = None,
-                       t_asagi_mm: float | None = None) -> dict[str, Any]:
+                       t_asagi_mm: float | None = None,
+                       ekim_t: float | None = None) -> dict[str, Any]:
     """Tek bitkinin parçaları. Her adım MUTLAK MAKİNE koordinatı taşıyor.
 
     İki nokta arasında HER ZAMAN güvenli Z'de gidiliyor; yalnız hazneye
@@ -345,12 +346,24 @@ def parcalar_bir_tohum(hedef: dict[str, Any], hazne: dict[str, Any], *,
     ha = str(hazne.get("ad") or "hazne")
     ta = str(hedef.get("ad") or "hedef")
 
-    def _in() -> list[dict[str, Any]]:
-        return ([] if t_asagi_mm is None
-                else [{"tip": "uc_dikey", "mm": round(_sayi(t_asagi_mm), 2)}])
+    # ALMA VE BIRAKMA AYNI DERİNLİĞE İNMİYOR.
+    #
+    # Haznenin dibi ile toprağın yüzeyi farklı yerlerde ve hazneler kendi
+    # aralarında da farklı derinlikte. Tek bir `t_asagi_mm` ile ikisini de
+    # sürmek, ya tohuma değmemek ya da tepsinin dibine bastırmak demekti.
+    # Hazne kendi `t` değeriyle, toprak `toprak_t + ekim derinliği` ile
+    # iniyor; ikisi de yoksa eski tek değere düşülüyor ve o da yoksa T
+    # adımı hiç yazılmıyor (ana Z'nin bugünkü davranışı sürüyor).
+    haz_t = hazne.get("t")
+    haz_t = _sayi(haz_t) if haz_t is not None else t_asagi_mm
+    top_t = ekim_t if ekim_t is not None else t_asagi_mm
+
+    def _inis(mm: float | None) -> list[dict[str, Any]]:
+        return [] if mm is None else [{"tip": "uc_dikey", "mm": round(_sayi(mm), 2)}]
 
     def _kalk() -> list[dict[str, Any]]:
-        return [] if t_asagi_mm is None else [{"tip": "uc_dikey", "yukari": True}]
+        return ([] if (haz_t is None and top_t is None)
+                else [{"tip": "uc_dikey", "yukari": True}])
 
     return {
         # Haznenin ÜSTÜ. Burada durup soruyoruz; henüz inmedi.
@@ -361,7 +374,7 @@ def parcalar_bir_tohum(hedef: dict[str, Any], hazne: dict[str, Any], *,
         # in, sonra pompa. Tohum ucu kendi ekseniyle de son santimi iniyor.
         "al": [
             {"tip": "nokta", "ad": ha, "x": hx, "y": hy, "z": hz},
-        ] + _in(),
+        ] + _inis(haz_t),
         # Vakum tutsun diye bekliyor, ucu çekiyor, kalkıyor, hedefin
         # üstüne gidiyor. UÇ ÖNCE ÇEKİLİYOR: aşağıdayken yatay hareket
         # ucu haznenin kenarına sürter (ajan da zaten reddeder).
@@ -376,7 +389,7 @@ def parcalar_bir_tohum(hedef: dict[str, Any], hazne: dict[str, Any], *,
         "ek": [
             {"tip": "nokta", "ad": ta, "x": tx, "y": ty, "z": ekim_z,
              "is_x": ix, "is_y": iy},
-        ] + _in() + [
+        ] + _inis(top_t) + [
             {"tip": "role", "ad": "hava_pompasi", "durum": False},
             {"tip": "bekle", "saniye": dusme_sn},
         ] + _kalk() + [
@@ -419,6 +432,7 @@ def coz(hedefler: list[dict[str, Any]], gozler: list[dict[str, Any]] | None, *,
         onay: bool = False,
         bas: dict[str, float] | None = None,
         t_asagi_mm: float | None = None,
+        toprak_t: float | None = None,
         ) -> dict[str, Any]:
     """Ekimi çözer: bitki başına parçalar + özet + ret sebepleri.
 
@@ -545,16 +559,21 @@ def coz(hedefler: list[dict[str, Any]], gozler: list[dict[str, Any]] | None, *,
                        f"{derinlik:.0f} mm).")
             continue
 
+        # Toprağa inişin T karşılığı: yüzeye denk gelen T uzaması +
+        # türün ekim derinliği. `toprak_t` ölçülmemişse (None) eski
+        # davranış sürüyor.
+        ekim_t = None if toprak_t is None else round(_sayi(toprak_t) + derinlik, 2)
         plan.append(parcalar_bir_tohum(
             hedef, hazne, guvenli_z=guvenli_z, ekim_z=ekim_z,
             vakum_sn=vakum_sn, dusme_sn=dusme_sn,
-            bas=bas, t_asagi_mm=t_asagi_mm))
+            bas=bas, t_asagi_mm=t_asagi_mm, ekim_t=ekim_t))
         ozet.append({
             "ad": ad, "x": tx, "y": ty, "z": ekim_z,
             "tur": tur, "tur_ad": _tur_ad(tur),
             "hazne": hazne["ad"], "hazne_x": _sayi(hazne.get("x")),
             "hazne_y": _sayi(hazne.get("y")), "hazne_z": _sayi(hazne.get("z")),
             "yuzey_z": yuzey, "derinlik_mm": derinlik,
+            "hazne_t": hazne.get("t"), "ekim_t": ekim_t,
             "alan": (alan or {}).get("ad") or "",
         })
 

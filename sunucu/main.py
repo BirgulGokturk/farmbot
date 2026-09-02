@@ -1270,6 +1270,20 @@ async def api_sulama_onizle(govde: dict[str, Any], jeton: str = Query(default=""
 # --------------------------------------------------------------------------- #
 
 
+def _toprak_t(durum: dict[str, Any]) -> float | None:
+    """Toprak yüzeyine denk gelen T uzaması. Ayarlanmamışsa None.
+
+    SIFIR "ölçülmedi" demek: uç tamamen çekilmişken toprağa değmesi
+    mümkün değil, yani 0 gerçek bir yüzey değeri olamaz. Bu yüzden 0'ı
+    "yok" sayıp ekimi eski yoluyla sürdürüyoruz.
+    """
+    try:
+        deger = float(durum.get("toprak_t") or 0.0)
+    except (TypeError, ValueError):
+        return None
+    return deger if deger > 0.0 else None
+
+
 def _t_asagi_mm(durum: dict[str, Any]) -> float | None:
     """Tohum ucunun KENDİ ekseninde ineceği mutlak T değeri.
 
@@ -1332,6 +1346,11 @@ def _ekim_coz(adlar: list[str]) -> dict[str, Any]:
         # düşer. Kendi dikey ekseninin hedefi de buradan geçiyor.
         bas=baslar.bas(durum, "tohum"),
         t_asagi_mm=_t_asagi_mm(durum),
+        # Toprak yüzeyinin T karşılığı ajandan geliyor (plc.toprak_t).
+        # Ölçülmemişse None kalıyor ve ekim eski davranışla, ana Z ile
+        # sürüyor — yarım bir T ayarıyla toprağa dalmaktansa hiç
+        # kullanmamak doğru.
+        toprak_t=_toprak_t(durum),
         # Hazne koordinatları makine sınırlarının içinde mi. Bunu ekim
         # başlarken öğrenmek geç ve kullanıcıyı bugün üç kez durdurdu;
         # panel aynı denetimi koordinat girilirken de yapıyor.

@@ -1166,7 +1166,7 @@ function gozTablosuCiz(gozler) {
    * sıranın başlığı yok çünkü kendini anlatıyor: listede türün adı
    * yazılı, kutunun yanında "dolu" etiketi duruyor. */
   kutu.innerHTML = `<div class="goz-baslik">
-      <span>Hazne</span><span>X mm</span><span>Y mm</span><span>Z mm</span>
+      <span>Hazne</span><span>X mm</span><span>Y mm</span><span>Z mm</span><span>T mm</span>
     </div>` + liste.map((g, i) => `
     <div class="goz-satir${g.dolu ? "" : " goz-bos"}" data-i="${i}" data-ad="${kacisli(g.ad || "")}">
       <div class="goz-hucreler">
@@ -1176,6 +1176,9 @@ function gozTablosuCiz(gozler) {
         <input type="number" class="gz-z" step="0.1"
                title="Gözün dibi — vakum ucu bu Z'ye iniyor"
                value="${g.z != null ? g.z : ""}">
+        <input type="number" class="gz-t" step="0.1"
+               title="Tohum ucunun bu haznede kendi ekseniyle ineceği T. BOŞ BIRAKILABİLİR: boş 'bu hazneye T ile inme' demek, sıfır ise 'uç tamamen çekili' demek — ikisi ayrı."
+               placeholder="—" value="${g.t != null ? g.t : ""}">
       </div>
       <div class="goz-alt">
         <select class="gz-tohum"
@@ -1270,6 +1273,11 @@ function gozTablosuTopla() {
     x: Number(el.querySelector(".gz-x").value),
     y: Number(el.querySelector(".gz-y").value),
     z: Number(el.querySelector(".gz-z").value),
+    // T BOŞ KALABİLİR ve boş sıfır DEĞİL: sıfır "uç tamamen çekili" diye
+    // geçerli bir hedef, boş ise "bu hazneye T ile inme". `Number("")`
+    // sıfır verdiği için burada açıkça ayırıyoruz.
+    t: el.querySelector(".gz-t").value.trim() === ""
+      ? null : Number(el.querySelector(".gz-t").value),
     tohum: el.querySelector(".gz-tohum").value.trim(),
     dolu: el.querySelector(".gz-dolu").checked,
   })).filter((g) => g.ad);
@@ -5098,7 +5106,8 @@ function olaylariBagla() {
   // KENDİ yarısında (Kamera sekmesi) ve orada bağlanıyor — bkz.
   // `kamYariBagla`. Burada bağlanacak tek kopya kalmadı.
   $("#d-buraya").onclick = () => {
-    ["x", "y", "z"].forEach((eksen) => {
+    ["x", "y", "z", "t"].forEach((eksen) => {
+      if (!$(`#k-${eksen}`) || !$(`#h-${eksen}`)) return;
       const metin = $(`#k-${eksen}`).textContent.replace(/[^\d.,-]/g, "").replace(",", ".");
       if (metin) $(`#h-${eksen}`).value = parseFloat(metin);
     });
@@ -5308,8 +5317,10 @@ function olaylariBagla() {
 
   $("#d-git").onclick = () => {
     const arg = {};
-    ["x", "y", "z"].forEach((eksen) => {
-      const deger = $(`#h-${eksen}`).value;
+    ["x", "y", "z", "t"].forEach((eksen) => {
+      const el = $(`#h-${eksen}`);
+      if (!el) return;
+      const deger = el.value;
       if (deger !== "") arg[eksen] = Number(deger);
     });
     if (!Object.keys(arg).length) { gunluk("✕ En az bir eksen değeri girin", "hata"); return; }
