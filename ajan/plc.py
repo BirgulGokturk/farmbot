@@ -813,7 +813,15 @@ class Gantry:
             # bulunduğumuz noktaya baksaydık eksen bölgeye girdikten sonra
             # dururdu — yani bir miktar içeri girmiş olurdu. Bir sonraki
             # yenilemeye kadar (JOG_TTL) katedilecek yolu tarıyoruz.
-            if self.bolgeler is not None:
+            #
+            # T BU DENETİMİN DIŞINDA. Bölgeler X/Y/Z hacimleri; `konum_mm()`
+            # de üç eleman veriyor. T'yi buraya sokmak `ileri[3]` demekti ve
+            # sahada tam bu oldu: T'ye basınca ajan `IndexError` ile çöküyor,
+            # panelde hiçbir şey olmuyordu. T kafayı yatakta oynatmıyor,
+            # yalnız tohum ucunu ana Z'nin üstüne binerek indirip kaldırıyor;
+            # bölge kavramının karşılığı yok. Ucun aşağıdayken yatay hareketi
+            # engellemesi ayrı bir kural (`t_yatay_engel`) ve o duruyor.
+            if self.bolgeler is not None and i != T:
                 simdiki = self.konum_mm()
                 # İhlal hâlindeyken kaçış: yalnızca Z+ jog serbest.
                 bas_ihlal = self.bolgeler.ihlal(simdiki[0], simdiki[1], simdiki[2], self.baglam())
