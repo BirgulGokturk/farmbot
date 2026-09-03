@@ -141,3 +141,40 @@
   line-height: 1;
   font-variant-numeric: tabular-nums;
 }
+
+/* ---------------------------------------------------- nem tablosu
+   Dort hal, dort renk. "Olculmedi" ile "iyi" ayri renkte: ilki bilgi
+   EKSIKLIGI, ikincisi bilgi — ayni gorunmeleri, bilmedigini bilmemek
+   demekti. */
+
+.nem-ozet { font-weight: 400; font-size: 13px; margin-left: 8px; }
+.nem-ozet b { font-weight: 700; }
+
+.nem-tablo td { vertical-align: top; }
+.nem-tablo tr.nem-gerekce td { padding-top: 0; border-top: 0; }
+
+.nem-rozet {
+  display: inline-block;
+  padding: 2px 9px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+  border: 1px solid currentColor;
+}
+
+/* Susadi: is var. Kirmizi degil turuncu — kirmiziyi gercek hatalara
+   sakliyoruz, susamis bitki bir arizadan cok bir gorev. */
+.nem-susadi { color: var(--uyari, #e8a33c); }
+.nem-iyi    { color: var(--iyi, #4caf50); }
+/* Olculmedi: bilgi eksikligi. Mavi — ne iyi ne kotu, BILINMIYOR. */
+.nem-yok    { color: var(--su, #57b0e6); }
+.nem-bayat  { color: var(--metin-silik, #8a9a8c); }
+
+.nem-tablo tr.nem-susadi > td:first-child { border-left: 3px solid var(--uyari, #e8a33c); }
+.nem-tablo tr.nem-yok    > td:first-child { border-left: 3px solid var(--su, #57b0e6); }
+.nem-tablo tr.nem-iyi    > td:first-child { border-left: 3px solid var(--iyi, #4caf50); }
+.nem-tablo tr.nem-bayat  > td:first-child { border-left: 3px solid var(--metin-silik, #8a9a8c); }
+
+.nem-tablo .alt-not { display: block; }
+.nem-olc-tek { padding: 3px 10px; min-height: 0; font-size: 12.5px; }
