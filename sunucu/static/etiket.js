@@ -27,11 +27,50 @@
 
   function P() { return window.Panel || null; }
 
-  /** Kalibrasyon bölümünün o an hangi kamerayı işlediği. app.js'in iç
-   *  değişkenini okumak yerine DOM'dan: iki dosya arasındaki tek bağ bu. */
+  /** Bu bölümün işlediği kamera — KENDİ seçicisinden.
+   *
+   * Önce kalibrasyon sekmelerindeki seçime bakıyordu ve sekme
+   * bulunamayınca sessizce "uc"a düşüyordu: kullanıcı üst kamerayı
+   * kalibre ettiğini sanırken uç kamerası taranıyor, sonuç da "karede
+   * hiç etiket yok" oluyordu. Hangi kameranın tarandığı görünmediği
+   * için sebebi de anlaşılmıyordu.
+   *
+   * Artık seçim burada, gözle görünüyor ve varsayılan da kör değil.
+   */
   function seciliKamera() {
+    const sec = $("#etiket-kamera");
+    if (sec && sec.value) return sec.value;
     const d = document.querySelector("#kalib-sekmeler .kam-sekme.secili");
-    return (d && d.dataset.kam) || "uc";
+    return (d && d.dataset.kam) || "ust";
+  }
+
+  /** Seçiciyi paneldeki kamera listesinden dolduruyor. */
+  async function kameralariYukle() {
+    const sec = $("#etiket-kamera");
+    if (!sec) return;
+    let liste = Array.from(document.querySelectorAll("#kalib-sekmeler .kam-sekme"))
+      .map((d) => ({ ad: d.dataset.kam, etiket: d.textContent.trim() }))
+      .filter((k) => k.ad);
+    if (!liste.length) {
+      const p = P();
+      try {
+        const y = await p.apiIste("/api/durum");
+        liste = ((y.durum || {}).kameralar || [])
+          .map((k) => ({ ad: k.ad, etiket: k.etiket || k.ad }));
+      } catch (h) { /* liste yoksa aşağıdaki yedek devreye giriyor */ }
+    }
+    if (!liste.length) liste = [{ ad: "ust", etiket: "Üst kamera" },
+                                { ad: "uc", etiket: "Uç kamerası" }];
+    const onceki = sec.value;
+    sec.innerHTML = liste.map((k) =>
+      `<option value="${kacisli(k.ad)}">${kacisli(k.etiket)}</option>`).join("");
+    // SABİT KAMERA VARSAYILAN. Etiketler yatağa yapıştırılıyor ve onları
+    // gören sabit kamera; hareketli uç kamerası kadraja ancak üstünden
+    // geçerken alıyor.
+    const sekme = document.querySelector("#kalib-sekmeler .kam-sekme.secili");
+    sec.value = (liste.some((k) => k.ad === onceki) && onceki)
+      || (sekme && sekme.dataset.kam)
+      || (liste.find((k) => k.ad === "ust") || liste[0]).ad;
   }
 
   function gunluk(metin, seviye) {
@@ -55,6 +94,10 @@
         </p>
 
         <div class="satir-8 alt-hizali">
+          <div class="alan">
+            <label for="etiket-kamera">Kamera</label>
+            <select id="etiket-kamera"></select>
+          </div>
           <div class="alan">
             <label for="etiket-kenar">Etiket kenarı (mm)</label>
             <input type="number" id="etiket-kenar" step="0.1" min="5" max="1000"
@@ -99,7 +142,9 @@
     $("#d-etiket-kenar-kaydet").onclick = konumlariKaydet;
     $("#d-etiket-tara").onclick = tara;
     $("#d-etiket-uygula").onclick = uygula;
-    konumlariYukle();
+    kameralariYukle().then(konumlariYukle);
+    const kam = $("#etiket-kamera");
+    if (kam) kam.onchange = () => { son = null; sonucTemizle(); };
   }
 
   /* --------------------------------------------------------- konumlar */
@@ -221,6 +266,16 @@
     }
   }
 
+  function sonucTemizle() {
+    const k = $("#etiket-sonuc");
+    if (k) k.classList.add("gizli");
+    const o = $("#etiket-onizleme");
+    if (o) o.classList.add("gizli");
+    const u = $("#d-etiket-uygula");
+    if (u) u.disabled = true;
+    hataYaz("");
+  }
+
   function sonucYaz() {
     const kutu = $("#etiket-sonuc");
     if (!kutu || !son) return;
@@ -230,7 +285,9 @@
       ? `<b class="etiket-var">${e.kimlik}</b>`
       : `<b class="etiket-yok" title="Konumu kayıtlı değil — yerleşime giremez">${e.kimlik}</b>`;
 
-    let g = `<div class="etiket-satir"><span>Bulunan etiket</span>
+    let g = `<div class="etiket-satir"><span>Taranan kamera</span>
+      <span><b>${kacisli(son.kamera || "?")}</b></span></div>
+      <div class="etiket-satir"><span>Bulunan etiket</span>
       <span>${bulunan.length ? bulunan.map(rozet).join(", ") : "yok"}</span></div>`;
 
     // EĞİKLİK UYARISI. Kenarlar birbirinden ayrılıyorsa etiket eğik duruyor
