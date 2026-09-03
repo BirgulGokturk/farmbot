@@ -170,11 +170,16 @@
 /* Olculmedi: bilgi eksikligi. Mavi — ne iyi ne kotu, BILINMIYOR. */
 .nem-yok    { color: var(--su, #57b0e6); }
 .nem-bayat  { color: var(--metin-silik, #8a9a8c); }
+/* Komsudan odunc alinan okuma: sayi var ama BU bitkinin olcumu degil.
+   Mor — "olculmedi"den ayri, cunku elde bir bilgi var; "iyi"den de ayri,
+   cunku o bilgi bu bitkiye ait degil. */
+.nem-odunc  { color: #b37be0; }
 
 .nem-tablo tr.nem-susadi > td:first-child { border-left: 3px solid var(--uyari, #e8a33c); }
 .nem-tablo tr.nem-yok    > td:first-child { border-left: 3px solid var(--su, #57b0e6); }
 .nem-tablo tr.nem-iyi    > td:first-child { border-left: 3px solid var(--iyi, #4caf50); }
 .nem-tablo tr.nem-bayat  > td:first-child { border-left: 3px solid var(--metin-silik, #8a9a8c); }
+.nem-tablo tr.nem-odunc  > td:first-child { border-left: 3px solid #b37be0; }
 
 .nem-tablo .alt-not { display: block; }
 .nem-olc-tek { padding: 3px 10px; min-height: 0; font-size: 12.5px; }

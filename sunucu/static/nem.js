@@ -49,11 +49,22 @@
     const o = b.su_olcum || {};
     if (!o.var) return { ad: "yok", etiket: "ölçülmedi", sinif: "nem-yok" };
     if (o.bayat) return { ad: "bayat", etiket: "eski ölçüm", sinif: "nem-bayat" };
+    /* ÖDÜNÇ OKUMA AYRI BİR HÂL.
+     *
+     * Sunucu, bitkinin kendi ölçümü yoksa 100 mm içindeki bir komşu
+     * okumayı kullanıyor. Prob kafada olduğu için makine bir yerde
+     * dururken oraya okuma birikiyor ve yakınındaki bitkiler o sayıyı
+     * miras alıyor. Sayıyı nem sütununda göstermek, hiç ölçülmemiş bir
+     * bitkiyi ölçülmüş gibi sunuyordu.
+     *
+     * Sayıyı saklamıyoruz — bilgi bilgidir — ama ONA GÖRE KARAR
+     * VERMİYORUZ: bu bitkiler iyi ya da susadı sayılmıyor. */
+    if (!o.kendi) return { ad: "odunc", etiket: "komşudan", sinif: "nem-odunc" };
     if (b.susadi) return { ad: "susadi", etiket: "susadı", sinif: "nem-susadi" };
     return { ad: "iyi", etiket: "iyi", sinif: "nem-iyi" };
   }
 
-  const SIRA = { yok: 0, susadi: 1, bayat: 2, iyi: 3 };
+  const SIRA = { yok: 0, odunc: 1, susadi: 2, bayat: 3, iyi: 4 };
 
   function kur() {
     const kap = document.getElementById(KAP);
@@ -81,6 +92,7 @@
         </table></div>
       </details>`;
     $("#d-nem-tazele").onclick = () => yukle(true);
+    cubugaEkle();
     $("#d-nem-olc").onclick = olculmeyenleriOlc;
     // Bölüm AÇILDIĞINDA tazeleniyor: kapalı bir tabloyu saniyede bir
     // yenilemek boşuna istek demek.
@@ -88,6 +100,38 @@
       if ($("#nem-detay").open) { yukle(); baslat(); } else durdur();
     });
     yukle();
+  }
+
+  /** Tarla'nin secim cubuguna "Nem olc" dugmesi ekliyor.
+   *
+   *  Cubuk index.html'de, isleyicileri tarla.js'te — ikisi de baska bir
+   *  oturumun dosyasi. Dugmeyi CALISMA ANINDA ekliyoruz: secimi
+   *  `Tarla.secimDurumu()` veriyor (zaten disa acik), is de bahcenin
+   *  kendi kuyrugundan geciyor. Boylece Sula ve Ek ile ayni yerde
+   *  duruyor ama kimsenin dosyasina girmiyoruz.
+   */
+  function cubugaEkle() {
+    const cubuk = document.getElementById("toplu-cubuk");
+    if (!cubuk || document.getElementById("d-toplu-nem")) return;
+    const d = document.createElement("button");
+    d.className = "dugme";
+    d.id = "d-toplu-nem";
+    d.type = "button";
+    d.title = "Seçili bitkilerin üstüne gidip toprak nemini ölçer";
+    d.textContent = "🌡️ Nem ölç";
+    d.onclick = () => {
+      const t = window.Tarla;
+      const adlar = (t && t.secimDurumu) ? t.secimDurumu() : [];
+      if (!adlar.length) {
+        const p = P();
+        if (p && p.gunluk) p.gunluk("✕ Önce bitki seçin", "hata");
+        return;
+      }
+      olc(adlar);
+    };
+    const ek = document.getElementById("d-toplu-ek");
+    if (ek && ek.parentElement === cubuk) ek.insertAdjacentElement("afterend", d);
+    else cubuk.appendChild(d);
   }
 
   function baslat() {
@@ -120,7 +164,7 @@
       .sort((a, b) => SIRA[hal(a).ad] - SIRA[hal(b).ad]
                    || String(a.ad).localeCompare(String(b.ad), "tr"));
 
-    const sayim = { yok: 0, susadi: 0, bayat: 0, iyi: 0 };
+    const sayim = { yok: 0, odunc: 0, susadi: 0, bayat: 0, iyi: 0 };
     for (const b of bitkiler) sayim[hal(b).ad] += 1;
 
     const ozet = $("#nem-ozet");
@@ -128,6 +172,7 @@
       const parca = [];
       if (sayim.susadi) parca.push(`<b class="nem-susadi">${sayim.susadi} susadı</b>`);
       if (sayim.yok) parca.push(`<b class="nem-yok">${sayim.yok} ölçülmedi</b>`);
+      if (sayim.odunc) parca.push(`<b class="nem-odunc">${sayim.odunc} komşudan</b>`);
       if (sayim.bayat) parca.push(`<b class="nem-bayat">${sayim.bayat} eski</b>`);
       if (sayim.iyi) parca.push(`<b class="nem-iyi">${sayim.iyi} iyi</b>`);
       ozet.innerHTML = parca.join(" · ") || "bitki yok";
@@ -145,7 +190,11 @@
       const nereden = !o.var ? "—"
         : o.kendi ? "kendi üstünden"
         : `${Math.round(o.uzak_mm || 0)} mm ötede`;
-      const nem = o.var ? `%${Number(o.yuzde).toFixed(0)}` : "—";
+      // Ödünç okuma PARANTEZ içinde: sayı görünüyor ama bu bitkinin
+      // ölçülmüş nemi gibi durmuyor.
+      const nem = !o.var ? "—"
+        : o.kendi ? `%${Number(o.yuzde).toFixed(0)}`
+        : `(%${Number(o.yuzde).toFixed(0)})`;
       const esik = o.esik_acik ? `%${Number(o.esik).toFixed(0)}` : "kapalı";
       return `<tr class="${h.sinif}">
         <td><b>${kacisli(b.tur_ad || b.tur || b.ad)}</b>
@@ -170,11 +219,13 @@
 
   function olculmeyenleriOlc() {
     if (!veri) return;
+    // Kendi ölçümü olmayan HER ŞEY: hiç ölçülmemiş, eskimiş ve komşudan
+    // ödünç alan. Üçü de "bu bitkinin taze ölçümü yok" demek.
     const adlar = (veri.bitkiler || [])
-      .filter((b) => hal(b).ad === "yok" || hal(b).ad === "bayat")
+      .filter((b) => ["yok", "bayat", "odunc"].includes(hal(b).ad))
       .map((b) => b.ad);
     if (!adlar.length) {
-      notYaz("Bütün bitkilerin taze ölçümü var.");
+      notYaz("Bütün bitkilerin kendi taze ölçümü var.");
       return;
     }
     olc(adlar);
