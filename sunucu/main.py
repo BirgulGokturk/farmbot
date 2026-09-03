@@ -2977,9 +2977,12 @@ async def api_kalibrasyon_olcek(govde: dict[str, Any], jeton: str = Query(defaul
 # AprilTag ile kalibrasyon AYRI BİR DOSYADA ve kendi yönlendiricisinde
 # (`etiket.py`). Uç noktalarını buraya yazmak, `main.py` sürekli değiştiği
 # için her yamada çakışma demekti; tek satırla bağlanıyor.
-app.include_router(etiket.yonlendirici_kur(_parola_dogrula))
+app.include_router(etiket.yonlendirici_kur(_parola_dogrula, merkez.canli_kare_al))
 # Satranç tahtasıyla lens kalibrasyonu — aynı gerekçe, ayrı dosya.
-app.include_router(tahta.yonlendirici_kur(_parola_dogrula))
+# Canlı kare geçiriliyor: `kareler.son` DİSKTEKİ periyodik kareyi veriyor
+# ve o aralık saatlik olabiliyor — tahtayı oynatan kullanıcı 25 kez aynı
+# eski kareyi eklemişti. Canlı akış bellekte ayrı duruyor.
+app.include_router(tahta.yonlendirici_kur(_parola_dogrula, merkez.canli_kare_al))
 
 
 # --------------------------------------------------------------------------- #

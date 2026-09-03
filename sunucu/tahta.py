@@ -50,6 +50,11 @@ EN_AZ_ALAN_ORAN = 0.03
 #: kararsız: bir sonraki karede katsayılar belirgin değişiyor.
 EN_AZ_KARE = 8
 
+#: Duruşların yeterince farklı olduğunu söyleyen en küçük yayılım. Kameraya
+#: uzaklık bu kadar bile değişmediyse bütün kareler pratikte aynı görüntü
+#: demek ve çözüm ölçüme değil tek bir kareye oturuyor.
+EN_AZ_UZAKLIK_YAYILIM_MM = 20.0
+
 
 class TahtaHatasi(Exception):
     """Kare reddedildi ya da kalibrasyon hesaplanamadı."""
@@ -171,12 +176,29 @@ def kare_ekle(kamera: str, jpeg: bytes, ic_kose: tuple[int, int],
             "Yaklaştırın — köşeler birkaç piksele sıkışınca ölçüm anlamını yitiriyor.")
 
     hucre = _kapsama_hucresi(koseler, boyut)
+    # AYNI KARE İKİ KEZ EKLENMESİN.
+    #
+    # Sahada tam bu oldu: kare eski bir depodan geliyordu, kullanıcı tahtayı
+    # oynattığı hâlde 25 kez AYNI görüntü eklendi ve sonuç — düşük ölçüm
+    # hatasına rağmen — çöp çıktı. Aynı ölçümü tekrarlamak kalibrasyona
+    # hiçbir şey katmıyor; sessizce kabul etmek, saatler sonra anlaşılan
+    # bir yanlışa dönüşüyor.
+    import hashlib
+    imza = hashlib.sha1(jpeg).hexdigest()
+    with _KILIT:
+        onceki = _TOPLANAN.get(kamera)
+        if onceki and imza in onceki.get("imzalar", set()):
+            raise TahtaHatasi(
+                "Bu kare zaten eklendi — görüntü hiç değişmemiş. Kamera yeni "
+                "kare üretiyor mu bakın; canlı akış kapalıysa depodaki eski "
+                "kare geliyor olabilir.")
     with _KILIT:
         durum = _TOPLANAN.setdefault(kamera, {
             "boyut": boyut, "ic_kose": ic_kose, "kare_mm": float(kare_mm),
-            "kareler": [],
+            "kareler": [], "imzalar": set(),
         })
         durum["kare_mm"] = float(kare_mm)
+        durum.setdefault("imzalar", set()).add(imza)
         durum["kareler"].append({"koseler": koseler, "hucre": hucre,
                                  "netlik": netlik, "oran": oran})
         sayi = len(durum["kareler"])
@@ -240,6 +262,23 @@ def hesapla(kamera: str) -> dict[str, Any]:
     # ihtiyacının pratik karşılığı bu sayı.
     uzakliklar = sorted(float(np.linalg.norm(t)) for t in tvecs)
     orta = uzakliklar[len(uzakliklar) // 2]
+    yayilim = uzakliklar[-1] - uzakliklar[0]
+
+    # DÜŞÜK ÖLÇÜM HATASI TEK BAŞINA YETMİYOR.
+    #
+    # Bütün kareler aynı duruştaysa çözüm o tek duruşu kusursuz eşliyor:
+    # hata küçücük çıkıyor ama katsayılar gerçeği değil o kareyi anlatıyor
+    # (sahada k2 = 19,9 gördük — gerçek bir lenste 1'in altında olur).
+    # Bu yüzden güvenilirliği duruş ÇEŞİTLİLİĞİNDEN de soruyoruz.
+    uyari = ""
+    if yayilim < EN_AZ_UZAKLIK_YAYILIM_MM:
+        uyari = (f"Kareler birbirinin aynı: kameraya uzaklık yalnız "
+                 f"{yayilim:.1f} mm değişmiş. Sonuç bu hâliyle GÜVENİLMEZ — "
+                 "tahtayı yaklaştırıp uzaklaştırarak ve eğerek toplayın.")
+    elif len(kapsama) < 3:
+        uyari = (f"Kareler karenin yalnız {len(kapsama)} bölgesinden alınmış. "
+                 "Lens bozulması en çok kenarlarda; oraları göstermezseniz "
+                 "düzeltme kenarlarda uydurma kalıyor.")
 
     sonuc = {
         "rms": round(float(rms), 3),
@@ -253,6 +292,9 @@ def hesapla(kamera: str) -> dict[str, Any]:
         "uzaklik_ortanca_mm": round(orta, 1),
         "uzaklik_en_az_mm": round(uzakliklar[0], 1),
         "uzaklik_en_cok_mm": round(uzakliklar[-1], 1),
+        "uzaklik_yayilim_mm": round(yayilim, 1),
+        "guvenilir": not uyari,
+        "uyari": uyari,
     }
     return sonuc
 
@@ -307,7 +349,14 @@ def kaydet(kamera: str, sonuc: dict[str, Any]) -> dict[str, Any]:
 # --------------------------------------------------------------------------- #
 # Uç noktalar — ayrı yönlendirici (bkz. etiket.py'deki aynı gerekçe)
 # --------------------------------------------------------------------------- #
-def yonlendirici_kur(parola_dogrula):
+def yonlendirici_kur(parola_dogrula, canli_kare=None):
+    """`canli_kare(kamera) -> bytes` verilirse kare ONDAN alınıyor.
+
+    İKİ AYRI DEPO VAR ve yanlışını okumak sahada yandı: `kareler.son`
+    DİSKTEKİ periyodik kareyi veriyor ve o aralık saatlik olabiliyor.
+    Kullanıcı tahtayı oynattığı hâlde her seferinde aynı eski kare
+    ekleniyordu. Canlı akış bellekte ayrı duruyor; varsa o kullanılmalı.
+    """
     import asyncio
 
     from fastapi import APIRouter, HTTPException, Query
@@ -360,10 +409,14 @@ def yonlendirici_kur(parola_dogrula):
         if kare_mm <= 0:
             raise HTTPException(status_code=400,
                                 detail="Kare ölçüsü (mm) girilmedi.")
-        ham = await asyncio.to_thread(kareler.son, kareler.ad_temizle(kam))
-        if ham is None:
-            raise HTTPException(status_code=404,
-                                detail=f"'{kam}' kamerasından henüz kare yok.")
+        ham = canli_kare(kam) if canli_kare else None
+        if not ham:
+            ham = await asyncio.to_thread(kareler.son, kareler.ad_temizle(kam))
+        if not ham:
+            raise HTTPException(
+                status_code=404,
+                detail=f"'{kam}' kamerasından kare yok. Canlı akışı açın — "
+                       "kapalıyken yalnız saatlik kaydedilen eski kare var.")
         try:
             return await asyncio.to_thread(kare_ekle, kam, ham, ic, kare_mm)
         except TahtaHatasi as hata:

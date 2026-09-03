@@ -150,7 +150,12 @@ def main() -> int:
                   f"({s['uzaklik_en_az_mm']}–{s['uzaklik_en_cok_mm']})")
             print(f"  bozulma      : "
                   + " · ".join(f"{x:.4f}" for x in s["bozulma"][:3]))
-            print("  KAYDEDİLDİ\n")
+            print(f"  duruş çeşit. : {s.get('uzaklik_yayilim_mm', '?')} mm")
+            # DÜŞÜK HATA TEK BAŞINA YETMİYOR: bütün kareler aynı duruştaysa
+            # çözüm o tek kareyi kusursuz eşliyor ve hata küçücük çıkıyor.
+            if s.get("uyari"):
+                print(f"\n  ! {s['uyari']}")
+            print("\n  KAYDEDİLDİ\n")
             print("  Not: bu kalibrasyon yalnız "
                   f"{s['boyut'][0]}x{s['boyut'][1]} çözünürlüğünde geçerli.\n")
             return 0

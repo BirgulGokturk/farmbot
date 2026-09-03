@@ -368,8 +368,14 @@ def _benzerlik(p: list[tuple[float, float]],
 # toplayıp tek satırla bağlıyoruz: `main.py` başka bir oturumda sürekli
 # değişiyor ve oraya blok eklemek her yamada çakışma demek.
 # --------------------------------------------------------------------------- #
-def yonlendirici_kur(parola_dogrula):
-    """Parola denetimi çağıranın; geri kalan her şey burada."""
+def yonlendirici_kur(parola_dogrula, canli_kare=None):
+    """Parola denetimi çağıranın; geri kalan her şey burada.
+
+    `canli_kare(kamera) -> bytes` verilirse kare ONDAN alınıyor. İki ayrı
+    depo var: `kareler.son` diskteki PERİYODİK kareyi veriyor ve o aralık
+    saatlik olabiliyor. Etiket taraması eski bir kareyi okursa "etiket
+    yok" der ya da çoktan kaldırılmış bir etiketi bulur.
+    """
     import time
 
     from fastapi import APIRouter, HTTPException, Query
@@ -408,11 +414,14 @@ def yonlendirici_kur(parola_dogrula):
         parola_dogrula(jeton)
         govde = govde or {}
         kam = kalibrasyon.ad_temizle(govde.get("kamera"))
-        kare = await asyncio.to_thread(kareler.son, kareler.ad_temizle(kam))
-        if kare is None:
+        kare = canli_kare(kam) if canli_kare else None
+        if not kare:
+            kare = await asyncio.to_thread(kareler.son, kareler.ad_temizle(kam))
+        if not kare:
             raise HTTPException(
                 status_code=404,
-                detail=f"'{kam}' kamerasından henüz kare yok — kamerayı açın.")
+                detail=f"'{kam}' kamerasından kare yok — kamerayı ve canlı "
+                       "akışı açın.")
         try:
             bulunan, g_px, y_px = await asyncio.to_thread(algila_ve_boyut, kare)
         except EtiketHatasi as hata:
