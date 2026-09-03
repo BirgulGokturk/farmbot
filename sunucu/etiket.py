@@ -306,8 +306,52 @@ def coz_yerlesim(bulunanlar: list[dict[str, Any]], konumlar: dict[str, Any],
             "Etiketler üst üste düşüyor — aralarında ölçülebilir mesafe yok. "
             "Karenin farklı yerlerinde duran etiketler kullanın.")
 
+    # DÖRT ETİKETTEN SONRA PERSPEKTİF DE ÇÖZÜLÜYOR.
+    #
+    # Benzerlik (ölçek + dönme + kaydırma) kameranın yatağa DİK baktığını
+    # varsayıyor. Bu kurulumda kamera sert bir açıyla bakıyor ve varsayım
+    # sahada 52 mm hata verdi; aynı ölçümden çıkan projektif harita 9 mm'ye
+    # indirdi. İki modelin hatası da dönüyor: aradaki fark, kameranın ne
+    # kadar eğik baktığını SÖYLÜYOR — tahmin etmiyoruz.
+    harita = None
+    harita_artik = None
+    if len(eslesen) >= 4:
+        import otokalib
+        px_ham = [tuple(e["merkez"]) for e, _ in eslesen]
+        harita = otokalib._projektif(px_ham, q)
+        if harita is not None:
+            kare = 0.0
+            for (u, v), (x, y) in zip(px_ham, q):
+                hx, hy = otokalib.uygula(harita, u, v)
+                kare += (hx - x) ** 2 + (hy - y) ** 2
+            harita_artik = math.sqrt(kare / len(px_ham))
+
+    # DÖRT ETİKETTEN SONRA PERSPEKTİF DE ÇIKIYOR.
+    #
+    # Benzerlik (ölçek + dönme + kaydırma) kameranın yatağa DİK baktığını
+    # varsayıyor. Bu kurulumda kamera eğik bakıyor ve sahada ölçüldü:
+    # aynı noktalarda benzerlik 51,8 mm, projektif 9,3 mm yanılıyordu.
+    # Dört nokta homografiyi tam belirliyor, fazlası hatayı ölçülebilir
+    # yapıyor.
+    harita = None
+    proj_artik = None
+    if len(eslesen) >= 4:
+        import otokalib
+        px = [(e["merkez"][0], e["merkez"][1]) for e, _ in eslesen]
+        harita = otokalib._projektif(px, q)
+        if harita is not None:
+            kare = 0.0
+            for (u, v), (x, y) in zip(px, q):
+                hx, hy = otokalib.uygula(harita, u, v)
+                kare += (hx - x) ** 2 + (hy - y) ** 2
+            proj_artik = math.sqrt(kare / len(px))
+
     aci = math.degrees(en_iyi["aci"])
     return {
+        "harita": harita,
+        "projektif_artik_mm": None if proj_artik is None else round(proj_artik, 2),
+        "harita": harita,
+        "harita_artik_mm": None if harita_artik is None else round(harita_artik, 2),
         "mm_px": en_iyi["olcek"],
         "donme": (aci + 180.0) % 360.0 - 180.0,
         "ofset_x": en_iyi["tx"],
@@ -462,6 +506,19 @@ def yonlendirici_kur(parola_dogrula, canli_kare=None):
                 yazilacak.update(mm_px=yer["mm_px"], donme=yer["donme"],
                                  ofset_x=yer["ofset_x"], ofset_y=yer["ofset_y"],
                                  ayna_y=yer["ayna_y"])
+                # HARİTA VARSA O DA YAZILIYOR. Üçlü (ölçek/dönme/ofset)
+                # yerinde kalıyor: haritayı okumayan yerler bozulmadan
+                # çalışsın diye. Okuyanlar eğik bakışı da düzeltiyor.
+                if yer.get("harita"):
+                    yazilacak["harita"] = yer["harita"]
+                    yazilacak["harita_sapma_mm"] = yer.get("projektif_artik_mm")
+                    yazilacak["harita_nokta"] = yer.get("etiket_sayisi")
+                # HARİTA VARSA O DA YAZILIYOR. Üçlü de yazılmaya devam
+                # ediyor: haritayı okumayan yerler bozulmadan çalışsın.
+                if yer.get("harita"):
+                    yazilacak["harita"] = yer["harita"]
+                    yazilacak["harita_sapma_mm"] = yer.get("harita_artik_mm")
+                    yazilacak["harita_nokta"] = yer.get("etiket_sayisi")
             else:
                 yazilacak["mm_px"] = olc["mm_px"]
             cikti["kalibrasyon"] = await asyncio.to_thread(
