@@ -134,3 +134,10 @@
 
 .nem-tablo .alt-not { display: block; }
 .nem-olc-tek { padding: 3px 10px; min-height: 0; font-size: 12.5px; }
+
+/* ---------------------------------------------------- filiz tablosu
+   Koordinat sutunlari kalin ve tek genislikli: gozle karsilastirilan
+   sey bu iki sayi, satirlar arasinda hizali durmali. */
+.filiz-tablo .mono { font-variant-numeric: tabular-nums; }
+.filiz-tablo td:nth-child(2) b,
+.filiz-tablo td:nth-child(3) b { color: var(--iyi, #4caf50); }

@@ -36,6 +36,7 @@ import bahce
 import baslar
 import depo
 import etiket
+import filiz
 import otokalib
 import dikim
 import egriler
@@ -3000,6 +3001,7 @@ async def api_kalibrasyon_olcek(govde: dict[str, Any], jeton: str = Query(defaul
 # (`etiket.py`). Uç noktalarını buraya yazmak, `main.py` sürekli değiştiği
 # için her yamada çakışma demekti; tek satırla bağlanıyor.
 app.include_router(etiket.yonlendirici_kur(_parola_dogrula, merkez.canli_kare_taze))
+app.include_router(filiz.yonlendirici_kur(_parola_dogrula, merkez.canli_kare_taze))
 
 
 async def _git_ve_bekle(x: float, y: float, z: float | None,
