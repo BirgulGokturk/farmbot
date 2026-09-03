@@ -84,12 +84,51 @@ def _cv2():
     return cv2
 
 
+def _parametreler(cv2):
+    """Küçük ve eğik duran etiketler için ayarlanmış algılama parametreleri.
+
+    Varsayılanlar, kadrajı dolduran ve karşıdan bakılan etikete göre
+    seçilmiş. Bizim durumumuz ikisi de değil: etiketler karede ~40 piksel
+    ve kamera yatağa sert açıyla bakıyor. Sahada dört etiketin ikisi
+    bulunamadı; aşağıdaki üç ayar tam bu iki zorluğa denk geliyor.
+    """
+    par = (cv2.aruco.DetectorParameters() if hasattr(cv2.aruco, "ArucoDetector")
+           else cv2.aruco.DetectorParameters_create())
+
+    # KÜÇÜK ETİKET. Aday dörtgenin çevresi, görüntü kenarının en az bu
+    # kadarı olmalı. 0.03 varsayılanı 640 piksellik karede ~19 piksellik
+    # kenar demek; uzaktaki etiket bunun altına düşüp elenmeden önce
+    # okunabilir hâlde kalıyor. Sıfıra indirmiyoruz — çok küçük adaylar
+    # gürültüden ayırt edilemez ve yanlış okuma üretir.
+    par.minMarkerPerimeterRate = 0.01
+
+    # EĞİK BAKIŞ. Kare, perspektifte yamuğa dönüşüyor; köşe bulucunun
+    # çokgen yaklaşımına verdiği pay dar kalınca dörtgen "dörtgen değil"
+    # diye eleniyor.
+    par.polygonalApproxAccuracyRate = 0.06
+
+    # DEĞİŞKEN IŞIK. Yatağın bir ucu gölgede, öbürü pencereden ışık
+    # alıyor. Eşikleme penceresini geniş bir aralıkta deniyoruz.
+    par.adaptiveThreshWinSizeMin = 3
+    par.adaptiveThreshWinSizeMax = 43
+    par.adaptiveThreshWinSizeStep = 4
+
+    # ALT PİKSEL KÖŞE. Kalibrasyonun tamamı köşe konumlarından çıkıyor;
+    # tam piksele yuvarlanmış köşe, doğrudan milimetre hatası demek.
+    if hasattr(cv2.aruco, "CORNER_REFINE_SUBPIX"):
+        par.cornerRefinementMethod = cv2.aruco.CORNER_REFINE_SUBPIX
+        par.cornerRefinementWinSize = 5
+
+    return par
+
+
 def _algilayici(cv2):
     """Sürüm farkını burada yutuyoruz: 4.7'de sınıf, öncesinde işlev."""
     sozluk = cv2.aruco.getPredefinedDictionary(getattr(cv2.aruco, AILE))
+    par = _parametreler(cv2)
     if hasattr(cv2.aruco, "ArucoDetector"):
-        return cv2.aruco.ArucoDetector(sozluk, cv2.aruco.DetectorParameters())
-    return None, sozluk
+        return cv2.aruco.ArucoDetector(sozluk, par)
+    return None, sozluk, par
 
 
 def algila_ve_boyut(jpeg: bytes) -> tuple[list[dict[str, Any]], int, int]:
@@ -125,17 +164,46 @@ def algila(jpeg: bytes) -> list[dict[str, Any]]:
         raise EtiketHatasi("Kare çözülemedi — JPEG bozuk olabilir")
 
     alg = _algilayici(cv2)
-    if isinstance(alg, tuple):
-        koseler, kimlikler, _ = cv2.aruco.detectMarkers(gri, alg[1])
-    else:
-        koseler, kimlikler, _ = alg.detectMarkers(gri)
+
+    def _bul(g):
+        if isinstance(alg, tuple):
+            return cv2.aruco.detectMarkers(g, alg[1], parameters=alg[2])
+        return alg.detectMarkers(g)
+
+    koseler, kimlikler, _ = _bul(gri)
+    olcek = 1.0
+
+    # BÜYÜTÜP TEKRAR DENEME.
+    #
+    # Etiket karede ne kadar küçükse, hücre başına o kadar az piksel
+    # düşüyor ve kod çözme bir noktada tamamen başarısız oluyor —
+    # kenarları görülen etiket okunamıyor. Kareyi iki katına çıkarmak
+    # yeni bilgi eklemiyor ama çözücüye hücre başına dört kat piksel
+    # veriyor ve eşikleme kararı kararsız piksellerde yumuşuyor.
+    #
+    # BEDELİ VAR: dört kat piksel, dört kat süre. Bu yüzden yalnız az
+    # etiket bulunduğunda deneniyor, her karede değil. Bulunan sonuç
+    # daha fazlaysa o kazanıyor; eşitse büyütülmüş hâl daha kararlı
+    # köşe verdiği için yine o alınıyor.
+    bulunan = 0 if kimlikler is None else len(kimlikler)
+    if bulunan < 4 and max(gri.shape) <= 2000:
+        buyuk = cv2.resize(gri, None, fx=2.0, fy=2.0,
+                           interpolation=cv2.INTER_CUBIC)
+        k2, i2, _ = _bul(buyuk)
+        if i2 is not None and len(i2) >= max(1, bulunan):
+            koseler, kimlikler, olcek = k2, i2, 2.0
 
     if kimlikler is None or len(kimlikler) == 0:
         return []
 
     cikti: list[dict[str, Any]] = []
     for kose_dizi, kimlik in zip(koseler, kimlikler.flatten()):
-        k = [[float(u), float(v)] for u, v in kose_dizi.reshape(4, 2)]
+        # Büyütülmüş karede bulunduysa koordinatlar ORİJİNAL kareye
+        # geri ölçekleniyor: kalibrasyon karenin kendi piksel uzayında
+        # tanımlı ve iki katı bir uzaydan gelen sayı her şeyi ikiye
+        # katlardı.
+        k = [[float(u) / olcek, float(v) / olcek]
+             for u, v in kose_dizi.reshape(4, 2)]
         kenarlar = [math.dist(k[i], k[(i + 1) % 4]) for i in range(4)]
         cikti.append({
             "kimlik": int(kimlik),
