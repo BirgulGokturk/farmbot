@@ -36,6 +36,7 @@ import bahce
 import baslar
 import depo
 import etiket
+import tahta
 import dikim
 import egriler
 import ekim
@@ -2977,6 +2978,8 @@ async def api_kalibrasyon_olcek(govde: dict[str, Any], jeton: str = Query(defaul
 # (`etiket.py`). Uç noktalarını buraya yazmak, `main.py` sürekli değiştiği
 # için her yamada çakışma demekti; tek satırla bağlanıyor.
 app.include_router(etiket.yonlendirici_kur(_parola_dogrula))
+# Satranç tahtasıyla lens kalibrasyonu — aynı gerekçe, ayrı dosya.
+app.include_router(tahta.yonlendirici_kur(_parola_dogrula))
 
 
 # --------------------------------------------------------------------------- #

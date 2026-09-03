@@ -22,3 +22,7 @@ ajan/bolgeler.json
 # takili oldugu makineye ozel. Baslangic degeri ayarlar.ornek.json'da.
 ajan/kameralar.json
 kamera_kalibrasyon.json
+
+# Kalibrasyon ciktilari makineye ait, depoya girmiyor.
+sunucu/lens_kalibrasyon.json
+sunucu/etiket_konumlari.json
