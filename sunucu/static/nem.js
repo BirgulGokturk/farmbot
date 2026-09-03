@@ -80,8 +80,16 @@
         <div class="satir-8 alt-hizali">
           <button class="dugme" id="d-nem-tazele">Yenile</button>
           <button class="dugme birincil" id="d-nem-olc">Ölçülmeyenleri ölç</button>
+          <div class="alan">
+            <label for="nem-bekleme">Probun toprakta bekleme süresi (sn)</label>
+            <input type="number" id="nem-bekleme" step="0.5" min="0.5" max="60">
+          </div>
+          <button class="dugme" id="d-nem-bekleme-kaydet">Kaydet</button>
           <span class="alt-not" id="nem-not"></span>
         </div>
+        <p class="alt-not">Okumanın oturması toprağın cinsine göre değişiyor:
+          killi ve sıkışık toprakta uzun, gevşek harçta kısa. Erken okumak
+          yanlış nem, yanlış nem de yanlış sulama kararı demek.</p>
         <div id="nem-hata" class="uyari-kutu gizli"></div>
         <div class="veri-kutu"><table class="veri nem-tablo">
           <thead><tr>
@@ -94,6 +102,8 @@
     $("#d-nem-tazele").onclick = () => yukle(true);
     cubugaEkle();
     $("#d-nem-olc").onclick = olculmeyenleriOlc;
+    $("#d-nem-bekleme-kaydet").onclick = beklemeKaydet;
+    ayarYukle();
     // Bölüm AÇILDIĞINDA tazeleniyor: kapalı bir tabloyu saniyede bir
     // yenilemek boşuna istek demek.
     $("#nem-detay").addEventListener("toggle", () => {
@@ -132,6 +142,46 @@
     const ek = document.getElementById("d-toplu-ek");
     if (ek && ek.parentElement === cubuk) ek.insertAdjacentElement("afterend", d);
     else cubuk.appendChild(d);
+  }
+
+  /* Bekleme süresi ekimin süreleriyle aynı dosyada duruyor (`vakum_sn`,
+   * `dusme_sn` ile birlikte): üçü de "işlem sırasında ne kadar bekle"
+   * sorusunun cevabı ve aynı soruyu iki ayrı yerde aramak istemiyoruz. */
+  async function ayarYukle() {
+    const p = P();
+    if (!p) return;
+    try {
+      const a = await p.apiIste("/api/ekim/ayar");
+      const el = $("#nem-bekleme");
+      if (el && document.activeElement !== el) el.value = a.nem_bekleme_sn ?? 4;
+    } catch (h) { /* eski sunucuda alan yok — boş kalsın */ }
+  }
+
+  async function beklemeKaydet() {
+    const p = P();
+    if (!p) return;
+    const v = Number($("#nem-bekleme").value);
+    if (!Number.isFinite(v) || v < 0.5 || v > 60) {
+      hataYaz("Bekleme süresi 0,5 ile 60 saniye arasında olmalı.");
+      return;
+    }
+    try {
+      // ÖNCE OKU, SONRA YAZ. Uç nokta eksik alanları VARSAYILANA çekiyor;
+      // yalnız bu alanı göndermek, vakum ve düşme sürelerini sessizce
+      // sıfırlamak demekti.
+      const mevcut = await p.apiIste("/api/ekim/ayar");
+      const y = await p.apiIste("/api/ekim/ayar", {
+        method: "POST",
+        body: JSON.stringify({ ...mevcut, nem_bekleme_sn: v }),
+      });
+      hataYaz("");
+      const yeni = (y && (y.ayar || y).nem_bekleme_sn) ?? v;
+      $("#nem-bekleme").value = yeni;
+      notYaz(`Bekleme süresi ${yeni} saniye olarak kaydedildi.`);
+      if (p.gunluk) p.gunluk(`✓ Nem ölçüm beklemesi ${yeni} sn`, "ok");
+    } catch (h) {
+      hataYaz(h.message || "Kaydedilemedi");
+    }
   }
 
   function baslat() {

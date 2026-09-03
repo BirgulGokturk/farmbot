@@ -834,6 +834,10 @@ async def _nem_olc_baslat(adlar: list[str]) -> dict[str, Any]:
     alanlar = await asyncio.to_thread(dikim.listele)
     kayitli = {n.get("ad"): n for n in await asyncio.to_thread(noktalar.hepsi)}
     guvenli_z = _sayi_guvenli(durum.get("guvenli_z"), 340.0)
+    # Bekleme süresi ayardan: toprağın cinsine göre okumanın oturması
+    # farklı sürüyor ve bunu koda gömmek, bir kurulumda erken okuyup
+    # yanlış değer vermek demekti.
+    nem_bekleme = float(ekim.ayar_oku().get("nem_bekleme_sn") or NEM_BEKLEME_SN)
 
     adimlar: list[dict[str, Any]] = []
     hedefler: list[dict[str, Any]] = []
@@ -864,7 +868,7 @@ async def _nem_olc_baslat(adlar: list[str]) -> dict[str, Any]:
             # Prob toprakta: okumanın oturması için kısa bir bekleme.
             # Ölçüm anını AJANIN durum paketinden alıyoruz; ayrı bir
             # "oku" adımı yok, çünkü prob sürekli okuyor.
-            {"tip": "bekle", "saniye": NEM_BEKLEME_SN},
+            {"tip": "bekle", "saniye": nem_bekleme},
             {"tip": "nokta", "ad": f"{ad}↑", "x": mx, "y": my, "z": guvenli_z},
         ]
         hedefler.append({"ad": ad, "x": ix, "y": iy, "mx": mx, "my": my,
@@ -909,6 +913,8 @@ _NEM_GOREVLERI: set[Any] = set()
 #: toprakta kalırsa aşağıdayken tek bir okuma bile gelmiyor ve kaydedilecek
 #: bir sayı olmuyor — ölçüm sessizce boşa gidiyor. Ölçtük: 2 sn ile hiçbir
 #: okuma yakalanmadı, 4 sn ile her seferinde yakalandı.
+#: Ayar okunamazsa devreye giren yedek. Asıl değer `ekim.ayar_oku()`
+#: içindeki `nem_bekleme_sn`.
 NEM_BEKLEME_SN = 4.0
 
 #: Ölçümün bitkiye ait sayılması için makinenin ona ne kadar yaklaşması

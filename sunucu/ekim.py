@@ -133,11 +133,26 @@ AYAR_VARSAYILAN: dict[str, Any] = {
     "onay_iste": True,
     "vakum_sn": VAKUM_SANIYE,
     "dusme_sn": DUSME_SANIYE,
+    # NEM ÖLÇÜMÜNDE PROBUN TOPRAKTA BEKLEME SÜRESİ.
+    #
+    # Kodda 4 saniye sabitti. Toprağın cinsine ve probun tipine göre okuma
+    # farklı sürede oturuyor: killi ve sıkışık toprakta daha uzun, gevşek
+    # harçta daha kısa. Sabit bir sayı, bir kurulumda erken okuyup yanlış
+    # değer vermek demekti — ve yanlış nem, yanlış sulama kararı.
+    #
+    # Burada duruyor çünkü kardeşleri de burada: `vakum_sn` ve `dusme_sn`
+    # de "işlem sırasında ne kadar bekle" sorusunun cevabı. Tek bir yerde
+    # olmaları, aynı soruyu iki ayrı dosyada aramayı önlüyor.
+    "nem_bekleme_sn": 4.0,
 }
 
 AYAR_SINIR: dict[str, tuple[float, float]] = {
     "vakum_sn": (0.1, 10.0),
     "dusme_sn": (0.1, 10.0),
+    # Üst sınır cömert: yavaş oturan bir probda 30 saniye beklemek
+    # gerekebiliyor. Alt sınır 0,5 — altında okuma probun toprağa
+    # girmesinden önceki havayı gösterir.
+    "nem_bekleme_sn": (0.5, 60.0),
 }
 
 _AYAR_KILIT = threading.Lock()
