@@ -72,7 +72,20 @@ VARSAYILAN: dict[str, Any] = {
     "genislik_px": 640,
     "yukseklik_px": 480,
     "guncelleme": 0.0,      # son kalibrasyon zamanı (unix)
-    "yontem": "",           # "elle" | "iki-kare"
+    "yontem": "",           # "elle" | "iki-kare" | "olcek" | "harita"
+    # PİKSEL → MİLİMETRE HARİTASI (3x3 homografi). `mm_px`/`donme`/`ofset`
+    # üçlüsü kameranın yatağa DİK baktığını varsayıyor; eğik bakan bir
+    # kamerada bu varsayım sahada 52 mm hata verdi. Harita perspektifi de
+    # taşıyor ve aynı ölçümde hatayı 9 mm'ye indirdi.
+    #
+    # Boş bırakılabilir: yoksa eski üçlü aynen geçerli ve hiçbir kurulum
+    # değişmiyor. Harita VARSA ondan türetilen üçlü de yazılıyor, böylece
+    # haritayı okumayan yerler bozulmadan çalışmaya devam ediyor.
+    "harita": None,
+    # Haritanın ölçülen sapması (mm) ve kaç noktadan çıktığı. Sayı
+    # olmadan "kalibre" demek, ne kadar yanlış olduğunu bilmemek demek.
+    "harita_sapma_mm": None,
+    "harita_nokta": 0,
 }
 
 # Makul aralıklar. Panelden gelen sayıya körlemesine güvenmiyoruz: saçma bir
@@ -89,6 +102,43 @@ SINIR = {
 
 class KalibrasyonHatasi(Exception):
     """Kalibrasyon hesaplanamadı ya da verilen değer geçersiz."""
+
+
+def _harita_dogrula(ham: Any) -> list[list[float]] | None:
+    """3x3 homografi — ya geçerli ya None.
+
+    YARIM BİR HARİTA, HİÇ HARİTA OLMAMASINDAN KÖTÜ: sekiz sayısı doğru
+    dokuzuncusu bozuk bir dizi, ölçüleri sessizce saçmalatır. Ya tamamı
+    sayı ve son eleman sıfır değil, ya da hiç kaydetmiyoruz.
+    """
+    if ham in (None, "", [], {}):
+        return None
+    try:
+        satirlar = [[float(x) for x in satir] for satir in ham]
+    except (TypeError, ValueError):
+        raise KalibrasyonHatasi("Harita 3x3 sayı dizisi olmalı") from None
+    if len(satirlar) != 3 or any(len(s) != 3 for s in satirlar):
+        raise KalibrasyonHatasi(
+            f"Harita 3x3 olmalı (verilen: {len(satirlar)} satır)")
+    if abs(satirlar[2][2]) < 1e-12:
+        raise KalibrasyonHatasi(
+            "Haritanın son elemanı sıfır olamaz — dönüşüm tanımsız kalır")
+    # Ölçekleme serbestliğini kaldırıyoruz: aynı harita farklı katsayılarla
+    # yazılabiliyor ve karşılaştırma imkânsızlaşıyor.
+    b = satirlar[2][2]
+    return [[round(x / b, 10) for x in satir] for satir in satirlar]
+
+
+def harita_uygula(harita: Any, u: float, v: float) -> tuple[float, float]:
+    """Bir pikseli haritadan geçirip milimetreye çevirir."""
+    H = _harita_dogrula(harita)
+    if H is None:
+        raise KalibrasyonHatasi("Harita tanımlı değil")
+    payda = H[2][0] * u + H[2][1] * v + H[2][2]
+    if abs(payda) < 1e-12:
+        raise KalibrasyonHatasi("Harita bu piksel için tanımsız")
+    return ((H[0][0] * u + H[0][1] * v + H[0][2]) / payda,
+            (H[1][0] * u + H[1][1] * v + H[1][2]) / payda)
 
 
 def _yol() -> str:
@@ -191,6 +241,13 @@ def kaydet(ham: dict[str, Any], kamera: str = VARSAYILAN_KAMERA) -> dict[str, An
     for ad in ("ayna_x", "ayna_y"):
         if ad in ham:
             yeni[ad] = bool(ham[ad])
+    if "harita" in ham:
+        yeni["harita"] = _harita_dogrula(ham["harita"])
+    for ad in ("harita_sapma_mm",):
+        if ad in ham and ham[ad] is not None:
+            yeni[ad] = round(float(ham[ad]), 3)
+    if "harita_nokta" in ham and ham["harita_nokta"] is not None:
+        yeni["harita_nokta"] = int(ham["harita_nokta"])
     if "yontem" in ham:
         yeni["yontem"] = str(ham["yontem"])[:20]
     if "guncelleme" in ham:

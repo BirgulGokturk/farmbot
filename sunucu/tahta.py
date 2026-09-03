@@ -55,6 +55,20 @@ EN_AZ_KARE = 8
 #: demek ve çözüm ölçüme değil tek bir kareye oturuyor.
 EN_AZ_UZAKLIK_YAYILIM_MM = 20.0
 
+#: 3x3 ızgarada kapsanması gereken en az bölge ve köşe. Bozulma KENARLARDA
+#: yaşıyor; tahta oraya hiç gitmediyse model o bölgede ölçüme değil
+#: tahmine dayanıyor ve katsayılar birbirini kovalayarak büyüyor.
+EN_AZ_BOLGE = 5
+KOSE_HUCRELERI = (0, 2, 6, 8)
+EN_AZ_KOSE = 2
+
+#: Makul bozulma aralıkları. Bir webcam lensinde k1 kabaca -0,6…0,3,
+#: k2 ise birin altındadır. Dışına çıkan bir katsayı "bu lens çok bozuk"
+#: değil, "veri yetmedi, model gürültüye uydu" demek — ve düşük ölçüm
+#: hatası bunu GİZLİYOR, çünkü uydurma o karelere kusursuz oturuyor.
+MAKUL_K1 = 0.8
+MAKUL_K2 = 1.5
+
 
 class TahtaHatasi(Exception):
     """Kare reddedildi ya da kalibrasyon hesaplanamadı."""
@@ -254,8 +268,16 @@ def hesapla(kamera: str) -> dict[str, Any]:
     nesne[:, :2] = np.mgrid[0:ic[0], 0:ic[1]].T.reshape(-1, 2) * kare_mm
     nesneler = [nesne for _ in goruntu]
 
+    # SADE MODEL, BİLİNÇLİ.
+    #
+    # Varsayılan beş katsayılı model (k1,k2,p1,p2,k3) az ve dar kapsamalı
+    # veriyle kararsız: katsayılar birbirini kovalayıp büyüyor ve ölçüm
+    # hatası yine de küçük çıkıyor. Sahada k2 = 19,9 ve 3,2 böyle çıktı.
+    # Bu kurulumda kamera yatağa dik bakıyor, lens de basit; k3 ve teğetsel
+    # bozulma pratikte sıfır. Onları sabitlemek modeli oturtuyor.
+    bayrak = cv2.CALIB_FIX_K3 | cv2.CALIB_ZERO_TANGENT_DIST
     rms, kamera_mat, bozulma, rvecs, tvecs = cv2.calibrateCamera(
-        nesneler, goruntu, boyut, None, None)
+        nesneler, goruntu, boyut, None, None, flags=bayrak)
 
     # Her karede tahtanın kameraya uzaklığı — tahta toprağa yatık
     # çekildiyse bu, kameranın yataktan yüksekliği demek. "Derinlik"
@@ -270,15 +292,29 @@ def hesapla(kamera: str) -> dict[str, Any]:
     # hata küçücük çıkıyor ama katsayılar gerçeği değil o kareyi anlatıyor
     # (sahada k2 = 19,9 gördük — gerçek bir lenste 1'in altında olur).
     # Bu yüzden güvenilirliği duruş ÇEŞİTLİLİĞİNDEN de soruyoruz.
+    k1 = float(np.asarray(bozulma).ravel()[0])
+    k2 = float(np.asarray(bozulma).ravel()[1])
+    koseler_var = len([h for h in kapsama if h in KOSE_HUCRELERI])
+
     uyari = ""
     if yayilim < EN_AZ_UZAKLIK_YAYILIM_MM:
         uyari = (f"Kareler birbirinin aynı: kameraya uzaklık yalnız "
                  f"{yayilim:.1f} mm değişmiş. Sonuç bu hâliyle GÜVENİLMEZ — "
                  "tahtayı yaklaştırıp uzaklaştırarak ve eğerek toplayın.")
-    elif len(kapsama) < 3:
-        uyari = (f"Kareler karenin yalnız {len(kapsama)} bölgesinden alınmış. "
-                 "Lens bozulması en çok kenarlarda; oraları göstermezseniz "
-                 "düzeltme kenarlarda uydurma kalıyor.")
+    elif len(kapsama) < EN_AZ_BOLGE or koseler_var < EN_AZ_KOSE:
+        uyari = (f"Kapsama yetersiz: {len(kapsama)}/9 bölge, {koseler_var} köşe. "
+                 f"En az {EN_AZ_BOLGE} bölge ve {EN_AZ_KOSE} köşe gerekiyor. "
+                 "Bozulma KENARLARDA yaşıyor; tahtayı köşelere götürmezseniz "
+                 "düzeltme oralarda ölçüme değil tahmine dayanıyor.")
+    elif abs(k1) > MAKUL_K1 or abs(k2) > MAKUL_K2:
+        # ÖLÇÜM HATASI BUNU GİZLİYOR: uydurma, toplanan karelere kusursuz
+        # oturduğu için hata küçük çıkıyor. Katsayının kendisine bakmak
+        # gerekiyor.
+        uyari = (f"Bozulma katsayıları gerçekçi değil (k1 {k1:.3f}, k2 {k2:.3f}). "
+                 "Bir webcam lensinde k1 kabaca -0,6…0,3, k2 birin altındadır. "
+                 "Bu, lensin çok bozuk olduğunu değil VERİNİN YETMEDİĞİNİ "
+                 "gösteriyor: tahtayı köşelere götürüp daha yakından, daha "
+                 "çeşitli açılarda toplayın.")
 
     sonuc = {
         "rms": round(float(rms), 3),
@@ -293,6 +329,8 @@ def hesapla(kamera: str) -> dict[str, Any]:
         "uzaklik_en_az_mm": round(uzakliklar[0], 1),
         "uzaklik_en_cok_mm": round(uzakliklar[-1], 1),
         "uzaklik_yayilim_mm": round(yayilim, 1),
+        "kose_sayisi": koseler_var,
+        "model": "k1+k2 (k3 ve teğetsel sabit)",
         "guvenilir": not uyari,
         "uyari": uyari,
     }

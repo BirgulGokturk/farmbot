@@ -36,6 +36,7 @@ import bahce
 import baslar
 import depo
 import etiket
+import otokalib
 import tahta
 import dikim
 import egriler
@@ -2999,6 +3000,50 @@ app.include_router(etiket.yonlendirici_kur(_parola_dogrula, merkez.canli_kare_ta
 # ve o aralık saatlik olabiliyor — tahtayı oynatan kullanıcı 25 kez aynı
 # eski kareyi eklemişti. Canlı akış bellekte ayrı duruyor.
 app.include_router(tahta.yonlendirici_kur(_parola_dogrula, merkez.canli_kare_taze))
+
+
+async def _git_ve_bekle(x: float, y: float, z: float | None,
+                        zaman_asimi: float = 60.0) -> str:
+    """Hedefe gidip HAREKETİN BİTMESİNİ bekliyor. Sorun varsa metni döner.
+
+    `git` komutu ajanda arka planda yürüyor ve hemen dönüyor; kamera
+    kalibrasyonu hareket biterken kare alırsa işareti yanlış yerde ölçer.
+    Bitişi durum paketinden okuyoruz: hem `hareket` bayrağı düşmeli hem
+    konum hedefe oturmuş olmalı — yalnız bayrağa bakmak, hareket daha
+    başlamadan "bitti" demek olurdu.
+    """
+    try:
+        await merkez.komut_gonder("git", {"x": x, "y": y,
+                                          **({} if z is None else {"z": z})})
+    except HTTPException as hata:
+        return str(hata.detail)
+
+    basla = time.time()
+    oturdu = 0
+    while time.time() - basla < zaman_asimi:
+        await asyncio.sleep(0.25)
+        d = merkez.son_durum or {}
+        k = d.get("konum") or {}
+        try:
+            yakin = (abs(float(k.get("x")) - x) <= 1.0
+                     and abs(float(k.get("y")) - y) <= 1.0
+                     and (z is None or abs(float(k.get("z")) - z) <= 1.0))
+        except (TypeError, ValueError):
+            yakin = False
+        if yakin and not d.get("hareket"):
+            oturdu += 1
+            # İki tur üst üste: tek okuma, hareket başlamadan önceki ana
+            # denk gelebiliyor.
+            if oturdu >= 2:
+                return ""
+        else:
+            oturdu = 0
+    return (f"Makine {zaman_asimi:.0f} saniyede X{x:.0f} Y{y:.0f} noktasına "
+            "ulaşamadı — sınır dışı ya da bir hareket engeli olabilir.")
+
+
+app.include_router(otokalib.yonlendirici_kur(
+    _parola_dogrula, merkez.canli_kare_taze, _git_ve_bekle))
 
 
 # --------------------------------------------------------------------------- #
