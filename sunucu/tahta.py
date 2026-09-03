@@ -409,14 +409,18 @@ def yonlendirici_kur(parola_dogrula, canli_kare=None):
         if kare_mm <= 0:
             raise HTTPException(status_code=400,
                                 detail="Kare ölçüsü (mm) girilmedi.")
+        # DİSKTEKİ KAREYE DÜŞMÜYORUZ. Kalibrasyon her basışta YENİ bir
+        # görüntü istiyor; periyodik kare saatlik olabiliyor ve aynı kareyi
+        # tekrar tekrar ölçmek çöp sonuç demek. Taze canlı kare yoksa
+        # sebebini söyleyip duruyoruz.
         ham = canli_kare(kam) if canli_kare else None
         if not ham:
-            ham = await asyncio.to_thread(kareler.son, kareler.ad_temizle(kam))
-        if not ham:
             raise HTTPException(
-                status_code=404,
-                detail=f"'{kam}' kamerasından kare yok. Canlı akışı açın — "
-                       "kapalıyken yalnız saatlik kaydedilen eski kare var.")
+                status_code=409,
+                detail=f"'{kam}' kamerasından taze kare gelmiyor — canlı akış "
+                       "durmuş görünüyor. Panelde Kamera sekmesini açık ve "
+                       "görünür tutun; sekmeden çıkınca akış duruyor ve "
+                       "bellekteki son kare donuyor.")
         try:
             return await asyncio.to_thread(kare_ekle, kam, ham, ic, kare_mm)
         except TahtaHatasi as hata:

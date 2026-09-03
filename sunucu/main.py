@@ -215,6 +215,22 @@ class Merkez:
     def canli_kare_al(self, kamera: str = kareler.VARSAYILAN_KAMERA) -> bytes:
         return (self.canli_kareler.get(kareler.ad_temizle(kamera)) or {}).get("kare", b"")
 
+    def canli_kare_taze(self, kamera: str = kareler.VARSAYILAN_KAMERA,
+                        azami_yas: float = 5.0) -> bytes:
+        """Canlı kare — ama YALNIZ tazeyse.
+
+        DONMUŞ KARE, OLMAYAN KAREDEN KÖTÜ. Canlı akış durduğunda bellekteki
+        son kare orada kalıyor; onu okuyan kalibrasyon "kamera çalışıyor"
+        sanıp aynı görüntüyü tekrar tekrar ölçüyor. Sahada tam bu oldu:
+        panelin kamera sekmesinden çıkılınca akış durdu, terminal 25 kez
+        aynı kareyi aldı ve sonuç — düşük hatasına rağmen — çöp çıktı.
+        Eski kareyi boş saymak, çağıranın sebebi söylemesini sağlıyor.
+        """
+        k = self.canli_kareler.get(kareler.ad_temizle(kamera)) or {}
+        if not k.get("kare"):
+            return b""
+        return k["kare"] if (time.time() - float(k.get("ts") or 0)) <= azami_yas else b""
+
     def sonuc_isle(self, mesaj: dict[str, Any]) -> None:
         beklenen = self._bekleyen.get(str(mesaj.get("id")))
         if beklenen is not None and not beklenen.done():
@@ -2977,12 +2993,12 @@ async def api_kalibrasyon_olcek(govde: dict[str, Any], jeton: str = Query(defaul
 # AprilTag ile kalibrasyon AYRI BİR DOSYADA ve kendi yönlendiricisinde
 # (`etiket.py`). Uç noktalarını buraya yazmak, `main.py` sürekli değiştiği
 # için her yamada çakışma demekti; tek satırla bağlanıyor.
-app.include_router(etiket.yonlendirici_kur(_parola_dogrula, merkez.canli_kare_al))
+app.include_router(etiket.yonlendirici_kur(_parola_dogrula, merkez.canli_kare_taze))
 # Satranç tahtasıyla lens kalibrasyonu — aynı gerekçe, ayrı dosya.
 # Canlı kare geçiriliyor: `kareler.son` DİSKTEKİ periyodik kareyi veriyor
 # ve o aralık saatlik olabiliyor — tahtayı oynatan kullanıcı 25 kez aynı
 # eski kareyi eklemişti. Canlı akış bellekte ayrı duruyor.
-app.include_router(tahta.yonlendirici_kur(_parola_dogrula, merkez.canli_kare_al))
+app.include_router(tahta.yonlendirici_kur(_parola_dogrula, merkez.canli_kare_taze))
 
 
 # --------------------------------------------------------------------------- #
