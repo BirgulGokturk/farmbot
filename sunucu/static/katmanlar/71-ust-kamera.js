@@ -100,18 +100,24 @@ Tarla.katman({
       return c.every(Boolean) ? c : null;
     }
 
-    const mm = Number(k.mm_px);
-    if (!(mm > 0)) return null;
-    // Ölçek + dönme: kare, ofsetin etrafında dönmüş bir dikdörtgen.
-    const ex = W * mm / 2, ey = H * mm / 2;
-    const a = (Number(k.donme) || 0) * Math.PI / 180;
-    const cs = Math.cos(a), sn = Math.sin(a);
-    const ax = k.ayna_x ? -1 : 1, ay = k.ayna_y ? -1 : 1;
-    const cx = Number(k.ofset_x) || 0, cy = Number(k.ofset_y) || 0;
-    return [[-ex, -ey], [ex, -ey], [ex, ey], [-ex, ey]].map(([u, v]) => {
-      const su = u * ax, sv = v * ay;
-      return { x: cx + su * cs - sv * sn, y: cy + su * sn + sv * cs };
-    });
+    /* HARİTA YOKSA ÇİZMİYORUZ — ölçek + dönme'ye DÜŞMÜYORUZ.
+     *
+     * Önce düşüyordu ve sonuç yatağın yanına taşan, yamuk oturmuş bir
+     * fotoğraftı. Sebep bir hata değil, modelin kendisi: ölçek + dönme
+     * kameranın yatağa DİK baktığını varsayıyor. Bu kamera sert bir
+     * açıyla bakıyor ve o varsayım sahada 52 mm hata verdi. Yani o
+     * modelle serilen görüntü tanımı gereği kayar; "biraz yanlış" değil,
+     * yanlış olduğu bilinen bir görüntü.
+     *
+     * Perspektifli harita dört etiketten çıkıyor ve aynı ölçümde hatayı
+     * 9 mm'ye indirdi. Serilecek görüntünün şartı bu.
+     *
+     * Ölçek + dönme yine de KULLANILIYOR, başka yerlerde: leke
+     * konumları, tespitler. Orada tek bir noktanın koordinatı var ve
+     * hatası sayı olarak yazılıyor; burada ise bütün yatağı kaplayan,
+     * hata payı görünmeyen bir görüntü söz konusu.
+     */
+    return null;
   },
 
   /** Kalibrasyon MANTIKLI mı — değilse sebebi, mantıklıysa "".
@@ -139,7 +145,7 @@ Tarla.katman({
     if (!Number.isFinite(en) || !Number.isFinite(boy) || en < 1 || boy < 1) {
       return "kalibrasyondaki ölçek sayısı geçersiz.";
     }
-    if (en > enB * 3 || boy > boyB * 3) {
+    if (en > enB * 1.8 || boy > boyB * 1.8) {
       return `kalibrasyon gerçekçi değil — kare ${Math.round(en)}×`
         + `${Math.round(boy)} mm çıkıyor, yatak ${Math.round(enB)}×`
         + `${Math.round(boyB)} mm. Üst kameranın mm/px değeri eski bir `
@@ -180,10 +186,10 @@ Tarla.katman({
     }
     const k4 = this.koseler();
     if (!k4) {
-      this.sebepYaz(o, "üst kamera kalibre edilmemiş. Kamera sekmesi → "
-        + "'AprilTag ile kalibre et' ile en az iki etiketten kalibrasyon "
-        + "kaydedin; kameranın yatağın neresine baktığı ancak ondan sonra "
-        + "biliniyor.");
+      this.sebepYaz(o, "dört etiketten çıkan perspektifli harita gerekiyor. "
+        + "Kamera yatağa eğik bakıyor; ölçek+dönme modeli bu açıda 52 mm "
+        + "sapıyor ve görüntü yatağa yamuk oturuyor. Kamera sekmesi → "
+        + "'AprilTag ile kalibre et' → dört etiketi de tarayıp kaydedin.");
       return;
     }
     const kotu = this.saglamMi(o, k4);
