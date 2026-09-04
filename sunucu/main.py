@@ -3503,6 +3503,10 @@ def _bahce_veri() -> dict[str, Any]:
             for k, v in baslar.hepsi(merkez.son_durum or {}).items()},
         "is_basi": baslar.IS_BASI,
         "tohum_ucu": (merkez.son_durum or {}).get("tohum_ucu") or {},
+        # HAZNEDE TOHUMU OLAN TÜRLER. Tohum rafı bunu yazıyor: haznesi
+        # boş bir türü "ekilebilir" diye göstermek, kullanıcıyı makinenin
+        # reddedeceği bir işe göndermek olurdu.
+        "hazne_turleri": _bahce_hazne_turleri(),
         "bolgeler": durum.get("bolgeler") or [],
         "konum": durum.get("konum") or {},
         "ekim": _bahce_ekim_ozet(),
@@ -3710,7 +3714,9 @@ async def _bahce_yayinla() -> None:
 
 
 @app.get("/api/bahce/bos-yer")
-async def api_bahce_bos_yer(tur: str = Query(default=""), jeton: str = Query(default="")):
+async def api_bahce_bos_yer(tur: str = Query(default=""),
+                            azami: int = Query(default=bahce.AZAMI_ONERI),
+                            jeton: str = Query(default="")):
     """Seçilen TÜRE göre kaç boş yer var — türü kullanıcı seçiyor.
 
     Sayı türe göre gerçekten değişiyor: marulun yayılımı 250 mm, rokanınki
@@ -3736,15 +3742,20 @@ async def api_bahce_bos_yer(tur: str = Query(default=""), jeton: str = Query(def
         hepsi = noktalar.hepsi()
         yaricaplar, _ = _yaricaplar(bahce.bitkiler(hepsi))
         durum = merkez.durum()
+        # KAÇ TANE. Kart "kaç boş yer var" diye soruyor ve on iki yetiyor;
+        # bahçe sahnesi ekim gözlerini ÇİZİYOR, yani yatağın tamamını
+        # istiyor. Üst sınır duruyor: sınırsız tarama küçük bilgisayarda
+        # her tür değişiminde saniyeler yakar.
+        kac = max(1, min(int(azami or bahce.AZAMI_ONERI), 96))
         yerler = bahce.bos_yerler(hepsi, yaricaplar, dikim.listele(), yayilim,
-                                  durum.get("sinirlar") or {})
+                                  durum.get("sinirlar") or {}, azami=kac)
         return {
             "tur": slug,
             "ad": t.get("name_tr") or slug,
             "simge": t.get("icon") or "🌱",
             "yayilim_mm": round(yayilim, 1),
             "adet": len(yerler),
-            "sinirda": len(yerler) >= bahce.AZAMI_ONERI,
+            "sinirda": len(yerler) >= kac,
             "hazne": slug in _bahce_hazne_turleri(),
             "yerler": yerler,
         }

@@ -68,6 +68,10 @@ window.BahceSahne = (function () {
     olcuTs: 0,
     notlar: {},
     kart: null,
+    secilenTur: "",       // eline aldığı tohum
+    gozler: null,         // o türün GERÇEK boş yerleri (/api/bahce/bos-yer)
+    surukle: null,
+    suruklendi: false,
     sayac: { cizim: 0, kare: 0, istek: 0 },
   };
 
@@ -580,6 +584,7 @@ window.BahceSahne = (function () {
           + '<span class="bs-govde"></span>'
           + '<span class="bs-simge"></span>'
           + '<span class="bs-rozetler"></span>';
+        el.onclick = () => bitkiKarti(el.dataset.ad);
         kap.appendChild(el);
       } else {
         eskiler.delete(b.ad);
@@ -826,6 +831,376 @@ window.BahceSahne = (function () {
     });
   }
 
+
+  /* ==================================================================== *
+   * İş gönderme
+   *
+   * İŞLER KUYRUĞA GİRİYOR, SORU SORULMUYOR. Makine tek dizi
+   * çalıştırabiliyor; iki bitkiye arka arkaya dokunan birine "makine
+   * meşgul" demek, kullanıcıyı makinenin takvimine uydurmak olurdu.
+   * ==================================================================== */
+  async function isGonder(tip, adlar, ek) {
+    try {
+      const y = await gonder("/api/bahce/is",
+                             { tip, noktalar: adlar, ...(ek || {}) });
+      kuyrukDegisti(y.kuyruk);
+      gunluk(`✓ ${({ sula: "Sulama", nem: "Nem ölçümü", foto: "Fotoğraf",
+                     gez: "Ziyaret" })[tip] || tip} sıraya girdi`, "ok");
+      return true;
+    } catch (hata) {
+      gunluk(`✕ ${hata.message}`, "hata");
+      notYaz("is", `İş sıraya konamadı: ${hata.message}`);
+      setTimeout(() => notYaz("is", ""), 8000);
+      return false;
+    }
+  }
+
+  /** ONAY ADIMI — geri alınamaz işler için.
+   *
+   * Sürükle-bırak hoş bir hareket ama arkasında 24 V'luk bir portal var.
+   * Onay kutusu "emin misiniz" demiyor; NE OLACAĞINI yazıyor: hangi baş,
+   * hangi noktaya, ne kadar. Okunmadan basılan bir onay, onay değildir.
+   */
+  function onayIste(secenek) {
+    const geri = S.kart;
+    kartAc({
+      simge: secenek.simge || "⚠️",
+      baslik: secenek.baslik,
+      alt: "onay gerekiyor",
+      satirlar: [
+        `<div class="bs-onay"><b>Ne olacak</b><p>${kacisli(secenek.ne)}</p></div>`,
+        ...(secenek.satirlar || []),
+      ],
+      dugmeler: [
+        { yazi: secenek.tamam, birincil: true, makine: true,
+          tikla: async () => { kartKapat(); await secenek.tikla(); } },
+        { yazi: "Vazgeç", tikla: () => (geri ? kartAc(geri) : kartKapat()) },
+      ],
+    });
+  }
+
+  /* ==================================================================== *
+   * Tohum rafı ve ekim gözleri
+   * ==================================================================== */
+  function rafYaz() {
+    const raf = $("#bs-raf");
+    if (!raf) return;
+    const v = S.veri || {};
+    const turler = v.turler || [];
+    const hazne = new Set(v.hazne_turleri || []);
+    const imza = turler.map((t) => t.slug).join(",") + "|" + [...hazne].join(",");
+    if (raf.dataset.imza === imza) return;
+    raf.dataset.imza = imza;
+    // Bahçede zaten olan türler önde: en çok kullanılan tohum en yakında.
+    const bahcede = new Set((v.bitkiler || []).map((b) => b.tur));
+    const sirali = [...turler].sort((a, b) =>
+      (bahcede.has(b.slug) ? 1 : 0) - (bahcede.has(a.slug) ? 1 : 0));
+    raf.innerHTML = sirali.map((t) => `
+      <button class="bs-tohum" type="button" data-tur="${kacisli(t.slug)}"
+              aria-pressed="false" data-makine="1"
+              aria-label="${kacisli(t.ad)} — toprağa sürükleyin ya da dokunup bir göz seçin">
+        <span class="im">${kacisli(t.simge || "🌱")}</span>
+        <span>${kacisli(t.ad)}${hazne.has(t.slug) ? ""
+          : '<br><span class="haznesiz">haznede tohumu yok</span>'}</span>
+      </button>`).join("");
+    raf.querySelectorAll(".bs-tohum").forEach((d) => {
+      d.addEventListener("pointerdown", surukleBasla);
+      d.addEventListener("click", (o) => {
+        // Sürükleme olduysa tıklamayı yutuyoruz: parmağını kaldırınca
+        // tohum hem bırakılıp hem seçilmiş olmasın.
+        if (S.suruklendi) { S.suruklendi = false; return; }
+        o.preventDefault();
+        tohumSec(d.dataset.tur === S.secilenTur ? "" : d.dataset.tur);
+      });
+    });
+    baglantiYaz();
+  }
+
+  /** Bir türü "eline almak": o türün ekim gözleri yatakta yanıyor.
+   *
+   * Gözler `/api/bahce/bos-yer`den geliyor ve TÜRE GÖRE değişiyor —
+   * marulun yayılımı 250 mm, rokanınki 150 mm. Uydurulmuş bir ızgara
+   * yerine gerçekten ekilebilir noktalar. */
+  async function tohumSec(slug) {
+    S.secilenTur = slug || "";
+    document.querySelectorAll("#bs-raf .bs-tohum").forEach((d) => {
+      d.setAttribute("aria-pressed", d.dataset.tur === S.secilenTur ? "true" : "false");
+    });
+    if (!S.secilenTur) { gozleriYaz(null); return; }
+    try {
+      const y = await api(`/api/bahce/bos-yer?tur=${encodeURIComponent(slug)}&azami=96`);
+      if (S.secilenTur !== slug) return;      // kullanıcı arada fikir değiştirdi
+      S.gozler = y;
+      gozleriYaz(y);
+      if (!y.adet) {
+        notYaz("goz", `${y.ad} için boş yer kalmamış — mevcut bitkilerin `
+                      + `yayılım çemberleri yatağı doldurmuş.`);
+      } else {
+        notYaz("goz", "");
+      }
+    } catch (hata) {
+      S.gozler = null;
+      gozleriYaz(null);
+      // Sessiz başarısızlık yok: göz çizilmiyorsa sebebi yazıyor.
+      notYaz("goz", `Ekim gözleri hesaplanamadı: ${hata.message}`);
+    }
+  }
+
+  function gozleriYaz(veri) {
+    const kap = $("#bs-gozler");
+    if (!kap) return;
+    if (!veri || !veri.yerler || !veri.yerler.length) { kap.innerHTML = ""; return; }
+    const pxMM = pikselMM();
+    const cap = Math.max(18, sayi(veri.yayilim_mm) * pxMM);
+    kap.innerHTML = veri.yerler.map((yer, i) => {
+      const p = mmUV(yer.x, yer.y);
+      return `<span class="bs-goz" data-i="${i}"
+        style="left:${(p.u * 100).toFixed(2)}%;top:${(p.v * 100).toFixed(2)}%;`
+        + `width:${cap.toFixed(1)}px;height:${cap.toFixed(1)}px;`
+        + `animation-delay:${(i * 0.02).toFixed(2)}s">${kacisli(veri.simge || "🌱")}</span>`;
+    }).join("");
+  }
+
+  /** Parmağın altındaki göz. Ekran koordinatı ÖLÇÜLEN dönüşümden
+   *  geçiyor: eğim ve yakınlaştırma ne olursa olsun doğru göz bulunuyor. */
+  function yakinGoz(ekranX, ekranY) {
+    if (!S.gozler || !S.gozler.yerler) return null;
+    const uv = ekranUV(ekranX, ekranY);
+    if (!uv) return null;
+    const yer = uvMM(uv.u, uv.v);
+    let en = null, enUzak = Infinity;
+    S.gozler.yerler.forEach((g, i) => {
+      const d = Math.hypot(g.x - yer.x, g.y - yer.y);
+      if (d < enUzak) { enUzak = d; en = { ...g, i }; }
+    });
+    // Yakınlık ölçütü yayılımın yarısı: gözün kendi çemberi. Daha uzağı
+    // "buraya bırakıldı" saymak, tohumu kullanıcının göstermediği bir
+    // yere koymak olurdu.
+    return (en && enUzak <= Math.max(25, sayi(S.gozler.yayilim_mm) / 2)) ? en : null;
+  }
+
+  function gozIsaretle(secili) {
+    document.querySelectorAll("#bs-gozler .bs-goz").forEach((e) => {
+      e.classList.toggle("yakin", secili != null && Number(e.dataset.i) === secili);
+    });
+  }
+
+  /* ------------------------------------------------------------ sürükleme */
+  function surukleBasla(o) {
+    const t = o.target.closest(".bs-tohum");
+    if (!t || t.disabled) return;
+    const tur = (S.veri.turler || []).find((x) => x.slug === t.dataset.tur);
+    if (!tur) return;
+    S.surukle = { tur, el: t, tasindi: false, x: o.clientX, y: o.clientY };
+    S.suruklendi = false;
+    if (S.secilenTur !== tur.slug) tohumSec(tur.slug);
+  }
+
+  function surukleTasi(o) {
+    if (!S.surukle) return;
+    const s = S.surukle;
+    if (!s.tasindi && Math.hypot(o.clientX - s.x, o.clientY - s.y) < 6) return;
+    if (!s.tasindi) { s.tasindi = true; s.el.classList.add("tutuluyor"); }
+    o.preventDefault();
+    const h = $("#bs-hayalet");
+    if (h) {
+      h.hidden = false;
+      h.textContent = s.tur.simge || "🌱";
+      h.style.left = `${o.clientX}px`;
+      h.style.top = `${o.clientY}px`;
+    }
+    const goz = yakinGoz(o.clientX, o.clientY);
+    gozIsaretle(goz ? goz.i : null);
+  }
+
+  function surukleBirak(o) {
+    const s = S.surukle;
+    if (!s) return;
+    S.surukle = null;
+    const h = $("#bs-hayalet");
+    if (h) h.hidden = true;
+    s.el.classList.remove("tutuluyor");
+    gozIsaretle(null);
+    if (!s.tasindi) return;             // dokunuş sayılır, sürükleme değil
+    S.suruklendi = true;
+    const goz = yakinGoz(o.clientX, o.clientY);
+    if (!goz) {
+      notYaz("birak", "Tohum bir ekim gözüne bırakılmadı — yanan gözlerden "
+                      + "birinin üstüne bırakın.");
+      setTimeout(() => notYaz("birak", ""), 6000);
+      return;
+    }
+    ekOnayi(s.tur, goz);
+  }
+
+  /** EKİM ONAYI. Ne olacağı önce yazılıyor, sonra soruluyor. */
+  function ekOnayi(tur, yer) {
+    const v = S.veri || {};
+    const bas = (v.baslar || {}).tohum || {};
+    const hazne = (v.hazne_turleri || []).includes(tur.slug);
+    const makine = { x: sayi(yer.x) + sayi(bas.dx), y: sayi(yer.y) + sayi(bas.dy) };
+    onayIste({
+      simge: tur.simge || "🌱",
+      baslik: `${tur.ad} ekilecek`,
+      ne: `Makine tohum ucuyla ${makine.x.toFixed(0)} / ${makine.y.toFixed(0)} mm `
+        + `noktasına gidecek ve tohumu ${sayi(yer.x).toFixed(0)} / `
+        + `${sayi(yer.y).toFixed(0)} mm noktasına bırakacak. `
+        + "Nokta hemen yaratılıyor, ekim sıraya giriyor. Ekim geri alınamaz.",
+      satirlar: [
+        satir("Tür", tur.ad),
+        satir("Yayılım çapı", tur.yayilim_mm ? `${sayi(tur.yayilim_mm).toFixed(0)} mm` : null),
+        satir("Haznede tohumu", hazne ? "var" : null,
+              hazne ? "" : "Bu türe ayrılmış dolu bir göz görünmüyor; "
+                           + "makine ekimi reddedebilir."),
+        satir("Olgunluk süresi",
+              tur.olgun_gun ? `${sayi(tur.olgun_gun).toFixed(0)} gün` : null),
+      ],
+      tamam: "Ek",
+      tikla: async () => {
+        try {
+          const y = await gonder("/api/bahce/ek",
+                                 { tur: tur.slug, x: yer.x, y: yer.y });
+          kuyrukDegisti(y.kuyruk);
+          gunluk(`✓ ${tur.ad} sıraya girdi`, "ok");
+          tohumSec("");
+          await yukle();
+        } catch (hata) {
+          gunluk(`✕ ${hata.message}`, "hata");
+          notYaz("ek", `Ekilemedi: ${hata.message}`);
+          setTimeout(() => notYaz("ek", ""), 10000);
+        }
+      },
+    });
+  }
+
+  /* ==================================================================== *
+   * Bitki kartı
+   *
+   * "Bu bitki nasıl" sorusunun cevabı. Her satır ÖLÇÜLEN bir şey ya da
+   * açıkça "bilinmiyor" — arada bir şey yok.
+   * ==================================================================== */
+  function tarihYaz(damga) {
+    const d = sayi(damga, 0);
+    if (!d) return null;
+    try {
+      return new Date(d * 1000).toLocaleDateString("tr-TR",
+        { day: "numeric", month: "long", year: "numeric" });
+    } catch { return null; }
+  }
+
+  function bitkiKarti(ad) {
+    const v = S.veri || {};
+    const b = (v.bitkiler || []).find((x) => x.ad === ad);
+    if (!b) return;
+    const o = b.su_olcum || {};
+    const simdi = Date.now() / 1000;
+    const satirlar = [
+      satir("Tür", b.tur_ad || b.tur),
+      satir("Yeri", `${sayi(b.x).toFixed(0)} / ${sayi(b.y).toFixed(0)} mm`),
+      satir("Ekildiği gün", tarihYaz(b.ekim),
+            b.ekim ? "" : "Ekim tarihi kayıtlı değil — yaşı ve olgunluğu hesaplanamıyor."),
+      satir("Yaşı", b.yas_gun == null ? null : `${sayi(b.yas_gun).toFixed(0)} gün`),
+      satir("Olgunluk", (b.yas_gun == null || !b.olgun_gun) ? null
+        : `${sayi(b.yas_gun).toFixed(0)} / ${sayi(b.olgun_gun).toFixed(0)} gün`
+          + (b.hasat ? " · hasada hazır" : ""),
+        b.hasat_gerekce || ""),
+      satir("Yayılım çapı", b.yaricap_mm
+        ? `${(sayi(b.yaricap_mm) * 2).toFixed(0)} mm` : null,
+        b.cakisik ? "Komşu bir bitkinin çemberiyle çakışıyor." : ""),
+
+      // --- toprak nemi: ölçümün künyesi ---
+      satir("Toprak nemi", o.yuzde == null ? null : `%${sayi(o.yuzde).toFixed(0)}`,
+            o.yuzde == null
+              ? `Son ${Math.round(sayi(o.azami_yas_sn, 86400) / 3600)} saat içinde `
+                + `${sayi(o.yaricap_mm, 100).toFixed(0)} mm yakınında ölçüm yok.`
+              : ""),
+      satir("Ölçüm zamanı", o.yas_sn == null ? null : sureKisa(o.yas_sn),
+            o.bayat ? "Bu okuma son sulamadan ÖNCE alınmış — güncel değil." : ""),
+      // "Kendi üstünden" ile "90 mm ötede" aynı güvenilirlikte değil ve
+      // kullanıcı hangisi olduğunu bilmeden sayıya bakamaz.
+      satir("Ölçüm nereden", o.yuzde == null ? null
+        : (o.kendi ? "kendi toprağından"
+                   : `${sayi(o.uzak_mm).toFixed(0)} mm ötedeki bir noktadan`)),
+      satir("Sulama nem eşiği", o.esik_acik ? `%${sayi(o.esik).toFixed(0)}` : null,
+            o.esik_acik ? "Ölçülen nem bunun altına düşünce sulanması gerekiyor."
+                        : "Eşik %100, yani kapalı: nem kararı verilmiyor."),
+      satir("Sulama süresi", b.sulama_saniye == null ? null
+        : `${sayi(b.sulama_saniye).toFixed(1)} sn`,
+        b.sulama_deseni && b.sulama_deseni !== "ust"
+          ? `Desen: ${b.sulama_deseni} — süre noktalara bölünüyor.` : ""),
+      satir("Son sulama", tarihYaz(b.sulama_ts),
+            b.sulama_ts ? `${sureKisa(simdi - sayi(b.sulama_ts))} · `
+              + "sulama komutunun gittiği an; akış sensörü yok"
+              : "Ekildiğinden beri sulanmamış."),
+      satir("Susama kararı",
+            b.susadi ? (b.su_tahmin ? "susamış olabilir" : "susadı")
+                     : (b.su_tahmin ? "susamamış görünüyor" : "susamadı"),
+            b.su_gerekce + (b.su_tahmin
+              ? " · Bu bir TAHMİN: ölçüme değil geçen güne dayanıyor." : "")),
+    ];
+
+    const bas = (v.baslar || {}).sulama || {};
+    kartAc({
+      simge: b.simge || "🌱",
+      baslik: b.tur_ad || b.tur,
+      alt: b.ad,
+      satirlar,
+      dugmeler: [
+        { yazi: "💧 Sula", birincil: true, makine: true, tikla: () => onayIste({
+            simge: "💧",
+            baslik: `${b.tur_ad || b.tur} sulanacak`,
+            ne: `Makine sulama başlığıyla `
+              + `${(sayi(b.x) + sayi(bas.dx)).toFixed(0)} / `
+              + `${(sayi(b.y) + sayi(bas.dy)).toFixed(0)} mm noktasına gidecek ve `
+              + `pompayı ${sayi(b.sulama_saniye, 3).toFixed(1)} saniye açacak. `
+              + "Dökülen su geri alınamaz.",
+            satirlar: [
+              satir("Toprak nemi", o.yuzde == null ? null : `%${sayi(o.yuzde).toFixed(0)}`,
+                    o.yuzde == null ? "Ölçülmediği için ne kadar gerektiği bilinmiyor." : ""),
+              satir("Sulama süresi", `${sayi(b.sulama_saniye, 3).toFixed(1)} sn`),
+            ],
+            tamam: "Onaylıyorum, sula",
+            tikla: () => isGonder("sula", [b.ad],
+                                  { saniye: sayi(b.sulama_saniye, 3) }),
+          }) },
+        { yazi: "🌡️ Nemini ölç", makine: true, tikla: async () => {
+            kartKapat();
+            await isGonder("nem", [b.ad]);
+          } },
+        { yazi: "📷 Fotoğrafla", makine: true, tikla: async () => {
+            kartKapat();
+            await isGonder("foto", [b.ad]);
+          } },
+      ],
+      tazele: () => bitkiKarti(ad),
+    });
+  }
+
+  /* ==================================================================== *
+   * Sıra şeridi
+   * ==================================================================== */
+  function seritYaz() {
+    const el = $("#bs-serit");
+    const yazi = $("#bs-serit-yazi");
+    const iptal = $("#bs-serit-iptal");
+    if (!el || !yazi) return;
+    const v = S.veri || {};
+    const k = v.kuyruk || {};
+    const calisan = k.calisan;
+    el.classList.toggle("calisiyor", !!calisan);
+    if (!v.bagli) {
+      yazi.textContent = "Makine kopuk — sıradaki işler bekliyor.";
+    } else if (calisan) {
+      yazi.textContent = `${calisan.etiket} · çalışıyor`
+        + (k.bekleyen ? ` · sırada ${k.bekleyen} iş` : "");
+    } else if (k.bekleyen) {
+      yazi.textContent = `Sırada ${k.bekleyen} iş bekliyor.`;
+    } else {
+      yazi.textContent = "Robot bekliyor.";
+    }
+    if (iptal) iptal.hidden = !k.bekleyen;
+  }
+
   /* ==================================================================== *
    * Çizim ve veri
    * ==================================================================== */
@@ -838,7 +1213,11 @@ window.BahceSahne = (function () {
     bitkileriYaz();
     makineYaz();
     hedefYaz();
+    rafYaz();
+    seritYaz();
     baglantiYaz();
+    // Gözler piksel cinsinden çizildi: yerleşim değiştiyse yeniden.
+    if (S.gozler) gozleriYaz(S.gozler);
   }
 
   /** Bağlantı rozeti. Makine kopukken bunu okumadan hiçbir düğmeye
@@ -864,6 +1243,7 @@ window.BahceSahne = (function () {
     });
     notYaz("bagli", v.bagli ? ""
       : "Makineyle bağlantı yok: bahçe görünüyor ama iş başlatılamıyor.");
+    seritYaz();
   }
 
   async function yukle() {
@@ -902,6 +1282,7 @@ window.BahceSahne = (function () {
     if (mesgul !== S.veri.mesgul) {
       S.veri.mesgul = mesgul;
       baglantiYaz();
+      seritYaz();
     }
     makineYaz();
     // Kart açıksa yazdığı sayı da canlı: kapalı bir sayfada donmuş bir
@@ -916,6 +1297,7 @@ window.BahceSahne = (function () {
     S.veri.kuyruk = k;
     makineYaz();
     hedefYaz();
+    seritYaz();
     // İş bitti: bahçenin hâli değişmiş olabilir (sulama damgası, yeni
     // bitki). `tazele` ise başka bir panel bahçeyi değiştirmiş.
     if (S.acik && (tazele || (k && !k.calisan && !k.bekleyen))) yukle();
@@ -932,6 +1314,8 @@ window.BahceSahne = (function () {
     if (kok) kok.hidden = !S.acik || S.klasik;
     if (!S.acik) {
       canliIste(false);
+      kartKapat();
+      tohumSec("");
       return;
     }
     if (S.klasik) return;
@@ -1004,10 +1388,26 @@ window.BahceSahne = (function () {
       zumla(S.zum.o * (o.deltaY < 0 ? 1.15 : 1 / 1.15), o.clientX, o.clientY);
     }, { passive: false });
 
+    // TOHUM ELDEYKEN BİR GÖZE DOKUNMAK DA EKİYOR. Dokunmatikte
+    // sürüklemeyi kendiliğinden bulamayan biri, tohuma sonra göze
+    // dokunarak aynı işi yapıyor; ikisi de aynı onay adımına çıkıyor.
+    sahne.addEventListener("click", (o) => {
+      if (o.target.closest(".bs-bitki") || o.target.closest(".bs-kizak")) return;
+      if (!S.secilenTur || S.suruklendi) { S.suruklendi = false; return; }
+      const goz = yakinGoz(o.clientX, o.clientY);
+      if (!goz) return;
+      const tur = (S.veri.turler || []).find((t) => t.slug === S.secilenTur);
+      if (tur) ekOnayi(tur, goz);
+    });
+
     // Çift dokunuş: yakınlaştır ya da tamamen geri dön. Dokunmatikte
     // yakınlaştırmanın en bilinen hareketi bu.
     let sonDokunus = 0;
     sahne.addEventListener("pointerup", (o) => {
+      // Bitkiye, makineye ya da eldeki tohumla bir göze dokunmak kendi
+      // işini yapıyor; üstüne bir de yakınlaştırmak olmaz.
+      if (o.target.closest(".bs-bitki") || o.target.closest(".bs-kizak")
+          || S.secilenTur) return;
       const simdi = Date.now();
       if (simdi - sonDokunus < 320) {
         zumla(S.zum.o > 1.5 ? 1 : 2.2, o.clientX, o.clientY);
@@ -1045,6 +1445,23 @@ window.BahceSahne = (function () {
 
     const kizak = $("#bs-kizak");
     if (kizak) kizak.onclick = makineKarti;
+
+    // Sürükleme belge düzeyinde izleniyor: parmak rafın dışına çıkınca
+    // olay akışı kesilmesin.
+    document.addEventListener("pointermove", surukleTasi, { passive: false });
+    document.addEventListener("pointerup", surukleBirak);
+    document.addEventListener("pointercancel", surukleBirak);
+
+    const iptal = $("#bs-serit-iptal");
+    if (iptal) {
+      iptal.onclick = async () => {
+        try {
+          const y = await gonder("/api/bahce/is/iptal", { kimlik: "hepsi" });
+          kuyrukDegisti(y.kuyruk);
+          gunluk(`${y.iptal} iş sıradan çıkarıldı`);
+        } catch (hata) { gunluk(`✕ ${hata.message}`, "hata"); }
+      };
+    }
 
     const ortu = $("#bs-ortu");
     if (ortu) {
@@ -1108,11 +1525,15 @@ window.BahceSahne = (function () {
 
     addEventListener("resize", () => {
       S.tersMatris = null;
-      if (S.acik && !S.klasik) { S.imza = ""; sahneBoyu(); bitkileriYaz(); }
+      if (S.acik && !S.klasik) {
+        S.imza = ""; sahneBoyu(); bitkileriYaz();
+        if (S.gozler) gozleriYaz(S.gozler);
+      }
     });
     addEventListener("keydown", (o) => {
       if (o.key !== "Escape") return;
       if (S.kart) { kartKapat(); return; }
+      if (S.secilenTur) { tohumSec(""); return; }
       if (S.zum.o > 1.02) { S.zum = { o: 1, x: 0, y: 0 }; zumUygula(); }
     });
   }
@@ -1132,7 +1553,9 @@ window.BahceSahne = (function () {
       zum: Math.round(S.zum.o * 100) / 100,
       bagli: !!(S.veri || {}).bagli, mesgul: !!(S.veri || {}).mesgul,
       hata: S.hata, kart: S.kart ? S.kart.baslik : "",
-      bas: aktifBasKimlik(), sayac: Object.assign({}, S.sayac),
+      bas: aktifBasKimlik(), tohum: S.secilenTur,
+      goz: S.gozler ? S.gozler.adet : 0,
+      sayac: Object.assign({}, S.sayac),
       matris: !!olcumTazele(true),
     };
   }
