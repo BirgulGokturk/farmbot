@@ -965,6 +965,54 @@ Açma artık **en küçük kabul edilen lekeye** bağlı (penceresi o lekenin
 eşdeğer çapının üçte birini geçemiyor: saklamaya karar verdiğimiz şeyi
 silen bir açma kurulamıyor), kapama ise çözünürlükle ölçekleniyor.
 
+**Morfolojinin SIRASI yanlıştı: önce kapama, sonra açma.** `ac_kapa`
+önce açma yapıyordu ve gerekçesi "önce temizle sonra doldur; tersi
+gürültüyü büyütür" idi. O gerekçe sağlam bir nesnenin üstündeki tuz
+gürültüsü için doğru, **gözenekli** bir nesne için felaket. Yaprak
+maskesi gözenekli: damar, gölge, parlama ve JPEG'in kroma altörneklemesi
+yüzünden yaprağın içi delik deşik çıkıyor, eşiği geçen piksel oranı
+yaprağın ancak %60'ı kadar. Açma ise pencerenin TAMAMEN dolu olmasını
+istiyor; öyle pencere neredeyse hiç yok ve açma yaprağı silip atıyor.
+
+Ölçüldü (1920×1440, dört fesleğen fidesi, maske %62 dolu, üstüne 1010
+piksel dağınık gürültü):
+
+| | piksel | bileşen | ≥80 px leke |
+|---|---|---|---|
+| ham maske | 1673 | 1014 | 4 |
+| AÇ→KAPA (eski) | **45** | 4 | **0** |
+| KAPA→AÇ (yeni) | 1174 | 4 | **4** |
+
+Fidenin 663 pikselinden geriye 45 piksel kalıyordu ve hiçbiri en küçük
+fide kapısını geçemiyordu — panelde "38 leke, hepsi kapının altında"
+tam olarak buydu. Sıra değişince dört fide de bütün birer leke (~290 px)
+olarak çıkıyor ve gürültünün 1010 pikselinin **tamamı yine eleniyor**;
+yani sıranın tersine çevrilmesi gürültüyü içeri almıyor.
+
+**Ara adımlar artık ölçülüyor.** "Leke neden bu kadar küçük ve parçalı"
+sorusu ancak her aşamanın kaç piksel ve kaç bileşen bıraktığı görülünce
+cevaplanıyordu; tek bir "0 leke" çıktısıyla morfolojinin mi eşiğin mi
+kapının mı yediği anlaşılmıyordu. `asamalar` üç aşamayı da veriyor:
+renk kapılarından çıkan ham maske, morfoloji sonrası, en küçük fide
+kapısı sonrası — her biri için piksel, bileşen ve en büyük leke.
+
+**Tanı "parçalı" durumunu ayrı bir sebep olarak söylüyor.** Lekelerin
+hepsi kapının altındaysa ama toplamları kapıyı geçiyorsa, sebep kapının
+yüksekliği değil maskenin fideyi bütün çıkaramaması. O durumda "en küçük
+fideyi düşürün" yanlış yönlendirme — kapı zaten düşük, düşürmek
+gürültüyü içeri alır. Aynı şekilde eşik 0.4 üstündeyse (0.06 yerine 0.6
+yazmak kolay) tanı önce onu söylüyor: ExG ölçeğinde yaprak 0.1–0.6
+arasında, o eşik yalnız en koyu yeşili geçirir.
+
+**Kamera yatağa bakıyor mu — ölçülebilir hâli.** `tespit.kadraj_ortusme()`
+kadrajı bir ızgarayla tarayıp her noktanın yatak koordinatını çıkarıyor
+ve dikim alanının içinde kalan oranı ile kadrajın yatak koordinatındaki
+sınırlarını veriyor. Sıfır çıkması kesin bir şey söylüyor: bu kamera
+yatağı hiç görmüyor, hangi eşik konursa konsun fide bulunamaz. Yüksek
+çıkması ise kanıt değil — kamera fiziksel olarak çevrildiyse kalibrasyon
+eskimiştir ve eski sayılar kadrajı hâlâ yatağın üstünde gösterir. Gerçek
+denetim önizleme karesine bakmak.
+
 **Karenin kendisi de ölçülüyor.** "Filiz bulunamadı" üç ayrı şey
 olabiliyor ve üçünün çaresi farklı: karede gerçekten yeşil yok, kare
 aşırı pozlanmış/karanlık (yeşil **ölçülemez**), ya da yeşil var ama renk

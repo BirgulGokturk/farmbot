@@ -491,6 +491,42 @@ def ac_kapa(mask: np.ndarray, yaricap: int = YARICAP,
 # --------------------------------------------------------------------------- #
 # 4. Bağlı bileşenler
 # --------------------------------------------------------------------------- #
+def kapa_ac(mask: np.ndarray, kapa_yaricap: int = YARICAP,
+            ac_yaricap: int = 1) -> np.ndarray:
+    """Önce KAPAMA, sonra AÇMA — yaprak maskesi için doğru sıra bu.
+
+    `ac_kapa` bunun tersini yapıyor ve gerekçesi şuydu: "önce temizle
+    sonra doldur; tersi gürültüyü büyütür." O gerekçe SAĞLAM bir nesnenin
+    üstündeki tuz gürültüsü için doğru, GÖZENEKLİ bir nesne için felaket.
+
+    Yaprak maskesi gözenekli: damar, gölge, parlama ve JPEG'in kroma
+    altörneklemesi yüzünden yaprağın içi delik deşik çıkıyor — eşiği
+    geçen piksel oranı yaprağın %60'ı kadar. Açma ise 3x3 pencerenin
+    TAMAMEN dolu olmasını istiyor; gözenekli bir lekede öyle pencere
+    neredeyse hiç yok, dolayısıyla açma yaprağı silip atıyor.
+
+    ÖLÇÜLDÜ (1920x1440, dört fesleğen fidesi, maske %62 dolu, üstüne
+    1010 piksel dağınık gürültü):
+
+        ham maske                    1673 px, 1014 bileşen, 4 leke ≥80px
+        AÇ→KAPA (bugünkü)              45 px,    4 bileşen, 0 leke ≥80px
+        KAPA→AÇ                      1174 px,    4 bileşen, 4 leke ≥80px
+
+    Yani açma önce gelince fidenin 663 pikselinden geriye 45 piksel
+    kalıyor ve hiçbiri en küçük fide kapısını geçemiyor. Sıra
+    değişince dört fide de bütün birer leke (~290 px) olarak çıkıyor —
+    ve gürültünün 1010 pikselinin tamamı yine eleniyor, yani sıranın
+    tersine çevrilmesi gürültüyü içeri almıyor.
+
+    Kapama önce: delikleri doldurup yaprağı bütünlüyor. Açma sonra:
+    artık sağlam olan lekeyi bozmadan dağınık gürültüyü siliyor.
+    """
+    k = int(kapa_yaricap)
+    a = int(ac_yaricap)
+    kapali = asin(genislet(mask, k), k)
+    return genislet(asin(kapali, a), a)
+
+
 def etiketle(mask: np.ndarray) -> tuple[np.ndarray, int]:
     """Bağlı bileşen etiketleme, 8 komşuluk. -> (etiket haritası, adet)
 
@@ -630,13 +666,23 @@ def kare_kalitesi(rgb: np.ndarray) -> dict[str, Any]:
 
 
 def _tani(yesil: dict[str, Any], kalite: dict[str, Any],
-          ham_leke: int, leke: int) -> str:
+          ham_leke: int, leke: int, asamalar: dict[str, Any],
+          esik: float, en_az_piksel: int) -> str:
     """Sonucun tek cümlelik gerekçesi. Boş = söylenecek bir sorun yok.
 
-    SIRA ÖNEMLİ: önce karenin ölçülebilir olup olmadığı, sonra yeşilin
-    varlığı, en sonda kapılar. Ters sırada "eşiği düşürün" denirdi ve
-    kare bembeyaz yanmışken o öğüt hiçbir işe yaramaz.
+    SIRA ÖNEMLİ: önce kullanıcının verdiği sayılar makul mü, sonra kare
+    ölçülebilir mi, sonra yeşil var mı, en sonda lekelerin hâli. Ters
+    sırada "eşiği düşürün" denirdi ve kare bembeyaz yanmışken ya da
+    eşik zaten on kat yüksekken o öğüt hiçbir işe yaramaz.
     """
+    # EŞİK MAKUL MU. ExG aralığı [-1, +2] ve yaprak tipik olarak
+    # +0.1 .. +0.6. 0.4 üstü bir eşik yalnız en koyu yeşili geçirir;
+    # 0.6 gibi bir sayı (virgül kaymasıyla 0.06 yerine yazılıyor)
+    # neredeyse her şeyi eler ve sonuç "karede yeşil yok" olur.
+    if esik > 0.40 and yesil["exg_oran"] <= 0.002:
+        return (f"Yeşil eşiği {esik:g} — bu çok yüksek. ExG ölçeğinde yaprak "
+                "tipik olarak 0.1–0.6 arasında; 0.4 üstü bir eşik yalnız en "
+                "koyu yeşili geçirir. Olağan değer 0.06–0.12.")
     if kalite["doymus"] >= DOYMA_UYARI:
         return (f"Kare aşırı pozlanmış: piksellerin %{kalite['doymus'] * 100:.0f}'i "
                 "doymuş (kırpılmış). Doymuş pikselde renk yok, yaprak da beyaz "
@@ -647,19 +693,46 @@ def _tani(yesil: dict[str, Any], kalite: dict[str, Any],
                 "Renk oranları gürültüye boğuluyor; yeşil ölçülemez.")
     if yesil["exg_oran"] <= 0.0002:
         return ("Karede yeşile yakın piksel yok (ExG eşiği geçen oran binde ikinin "
-                "altında). Kamera yatağa mı bakıyor, kadrajda bitki var mı?")
-    if leke == 0 and ham_leke == 0 and yesil["maske_oran"] <= 0.0:
+                "altında). Kamera yatağa mı bakıyor, kadrajda bitki var mı? "
+                "Önizleme karesinde yatağı göremiyorsanız hiçbir eşik yardım etmez.")
+
+    kapi = asamalar.get("kapi") or {}
+    morf = asamalar.get("morfoloji") or {}
+    if leke == 0 and yesil["maske_oran"] <= 0.0:
         en_cok = max(yesil["elenen"], key=yesil["elenen"].get)
         return (f"ExG %{yesil['exg_oran'] * 100:.1f} yeşil buldu ama renk "
                 f"kapılarının hepsi eledi (en çok '{en_cok}'). Kalan yeşil "
                 "mavi-turkuaza ya da nötre çok yakın — gerçekten yaprak mı?")
+
+    # MORFOLOJİ YEDİ Mİ. Kapılardan çıkan maske doluyken morfoloji
+    # sonrası neredeyse hiçbir şey kalmadıysa sebep eşik değil, morfoloji.
+    if kapi.get("piksel", 0) > 0 and morf.get("piksel", 0) < kapi["piksel"] * 0.2:
+        return (f"Renk kapılarından {kapi['piksel']} piksel çıktı ama morfoloji "
+                f"sonrası {morf.get('piksel', 0)} piksel kaldı: maske gözenekli "
+                "(yaprağın içi delik deşik) ve temizleme adımı onu yiyor. "
+                "Eşiği biraz düşürmek maskeyi doldurur.")
+
+    # PARÇALI. En küçük fide kapısı bunu ELEYEN sebep gibi görünüyor ama
+    # asıl sebep lekelerin bütün çıkmaması: hepsini toplasan kapıyı
+    # geçecek kadar yeşil var. "En küçük fideyi düşürün" demek burada
+    # yanlış yönlendirme — kapı zaten düşük, düşürmek gürültüyü içeri alır.
+    toplam = morf.get("piksel", 0)
+    if leke == 0 and ham_leke > 0:
+        if toplam >= en_az_piksel and morf.get("en_buyuk", 0) < en_az_piksel:
+            return (f"{ham_leke} leke bulundu, hepsi en küçük fide kapısının "
+                    f"altında (en büyüğü {morf.get('en_buyuk', 0)} piksel, kapı "
+                    f"{en_az_piksel}). Ama toplamda {toplam} piksel yeşil var — "
+                    "yani fide KADRAJDA, maske onu bütün bir leke olarak "
+                    "çıkaramıyor, parçalara bölüyor. En küçük fideyi düşürmeyin "
+                    "(gürültüyü içeri alır); eşiği biraz düşürüp maskeyi "
+                    "doldurmak ya da birleştirme mesafesini artırmak doğru yol.")
+        return (f"{ham_leke} leke bulundu ama hepsi en küçük fide kapısının "
+                f"altında kaldı (en büyüğü {morf.get('en_buyuk', 0)} piksel, "
+                f"kapı {en_az_piksel}). En küçük fideyi (mm) düşürün.")
     if leke == 0 and ham_leke == 0:
         return ("Yeşil pikseller vardı ama hiçbiri bağlı bir lekeye dönüşmedi: "
-                "dağınık, tek tük pikseller. En küçük fideyi düşürmek yardımcı "
-                "olabilir.")
-    if leke == 0 and ham_leke > 0:
-        return (f"{ham_leke} leke bulundu ama hepsi en küçük fide kapısının "
-                "altında kaldı. En küçük fideyi (mm) düşürün.")
+                "dağınık, tek tük pikseller. Eşiği biraz düşürmek maskeyi "
+                "bütünleştirebilir.")
     return ""
 
 
@@ -693,9 +766,28 @@ def bul(rgb: np.ndarray, esik: float = ESIK, yaricap: int | None = None,
     # `acma_yaricapi` / `kapama_yaricapi` başlarında.
     r = acma_yaricapi(en_az_piksel) if yaricap is None else int(yaricap)
     kapa = kapama_yaricapi(rgb.shape[1]) if yaricap is None else int(yaricap)
-    maske = ac_kapa(y["maske"], r, kapa)
+    # SIRA: ÖNCE KAPAMA, SONRA AÇMA. Gerekçesi ve ölçümü `kapa_ac`
+    # başında — açma önce gelince gözenekli yaprak maskesi siliniyordu.
+    maske = kapa_ac(y["maske"], kapa, r)
     etiket, adet = etiketle(maske)
     ham = lekeler(etiket, adet, en_az_piksel)
+
+    # ARA ADIMLARIN ÖLÇÜSÜ. "Leke neden bu kadar küçük ve parçalı"
+    # sorusu ancak her aşamanın kaç piksel ve kaç bileşen bıraktığı
+    # görülünce cevaplanıyor; tek bir "0 leke" çıktısıyla morfolojinin mi
+    # eşiğin mi kapının mı yediği anlaşılmıyordu.
+    def _asama(m: np.ndarray) -> dict[str, Any]:
+        e, n = etiketle(m)
+        buyukler = sorted((b["alan_px"] for b in lekeler(e, n, 1)), reverse=True)
+        return {"piksel": int(m.sum()), "leke": int(n),
+                "en_buyuk": buyukler[0] if buyukler else 0}
+    asamalar = {
+        "kapi": _asama(y["maske"]),          # renk kapılarından çıkan ham maske
+        "morfoloji": _asama(maske),          # kapama + açma sonrası
+        "en_az": {"piksel": int(sum(b["alan_px"] for b in ham)),
+                  "leke": len(ham),
+                  "en_buyuk": max((b["alan_px"] for b in ham), default=0)},
+    }
 
     # ALAN SÜZGECİ EN SONDA. Önce elemek, morfolojiyi ve etiketlemeyi
     # eksik bir maske üstünde çalıştırmak demekti; leke ölçüleri de o
@@ -727,7 +819,9 @@ def bul(rgb: np.ndarray, esik: float = ESIK, yaricap: int | None = None,
         # var ama kapılar eledi. Panel eşiği düşürmeyi öneriyordu; kare
         # bembeyaz yanmışsa o öneri yanlış.
         "kare": kalite,
-        "tani": _tani(y, kalite, int(adet), len(secili)),
+        "asamalar": asamalar,
+        "tani": _tani(y, kalite, int(adet), len(secili), asamalar,
+                      float(esik), int(en_az_piksel)),
         "alan_disi": len(disarida),
         "alan_disi_lekeler": disarida,
     }

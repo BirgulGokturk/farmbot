@@ -435,6 +435,72 @@ def en_az_piksel(kalib: dict[str, Any] | None,
     return int(max(taban, round(alan_mm2 / (mmpx * mmpx))))
 
 
+def kadraj_ortusme(kalib: dict[str, Any] | None,
+                   genislik_px: float | None = None,
+                   yukseklik_px: float | None = None, *,
+                   kare: dict[str, Any] | None = None,
+                   alanlar: list[dict[str, Any]] | None = None,
+                   izgara: int = 24) -> dict[str, Any]:
+    """Kalibrasyona göre kadrajın ne kadarı dikim alanına düşüyor.
+
+    "Kamera gerçekten yatağa mı bakıyor" sorusunun ÖLÇÜLEBİLİR hâli.
+    Kadrajı bir ızgarayla tarayıp her noktanın yatak koordinatını
+    çıkarıyor ve dikim alanlarının içinde kalan oranı veriyor.
+
+    NE SÖYLER, NE SÖYLEMEZ. Sıfır çıkması kesin bir şey söylüyor:
+    kalibrasyona göre bu kamera yatağı HİÇ görmüyor, dolayısıyla hangi
+    eşik konursa konsun fide bulunamaz. Yüksek çıkması ise kameranın
+    doğru baktığını KANITLAMIYOR — kamera fiziksel olarak çevrildiyse
+    kalibrasyon eskimiştir ve eski sayılar kadrajı hâlâ yatağın üstünde
+    gösterir. O yüzden çıktıda "kalibrasyona göre" diyoruz; gerçek
+    denetim önizleme karesine bakmak.
+
+    -> {oran, kutu: {x1,y1,x2,y2}, alan_var}
+    """
+    import dikim
+
+    k = kalib or {}
+    kare_bilgi = kare if kare is not None else {"x": None, "y": None}
+    W, H, _, _ = _kalib_piksel(k, genislik_px, yukseklik_px)
+    if not kalibre_mi(k):
+        return {"oran": None, "kutu": None, "alan_var": False}
+    if alanlar is None:
+        try:
+            alanlar = dikim.listele()
+        except Exception:                                  # noqa: BLE001
+            alanlar = []
+
+    n = max(4, int(izgara))
+    icinde = 0
+    toplam = 0
+    xs: list[float] = []
+    ys: list[float] = []
+    for i in range(n):
+        for j in range(n):
+            u = (i + 0.5) * W / n
+            v = (j + 0.5) * H / n
+            try:
+                x, y = piksel_mm(u, v, kare_bilgi, k, genislik_px, yukseklik_px)
+            except Exception:                              # noqa: BLE001
+                continue
+            toplam += 1
+            xs.append(x)
+            ys.append(y)
+            if alanlar and dikim.alan_bul(x, y, alanlar) is not None:
+                icinde += 1
+    if not toplam:
+        return {"oran": None, "kutu": None, "alan_var": bool(alanlar)}
+    return {
+        "oran": (round(icinde / toplam, 3) if alanlar else None),
+        # Kadrajın yatak koordinatındaki sınırları: "kamera X 20-760,
+        # Y -100-540 arasını görüyor" demek, tek bir oran sayısından
+        # daha çok şey anlatıyor.
+        "kutu": {"x1": round(min(xs), 1), "y1": round(min(ys), 1),
+                 "x2": round(max(xs), 1), "y2": round(max(ys), 1)},
+        "alan_var": bool(alanlar),
+    }
+
+
 def alan_suzgeci(kalib: dict[str, Any] | None,
                  genislik_px: float | None = None,
                  yukseklik_px: float | None = None, *,

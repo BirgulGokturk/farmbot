@@ -2609,7 +2609,14 @@ def _goruntu_coz(damga: str, esik: float | None, en_az_piksel: int,
         # çareleri de ayrı; ikisini ayırt etmeden "eşiği düşürün"
         # demek yanlış yönlendirme.
         "kare_kalite": sonuc.get("kare"),
+        "asamalar": sonuc.get("asamalar"),
         "tani": sonuc.get("tani"),
+        # KAMERA YATAĞA BAKIYOR MU — kalibrasyona göre. Sıfır çıkması
+        # kesin: bu kadraj yatağı hiç görmüyor, hangi eşik konursa
+        # konsun fide bulunamaz. Yüksek çıkması kanıt DEĞİL: kamera
+        # fiziksel olarak çevrildiyse kalibrasyon eskimiştir ve eski
+        # sayılar kadrajı hâlâ yatağın üstünde gösterir.
+        "kadraj": tespit.kadraj_ortusme(kalib, en, boy),
         "alan_disi": cozum.get("alan_disi", 0),
         "lekeler_px": sonuc["lekeler"],
         "lekeler": cozum["lekeler"],
