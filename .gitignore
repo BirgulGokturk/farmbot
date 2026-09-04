@@ -26,3 +26,8 @@ kamera_kalibrasyon.json
 # Kalibrasyon ciktilari makineye ait, depoya girmiyor.
 sunucu/lens_kalibrasyon.json
 sunucu/etiket_konumlari.json
+
+# Yamalar depoya girmesin: gecici alisveris dosyalari, tarihi zaten
+# commitlerde duruyor.
+Claude outputs/
+*.patch
