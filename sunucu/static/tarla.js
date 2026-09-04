@@ -2079,6 +2079,17 @@
   /* ============================================================= arayüz */
   const Tarla = {
     katman: katmanKaydet,
+    /** Bir katmanın tanımı — TANI İÇİN.
+     *
+     * Katmanlar birbirininkine `o.katmanTanimi` ile ulaşıyordu ama
+     * dışarıdan yolu yoktu. "Parça neden görünmüyor" gibi sorular ekran
+     * görüntüsünden cevaplanamıyor; katmanların tanı işlevleri (örneğin
+     * robot katmanının `suDurumu()`) sayıyla cevaplıyor ve konsoldan
+     * çağrılabilmeleri gerekiyor. */
+    katmanTanimi: (kimlik) => {
+      const k = T.katmanlar.find((x) => x.tanim.kimlik === kimlik);
+      return k ? k.tanim : null;
+    },
 
     async kur() {
       if (T.hazir) return;
