@@ -154,9 +154,10 @@
         <span>yeşil ${son.esik} · en az <b>${son.en_az_piksel}</b> piksel${
           son.en_az_kendiliginden
             ? ` (≈ ${son.en_kucuk_cap_mm} mm çapında leke)` : ""}</span></div>
-      <div class="etiket-satir"><span>Elenenler</span>
-        <span><b>${son.elenen || 0}</b> küçük · <b>${son.alan_disi || 0}</b>
-          dikim alanı dışında</span></div>`;
+      <div class="etiket-satir"><span>Alan dışı</span>
+        <span><b>${son.alan_disi || 0}</b> leke dikim alanının dışında
+          kaldığı için elendi</span></div>
+      ${kapiSatiri()}`;
 
     if (!fideler.length) {
       g += `<div class="etiket-satir uyari"><span>—</span>
@@ -184,6 +185,25 @@
     k.innerHTML = g;
     k.classList.remove("gizli");
     onizleme();
+  }
+
+  /** Renk kapılarının ne kadar elediği — "yeşil bulunamadı"nın sebebi.
+   *
+   * `elenen` bir sayı değil, kapı başına oran veriyor: güçlü yeşil
+   * sayılan piksellerin ne kadarını hangi kapı kesti. En çok kesen kapı
+   * hangisiyse sorun oradadır; eşiği körlemesine denemek yerine
+   * bakılacak yer burası. */
+  function kapiSatiri() {
+    const e = son.elenen || {};
+    const ad = { mavi: "mavi", kirmizi: "kırmızı", exgr: "yeşil-kırmızı",
+                 doygunluk: "doygunluk" };
+    const parca = Object.keys(ad)
+      .filter((k) => Number(e[k]) > 0)
+      .sort((a, b) => Number(e[b]) - Number(e[a]))
+      .map((k) => `${ad[k]} <b>${(Number(e[k]) * 100).toFixed(1)}%</b>`);
+    if (!parca.length) return "";
+    return `<div class="etiket-satir"><span>Renk kapıları</span>
+      <span>${parca.join(" · ")}</span></div>`;
   }
 
   /** Kareyi ve bulunan kutuları üst üste çiziyor.

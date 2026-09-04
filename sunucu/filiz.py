@@ -266,12 +266,18 @@ def yonlendirici_kur(parola_dogrula, canli_kare):
             "yesil_oran": round(y["oran"], 4),
             "leke_sayisi": len(y["lekeler"]), "ham_leke": int(y["ham_leke"]),
             # NEDEN BULAMADI sorusu artık tahminle değil sayıyla
-            # cevaplanıyor: kaç leke boy kapısına, kaç leke alan
-            # dışına takıldı.
-            "elenen": int(y.get("elenen") or 0),
+            # cevaplanıyor.
+            #
+            # `elenen` bir SAYI DEĞİL, sözlük: her renk kapısının
+            # (mavi, kırmızı, exgr, doygunluk) karenin ne kadarını
+            # elediği. Sayıya çevirmeye çalışmak çökertiyordu; olduğu
+            # gibi geçiriyoruz ve panel hangi kapının kestiğini yazıyor
+            # — "yeşil bulunamadı"nın sebebi tam olarak orada duruyor.
+            "elenen": y.get("elenen") or {},
             "alan_disi": int(y.get("alan_disi") or 0),
             "denge_kazanc": y.get("denge_kazanc"),
             "exg_oran": y.get("exg_oran"),
+            "maske_oran": y.get("maske_oran"),
             "yontem": c["yontem"], "ret": c["ret"],
             "lekeler": c["lekeler"], "fideler": fideler,
             "kare": "data:image/jpeg;base64," + base64.b64encode(jpeg).decode(),
