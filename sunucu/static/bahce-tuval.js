@@ -92,6 +92,8 @@ window.BahceTuval = (function () {
     surukle: null,
     suruklendi: false,
     onizleme: null,        // bırakılırsa ne olacağı
+    kutlama: [],           // biten işin küçük kutlaması
+    sonIs: null,           // en son çalışan iş — bitişini yakalamak için
     t0: performance.now(),
   };
 
@@ -2183,6 +2185,58 @@ window.BahceTuval = (function () {
   }
 
   /* ==================================================================== *
+   * Kutlama
+   *
+   * İŞİN BİTTİĞİ HABERİ KUYRUKTAN GELİYOR, tahminden değil: sunucu işi
+   * "bitti" diye kapattığında o işin noktalarında birkaç zerre
+   * yükseliyor. Renk işin tipinden — su mavi, ölçüm sarı, ekim yeşil.
+   *
+   * Ne kadar sürdüğü ya da ne kadar su gittiği burada YAZMIYOR; bunlar
+   * kartın işi. Kutlama bir bilgi taşımıyor, "oldu" diyor.
+   * ==================================================================== */
+  const KUTLAMA_RENK = { sula: "#4fb8e8", nem: "#d9a520", ek: "#8fd27a",
+                         foto: "#cfd6dd", gez: "#cfd6dd" };
+
+  function kutlamaAt(tip, adlar) {
+    if (S.sakin) return;                 // sakin mod: hiç hareket yok
+    const renk = KUTLAMA_RENK[tip] || "#cfd6dd";
+    const t = (performance.now() - S.t0) / 1000;
+    (adlar || []).forEach((ad) => {
+      const b = S.bitki.find((x) => x.ad === ad);
+      if (!b) return;
+      for (let i = 0; i < 12; i++) {
+        const a = Math.random() * Math.PI * 2;
+        const h = 0.4 + Math.random() * 0.9;
+        S.kutlama.push({
+          x: b.x + Math.cos(a) * b.cizimPx * 0.25,
+          y: b.y - Math.random() * b.cizimPx * 0.2,
+          vx: Math.cos(a) * 14 * h,
+          vy: -(34 + Math.random() * 42),
+          t0: t, sure: 0.9 + Math.random() * 0.5, renk,
+          r: 1.6 + Math.random() * 2.2,
+        });
+      }
+    });
+    surdur();
+  }
+
+  function kutlamaCiz(ct, t) {
+    if (!S.kutlama.length) return;
+    S.kutlama = S.kutlama.filter((p) => t - p.t0 < p.sure);
+    S.kutlama.forEach((p) => {
+      const o = (t - p.t0) / p.sure;             // 0..1
+      const x = p.x + p.vx * (t - p.t0);
+      const y = p.y + p.vy * (t - p.t0) + 26 * (t - p.t0) * (t - p.t0);
+      ct.globalAlpha = (1 - o) * 0.9;
+      ct.fillStyle = p.renk;
+      ct.beginPath();
+      ct.arc(x, y, p.r * (1 - o * 0.4), 0, Math.PI * 2);
+      ct.fill();
+    });
+    ct.globalAlpha = 1;
+  }
+
+  /* ==================================================================== *
    * Veriden çizime
    * ==================================================================== */
   function bitkileriHazirla() {
@@ -2266,6 +2320,7 @@ window.BahceTuval = (function () {
       if (i >= 0) secilen.splice(i, 1);
       secilen.unshift(vurgulu);
     }
+    kutlamaCiz(ct, t);
     const kutular = [];
     makineEtiketi(ct);
     secilen.forEach((b) => etiketCiz(ct, b, kutular, I));
@@ -2405,6 +2460,25 @@ window.BahceTuval = (function () {
 
   function kuyrukDegisti(k, tazele) {
     if (!S.veri) return;
+    // BİTİŞİ YAKALA. Kuyruk özeti her işin durumunu veriyor; en son
+    // çalışan iş "bitti" diye kapandıysa o işin noktalarında kutlama
+    // var. "Çalışan yok, demek ki bitti" demek yanlış olurdu: iş iptal
+    // de edilmiş, hata da vermiş olabilir.
+    const onceki = S.sonIs;
+    if (onceki) {
+      const kayit = ((k && k.isler) || []).find((i) => i.kimlik === onceki.kimlik);
+      if (kayit && kayit.durum === "bitti") {
+        kutlamaAt(onceki.tip, onceki.noktalar);
+        S.sonIs = null;
+      } else if (kayit && kayit.durum !== "calisiyor") {
+        S.sonIs = null;                 // iptal ya da hata: kutlama yok
+      }
+    }
+    const calisan = k && k.calisan;
+    if (calisan) {
+      S.sonIs = { kimlik: calisan.kimlik, tip: calisan.tip,
+                  noktalar: (calisan.noktalar || []).slice() };
+    }
     S.veri.kuyruk = k;
     if (S.acik && (tazele || (k && !k.calisan && !k.bekleyen))) yukle();
   }
@@ -2557,6 +2631,7 @@ window.BahceTuval = (function () {
       bas: aktifBasKimlik(), ucYuksekligi: ucYuksekligi(),
       uzerinde: S.uzerinde, kart: S.kartAd,
       tohum: S.secilenTur, goz: S.gozler ? S.gozler.adet : 0,
+      kutlama: S.kutlama.length,
       onizleme: S.onizleme ? [S.onizleme.x, S.onizleme.y, S.onizleme.ok] : null,
       tipler: S.bitki.map((b) => `${b.tur}:${b.tip}`),
       ters: !!G.ters,
