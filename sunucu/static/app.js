@@ -4130,7 +4130,22 @@ function kamKutuBagla(kutu, ad, sira = 0) {
     const pay = 24;                    // kutunun bu kadarı hep görünsün
     kayma.x = Math.max(-(y.left + y.width - pay),
                        Math.min(innerWidth - y.left - pay, kayma.x));
-    kayma.y = Math.max(-(y.top + y.height - pay),
+    /* ÜST KENAR AYRI KURALA TABİ.
+     *
+     * Alt/sağ/sol için "kutunun 24 pikseli görünsün" yetiyor: kalanı
+     * ekranın dışına taşsa da kullanıcı tutup geri çekebiliyor.
+     * ÜSTTE öyle değil — oradaki 24 piksel uygulamanın kendi üst
+     * çubuğunun arkasında kalıyor, yani kutu "görünür" sayılıyor ama
+     * hiçbir yerinden tutulamıyor ve hiçbir şeyi göstermiyor.
+     *
+     * Sahada tam bu oldu: sabit kameranın kutusu y = -217'ye oturdu
+     * (kutular zaten alt alta diziliyor, üstüne bir de bir kutu boyu
+     * yukarı kaydırma binince), açık olduğu hâlde ekranda görünmedi ve
+     * kullanıcı "kamera gelmiyor" dedi — kutu gelmişti, üstte duruyordu.
+     *
+     * Kural: kutunun ÜST KENARI ekranın üstünden yukarı çıkamaz. */
+    const ustPay = 8;
+    kayma.y = Math.max(ustPay - y.top,
                        Math.min(innerHeight - y.top - pay, kayma.y));
   };
   uygula();
