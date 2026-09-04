@@ -25,10 +25,12 @@ Tarla.katman({
   varsayilan: true,
 
   //: Damlanın bitkiden kayması (mm) — makine Y ekseninde ileri.
-  KAYMA: 30,
+  KAYMA: 22,
   //: Tıklama yarıçapı (mm). Bitkinin kendi vuruş alanına girmeyecek
-  //  kadar küçük, fareyle tutturulabilecek kadar büyük.
-  YARICAP: 16,
+  //  kadar küçük, fareyle tutturulabilecek kadar büyük. İşaretin
+  //  ÇİZİM boyundan büyük olması sorun değil, hatta gerekli: küçük
+  //  bir simgeyi fareyle tam tutturmak zor.
+  YARICAP: 14,
 
   /* --------------------------------------------------------- veri */
 
@@ -80,27 +82,34 @@ Tarla.katman({
     this.hedefler(o).forEach((h) => {
       const susuz = h.hal === "susadi";
       const renk = susuz ? "#4aa8d8" : "#e8a33c";
+      /* İKİSİ AYNI AĞIRLIKTA DEĞİL.
+       *
+       * Susadı = yapılacak iş. Ölçülmedi = eksik bilgi. İlki göze
+       * çarpmalı, ikincisi yalnız FARK EDİLMELİ. İlk hâlde ikisi de
+       * aynı boyda ve aynı parlaklıktaydı; 25 bitkinin 14'ünde ölçüm
+       * olmadığı için sahne halkayla doldu ve asıl uyarı olan damlalar
+       * onların arasında kayboldu. Sayıca çok olan, göze az batmalı. */
       const mal = new T.MeshStandardMaterial({
-        color: renk, transparent: true, opacity: 0.9,
-        emissive: new T.Color(renk), emissiveIntensity: 0.45,
+        color: renk, transparent: true, opacity: susuz ? 0.92 : 0.45,
+        emissive: new T.Color(renk), emissiveIntensity: susuz ? 0.5 : 0.2,
         roughness: 0.2, metalness: 0.0,
       });
 
       const g = new T.Group();
       if (susuz) {
-        // DAMLA: küre + üstüne koni. Gerçek bir damla biçimi, uzaktan
-        // da "su" diye okunuyor — soru işaretiyle karışmasın diye.
-        const kure = new T.Mesh(new T.SphereGeometry(0.016, 14, 12), mal);
-        kure.position.y = 0.016;
+        // DAMLA: küre + üstüne koni. Küçük ama biçimi belirgin; sahneyi
+        // kaplamadan "su" diye okunuyor.
+        const kure = new T.Mesh(new T.SphereGeometry(0.0055, 12, 10), mal);
+        kure.position.y = 0.0055;
         g.add(kure);
-        const koni = new T.Mesh(new T.ConeGeometry(0.016, 0.026, 14), mal);
-        koni.position.y = 0.040;
+        const koni = new T.Mesh(new T.ConeGeometry(0.0055, 0.009, 12), mal);
+        koni.position.y = 0.0145;
         g.add(koni);
       } else {
-        // ÖLÇÜLMEDİ: içi boş halka. Damladan farklı bir biçim, çünkü
-        // farklı bir şey söylüyor — "su gerek" değil, "bilmiyoruz".
-        const halka = new T.Mesh(new T.TorusGeometry(0.018, 0.005, 8, 20), mal);
-        halka.position.y = 0.030;
+        // ÖLÇÜLMEDİ: ince, sönük halka. Damladan farklı bir biçim,
+        // çünkü farklı bir şey söylüyor — "su gerek" değil, "bilmiyoruz".
+        const halka = new T.Mesh(new T.TorusGeometry(0.006, 0.0013, 6, 16), mal);
+        halka.position.y = 0.008;
         halka.rotation.x = Math.PI / 2;
         g.add(halka);
       }
@@ -115,7 +124,8 @@ Tarla.katman({
         new T.BufferGeometry().setFromPoints([
           new T.Vector3(o.sx(h.bitki.x), 0.004, o.sz(h.bitki.y)),
           new T.Vector3(o.sx(h.x), 0.004, o.sz(h.y))]),
-        new T.LineBasicMaterial({ color: renk, transparent: true, opacity: 0.5 }));
+        new T.LineBasicMaterial({ color: renk, transparent: true,
+                                  opacity: susuz ? 0.45 : 0.22 }));
       o.grup.add(iz);
     });
   },
@@ -129,11 +139,11 @@ Tarla.katman({
       const renk = h.hal === "susadi" ? "#4aa8d8" : "#e8a33c";
       c.save();
       c.strokeStyle = renk;
-      c.globalAlpha = 0.5;
+      c.globalAlpha = h.hal === "susadi" ? 0.45 : 0.22;
       c.beginPath(); c.moveTo(b.x, b.y); c.lineTo(p.x, p.y); c.stroke();
-      c.globalAlpha = 1;
+      c.globalAlpha = h.hal === "susadi" ? 1 : 0.5;
       c.fillStyle = renk;
-      c.font = "16px system-ui, sans-serif";
+      c.font = "11px system-ui, sans-serif";
       c.textAlign = "center";
       c.textBaseline = "middle";
       c.fillText(h.hal === "susadi" ? "💧" : "?", p.x, p.y);
