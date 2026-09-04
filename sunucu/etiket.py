@@ -404,10 +404,38 @@ def coz_yerlesim(bulunanlar: list[dict[str, Any]], konumlar: dict[str, Any],
                 kare += (hx - x) ** 2 + (hy - y) ** 2
             harita_artik = math.sqrt(kare / len(px))
 
+    # DÖRT NOKTADA "SAPMA" ÖLÇÜM DEĞİL.
+    #
+    # Homografinin sekiz serbestliği var, her nokta iki denklem veriyor:
+    # dört nokta sistemi TAM belirliyor ve artık her zaman ~0 çıkıyor.
+    # Ekranda "±0,0 mm" görmek, kalibrasyonun kusursuz olduğu anlamına
+    # gelmiyor — hiç ölçülmediği anlamına geliyor. Aynı gerekçe iki
+    # noktalı benzerlikte de yazılı (aşağıda `artik_notu`).
+    harita_artik_notu = ""
+    if harita is not None and len(eslesen) < 5:
+        harita_artik = None
+        harita_artik_notu = (
+            "Dört etiket haritayı tam belirliyor, sapması ölçülemez. "
+            "Beşinci bir etiket eklerseniz haritanın ne kadar tuttuğunu "
+            "sayıyla söyleyebilirim.")
+
+    # HARİTANIN KENDİSİNİ DE ÖLÇÜYORUZ. Artık, yalnız etiketlerin
+    # DURDUĞU yerdeki hatayı görüyor; etiketler aynı düzlemde değilse
+    # harita aralarında doğru, kenarlarda saçma olabilir. Ufuk çizgisi ve
+    # ölçek yayılımı bunu haritanın katsayılarından çıkarıyor.
+    harita_saglik = None
+    if harita is not None:
+        import tespit
+        harita_saglik = tespit.harita_saglik(
+            {"harita": harita, "genislik_px": genislik_px,
+             "yukseklik_px": yukseklik_px})
+
     aci = math.degrees(en_iyi["aci"])
     return {
         "harita": harita,
         "harita_artik_mm": None if harita_artik is None else round(harita_artik, 2),
+        "harita_artik_notu": harita_artik_notu,
+        "harita_saglik": harita_saglik,
         "mm_px": en_iyi["olcek"],
         "donme": (aci + 180.0) % 360.0 - 180.0,
         "ofset_x": en_iyi["tx"],
@@ -624,9 +652,31 @@ def yonlendirici_kur(parola_dogrula, canli_kare=None, makine_konum=None,
                 # HARİTA VARSA O DA YAZILIYOR. Üçlü (ölçek/dönme/ofset)
                 # yerinde kalıyor: haritayı okumayan yerler bozulmadan
                 # çalışsın diye. Okuyanlar eğik bakışı da düzeltiyor.
-                if yer.get("harita"):
+                sag = yer.get("harita_saglik") or {}
+                if yer.get("harita") and not sag.get("gecerli", True):
+                    # UFUK KADRAJA GİRİYORSA HARİTA YAZILMIYOR. Kaydetsek
+                    # `tespit` onu zaten reddedecek, ama panel rozeti
+                    # "harita" yazmaya devam eder ve kullanıcı kalibre
+                    # olduğunu sanır. Üçlü (ölçek/dönme/ofset) yazılıyor,
+                    # kamera yine ölçüyor — yalnız perspektif düzeltmesi yok.
+                    cikti["notlar"].append(sag.get("sebep") or
+                                           "Harita geçersiz, yazılmadı.")
+                elif yer.get("harita"):
                     yazilacak["harita"] = yer["harita"]
+                    # None DA YAZILIYOR: dört etiketle sapma ölçülemiyor ve
+                    # eski taramadan kalan sayının orada durması, ölçülmemiş
+                    # bir değeri ölçülmüş gibi göstermek olurdu.
                     yazilacak["harita_sapma_mm"] = yer.get("harita_artik_mm")
+                    if yer.get("harita_artik_notu"):
+                        cikti["notlar"].append(yer["harita_artik_notu"])
+                    import tespit
+                    kat = sag.get("olcek_yayilimi_kat")
+                    if kat and kat > tespit.OLCEK_YAYILIMI_UYARI:
+                        cikti["notlar"].append(
+                            f"Haritada mm/piksel karenin bir ucundan öbürüne "
+                            f"{kat:.1f} kat değişiyor — etiketler farklı "
+                            "yükseklikte duruyor ya da kamera çok eğik "
+                            "bakıyor. Ölçüler kadrajın kenarında güvenilmez.")
                     yazilacak["harita_nokta"] = yer.get("etiket_sayisi")
                     # Haritanın ölçüldüğü makine konumu. Sabit kamerada
                     # None: kamera oynamıyor, harita her zaman geçerli.

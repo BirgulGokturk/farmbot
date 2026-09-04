@@ -319,6 +319,32 @@
              <span class="alt-not">${kacisli(y.artik_notu)}</span></div>`
         : `<div class="etiket-satir${y.artik_mm > 3 ? " uyari" : ""}"><span>Sapma</span>
              <span class="mono">${sayi(y.artik_mm, 2)} mm</span></div>`;
+
+      /* HARİTA AYRI BİR SATIR. Yukarıdaki sapma BENZERLİK modelinin;
+       * harita ondan bağımsız ve kendi ölçüsü var. Dörtte sapma
+       * ölçülemiyor — "±0,0 mm" yazmaktansa neden ölçülemediğini
+       * yazıyoruz. Ölçek yayılımı haritanın katsayılarından çıkıyor:
+       * kadrajın bir ucundan öbürüne mm/piksel kaç kat oynuyor. */
+      if (y.harita) {
+        const s = y.harita_saglik || {};
+        if (s.ufuk_karede) {
+          g += `<div class="etiket-satir uyari"><span>Harita</span>
+            <span>${kacisli(s.sebep || "geçersiz")}</span></div>`;
+        } else {
+          g += y.harita_artik_mm == null
+            ? `<div class="etiket-satir"><span>Harita sapması</span>
+                 <span class="alt-not">${kacisli(y.harita_artik_notu)}</span></div>`
+            : `<div class="etiket-satir${y.harita_artik_mm > 3 ? " uyari" : ""}">
+                 <span>Harita sapması</span>
+                 <span class="mono">${sayi(y.harita_artik_mm, 2)} mm</span></div>`;
+          const kat = Number(s.olcek_yayilimi_kat);
+          if (Number.isFinite(kat)) {
+            g += `<div class="etiket-satir${kat > 3 ? " uyari" : ""}">
+              <span>Harita ölçek yayılımı</span>
+              <span class="mono">${sayi(kat, 1)} kat</span></div>`;
+          }
+        }
+      }
     }
     for (const n of son.notlar || []) {
       g += `<div class="etiket-satir uyari"><span>—</span><span>${kacisli(n)}</span></div>`;

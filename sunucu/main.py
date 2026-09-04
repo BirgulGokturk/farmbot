@@ -2601,6 +2601,12 @@ def _goruntu_coz(damga: str, esik: float | None, en_az_piksel: int,
         "lekeler": cozum["lekeler"],
         "kare_mm": cozum["kare_mm"],
         "ret": cozum["ret"],
+        # HARİTA DÜŞTÜYSE SEBEBİ. Kayıtlı bir harita geçersiz olduğu için
+        # kullanılmadığında koordinatlar eski (ölçek + dönme) modelden
+        # geliyor; bunu yazmazsak panel "çeviri modeli: benzerlik" der ve
+        # kullanıcı az önce kaydettiği haritanın nerede olduğunu bilemez.
+        "notlar": cozum.get("notlar") or [],
+        "harita_saglik": cozum.get("harita_saglik"),
         "eslesen": eslesme["eslesen"],
         "yabani_aday": eslesme["yabani_aday"],
         "gorunmeyen": [{"ad": b.get("ad"), "x": b.get("x"), "y": b.get("y"),

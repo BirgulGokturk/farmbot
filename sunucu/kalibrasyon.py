@@ -281,9 +281,12 @@ def kaydet(ham: dict[str, Any], kamera: str = VARSAYILAN_KAMERA) -> dict[str, An
             yeni[ad] = bool(ham[ad])
     if "harita" in ham:
         yeni["harita"] = _harita_dogrula(ham["harita"])
+    # AÇIKÇA None YAZILABİLMELİ. Dört etiketle harita tam belirleniyor ve
+    # sapma ölçülemiyor; eski taramadan kalan sayının kayıtta durması,
+    # ölçülmemiş bir değeri ölçülmüş gibi gösterirdi.
     for ad in ("harita_sapma_mm",):
-        if ad in ham and ham[ad] is not None:
-            yeni[ad] = round(float(ham[ad]), 3)
+        if ad in ham:
+            yeni[ad] = (None if ham[ad] is None else round(float(ham[ad]), 3))
     if "harita_nokta" in ham and ham["harita_nokta"] is not None:
         yeni["harita_nokta"] = int(ham["harita_nokta"])
     # Harita ölçüm konumu: AÇIKÇA None yazılabilmeli (sabit kamera). O

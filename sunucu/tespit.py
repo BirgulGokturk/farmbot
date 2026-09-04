@@ -117,6 +117,72 @@ def harita(kalib: dict[str, Any] | None) -> Any:
     return ham
 
 
+# HARİTANIN UFUK ÇİZGİSİ VE ÖLÇEK YAYILIMI.
+#
+# Homografinin paydası  w = h20·u + h21·v + h22  piksel koordinatında
+# DOĞRUSAL. w'nin sıfırlandığı doğru, görüntüdeki ufuk çizgisi: orada
+# nokta sonsuza gidiyor ve çizginin iki yanında koordinatın işareti ters
+# dönüyor. Ufuk kareye giriyorsa harita o kare için geçerli değil.
+#
+# Uzunluk ölçeği w ile birlikte gidiyor: alan ölçeği |det H| / w³, yani
+# uzunluk ölçeği w^-1,5. Bu yüzden w'nin köşeler arasındaki oranı, mm/px
+# değerinin karenin bir ucundan öbürüne kaç kat değiştiğini VERİYOR —
+# tahmin değil, haritanın kendisinden çıkan sayı.
+#
+# w doğrusal olduğu için en küçük ve en büyük değerini karenin DÖRT
+# KÖŞESİNDE alıyor. Ara nokta örneklemeye gerek yok; dört köşe kesin.
+#
+# Sıfıra "yakınlık" için oran kullanılıyor, mutlak sayı değil: H bir
+# ölçek çarpanına kadar belirli, w'nin mutlak büyüklüğü anlamsız.
+UFUK_TABAN_ORAN = 1e-6
+
+#: Bu katın üstünde ölçek yayılımı ARTIK uyarılıyor (harita atılmıyor).
+#: 3 kat demek, karenin uzak ucundaki bir yaprağın yakın uçtakiyle aynı
+#: piksel sayısına karşılık üç katı çap vermesi demek — bu noktadan sonra
+#: tek bir "mm/piksel" ile konuşmak yanıltıcı, ama harita hâlâ tanımlı.
+OLCEK_YAYILIMI_UYARI = 3.0
+
+
+def harita_saglik(kalib: dict[str, Any] | None) -> dict[str, Any] | None:
+    """Harita bu kamerada geçerli mi — ölçülmüş sayılarla. None = harita yok.
+
+    Dönen alanlar:
+      `payda_en_az` / `payda_en_cok`  köşelerdeki w (işaretli)
+      `ufuk_karede`                   w işaret değiştiriyor ya da sıfırlanıyor
+      `olcek_yayilimi_kat`            (w_max/w_min)^1,5 — mm/px kaç kat oynuyor
+      `gecerli` / `sebep`             kullanılabilir mi, değilse neden
+    """
+    H = harita(kalib)
+    if H is None:
+        return None
+    k = kalib or {}
+    # Harita KALİBRASYON piksel uzayında tanımlı: köşeler kalibrasyonun
+    # kendi kare ölçüsü (`piksel_mm` de pikseli oraya taşıyıp uyguluyor).
+    W = _sayi(k.get("genislik_px"), 640.0)
+    Y = _sayi(k.get("yukseklik_px"), 480.0)
+    w = [H[2][0] * u + H[2][1] * v + H[2][2]
+         for u, v in ((0.0, 0.0), (W, 0.0), (0.0, Y), (W, Y))]
+    en_az, en_cok = min(w), max(w)
+    buyuk = max(abs(en_az), abs(en_cok))
+    ufuk = (en_az * en_cok <= 0.0) or (buyuk <= 0.0) or \
+           (min(abs(en_az), abs(en_cok)) <= UFUK_TABAN_ORAN * buyuk)
+    yayilim = (None if ufuk else
+               (max(abs(en_az), abs(en_cok)) /
+                min(abs(en_az), abs(en_cok))) ** 1.5)
+    return {
+        "payda_en_az": round(en_az, 9),
+        "payda_en_cok": round(en_cok, 9),
+        "ufuk_karede": bool(ufuk),
+        "olcek_yayilimi_kat": None if yayilim is None else round(yayilim, 2),
+        "gecerli": not ufuk,
+        "sebep": ("Haritanın ufuk çizgisi kadraja giriyor: karenin bir "
+                  "bölümünde koordinat tanımsız, komşu iki piksel ters "
+                  "işaretli milimetre veriyor. Etiketleri toprak yüzeyinde "
+                  "ve dördü de aynı düzlemde olacak şekilde yerleştirip "
+                  "taramayı tekrarlayın." if ufuk else ""),
+    }
+
+
 def _harita_kaydirma(kare: dict[str, Any] | None,
                      kalib: dict[str, Any] | None) -> tuple[float, float] | None:
     """Haritayı bu kareye taşımak için gereken kayma. None = harita kullanılamaz.
@@ -135,9 +201,20 @@ def _harita_kaydirma(kare: dict[str, Any] | None,
     return (_sayi(kare.get("x")) - _sayi(mx), _sayi(kare.get("y")) - _sayi(my))
 
 
+def _harita_kullanilir(kalib: dict[str, Any] | None) -> bool:
+    """Harita var VE karenin her yerinde tanımlı mı.
+
+    Ufuk kadraja giriyorsa harita kullanılmıyor: `piksel_mm` nokta nokta
+    eski modele düşerdi ve tek bir lekenin merkezi haritadan, kenarı
+    benzerlikten gelirdi — ikisi arası mesafe hiçbir şey ölçmez.
+    """
+    s = harita_saglik(kalib)
+    return bool(s and s["gecerli"])
+
+
 def haritali_mi(kare: dict[str, Any] | None, kalib: dict[str, Any] | None) -> bool:
     """Bu kare bu kalibrasyonun haritasıyla çözülebiliyor mu."""
-    return harita(kalib) is not None and _harita_kaydirma(kare, kalib) is not None
+    return _harita_kullanilir(kalib) and _harita_kaydirma(kare, kalib) is not None
 
 
 def mutlak_mi(kalib: dict[str, Any] | None) -> bool:
@@ -146,11 +223,11 @@ def mutlak_mi(kalib: dict[str, Any] | None) -> bool:
     Sabit üst kameranın karesi bunu sağlıyor: harita yatağa yapıştırılmış
     etiketlerden çıktığı için doğrudan yatak koordinatı veriyor.
     """
-    return harita(kalib) is not None and _harita_kaydirma(None, kalib) is not None
+    return _harita_kullanilir(kalib) and _harita_kaydirma(None, kalib) is not None
 
 
 def kalibre_mi(kalib: dict[str, Any] | None) -> bool:
-    return mm_px(kalib) > 0.0 or harita(kalib) is not None
+    return mm_px(kalib) > 0.0 or _harita_kullanilir(kalib)
 
 
 def _kalib_piksel(kalib: dict[str, Any] | None,
@@ -581,6 +658,11 @@ def cozumle(lekeler_px: list[dict[str, Any]], kare: dict[str, Any],
     hangisinin ne olduğunu bilemeyeceği bir liste.
     """
     ret: list[str] = []
+    # SESSİZ DÜŞÜŞ YOK. Harita kayıtlı ama kullanılamıyorsa panel sebebini
+    # görmeli: aksi halde "çeviri modeli: benzerlik" yazısı, kullanıcının
+    # az önce kaydettiği haritanın neden devrede olmadığını söylemez.
+    saglik = harita_saglik(kalib)
+    harita_notu = "" if not saglik or saglik["gecerli"] else saglik["sebep"]
     if not kalibre_mi(kalib):
         ret.append(YOK_KALIBRASYON)
     # KONUM İKİ KAYNAKTAN GELEBİLİYOR: karenin kendi makine konumundan ya da
@@ -591,7 +673,9 @@ def cozumle(lekeler_px: list[dict[str, Any]], kare: dict[str, Any],
     if hareket:
         ret.append(HAREKETLI)
     if ret:
-        return {"lekeler": [], "ret": ret, "kare_mm": None}
+        return {"lekeler": [], "ret": ret, "kare_mm": None,
+                "notlar": [harita_notu] if harita_notu else [],
+                "harita_saglik": saglik}
 
     en, boy = kare_olcusu(kalib, kare)
     cx, cy = merkez(kare, kalib)
@@ -636,9 +720,14 @@ def cozumle(lekeler_px: list[dict[str, Any]], kare: dict[str, Any],
             cikti = kalan
     return {
         "lekeler": cikti,
+        # `ret` DOLU = dönüşüm yapılmadı (sözleşme bu, okuyanlar buna
+        # bakıyor). Harita düşmesi dönüşümü durdurmuyor — koordinat eski
+        # (ölçek + dönme) modelden geliyor — o yüzden ayrı alanda.
         "ret": [],
+        "notlar": [harita_notu] if harita_notu else [],
         "kare_mm": kare_mm,
         "alan_disi": alan_disi,
+        "harita_saglik": saglik,
     }
 
 
