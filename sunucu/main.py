@@ -2604,6 +2604,12 @@ def _goruntu_coz(damga: str, esik: float | None, en_az_piksel: int,
         "denge_kazanc": sonuc.get("denge_kazanc"),
         "elenen": sonuc.get("elenen"),
         "exg_oran": sonuc.get("exg_oran"),
+        # Karenin kendisi ölçülebilir miydi ve sonucun tek cümlelik
+        # gerekçesi. "Filiz yok" ile "kare yanmış" iki ayrı şey ve
+        # çareleri de ayrı; ikisini ayırt etmeden "eşiği düşürün"
+        # demek yanlış yönlendirme.
+        "kare_kalite": sonuc.get("kare"),
+        "tani": sonuc.get("tani"),
         "alan_disi": cozum.get("alan_disi", 0),
         "lekeler_px": sonuc["lekeler"],
         "lekeler": cozum["lekeler"],

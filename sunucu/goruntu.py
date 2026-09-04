@@ -76,6 +76,7 @@ tek bitki, düz zemin) doğru araç odur ve `iki_tepeli()` bunu ölçüyor.
 
 from __future__ import annotations
 
+import math
 from typing import Any
 
 import numpy as np
@@ -87,15 +88,9 @@ ESIK = 0.12
 
 # Morfoloji yarıçapı. 2 → 5x5 pencere. Büyütmek ince yaprakları yer,
 # küçültmek JPEG gürültüsünü bırakır.
-#
-# BU SAYI 640x480'E GÖRE SEÇİLDİ. Çözünürlük 1920'ye çıkınca aynı 5x5
-# pencere görüntünün dokuzda biri kadar alan kaplıyor ve açma işlemi
-# artık gürültüyü temizlemiyor: 640'ta elenen tek piksellik JPEG
-# çöpü, 1920'de 3x3 piksellik bir küme oluyor ve pencereden geçiyor.
-# `yaricap_varsayilan` yarıçapı kare ölçüsüyle ölçekliyor.
 YARICAP = 2
 
-#: `YARICAP` hangi kare ölçüsüne göre seçilmişti — ölçekleme bundan çıkıyor.
+#: `YARICAP` hangi kare ölçüsüne göre seçilmişti.
 OLCU_GENISLIK = 640
 
 # Bundan küçük lekeler atılıyor. 640x480'de 150 piksel ≈ 12x12 px.
@@ -103,20 +98,59 @@ OLCU_GENISLIK = 640
 # olabiliyor. O çağrı kendi sınırını veriyor.
 EN_AZ_PIKSEL = 150
 
+#: Bir kanal bu değerin üstündeyse o piksel DOYMUŞ — gerçek rengi
+#: kaydedilmemiş, kırpılmış. Doymuş pikselde renk oranı anlamsız:
+#: (255,255,255) nötr görünür ama altında ne olduğu bilinmiyor.
+DOYMA_SINIRI = 250.0
 
-def yaricap_varsayilan(genislik_px: float) -> int:
-    """Morfoloji yarıçapını kare genişliğiyle ölçekliyor.
+#: Karenin bu kadarı doymuşsa "aşırı pozlanmış" diyoruz. %8 keyfi değil:
+#: gün gören beyaz bir etiket ya da parlama karenin yüzde birkaçını
+#: doyurabiliyor ve bu olağan; sekizde biri yanmışsa pozlama yanlış.
+DOYMA_UYARI = 0.08
 
-    Yarıçap PİKSEL cinsinden bir sayı ve çözünürlük değişince sessizce
-    başka bir şey demeye başlıyor: 1920 piksellik karede 5x5 pencere,
-    640'taki 5x5'in kapsadığı alanın dokuzda biri. Ölçekleyince
-    "yatağın şu kadarından ince şeyler gürültüdür" demek oluyor —
-    fiziksel bir büyüklük, piksel sayısı değil.
+#: Ortalama parlaklık bunun altındaysa kare karanlık. Karanlıkta renk
+#: oranları gürültüye boğuluyor ve yeşil ölçülemiyor.
+KARANLIK_SINIRI = 35.0
 
-    Üst sınır 6 (13x13): ondan büyüğü ince fide yapraklarını yiyor.
+
+def kapama_yaricapi(genislik_px: float) -> int:
+    """KAPAMA yarıçapı — yaprağın içindeki boşlukları dolduran adım.
+
+    Kapama (genişlet→aşın) yapıcı bir işlem: küçük bir lekeyi yok etmez,
+    yalnız yakın parçaları birleştirir ve delikleri doldurur. Yarıçapı
+    çözünürlükle büyütmek burada güvenli ve gerekli — 1920'lik karede
+    bir yaprağın iki lobu arasındaki boşluk da üç kat daha çok piksel.
+
+    Üst sınır 6 (13x13).
     """
     g = max(1.0, float(genislik_px))
     return int(max(1, min(6, round(YARICAP * g / OLCU_GENISLIK))))
+
+
+def acma_yaricapi(en_az_piksel: float) -> int:
+    """AÇMA yarıçapı — gürültüyü silen, dolayısıyla YIKICI adım.
+
+    ÖNCE BUNU DA ÇÖZÜNÜRLÜKLE ÖLÇEKLEDİM VE YANLIŞTI. Gerekçe şuydu:
+    "640'ta elenen tek piksellik çöp, 1920'de 3x3 piksellik bir küme
+    olur". Premis yanlış: baskın gürültü kaynağı JPEG'in 8x8 DCT
+    blokları ve sensör gürültüsü, ikisi de PİKSEL biriminde sabit —
+    çözünürlükle büyümüyorlar. Ölçeklenen tek şey GERÇEK nesneler oldu.
+
+    Sahada sonucu şu oldu (ölçüldü): 1920'de yarıçap 6, yani 13x13
+    pencere. O pencere 16 piksellik (≈6 mm) bir fideyi TAMAMEN siliyor,
+    20 piksellik (8 mm) fidenin de dörtte birini yiyor — ve gerçek bir
+    kotiledon dolu daire değil, iki ince lop. Sonuç: maske tamamen boş,
+    bağlı bileşen sayısı sıfır. Panel "eşiği düşürün" diyordu, oysa
+    eşikle ilgisi yoktu.
+
+    Yarıçap artık EN KÜÇÜK KABUL EDİLEN LEKEYE bağlı: açma penceresi o
+    lekenin eşdeğer çapının üçte birini geçemiyor. Yani "saklamaya karar
+    verdiğimiz şeyi silen" bir açma kurulamıyor. Gürültüyü zaten en az
+    piksel kapısı ve dikim alanı süzgeci eliyor.
+    """
+    alan = max(1.0, float(en_az_piksel))
+    cap = 2.0 * math.sqrt(alan / math.pi)
+    return int(max(1, min(3, (cap / 3.0 - 1.0) / 2.0)))
 
 
 # --------------------------------------------------------------------------- #
@@ -176,10 +210,20 @@ def beyaz_denge(rgb: np.ndarray, us: float = DENGE_USSU) -> tuple[np.ndarray, li
     if x.ndim != 3 or x.shape[2] < 3:
         raise ValueError("beyaz_denge (h, w, 3) RGB bekliyor")
     x = x[:, :, :3]
-    # Tam siyah pikseller norma katılmıyor: gece karesinde ya da kadrajın
-    # kararmış kenarında sayıyı aşağı çekip kazancı şişiriyorlar.
-    parlak = x.max(axis=2) > 8.0
+    # GEÇERLİ PİKSELLER: ne tam siyah ne DOYMUŞ.
+    #
+    # Tam siyah pikseller (gece karesi, kararmış kenar) sayıyı aşağı
+    # çekip kazancı şişiriyor.
+    #
+    # DOYMUŞ pikseller de dışarıda ve bunun gerekçesi ayrı: kırpılmış bir
+    # piksel (255,255,255) gerçek renginden bağımsız olarak NÖTR okunuyor.
+    # Parlak bir pencerenin ya da gün gören beyaz bir yüzeyin doymuş
+    # bölgesi norma girince üç kanal da aynı tavana dayanıyor ve düzeltme
+    # sıfıra yaklaşıyor — yani en çok düzeltmeye ihtiyaç duyulan karede
+    # beyaz dengesi hiçbir şey yapmıyor.
+    parlak = (x.max(axis=2) > 8.0) & (x.max(axis=2) < DOYMA_SINIRI)
     if not parlak.any():
+        # Kadrajın tamamı ya siyah ya yanmış: düzeltilecek bilgi yok.
         return x, [1.0, 1.0, 1.0]
     secili = x[parlak]                                     # (n, 3)
     norm = np.power(np.mean(np.power(secili, us), axis=0), 1.0 / us)
@@ -425,15 +469,23 @@ def genislet(mask: np.ndarray, yaricap: int = YARICAP) -> np.ndarray:
     return _pencere_sayisi(mask, yaricap) > 0
 
 
-def ac_kapa(mask: np.ndarray, yaricap: int = YARICAP) -> np.ndarray:
+def ac_kapa(mask: np.ndarray, yaricap: int = YARICAP,
+            kapa_yaricap: int | None = None) -> np.ndarray:
     """Önce AÇMA (aşın→genişlet), sonra KAPAMA (genişlet→aşın).
 
     Açma tek piksellik gürültüyü siliyor, kapama yaprağın ortasındaki
     delikleri dolduruyor. Sıra önemli: önce temizle sonra doldur; tersi
     gürültüyü büyütür.
+
+    İKİ YARIÇAP AYRI OLABİLİYOR ve olmalı da: açma YIKICI (küçük bir
+    lekeyi tamamen siler), kapama YAPICI (yalnız birleştirir ve
+    doldurur). İkisini tek sayıya bağlamak, boşluk doldurmak için
+    büyütülen yarıçapın fideyi de silmesi demekti — sahada tam bu oldu.
+    Verilmezse eski davranış: ikisi de aynı.
     """
+    kapa = yaricap if kapa_yaricap is None else kapa_yaricap
     a = genislet(asin(mask, yaricap), yaricap)
-    return asin(genislet(a, yaricap), yaricap)
+    return asin(genislet(a, kapa), kapa)
 
 
 # --------------------------------------------------------------------------- #
@@ -545,6 +597,72 @@ def lekeler(etiket: np.ndarray, adet: int,
     return sorted(cikti, key=lambda b: -b["alan_px"])
 
 
+def kare_kalitesi(rgb: np.ndarray) -> dict[str, Any]:
+    """Karenin kendisi ölçülebilir mi. -> {parlaklik, doymus, karanlik, netlik}
+
+    "Filiz bulunamadı" cevabını vermeden ÖNCE sorulması gereken soru:
+    bu karede yeşil ölçülebilir mi? Aşırı pozlanmış bir karede yaprak da
+    beyaz çıkıyor ve nötr okunuyor; karanlık bir karede renk oranları
+    gürültü. İkisinde de eşiği düşürmek işe yaramaz — panelin verdiği
+    öğüt yanlış olur.
+
+    `netlik`: Laplace benzeri komşu farkının değişimi. Bulanık karede
+    küçük, net karede büyük. Mutlak bir eşiği yok (sahneye bağlı), ama
+    aynı kameranın iki karesi arasında karşılaştırılabilir ve "kare
+    bulanık mıydı" sorusu ancak bir sayıyla cevaplanıyor.
+    """
+    x = np.asarray(rgb, dtype=np.float32)[:, :, :3]
+    gri = x.mean(axis=2)
+    doymus = float((x.max(axis=2) >= DOYMA_SINIRI).mean())
+    # Komşu farkının değişimi — ayrık Laplace'ın ucuz karşılığı.
+    if gri.shape[0] > 2 and gri.shape[1] > 2:
+        lap = (4.0 * gri[1:-1, 1:-1] - gri[:-2, 1:-1] - gri[2:, 1:-1]
+               - gri[1:-1, :-2] - gri[1:-1, 2:])
+        netlik = float(lap.var())
+    else:
+        netlik = 0.0
+    return {
+        "parlaklik": round(float(gri.mean()), 1),
+        "doymus": round(doymus, 4),
+        "karanlik": round(float((gri < 16.0).mean()), 4),
+        "netlik": round(netlik, 1),
+    }
+
+
+def _tani(yesil: dict[str, Any], kalite: dict[str, Any],
+          ham_leke: int, leke: int) -> str:
+    """Sonucun tek cümlelik gerekçesi. Boş = söylenecek bir sorun yok.
+
+    SIRA ÖNEMLİ: önce karenin ölçülebilir olup olmadığı, sonra yeşilin
+    varlığı, en sonda kapılar. Ters sırada "eşiği düşürün" denirdi ve
+    kare bembeyaz yanmışken o öğüt hiçbir işe yaramaz.
+    """
+    if kalite["doymus"] >= DOYMA_UYARI:
+        return (f"Kare aşırı pozlanmış: piksellerin %{kalite['doymus'] * 100:.0f}'i "
+                "doymuş (kırpılmış). Doymuş pikselde renk yok, yaprak da beyaz "
+                "çıkıyor — eşiği düşürmek işe yaramaz. Kameranın pozlamasını "
+                "kısın (Kamera → Denetimler → exposure).")
+    if kalite["parlaklik"] < KARANLIK_SINIRI:
+        return (f"Kare karanlık (ortalama parlaklık {kalite['parlaklik']:.0f}/255). "
+                "Renk oranları gürültüye boğuluyor; yeşil ölçülemez.")
+    if yesil["exg_oran"] <= 0.0002:
+        return ("Karede yeşile yakın piksel yok (ExG eşiği geçen oran binde ikinin "
+                "altında). Kamera yatağa mı bakıyor, kadrajda bitki var mı?")
+    if leke == 0 and ham_leke == 0 and yesil["maske_oran"] <= 0.0:
+        en_cok = max(yesil["elenen"], key=yesil["elenen"].get)
+        return (f"ExG %{yesil['exg_oran'] * 100:.1f} yeşil buldu ama renk "
+                f"kapılarının hepsi eledi (en çok '{en_cok}'). Kalan yeşil "
+                "mavi-turkuaza ya da nötre çok yakın — gerçekten yaprak mı?")
+    if leke == 0 and ham_leke == 0:
+        return ("Yeşil pikseller vardı ama hiçbiri bağlı bir lekeye dönüşmedi: "
+                "dağınık, tek tük pikseller. En küçük fideyi düşürmek yardımcı "
+                "olabilir.")
+    if leke == 0 and ham_leke > 0:
+        return (f"{ham_leke} leke bulundu ama hepsi en küçük fide kapısının "
+                "altında kaldı. En küçük fideyi (mm) düşürün.")
+    return ""
+
+
 def bul(rgb: np.ndarray, esik: float = ESIK, yaricap: int | None = None,
         en_az_piksel: int = EN_AZ_PIKSEL, denge: bool = True,
         gecerli_mi=None) -> dict[str, Any]:
@@ -557,8 +675,10 @@ def bul(rgb: np.ndarray, esik: float = ESIK, yaricap: int | None = None,
     imzası bozulmadı; yeni parametrelerin hepsi isteğe bağlı ve
     varsayılanları eski davranışa en yakın olanı.
 
-    `yaricap=None`   → morfoloji yarıçapını kare genişliğinden türet.
-                       1920'lik karede sabit 2 artık gürültü temizlemiyor.
+    `yaricap=None`   → AÇMA yarıçapını en küçük lekeden türet
+                       (`acma_yaricapi`), KAPAMA'yı kare genişliğinden
+                       (`kapama_yaricapi`). Açma yıkıcı, kapama yapıcı;
+                       ikisini tek sayıya bağlamak fideyi siliyordu.
     `denge=False`    → beyaz dengesini atla (ham RGB ile eski davranış).
     `gecerli_mi(leke)` → ALAN SÜZGECİ. Leke sözlüğünü alıp True/False
                        döndüren bir işlev; False diyene liste dışı.
@@ -566,10 +686,14 @@ def bul(rgb: np.ndarray, esik: float = ESIK, yaricap: int | None = None,
                        lekenin yatak koordinatını çıkarıp dikim alanının
                        dışındaysa eliyor. Verilmezse hiçbir şey elenmiyor.
     """
+    kalite = kare_kalitesi(rgb)
     dengeli, kazanc = (beyaz_denge(rgb) if denge else (rgb, [1.0, 1.0, 1.0]))
     y = yesil_maske(dengeli, float(esik))
-    r = yaricap_varsayilan(rgb.shape[1]) if yaricap is None else int(yaricap)
-    maske = ac_kapa(y["maske"], r)
+    # AÇMA en küçük lekeden, KAPAMA çözünürlükten. Gerekçeleri
+    # `acma_yaricapi` / `kapama_yaricapi` başlarında.
+    r = acma_yaricapi(en_az_piksel) if yaricap is None else int(yaricap)
+    kapa = kapama_yaricapi(rgb.shape[1]) if yaricap is None else int(yaricap)
+    maske = ac_kapa(y["maske"], r, kapa)
     etiket, adet = etiketle(maske)
     ham = lekeler(etiket, adet, en_az_piksel)
 
@@ -594,8 +718,16 @@ def bul(rgb: np.ndarray, esik: float = ESIK, yaricap: int | None = None,
         # vardı; `elenen` hangi kapının ne kadar attığını söylüyor.
         "denge_kazanc": kazanc,
         "yaricap": r,
+        "kapama_yaricap": kapa,
         "exg_oran": y["exg_oran"],
         "elenen": y["elenen"],
+        # KARENİN KENDİSİ ÖLÇÜLÜYOR. "Filiz bulunamadı" üç ayrı şey
+        # olabiliyor ve üçünün çaresi farklı: karede gerçekten yeşil yok,
+        # kare aşırı pozlanmış/karanlık (yeşil ÖLÇÜLEMEZ), ya da yeşil
+        # var ama kapılar eledi. Panel eşiği düşürmeyi öneriyordu; kare
+        # bembeyaz yanmışsa o öneri yanlış.
+        "kare": kalite,
+        "tani": _tani(y, kalite, int(adet), len(secili)),
         "alan_disi": len(disarida),
         "alan_disi_lekeler": disarida,
     }

@@ -942,10 +942,40 @@ kapısını açan o değil — kapının milimetre cinsinden konması.
 14 piksel, 1920'de 129 piksel. Aynı fiziksel fide, iki çözünürlükte de
 geçiyor — ve 1920'de 129 piksellik bir leke gürültüden rahatça ayrılıyor.
 
-Morfoloji yarıçapı da piksel cinsindeydi ve ölçeklenmiyordu: 1920'lik
-karede sabit 5×5 pencere, 640'takinin kapsadığı alanın dokuzda biri.
-`goruntu.yaricap_varsayilan()` kare genişliğiyle ölçekliyor (640 → 2,
-1920 → 6).
+**Morfoloji: açma ve kapama artık AYRI yarıçapta.** Yarıçap piksel
+cinsindeydi ve ölçeklenmiyordu; onu kare genişliğiyle ölçekledim ve bu
+YANLIŞTI. Gerekçe "640'ta elenen tek piksellik çöp, 1920'de 3×3'lük bir
+küme olur" idi; premis yanlış, çünkü baskın gürültü kaynağı JPEG'in 8×8
+DCT blokları ve sensör gürültüsü — ikisi de piksel biriminde sabit,
+çözünürlükle büyümüyorlar. Ölçeklenen tek şey gerçek nesneler oldu.
+
+Sahada sonucu ölçüldü: 1920'de yarıçap 6, yani 13×13 pencere.
+
+| şekil | eski (13×13 açma) | yeni (açma 5×5, kapama 13×13) |
+|---|---|---|
+| 16 px (6 mm) dolu daire | **0 leke** — tamamen silindi | 1 leke, 193 px |
+| 20 px (8 mm) dolu daire | 1 leke, 225/305 px | 1 leke, 305 px |
+| iki loplu kotiledon 22×9 px | **0 leke** — tamamen silindi | 1 leke, 277 px |
+
+Panel "hiç yeşil leke kalmadı, eşiği düşürün" diyordu; eşikle ilgisi
+yoktu, maskeyi morfoloji siliyordu. Açma (aşın→genişlet) YIKICI, kapama
+(genişlet→aşın) YAPICI — ikisini tek sayıya bağlamak, yaprağın içindeki
+boşluğu doldurmak için büyütülen yarıçapın fideyi de silmesi demekti.
+Açma artık **en küçük kabul edilen lekeye** bağlı (penceresi o lekenin
+eşdeğer çapının üçte birini geçemiyor: saklamaya karar verdiğimiz şeyi
+silen bir açma kurulamıyor), kapama ise çözünürlükle ölçekleniyor.
+
+**Karenin kendisi de ölçülüyor.** "Filiz bulunamadı" üç ayrı şey
+olabiliyor ve üçünün çaresi farklı: karede gerçekten yeşil yok, kare
+aşırı pozlanmış/karanlık (yeşil **ölçülemez**), ya da yeşil var ama renk
+kapıları eledi. `goruntu.kare_kalitesi()` parlaklığı, doymuş piksel
+oranını ve netliği veriyor; `tani` alanı da tek cümlelik gerekçeyi.
+Doymuş bir karede "eşiği düşürün" öğüdü yanlıştır — kırpılmış piksel
+(255,255,255) gerçek renginden bağımsız olarak nötr okunur, yaprak da
+beyaz çıkar. Aynı sebeple beyaz dengesi artık doymuş pikselleri norma
+katmıyor: parlak bir pencere üç kanalı da aynı tavana dayayıp düzeltmeyi
+sıfıra indiriyordu, yani en çok düzeltme gereken karede hiçbir şey
+yapmıyordu.
 
 ## Bahçe modu
 
