@@ -616,15 +616,35 @@
      * dizilim kullanılıyor (üçü birbirine değmesin diye), ama o zaman da
      * ayarların girilmediği belli oluyor.
      */
+    /* NEM PROBU — YL-69 tipi çatal sensör.
+     *
+     * Tek bir paslanmaz çubuktu ve gerçekteki parçaya hiç benzemiyordu.
+     * Gerçeği: siyah bir başlık, altında YAN YANA İKİ YASSI BIÇAK ve
+     * yukarı giden turuncu kablolar. Ayırt edici olan çatal biçimi;
+     * sahnede probu tohum ucundan ayıran tek şey o.
+     */
     const nemProbu = new THREE.Group();
-    // Prob gövdesi: kısa siyah blok, altında ince paslanmaz çubuk.
-    nemProbu.add(kutu(THREE, [P * 0.5, P * 0.7, P * 0.5], [0, -P * 0.25, 0],
-                      { color: "#1a1d20", metalness: 0.1, roughness: 0.7 }));
-    const cubuk = new THREE.Mesh(
-      new THREE.CylinderGeometry(P * 0.05, P * 0.04, P * 1.4, 8),
-      mal(THREE, { color: "#c9ced3", metalness: 0.9, roughness: 0.25 }));
-    cubuk.position.set(0, -P * 1.3, 0);
-    nemProbu.add(cubuk);
+    // Üstteki siyah konnektör başlığı.
+    nemProbu.add(kutu(THREE, [P * 0.42, P * 0.34, P * 0.22], [0, -P * 0.1, 0],
+                      { color: "#15181a", metalness: 0.1, roughness: 0.72 }));
+    // Bıçakları taşıyan ince plaka — gerçeğinde de baskı devre kartı.
+    nemProbu.add(kutu(THREE, [P * 0.38, P * 0.3, P * 0.07], [0, -P * 0.38, 0],
+                      { color: "#c9a227", metalness: 0.35, roughness: 0.45 }));
+    // İKİ BIÇAK. Yassı ve altın sarısı: kaplama böyle görünüyor.
+    [-1, 1].forEach((yon) => {
+      nemProbu.add(kutu(THREE, [P * 0.13, P * 1.5, P * 0.05],
+                        [yon * P * 0.12, -P * 1.28, 0],
+                        { color: "#c9a227", metalness: 0.4, roughness: 0.42 }));
+    });
+    // Turuncu kablolar: yukarı çıkıp gözden kayboluyorlar.
+    [-1, 1].forEach((yon) => {
+      const tel = new THREE.Mesh(
+        new THREE.CylinderGeometry(P * 0.035, P * 0.035, P * 1.5, 6),
+        mal(THREE, { color: yon < 0 ? "#e08a2e" : "#d8d2c4",
+                     metalness: 0.05, roughness: 0.7 }));
+      tel.position.set(yon * P * 0.1, P * 0.7, P * 0.05);
+      nemProbu.add(tel);
+    });
     ucKafa.add(nemProbu);
 
     /* TOHUM UCU KENDİ GRUBUNDA: kendi dikey ekseni var (PLC'de j4) ve
