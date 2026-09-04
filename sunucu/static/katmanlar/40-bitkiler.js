@@ -53,6 +53,26 @@ Tarla.katman({
    *  kirişten uzun; panelde makineyi gizlememesi için tavan var. */
   TAVAN: 0.42,
 
+  /** MODELİN GÖRSEL BÜYÜTMESİ — ölçüme dokunmuyor.
+   *
+   * Yatak 535x630 mm ve bitkiler dip dibe; gerçek yayılma çapıyla
+   * çizilen modeller sahnede birbirinden ayırt edilemiyordu.
+   *
+   * ÖLÇÜ NEREDE KALIYOR: `spread_mm` hiçbir yerde değişmiyor. Yayılma
+   * çemberi (30-yayilma-capi.js) gerçek çapı çizmeye devam ediyor,
+   * eşleştirme ve sulama hesapları da gerçek sayıyı kullanıyor.
+   * Büyüyen yalnızca yaprak/gövde MODELİ. Yani ekranda "bu bitki bu
+   * kadar yer kaplıyor" diyen şey hâlâ çember, model değil.
+   *
+   * Sınır: çok büyütmek komşuları iç içe geçirir ve okunaklılığı
+   * artırmak yerine düşürür. 1.4 o eşiğin altında kalıyor.
+   * `localStorage.farmbot_bitki_olcek` ile denenebiliyor.
+   */
+  get GORSEL_OLCEK() {
+    const el = Number(localStorage.getItem("farmbot_bitki_olcek"));
+    return Number.isFinite(el) && el >= 0.5 && el <= 3 ? el : 1.4;
+  },
+
   bitkiler(o) {
     return o.veri.noktalar.filter((n) => n && n.tur).map((n) => ({
       nokta: n,
@@ -204,7 +224,10 @@ Tarla.katman({
    */
   parcalar(o, b, ol, rast) {
     const THREE = o.THREE;
-    const rM = Math.max(0.02, (b.d("spread_mm").deger / 2) * o.MM);
+    // GÖRSEL ölçek burada uygulanıyor — bkz. GORSEL_OLCEK. Ölçüm
+    // değeri (`spread_mm`) olduğu gibi duruyor.
+    const rM = Math.max(0.02, (b.d("spread_mm").deger / 2) * o.MM)
+             * this.GORSEL_OLCEK;
     const tur = new THREE.Color(b.tur.color || "#5f9e46");
     const biçim = this.ARKETIP[b.nokta.tur] || "dik";
 
@@ -428,7 +451,10 @@ Tarla.katman({
    *  yuvarlanıyor, yani gün içinde bir kez değişiyor. */
   bitkiVeri(o, b, ol) {
     if (!this._kutu) this._kutu = new Map();
-    const rM = Math.max(0.02, (b.d("spread_mm").deger / 2) * o.MM);
+    // GÖRSEL ölçek burada uygulanıyor — bkz. GORSEL_OLCEK. Ölçüm
+    // değeri (`spread_mm`) olduğu gibi duruyor.
+    const rM = Math.max(0.02, (b.d("spread_mm").deger / 2) * o.MM)
+             * this.GORSEL_OLCEK;
     const anahtar = `${b.nokta.ad}|${b.nokta.tur}|${Math.round(rM * 1000)}`
                   + `|${Math.round(ol * 24)}|${b.tur.color}`;
     let v = this._kutu.get(anahtar);
