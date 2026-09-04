@@ -996,6 +996,28 @@ kapının mı yediği anlaşılmıyordu. `asamalar` üç aşamayı da veriyor:
 renk kapılarından çıkan ham maske, morfoloji sonrası, en küçük fide
 kapısı sonrası — her biri için piksel, bileşen ve en büyük leke.
 
+**Alan süzgeci de bir AŞAMA — sayılmadığı için tanı kendini yalanladı.**
+Panelde şu göründü:
+
+> "294 leke bulundu ama hepsi en küçük fide kapısının altında kaldı
+> (en büyüğü **8424** piksel, kapı **321**)."
+
+8424 > 321. Cümle kendi verdiği sayılarla çelişiyordu. Sebebi: lekeler
+boy kapısını GEÇMİŞTİ (44 tanesi), onları eleyen alan süzgeciydi — ama
+alan süzgeci ayrı bir aşama olarak ölçülmediği için tanı bir önceki
+kapıyı suçluyordu. `asamalar` artık dört aşama veriyor (kapı →
+morfoloji → en az → alan) ve her tanı dalı KENDİ aşamasının sayısını
+kullanıyor; kurala bağlanan şey şu: cümle hangi aşamanın elediğini
+söylemeli ve kendi sayılarıyla çelişmemeli.
+
+Alan süzgeci elediğinde tanı artık nereye düştüklerini de yazıyor
+(`alan_suzgeci` her lekeye hesapladığı yatak koordinatını iliştiriyor):
+*"44 leke boy kapısını GEÇTİ … ama hepsi dikim alanının DIŞINDA kaldı.
+Yatakta X 612…1490, Y −180…430 aralığına düşüyorlar."* Bu sayılar
+kameranın yanlış yere baktığını ya da kalibrasyonun eskidiğini tek
+bakışta gösteriyor — eşikle ya da en küçük fideyle ilgisi olmayan bir
+sorun.
+
 **Tanı "parçalı" durumunu ayrı bir sebep olarak söylüyor.** Lekelerin
 hepsi kapının altındaysa ama toplamları kapıyı geçiyorsa, sebep kapının
 yüksekliği değil maskenin fideyi bütün çıkaramaması. O durumda "en küçük

@@ -667,14 +667,29 @@ def kare_kalitesi(rgb: np.ndarray) -> dict[str, Any]:
 
 def _tani(yesil: dict[str, Any], kalite: dict[str, Any],
           ham_leke: int, leke: int, asamalar: dict[str, Any],
-          esik: float, en_az_piksel: int) -> str:
+          esik: float, en_az_piksel: int,
+          alan_disi_kutu: dict[str, Any] | None = None) -> str:
     """Sonucun tek cümlelik gerekçesi. Boş = söylenecek bir sorun yok.
 
-    SIRA ÖNEMLİ: önce kullanıcının verdiği sayılar makul mü, sonra kare
-    ölçülebilir mi, sonra yeşil var mı, en sonda lekelerin hâli. Ters
-    sırada "eşiği düşürün" denirdi ve kare bembeyaz yanmışken ya da
-    eşik zaten on kat yüksekken o öğüt hiçbir işe yaramaz.
+    KURAL: cümle HANGİ AŞAMANIN elediğini söylemeli ve kendi verdiği
+    sayılarla çelişmemeli. Bu bir kez bozuldu ve panelde şöyle göründü:
+
+        "294 leke bulundu ama hepsi en küçük fide kapısının altında
+         kaldı (en büyüğü 8424 piksel, kapı 321)."
+
+    8424 > 321, yani cümle kendi kendini yalanlıyordu. Sebebi, alan
+    süzgecinin bir AŞAMA olarak sayılmamasıydı: lekeler boy kapısını
+    geçmişti, onları eleyen alan süzgeciydi. Aşamalar artık ayrı ayrı
+    ölçülüyor ve her dal KENDİ aşamasının sayısını kullanıyor.
+
+    SIRA: önce kullanıcının verdiği sayılar makul mü, sonra kare
+    ölçülebilir mi, sonra yeşil var mı, sonra hangi aşama eledi.
     """
+    kapi_a = asamalar.get("kapi") or {}
+    morf = asamalar.get("morfoloji") or {}
+    boy = asamalar.get("en_az") or {}
+    alan = asamalar.get("alan") or {}
+
     # EŞİK MAKUL MU. ExG aralığı [-1, +2] ve yaprak tipik olarak
     # +0.1 .. +0.6. 0.4 üstü bir eşik yalnız en koyu yeşili geçirir;
     # 0.6 gibi bir sayı (virgül kaymasıyla 0.06 yerine yazılıyor)
@@ -695,45 +710,59 @@ def _tani(yesil: dict[str, Any], kalite: dict[str, Any],
         return ("Karede yeşile yakın piksel yok (ExG eşiği geçen oran binde ikinin "
                 "altında). Kamera yatağa mı bakıyor, kadrajda bitki var mı? "
                 "Önizleme karesinde yatağı göremiyorsanız hiçbir eşik yardım etmez.")
-
-    kapi = asamalar.get("kapi") or {}
-    morf = asamalar.get("morfoloji") or {}
-    if leke == 0 and yesil["maske_oran"] <= 0.0:
+    if yesil["maske_oran"] <= 0.0:
         en_cok = max(yesil["elenen"], key=yesil["elenen"].get)
         return (f"ExG %{yesil['exg_oran'] * 100:.1f} yeşil buldu ama renk "
                 f"kapılarının hepsi eledi (en çok '{en_cok}'). Kalan yeşil "
                 "mavi-turkuaza ya da nötre çok yakın — gerçekten yaprak mı?")
+    if leke > 0:
+        return ""
 
-    # MORFOLOJİ YEDİ Mİ. Kapılardan çıkan maske doluyken morfoloji
-    # sonrası neredeyse hiçbir şey kalmadıysa sebep eşik değil, morfoloji.
-    if kapi.get("piksel", 0) > 0 and morf.get("piksel", 0) < kapi["piksel"] * 0.2:
-        return (f"Renk kapılarından {kapi['piksel']} piksel çıktı ama morfoloji "
+    # --- Buradan sonrası: hiç fide kalmadı. HANGİ AŞAMA eledi? ---
+
+    # 1) ALAN SÜZGECİ. Boy kapısını geçen leke VARDI ama hepsi dikim
+    #    alanının dışına düştü. Bu, boy kapısıyla ilgisi olmayan bir
+    #    sorun: kamera başka yere bakıyor ya da kalibrasyon eski.
+    if boy.get("leke", 0) > 0 and alan.get("leke", 0) == 0:
+        nerede = ""
+        if alan_disi_kutu:
+            nerede = (f" Yatakta X {alan_disi_kutu['x1']:.0f}…{alan_disi_kutu['x2']:.0f}, "
+                      f"Y {alan_disi_kutu['y1']:.0f}…{alan_disi_kutu['y2']:.0f} "
+                      "aralığına düşüyorlar.")
+        return (f"{boy['leke']} leke boy kapısını GEÇTİ (en büyüğü "
+                f"{boy.get('en_buyuk', 0)} piksel, kapı {en_az_piksel}) ama "
+                f"hepsi dikim alanının DIŞINDA kaldı.{nerede} Eşikle ya da en "
+                "küçük fideyle ilgisi yok: ya kamera yatağa bakmıyor, ya "
+                "kalibrasyon eski, ya da dikim alanı yanlış yerde. Önizleme "
+                "karesinde yatağı görüyor musunuz?")
+
+    # 2) BOY KAPISI. Morfolojiden leke çıktı ama hiçbiri kapıyı geçmedi.
+    if morf.get("leke", 0) > 0 and boy.get("leke", 0) == 0:
+        toplam = morf.get("piksel", 0)
+        buyuk = morf.get("en_buyuk", 0)
+        if toplam >= en_az_piksel:
+            return (f"{morf['leke']} leke bulundu, en büyüğü {buyuk} piksel ve "
+                    f"kapı {en_az_piksel} — hiçbiri tek başına geçemedi. Ama "
+                    f"toplamda {toplam} piksel yeşil var, yani fide KADRAJDA; "
+                    "maske onu bütün bir leke olarak çıkaramıyor, parçalara "
+                    "bölüyor. En küçük fideyi düşürmeyin (gürültüyü içeri "
+                    "alır); eşiği biraz düşürüp maskeyi doldurmak ya da "
+                    "birleştirme mesafesini artırmak doğru yol.")
+        return (f"{morf['leke']} leke bulundu ama hepsi en küçük fide kapısının "
+                f"altında kaldı (en büyüğü {buyuk} piksel, kapı {en_az_piksel}). "
+                "En küçük fideyi (mm) düşürün.")
+
+    # 3) MORFOLOJİ. Kapılardan maske çıktı ama morfoloji sonrası neredeyse
+    #    hiçbir şey kalmadı.
+    if kapi_a.get("piksel", 0) > 0 and morf.get("piksel", 0) < kapi_a["piksel"] * 0.2:
+        return (f"Renk kapılarından {kapi_a['piksel']} piksel çıktı ama morfoloji "
                 f"sonrası {morf.get('piksel', 0)} piksel kaldı: maske gözenekli "
                 "(yaprağın içi delik deşik) ve temizleme adımı onu yiyor. "
                 "Eşiği biraz düşürmek maskeyi doldurur.")
 
-    # PARÇALI. En küçük fide kapısı bunu ELEYEN sebep gibi görünüyor ama
-    # asıl sebep lekelerin bütün çıkmaması: hepsini toplasan kapıyı
-    # geçecek kadar yeşil var. "En küçük fideyi düşürün" demek burada
-    # yanlış yönlendirme — kapı zaten düşük, düşürmek gürültüyü içeri alır.
-    toplam = morf.get("piksel", 0)
-    if leke == 0 and ham_leke > 0:
-        if toplam >= en_az_piksel and morf.get("en_buyuk", 0) < en_az_piksel:
-            return (f"{ham_leke} leke bulundu, hepsi en küçük fide kapısının "
-                    f"altında (en büyüğü {morf.get('en_buyuk', 0)} piksel, kapı "
-                    f"{en_az_piksel}). Ama toplamda {toplam} piksel yeşil var — "
-                    "yani fide KADRAJDA, maske onu bütün bir leke olarak "
-                    "çıkaramıyor, parçalara bölüyor. En küçük fideyi düşürmeyin "
-                    "(gürültüyü içeri alır); eşiği biraz düşürüp maskeyi "
-                    "doldurmak ya da birleştirme mesafesini artırmak doğru yol.")
-        return (f"{ham_leke} leke bulundu ama hepsi en küçük fide kapısının "
-                f"altında kaldı (en büyüğü {morf.get('en_buyuk', 0)} piksel, "
-                f"kapı {en_az_piksel}). En küçük fideyi (mm) düşürün.")
-    if leke == 0 and ham_leke == 0:
-        return ("Yeşil pikseller vardı ama hiçbiri bağlı bir lekeye dönüşmedi: "
-                "dağınık, tek tük pikseller. Eşiği biraz düşürmek maskeyi "
-                "bütünleştirebilir.")
-    return ""
+    return ("Yeşil pikseller vardı ama hiçbiri bağlı bir lekeye dönüşmedi: "
+            "dağınık, tek tük pikseller. Eşiği biraz düşürmek maskeyi "
+            "bütünleştirebilir.")
 
 
 def bul(rgb: np.ndarray, esik: float = ESIK, yaricap: int | None = None,
@@ -781,12 +810,15 @@ def bul(rgb: np.ndarray, esik: float = ESIK, yaricap: int | None = None,
         buyukler = sorted((b["alan_px"] for b in lekeler(e, n, 1)), reverse=True)
         return {"piksel": int(m.sum()), "leke": int(n),
                 "en_buyuk": buyukler[0] if buyukler else 0}
+    def _liste(lek: list[dict[str, Any]]) -> dict[str, Any]:
+        return {"piksel": int(sum(b["alan_px"] for b in lek)),
+                "leke": len(lek),
+                "en_buyuk": max((b["alan_px"] for b in lek), default=0)}
+
     asamalar = {
         "kapi": _asama(y["maske"]),          # renk kapılarından çıkan ham maske
         "morfoloji": _asama(maske),          # kapama + açma sonrası
-        "en_az": {"piksel": int(sum(b["alan_px"] for b in ham)),
-                  "leke": len(ham),
-                  "en_buyuk": max((b["alan_px"] for b in ham), default=0)},
+        "en_az": _liste(ham),                # en küçük fide kapısından sonra
     }
 
     # ALAN SÜZGECİ EN SONDA. Önce elemek, morfolojiyi ve etiketlemeyi
@@ -798,6 +830,25 @@ def bul(rgb: np.ndarray, esik: float = ESIK, yaricap: int | None = None,
         secili, disarida = [], []
         for b in ham:
             (secili if gecerli_mi(b) else disarida).append(b)
+    # ALAN SÜZGECİ DE BİR AŞAMA. Ayrı sayılmadığı için tanı "hepsi boy
+    # kapısının altında kaldı" diyordu — oysa lekeler boy kapısını
+    # geçmiş, onları eleyen alan süzgeciydi. Panelde en büyük leke 8424
+    # piksel, kapı 321 piksel yazıyordu; cümle kendi kendisiyle
+    # çelişiyordu ve sebebi bu eksik aşamaydı.
+    asamalar["alan"] = _liste(secili)
+
+    # ELENENLERİN YATAKTA NEREYE DÜŞTÜĞÜ. `alan_suzgeci` her lekeye
+    # hesapladığı koordinatı yazıyor; özeti burada çıkarıyoruz. "Hepsi
+    # alan dışında" cümlesini kullanılabilir yapan tek şey bu: X 1200
+    # Y −300 gibi sayılar kameranın yanlış yere baktığını ya da
+    # kalibrasyonun eskidiğini tek bakışta gösteriyor.
+    konumlu = [b for b in disarida if b.get("yatak_x") is not None]
+    alan_disi_kutu = None
+    if konumlu:
+        xs = [b["yatak_x"] for b in konumlu]
+        ys = [b["yatak_y"] for b in konumlu]
+        alan_disi_kutu = {"x1": round(min(xs), 1), "y1": round(min(ys), 1),
+                          "x2": round(max(xs), 1), "y2": round(max(ys), 1)}
 
     return {
         "esik": float(esik),
@@ -821,9 +872,10 @@ def bul(rgb: np.ndarray, esik: float = ESIK, yaricap: int | None = None,
         "kare": kalite,
         "asamalar": asamalar,
         "tani": _tani(y, kalite, int(adet), len(secili), asamalar,
-                      float(esik), int(en_az_piksel)),
+                      float(esik), int(en_az_piksel), alan_disi_kutu),
         "alan_disi": len(disarida),
         "alan_disi_lekeler": disarida,
+        "alan_disi_kutu": alan_disi_kutu,
     }
 
 

@@ -554,6 +554,14 @@ def alan_suzgeci(kalib: dict[str, Any] | None,
             # şey yüzünden gerçek bir fideyi atmak, fazladan bir yanlış
             # bulgudan kötü.
             return True
+        # HESAPLANAN KOORDİNATI LEKEYE YAZIYORUZ. Elenen lekelerin yatağın
+        # NERESİNE düştüğü, "hepsi alan dışında kaldı" cümlesini
+        # kullanılabilir yapan tek şey: X 1200 Y −300 gibi sayılar
+        # kameranın yanlış yere baktığını ya da kalibrasyonun eskidiğini
+        # tek bakışta gösteriyor. Sözlüğü yerinde değiştiriyoruz, çünkü
+        # çağıran (goruntu.bul) aynı sözlükleri geri veriyor.
+        leke["yatak_x"] = round(float(x), 1)
+        leke["yatak_y"] = round(float(y), 1)
         return dikim.alan_bul(x, y, genis) is not None
 
     return gecerli_mi
