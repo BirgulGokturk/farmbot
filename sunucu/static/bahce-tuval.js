@@ -691,17 +691,46 @@ window.BahceTuval = (function () {
     gulce: ["marul", "lettuce", "kivircik", "kıvırcık", "gobek", "göbek",
             "roka", "arugula", "ispanak", "spinach", "pazi", "pazı", "chard",
             "lahana", "cabbage", "brokoli", "broccoli", "karnabahar",
-            "turp", "radish", "pancar", "beet", "salata"],
+            "semizotu", "salata"],
     tuy: ["havuc", "havuç", "carrot", "dereotu", "dere otu", "dill",
-          "rezene", "fennel", "kimyon", "maydanoz", "parsley", "kereviz"],
+          "rezene", "fennel", "kimyon", "maydanoz", "parsley", "kereviz",
+          "turp", "radish", "pancar", "beet"],
+    yuvarlak: ["fesleğen", "feslegen", "basil", "nane", "mint", "kekik",
+               "thyme", "biberiye", "rosemary", "adaçayı", "adacayi", "sage",
+               "reyhan"],
     cali: ["domates", "tomato", "biber", "pepper", "patlican", "patlıcan",
            "eggplant", "salatalik", "salatalık", "cucumber", "kabak",
-           "zucchini", "fesleğen", "feslegen", "basil", "nane", "mint"],
+           "zucchini", "bamya", "nohut", "patates"],
     serit: ["sogan", "soğan", "onion", "pirasa", "pırasa", "leek",
             "sarimsak", "sarımsak", "garlic", "misir", "mısır", "corn",
             "arpa", "bugday", "buğday", "cim", "çim"],
     uclu: ["cilek", "çilek", "strawberry", "fasulye", "bean", "bezelye",
-           "pea", "yonca", "clover"],
+           "pea", "yonca", "clover", "uzum", "üzüm"],
+  };
+
+  /* HER ARKETİPİN KENDİ SİLUETİ.
+   *
+   * Hepsini yerde yayılan bir gülçe gibi çizmek, yataktaki her bitkiyi
+   * birbirinin aynısı yapıyordu: havucun tepesi İNCE ve DİK, marul
+   * YAYVAN ve katmanlı, fesleğen YUVARLAK yapraklı. Ayrımı yapan şey
+   * renk değil biçim — üstten bakışta bile.
+   *
+   * `dik` = siluetin ne kadar yukarı gittiği (0 tamamen yerde yayılan,
+   * 1 dimdik). `boyOran` = yüksekliğin yayılım yarıçapına oranı.
+   * İKİSİ DE SÜS: katalogda bitki yüksekliği yok, o yüzden hiçbir sayıya
+   * dönüşmüyor ve hiçbir yerde yazılmıyor. Ölçülen tek boyut yayılım
+   * çapı ve o, yerdeki halkanın çapı olarak duruyor.
+   *
+   * `kok` = toprak hizasında görünen kök omzu (havuç, turp, soğan).
+   * Rengi kataloğun tür rengi — havucun turuncusu orada yazıyor.
+   */
+  const SILUET = {
+    gulce:    { dik: 0.10, boyOran: 0.45, kok: false },
+    tuy:      { dik: 0.92, boyOran: 1.75, kok: true },
+    yuvarlak: { dik: 0.55, boyOran: 1.00, kok: false },
+    cali:     { dik: 0.70, boyOran: 1.35, kok: false },
+    serit:    { dik: 0.88, boyOran: 1.90, kok: true },
+    uclu:     { dik: 0.30, boyOran: 0.70, kok: false },
   };
 
   function arketip(b) {
@@ -717,9 +746,9 @@ window.BahceTuval = (function () {
    * Kataloğun `color` alanı yaprak rengi DEĞİL: türü listede ayırt etmek
    * için seçilmiş bir işaret rengi (çilek kırmızı, biber turuncu). Onu
    * yaprağa boyamak çileği kırmızı bir gülçe yapıyordu. Yaprak yeşil
-   * kalıyor; tür ayrımı yeşilin tonundan geliyor (addan türetiliyor,
-   * yani aynı tür her zaman aynı ton) ve katalog rengi yalnız MEYVEDE
-   * ve etikette aksan olarak kullanılıyor. */
+   * kalıyor; tür ayrımı yeşilin tonundan ve SİLUETTEN geliyor. Katalog
+   * rengi yalnız meyvede, kök omzunda ve etikette aksan.
+   */
   function yesil(b) {
     const h = tohum(`${b.tur}-yaprak`);
     // 82°..142° arası: sarımsı yeşilden mavimsi yeşile.
@@ -787,181 +816,245 @@ window.BahceTuval = (function () {
     ct.stroke();
   }
 
+  /** Dik siluetlerin ortak iskeleti: dipten çıkan, hafif kavisli bir sap.
+   *  Dönen değer sapın UCU — yaprak oraya konuyor. */
+  function sapCiz(ct, aci, boy, kalin, renk, egim) {
+    const ux = Math.sin(aci) * boy * (0.35 + egim * 0.5);
+    const uy = -Math.cos(aci) * boy;
+    ct.strokeStyle = rgba(renk, 0.95);
+    ct.lineWidth = Math.max(0.8, kalin);
+    ct.lineCap = "round";
+    ct.beginPath();
+    ct.moveTo(0, 0);
+    ct.quadraticCurveTo(ux * 0.25, uy * 0.55, ux, uy);
+    ct.stroke();
+    return { x: ux, y: uy };
+  }
+
+  /* ------------------------------------------------------------- gülçe
+   * Marul, lahana, roka: YERDE YAYILAN ve katmanlı. Dışta uzun ve koyu,
+   * içte kısa ve açık; ortada sıkışmış bir göbek. */
   function cizGulce(ct, R, c, olgun, t, faz, ozel) {
     const oran = olgun == null ? 0.5 : kis(olgun, 0.08, 1);
-    const dis = Math.max(10, Math.round(9 + oran * 9));
+    const dis = Math.max(11, Math.round(10 + oran * 10));
     const katlar = [
-      { n: dis, uzun: R, ton: -0.30, egim: 0.0 },
-      { n: Math.max(7, Math.round(dis * 0.72)), uzun: R * 0.72, ton: 0.03, egim: 0.41 },
-      { n: Math.max(5, Math.round(dis * 0.45)), uzun: R * 0.44, ton: 0.26, egim: 1.07 },
+      { n: dis, uzun: R, ton: -0.34, egim: 0.0 },
+      { n: Math.max(8, Math.round(dis * 0.74)), uzun: R * 0.74, ton: -0.06, egim: 0.41 },
+      { n: Math.max(6, Math.round(dis * 0.5)), uzun: R * 0.48, ton: 0.18, egim: 1.07 },
+      { n: Math.max(4, Math.round(dis * 0.3)), uzun: R * 0.26, ton: 0.36, egim: 1.9 },
     ];
     katlar.forEach((k, ki) => {
       for (let i = 0; i < k.n; i++) {
-        // Açı düzgün dağılıma DAYANMIYOR: eşit aralık gülçeyi bir kar
-        // tanesi yapıyordu. Her yaprak addan türeyen küçük bir sapma
-        // alıyor — süs, ölçüm değil.
+        // Eşit aralık gülçeyi bir kar tanesine çeviriyordu: her yaprak
+        // addan türeyen küçük bir sapma alıyor.
         const sapma = (tohum(`${ki}:${i}:${faz}`) - 0.5) * 0.42;
         const a = (Math.PI * 2 / k.n) * i + faz * 6 + k.egim + sapma;
-        const sal = Math.sin(t * 0.85 + faz * 5 + i + ki) * 0.04;
-        const uzunluk = k.uzun * (0.80 + tohum(`u${ki}:${i}:${faz}`) * 0.30);
+        const sal = Math.sin(t * 0.85 + faz * 5 + i + ki) * 0.035;
+        const uzunluk = k.uzun * (0.82 + tohum(`u${ki}:${i}:${faz}`) * 0.28);
         ct.save();
         ct.rotate(a + sal);
-        ct.scale(1, 0.70);          // yayılım halkasıyla aynı basıklık
-        const kayma = tohum(`r${ki}:${i}`) * 0.2;
+        ct.scale(1, 0.70);
+        const kayma = tohum(`r${ki}:${i}`) * 0.16;
         yaprakCiz(ct, uzunluk, uzunluk * (ozel.genislik || 0.26),
                   ton(c, k.ton - 0.16 + kayma), ton(c, k.ton + 0.16 + kayma),
                   ozel.dalga, i * 0.6);
         ct.restore();
       }
     });
-    // Merkez gölgesi: gülçenin ortası çukur, bu onu düz bir yıldız
-    // olmaktan çıkarıyor.
     const g = ct.createRadialGradient(0, 0, R * 0.02, 0, 0, R * 0.5);
     g.addColorStop(0, "rgba(0,0,0,0.34)");
     g.addColorStop(1, "rgba(0,0,0,0)");
     ct.fillStyle = g;
     ct.beginPath();
-    ct.ellipse(0, 0, R * 0.5, R * 0.42, 0, 0, Math.PI * 2);
-    ct.fill();
-    ct.fillStyle = rgba(ton(c, 0.38), 0.85);
-    ct.beginPath();
-    ct.ellipse(0, 0, R * 0.09, R * 0.08, 0, 0, Math.PI * 2);
+    ct.ellipse(0, 0, R * 0.5, R * 0.36, 0, 0, Math.PI * 2);
     ct.fill();
   }
 
-  function cizTuy(ct, R, c, olgun, t, faz) {
+  /* --------------------------------------------------------------- tüy
+   * Havuç, dereotu, maydanoz: İNCE ve DİK bir tepe. Yerde yayılan bir
+   * gülçe olarak çizildiğinde havuçla marul ayırt edilemiyordu. */
+  function cizTuy(ct, R, c, olgun, t, faz, boy) {
     const oran = olgun == null ? 0.5 : kis(olgun, 0.08, 1);
-    const sap = Math.max(5, Math.round(5 + oran * 7));
+    const sap = Math.max(6, Math.round(6 + oran * 8));
     for (let i = 0; i < sap; i++) {
-      const a = (Math.PI * 2 / sap) * i + faz * 6;
-      const sal = Math.sin(t * 1.3 + i + faz * 6) * 0.07;
-      const uzun = R * (0.70 + ((i * 37) % 11) / 34);
-      const renk = ton(c, -0.16 + ((i % 3) * 0.16));
+      const y = (i / Math.max(1, sap - 1) - 0.5) * 2;      // -1..1
+      const a = y * 0.62 + (tohum(`t${i}:${faz}`) - 0.5) * 0.22;
+      const sal = Math.sin(t * 1.35 + i + faz * 6) * 0.05;
+      const u = boy * (0.66 + tohum(`b${i}:${faz}`) * 0.42);
+      const renk = ton(c, -0.18 + ((i % 3) * 0.14));
       ct.save();
-      ct.rotate(a + sal);
-      ct.scale(1, 0.70);
-      ct.strokeStyle = rgba(renk, 0.95);
-      ct.lineWidth = Math.max(0.9, R * 0.028);
-      ct.lineCap = "round";
-      ct.beginPath();
-      ct.moveTo(0, 0);
-      ct.quadraticCurveTo(uzun * 0.16, -uzun * 0.62, uzun * 0.07, -uzun);
-      ct.stroke();
-      ct.lineWidth = Math.max(0.6, R * 0.016);
-      for (let j = 2; j <= 7; j++) {
-        const o = j / 8;
-        const bx = uzun * 0.16 * o * (2 - o), by = -uzun * o;
-        const tl = uzun * 0.24 * (1 - o * 0.7);
+      const uc = sapCiz(ct, a + sal, u, R * 0.055, renk, 0.25);
+      // Tüycükler sapın üst yarısında, sapı izleyerek.
+      ct.strokeStyle = rgba(renk, 0.9);
+      ct.lineWidth = Math.max(0.5, R * 0.022);
+      for (let j = 3; j <= 8; j++) {
+        const o = j / 9;
+        const bx = uc.x * o * (1.4 - o * 0.4), by = uc.y * o;
+        const tl = u * 0.17 * (1 - o * 0.55);
         ct.beginPath();
         ct.moveTo(bx, by);
-        ct.quadraticCurveTo(bx - tl * 0.6, by - tl * 0.3, bx - tl, by - tl * 0.9);
+        ct.quadraticCurveTo(bx - tl * 0.7, by - tl * 0.35, bx - tl, by - tl * 0.85);
         ct.moveTo(bx, by);
-        ct.quadraticCurveTo(bx + tl * 0.6, by - tl * 0.3, bx + tl, by - tl * 0.9);
+        ct.quadraticCurveTo(bx + tl * 0.7, by - tl * 0.35, bx + tl, by - tl * 0.85);
         ct.stroke();
       }
       ct.restore();
     }
   }
 
-  function cizCali(ct, R, c, olgun, t, faz, hasat, aksan) {
+  /* ----------------------------------------------------------- yuvarlak
+   * Fesleğen, nane, kekik: kısa bir sapta KARŞILIKLI ÇİFTLER hâlinde
+   * yuvarlak yapraklar. Sivri uçlu bir gülçeyle karıştırılmasın diye
+   * yaprak profili küt ve geniş. */
+  function cizYuvarlak(ct, R, c, olgun, t, faz, boy) {
     const oran = olgun == null ? 0.5 : kis(olgun, 0.1, 1);
-    const dal = Math.max(5, Math.round(5 + oran * 4));
-    ct.strokeStyle = rgba(ton(c, -0.52), 0.95);
-    ct.lineCap = "round";
-    for (let i = 0; i < dal; i++) {
-      const a = (Math.PI * 2 / dal) * i + faz * 6 + Math.sin(t * 0.7 + i) * 0.04;
-      // Dallar farklı boyda: eşit uzunlukta dallar çalıyı gülçeye
-      // benzetiyordu.
-      const uzun = R * (0.62 + tohum(`d${i}:${faz}`) * 0.38);
-      ct.lineWidth = Math.max(1.4, R * 0.05);
+    const kol = Math.max(3, Math.round(3 + oran * 3));
+    for (let i = 0; i < kol; i++) {
+      const a = (Math.PI * 2 / kol) * i + faz * 6;
+      const sal = Math.sin(t * 0.75 + i + faz * 4) * 0.04;
+      const u = boy * (0.7 + tohum(`y${i}:${faz}`) * 0.4);
       ct.save();
-      ct.rotate(a);
-      ct.scale(1, 0.70);
-      // Uzun, hafif kavisli bir dal: ucunda üçlü bileşik yaprak.
-      ct.beginPath();
-      ct.moveTo(0, 0);
-      ct.quadraticCurveTo(uzun * 0.10, -uzun * 0.38, uzun * 0.04, -uzun * 0.66);
-      ct.stroke();
-      // Dal boyunca ara yaprakçıklar
-      [0.34, 0.52].forEach((o, oi) => {
+      ct.rotate(a * 0.22 + sal);
+      const uc = sapCiz(ct, (a % (Math.PI * 2)) * 0.12 + (i - kol / 2) * 0.34,
+                        u, R * 0.06, ton(c, -0.45), 0.3);
+      ct.translate(uc.x, uc.y);
+      // İki karşılıklı çift + tepe yaprağı.
+      [[-1, 0.42], [1, 0.42], [-1, 0.78], [1, 0.78]].forEach((p, j) => {
         ct.save();
-        ct.translate(uzun * 0.08 * o, -uzun * o);
-        ct.rotate(oi ? 0.9 : -0.9);
-        yaprakCiz(ct, uzun * 0.30, uzun * 0.13,
-                  ton(c, -0.34), ton(c, -0.02), false, oi);
+        ct.translate(-uc.x * (1 - p[1]) * 0.0, uc.y * (1 - p[1]) * 0.0);
+        ct.rotate(p[0] * 1.25);
+        yuvarlakYaprak(ct, u * 0.32 * p[1] * 1.4, ton(c, -0.24 + (j % 2) * 0.2),
+                       ton(c, 0.16));
         ct.restore();
       });
-      ct.translate(uzun * 0.04, -uzun * 0.66);
-      [-0.72, 0, 0.72].forEach((k, j) => {
-        ct.save();
-        ct.rotate(k);
-        yaprakCiz(ct, uzun * (j === 1 ? 0.42 : 0.33), uzun * 0.15,
-                  ton(c, -0.28), ton(c, 0.12), false, j);
-        ct.restore();
-      });
+      ct.save();
+      ct.rotate(0.05);
+      yuvarlakYaprak(ct, u * 0.34, ton(c, -0.16), ton(c, 0.22));
+      ct.restore();
       ct.restore();
     }
-    // MEYVE YALNIZ GERÇEKTEN HASADA HAZIRSA. Olgunluk oranına bakıp
-    // "herhâlde meyve vermiştir" demek, ekranın uydurması olurdu.
-    // Rengi kataloğun tür rengi — meyvenin rengi orada yazıyor.
+  }
+
+  /** Küt uçlu, neredeyse yuvarlak yaprak. */
+  function yuvarlakYaprak(ct, uzun, dip, uc) {
+    const g = ct.createLinearGradient(0, 0, 0, -uzun);
+    g.addColorStop(0, rgba(dip, 0.97));
+    g.addColorStop(1, rgba(uc, 0.97));
+    ct.fillStyle = g;
+    ct.beginPath();
+    ct.moveTo(0, 0);
+    ct.bezierCurveTo(-uzun * 0.62, -uzun * 0.22, -uzun * 0.52, -uzun * 0.92,
+                     0, -uzun);
+    ct.bezierCurveTo(uzun * 0.52, -uzun * 0.92, uzun * 0.62, -uzun * 0.22,
+                     0, 0);
+    ct.fill();
+    ct.strokeStyle = rgba(ton(dip, -0.45), 0.5);
+    ct.lineWidth = Math.max(0.5, uzun * 0.03);
+    ct.stroke();
+    ct.strokeStyle = rgba(ton(uc, 0.3), 0.45);
+    ct.beginPath();
+    ct.moveTo(0, -uzun * 0.06);
+    ct.lineTo(0, -uzun * 0.88);
+    ct.stroke();
+  }
+
+  /* --------------------------------------------------------------- çalı
+   * Domates, biber, kabak: görünür bir GÖVDE ve ondan çıkan dallar.
+   * Meyve YALNIZ gerçekten hasada hazırsa — olgunluk oranına bakıp
+   * "herhâlde meyve vermiştir" demek ekranın uydurması olurdu. */
+  function cizCali(ct, R, c, olgun, t, faz, hasat, aksan, boy) {
+    const oran = olgun == null ? 0.5 : kis(olgun, 0.1, 1);
+    const kat = Math.max(3, Math.round(3 + oran * 3));
+    const govde = boy * 0.78;
+    ct.strokeStyle = rgba(ton(c, -0.55), 0.95);
+    ct.lineWidth = Math.max(1.4, R * 0.075);
+    ct.lineCap = "round";
+    ct.beginPath();
+    ct.moveTo(0, 0);
+    ct.quadraticCurveTo(R * 0.06, -govde * 0.5, 0, -govde);
+    ct.stroke();
+    for (let i = 0; i < kat; i++) {
+      const h = govde * (0.28 + (i / kat) * 0.68);
+      [-1, 1].forEach((yon, j) => {
+        const a = yon * (0.75 + tohum(`c${i}${j}:${faz}`) * 0.4);
+        const sal = Math.sin(t * 0.7 + i + j) * 0.05;
+        const u = boy * (0.34 + tohum(`cu${i}${j}:${faz}`) * 0.22);
+        ct.save();
+        ct.translate(0, -h);
+        ct.rotate(a + sal - yon * 0.35);
+        ct.scale(1, 0.82);
+        [-0.6, 0, 0.6].forEach((k, m) => {
+          ct.save();
+          ct.rotate(k);
+          yaprakCiz(ct, u * (m === 1 ? 1 : 0.74), u * 0.30,
+                    ton(c, -0.30), ton(c, 0.10), false, m);
+          ct.restore();
+        });
+        ct.restore();
+      });
+    }
     if (hasat) {
       for (let i = 0; i < 3; i++) {
-        const a = faz * 9 + i * 2.1;
-        const rr = R * 0.40;
-        const mx = Math.cos(a) * rr, my = Math.sin(a) * rr * 0.82;
-        const g = ct.createRadialGradient(mx - R * 0.05, my - R * 0.05, R * 0.02,
-                                          mx, my, R * 0.17);
+        const h = govde * (0.42 + i * 0.2);
+        const yan = (i % 2 ? 1 : -1) * R * 0.3;
+        const g = ct.createRadialGradient(yan - R * 0.05, -h - R * 0.05, R * 0.02,
+                                          yan, -h, R * 0.19);
         g.addColorStop(0, rgba(ton(aksan, 0.35), 1));
         g.addColorStop(1, rgba(ton(aksan, -0.18), 1));
         ct.fillStyle = g;
         ct.beginPath();
-        ct.ellipse(mx, my, R * 0.155, R * 0.145, 0, 0, Math.PI * 2);
+        ct.ellipse(yan, -h, R * 0.17, R * 0.16, 0, 0, Math.PI * 2);
         ct.fill();
       }
     }
   }
 
-  function cizSerit(ct, R, c, olgun, t, faz) {
+  /* -------------------------------------------------------------- şerit
+   * Soğan, pırasa, mısır: dipten çıkan DİK, kalınca bıçak yapraklar. */
+  function cizSerit(ct, R, c, olgun, t, faz, boy) {
     const oran = olgun == null ? 0.5 : kis(olgun, 0.1, 1);
-    const adet = Math.max(5, Math.round(5 + oran * 6));
+    const adet = Math.max(5, Math.round(5 + oran * 5));
     for (let i = 0; i < adet; i++) {
-      // Soğan/pırasa yaprakları bir kümeden çıkıp dağılıyor; tek yöne
-      // bakan bir yelpaze palmiyeye benziyordu.
-      const a = (Math.PI * 2 / adet) * i + faz * 6
-        + (tohum(`s${i}:${faz}`) - 0.5) * 0.5;
-      const sal = Math.sin(t * 1.15 + i * 0.8 + faz * 4) * 0.08;
-      const uzun = R * (0.9 + ((i * 53) % 7) / 22);
-      const renk = ton(c, i % 2 ? -0.22 : 0.06);
-      ct.save();
-      ct.rotate(a + sal);
-      ct.scale(1, 0.70);
-      ct.beginPath();
-      ct.moveTo(-R * 0.05, 0);
-      ct.quadraticCurveTo(-R * 0.14, -uzun * 0.55, R * 0.015, -uzun);
-      ct.quadraticCurveTo(R * 0.11, -uzun * 0.55, R * 0.05, 0);
+      const y = (i / Math.max(1, adet - 1) - 0.5) * 2;
+      const a = y * 0.48 + (tohum(`s${i}:${faz}`) - 0.5) * 0.16;
+      const sal = Math.sin(t * 1.05 + i * 0.8 + faz * 4) * 0.055;
+      const u = boy * (0.72 + tohum(`sb${i}:${faz}`) * 0.42);
+      const renk = ton(c, i % 2 ? -0.26 : 0.04);
+      const ux = Math.sin(a + sal) * u * 0.42;
+      const uy = -Math.cos(a + sal) * u;
+      const gen = R * 0.13;
       ct.fillStyle = rgba(renk, 0.95);
+      ct.beginPath();
+      ct.moveTo(-gen, 0);
+      ct.quadraticCurveTo(ux * 0.3 - gen * 0.7, uy * 0.55, ux, uy);
+      ct.quadraticCurveTo(ux * 0.3 + gen * 0.7, uy * 0.55, gen, 0);
+      ct.closePath();
       ct.fill();
-      ct.strokeStyle = rgba(ton(renk, -0.4), 0.5);
-      ct.lineWidth = Math.max(0.5, R * 0.015);
+      ct.strokeStyle = rgba(ton(renk, -0.4), 0.45);
+      ct.lineWidth = Math.max(0.5, R * 0.018);
       ct.stroke();
-      ct.restore();
     }
   }
 
+  /* --------------------------------------------------------------- üçlü
+   * Çilek, fasulye: üçer yapraklı kümeler; ortada da bir küme var,
+   * yoksa bitki ortası delik bir çelenge dönüyordu. */
   function cizUclu(ct, R, c, olgun, t, faz, hasat, aksan) {
     const oran = olgun == null ? 0.5 : kis(olgun, 0.1, 1);
     const kume = Math.max(3, Math.round(3 + oran * 4));
-    // Ortada da bir küme: dışarı kaymış kümeler bitkiyi ortası delik
-    // bir çelenge çeviriyordu.
+    const ucluCiz = (uzun) => {
+      [-0.78, 0, 0.78].forEach((k, j) => {
+        ct.save();
+        ct.rotate(k);
+        yaprakCiz(ct, uzun * (j === 1 ? 1 : 0.82), uzun * 0.46,
+                  ton(c, -0.28), ton(c, 0.14), true, j * 1.3);
+        ct.restore();
+      });
+    };
     ct.save();
     ct.scale(1, 0.70);
-    [-0.8, 0, 0.8].forEach((k, j) => {
-      ct.save();
-      ct.rotate(k + faz * 6);
-      yaprakCiz(ct, R * (j === 1 ? 0.40 : 0.33), R * 0.20,
-                ton(c, -0.34), ton(c, 0.04), true, j);
-      ct.restore();
-    });
+    ct.rotate(faz * 6);
+    ucluCiz(R * 0.42);
     ct.restore();
     for (let i = 0; i < kume; i++) {
       const a = (Math.PI * 2 / kume) * i + faz * 6;
@@ -969,20 +1062,14 @@ window.BahceTuval = (function () {
       ct.save();
       ct.rotate(a + sal);
       ct.scale(1, 0.70);
-      ct.translate(0, -R * 0.36);
-      [-0.78, 0, 0.78].forEach((k, j) => {
-        ct.save();
-        ct.rotate(k);
-        yaprakCiz(ct, R * (j === 1 ? 0.58 : 0.48), R * 0.26,
-                  ton(c, -0.26), ton(c, 0.14), true, j * 1.3);
-        ct.restore();
-      });
+      ct.translate(0, -R * 0.42);
+      ucluCiz(R * 0.46);
       ct.restore();
     }
     if (hasat) {
       for (let i = 0; i < 2; i++) {
         const a = faz * 7 + i * 2.6;
-        const mx = Math.cos(a) * R * 0.34, my = Math.sin(a) * R * 0.28;
+        const mx = Math.cos(a) * R * 0.34, my = Math.sin(a) * R * 0.24;
         ct.fillStyle = rgba(aksan, 1);
         ct.beginPath();
         ct.moveTo(mx, my - R * 0.11);
@@ -995,22 +1082,40 @@ window.BahceTuval = (function () {
     }
   }
 
+  /** Kök omzu — havuç, turp, soğan gibi kökü toprağın hizasında
+   *  görünenler için. Rengi kataloğun tür rengi: havucun turuncusu
+   *  orada yazıyor. Boyu bir ÖLÇÜM DEĞİL, süs. */
+  function kokCiz(ct, R, aksan) {
+    const g = ct.createLinearGradient(0, -R * 0.14, 0, R * 0.1);
+    g.addColorStop(0, rgba(ton(aksan, 0.2), 0.95));
+    g.addColorStop(1, rgba(ton(aksan, -0.35), 0.95));
+    ct.fillStyle = g;
+    ct.beginPath();
+    ct.ellipse(0, 0, R * 0.26, R * 0.13, 0, 0, Math.PI * 2);
+    ct.fill();
+    ct.strokeStyle = "rgba(0,0,0,0.28)";
+    ct.lineWidth = Math.max(0.5, R * 0.02);
+    ct.stroke();
+  }
+
   /** Bir bitkinin bütün çizimi: gölge, yayılım halkası, gövde. */
   function bitkiCiz(ct, b, t, I) {
     const R = b.cizimPx / 2;
-    // Yere düşen gölge — güneşin yönünde, alçak güneşte uzun.
+    const s = SILUET[b.tip] || SILUET.gulce;
+    // Gölge dik siluetlerde daha uzun: yukarı giden bir bitki yere daha
+    // uzun bir gölge düşürüyor. Yönü güneşten, boyu güneşin
+    // yüksekliğinden — ikisi de saatten, yani süs.
     ct.save();
     ct.globalAlpha = 0.20 + I.gunduz * 0.16;
     ct.fillStyle = "#000";
     ct.beginPath();
-    ct.ellipse(b.x + I.gx * R * 0.30 * I.boy, b.y + R * 0.14,
-               R * 0.74 * I.boy, R * 0.30, 0, 0, Math.PI * 2);
+    ct.ellipse(b.x + I.gx * R * (0.30 + s.dik * 0.5) * I.boy, b.y + R * 0.14,
+               R * (0.74 + s.dik * 0.2) * I.boy, R * 0.30, 0, 0, Math.PI * 2);
     ct.fill();
     ct.restore();
 
     // YAYILIM HALKASI — ÖLÇÜLEN çap. Çizilen bitki en az 26 piksel
-    // oluyor ki fide görünsün; halka gerçeği söylüyor, yani küçük bir
-    // fide büyük görünmüyor, yalnız görünüyor.
+    // oluyor ki fide görünsün; halka gerçeği söylüyor.
     if (b.capPx > 26) {
       ct.save();
       ct.setLineDash([5, 7]);
@@ -1023,8 +1128,7 @@ window.BahceTuval = (function () {
     }
 
     // ÜZERİNE GELİNCE: hafifçe kalkıyor, altında yumuşak bir ışık
-    // beliriyor. İkisi de SÜS — hangi bitkiye dokunduğunu göstermek
-    // dışında bir anlam taşımıyor.
+    // beliriyor. İkisi de SÜS.
     if (b.vurgu > 0.01) {
       const g = ct.createRadialGradient(b.x, b.y, R * 0.1, b.x, b.y, R * 1.25);
       g.addColorStop(0, `rgba(255,246,214,${(0.26 * b.vurgu).toFixed(3)})`);
@@ -1040,12 +1144,18 @@ window.BahceTuval = (function () {
     if (b.vurgu > 0.01) ct.scale(1 + b.vurgu * 0.05, 1 + b.vurgu * 0.05);
     const c = b.yaprak;
     const aksan = b.aksan;
-    const ozel = { genislik: 0.22 + b.faz * 0.12, dalga: b.tip === "gulce" };
-    if (b.tip === "tuy") cizTuy(ct, R, c, b.olgunluk, t, b.faz);
-    else if (b.tip === "cali") cizCali(ct, R, c, b.olgunluk, t, b.faz, b.hasat, aksan);
-    else if (b.tip === "serit") cizSerit(ct, R, c, b.olgunluk, t, b.faz);
+    // Dik siluetin ekrandaki boyu: yayılım yarıçapının katı. Perspektif
+    // kısalması yükseklikle aynı orandan geçiyor ki arka sıradaki bitki
+    // öndekinden kısa görünsün.
+    const boy = R * s.boyOran * YUKSEKLIK_ORANI * 1.4;
+    if (s.kok) kokCiz(ct, R, aksan);
+    if (b.tip === "tuy") cizTuy(ct, R, c, b.olgunluk, t, b.faz, boy);
+    else if (b.tip === "yuvarlak") cizYuvarlak(ct, R, c, b.olgunluk, t, b.faz, boy);
+    else if (b.tip === "cali") cizCali(ct, R, c, b.olgunluk, t, b.faz, b.hasat, aksan, boy);
+    else if (b.tip === "serit") cizSerit(ct, R, c, b.olgunluk, t, b.faz, boy);
     else if (b.tip === "uclu") cizUclu(ct, R, c, b.olgunluk, t, b.faz, b.hasat, aksan);
-    else cizGulce(ct, R, c, b.olgunluk, t, b.faz, ozel);
+    else cizGulce(ct, R, c, b.olgunluk, t, b.faz,
+                  { genislik: 0.22 + b.faz * 0.12, dalga: true });
     ct.restore();
   }
 
@@ -2062,9 +2172,22 @@ window.BahceTuval = (function () {
 
     ct.globalAlpha = o.ok ? 0.62 : 0.35;
     ct.translate(p.x, p.y - yukseklikPx(16, uv.v));
+    // Hayalet de TÜRÜN KENDİ SİLUETİ: bırakılacak şeyin ne olduğu
+    // önizlemede de görünsün, hepsi gülçe olmasın.
     const sahte = { tur: tur.slug, tur_ad: tur.ad };
-    cizGulce(ct, r * 0.92, yesil(sahte), null, t, tohum(tur.slug),
-             { genislik: 0.24, dalga: true });
+    const tip = arketip(sahte);
+    const s = SILUET[tip] || SILUET.gulce;
+    const boy = r * 0.92 * s.boyOran * YUKSEKLIK_ORANI * 1.4;
+    const c = yesil(sahte);
+    const faz = tohum(tur.slug);
+    const ak = hexRGB(tur.renk || "#7bbf5a");
+    if (s.kok) kokCiz(ct, r * 0.92, ak);
+    if (tip === "tuy") cizTuy(ct, r * 0.92, c, null, t, faz, boy);
+    else if (tip === "yuvarlak") cizYuvarlak(ct, r * 0.92, c, null, t, faz, boy);
+    else if (tip === "cali") cizCali(ct, r * 0.92, c, null, t, faz, false, ak, boy);
+    else if (tip === "serit") cizSerit(ct, r * 0.92, c, null, t, faz, boy);
+    else if (tip === "uclu") cizUclu(ct, r * 0.92, c, null, t, faz, false, ak);
+    else cizGulce(ct, r * 0.92, c, null, t, faz, { genislik: 0.24, dalga: true });
     ct.restore();
 
   }
