@@ -41,3 +41,6 @@ _deneme.tgz
 # Aktarim sirasinda kalan gecici arsivler
 _deneme.tgz
 _mesaj.txt
+
+# Kalibrasyon HMI kendi sanal ortamini kuruyor
+tepe_kalibrasyon/.ortam/
