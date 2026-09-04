@@ -776,59 +776,76 @@ async def api_toplu(govde: dict[str, Any], jeton: str = Query(default="")):
             raise HTTPException(
                 status_code=422,
                 detail="Sulama başlatılmadı — " + " · ".join(cozum["ret"]))
-        # YASAK BÖLGE + YUMUŞAK SINIR ÖN KONTROLÜ. Kararı ajan veriyor;
-        # sunucu kuralları kopyalamıyor, yalnız soruyor. Amaç 40 bitkilik
-        # bir dizinin ortasında çarpıp durmasını önlemek — yarı sulanmış
-        # bir yatak, hiç sulanmamış bir yataktan daha kötü.
-        await _sulama_on_kontrol(cozum)
+        await _sulama_uygula(cozum)
         adimlar = cozum["adimlar"]
-        # MAKİNE GERÇEKTE NEREYE GİDİYOR — günlüğe yazılıyor.
-        #
-        # Sahada su bitkinin yanına düştü ve sebebi tahminle arandı. Oysa
-        # bilinmesi gereken tek şey makinenin gittiği koordinattı: hedef
-        # neresi, başlık kayması ne, makine nereye gidiyor. Üçü yan yana
-        # yazılınca hangi hatanın olduğu bakınca anlaşılıyor.
-        await _sulama_gunluk(cozum)
-        # SULAMA DAMGASI. Panelde gözün "sulandı" rengi buradan geliyor.
-        # DÜRÜST OLMAK GEREKİRSE bu "su düştü" demek değil, "sulama
-        # komutu gitti" demek: akış sensörü yok ve dizi ortada kesilirse
-        # sonraki bitkiler yine damgalı kalır. Panel bunu bu şekilde
-        # yazıyor, "sulandı" kelimesinin altına gerekçesiyle.
-        sulanacak = [o["ad"] for o in cozum["ozet"] if o.get("sulanacak", True)]
-        if sulanacak:
-            simdi = time.time()
-            await asyncio.to_thread(
-                noktalar.alanlari_yaz,
-                {ad: {"sulama_ts": simdi} for ad in sulanacak})
-            # OLAY DEFTERI. Nokta deposu yalniz SON damgayi tutuyor; "kac
-            # kez sulandi" ancak her sulamanin bir satir birakmasiyla
-            # bilinebiliyor. Sure bitki basina: desen acikken toplam su
-            # noktalara BOLUNUYOR, o yuzden noktalarin sureleri toplaniyor
-            # -- istekteki `saniye` degil, gercekten gonderilen sure.
-            sureler = {
-                str(o["ad"]): round(sum(_sayi_guvenli(n.get("saniye"))
-                                        for n in (o.get("noktalar") or [])), 2)
-                for o in cozum["ozet"] if o.get("sulanacak", True)}
-            await asyncio.to_thread(
-                bitki.olay_yaz,
-                [(ad, "sula", sureler.get(ad)) for ad in sulanacak], simdi)
-            await merkez.yayinla({"tip": "tepsi"})
     else:
         adimlar = [{"tip": "nokta", "ad": ad} for ad in adlar]
+    return await _dizi_gonder(
+        "Seçim: " + ("sulama" if islem == "sula" else "gezinti"),
+        adimlar, govde.get("hiz"))
 
-    gecici = {"ad": "Seçim: " + ("sulama" if islem == "sula" else "gezinti"),
-              "adimlar": adimlar, "tekrar": 1}
+
+async def _sulama_uygula(cozum: dict[str, Any]) -> list[str]:
+    """Sulama dizisinden ÖNCE yapılması gereken her şey; sulanan adları döner.
+
+    AYRI DURUYOR ÇÜNKÜ İKİ ÇAĞIRANI VAR: `/api/toplu` ve "ölç, düşükse
+    sula" görevi. Aynı işi iki yerde yazsaydık biri sulama damgası basar,
+    öteki basmazdı — ya da biri yasak bölge ön kontrolünü atlardı.
+    """
+    # YASAK BÖLGE + YUMUŞAK SINIR ÖN KONTROLÜ. Kararı ajan veriyor;
+    # sunucu kuralları kopyalamıyor, yalnız soruyor. Amaç 40 bitkilik
+    # bir dizinin ortasında çarpıp durmasını önlemek — yarı sulanmış
+    # bir yatak, hiç sulanmamış bir yataktan daha kötü.
+    await _sulama_on_kontrol(cozum)
+    # MAKİNE GERÇEKTE NEREYE GİDİYOR — günlüğe yazılıyor.
+    #
+    # Sahada su bitkinin yanına düştü ve sebebi tahminle arandı. Oysa
+    # bilinmesi gereken tek şey makinenin gittiği koordinattı: hedef
+    # neresi, başlık kayması ne, makine nereye gidiyor. Üçü yan yana
+    # yazılınca hangi hatanın olduğu bakınca anlaşılıyor.
+    await _sulama_gunluk(cozum)
+    # SULAMA DAMGASI. Panelde gözün "sulandı" rengi buradan geliyor.
+    # DÜRÜST OLMAK GEREKİRSE bu "su düştü" demek değil, "sulama
+    # komutu gitti" demek: akış sensörü yok ve dizi ortada kesilirse
+    # sonraki bitkiler yine damgalı kalır. Panel bunu bu şekilde
+    # yazıyor, "sulandı" kelimesinin altına gerekçesiyle.
+    sulanacak = [o["ad"] for o in cozum["ozet"] if o.get("sulanacak", True)]
+    if sulanacak:
+        simdi = time.time()
+        await asyncio.to_thread(
+            noktalar.alanlari_yaz,
+            {ad: {"sulama_ts": simdi} for ad in sulanacak})
+        # OLAY DEFTERI. Nokta deposu yalniz SON damgayi tutuyor; "kac
+        # kez sulandi" ancak her sulamanin bir satir birakmasiyla
+        # bilinebiliyor. Sure bitki basina: desen acikken toplam su
+        # noktalara BOLUNUYOR, o yuzden noktalarin sureleri toplaniyor
+        # -- istekteki `saniye` degil, gercekten gonderilen sure.
+        sureler = {
+            str(o["ad"]): round(sum(_sayi_guvenli(n.get("saniye"))
+                                    for n in (o.get("noktalar") or [])), 2)
+            for o in cozum["ozet"] if o.get("sulanacak", True)}
+        await asyncio.to_thread(
+            bitki.olay_yaz,
+            [(ad, "sula", sureler.get(ad)) for ad in sulanacak], simdi)
+        await merkez.yayinla({"tip": "tepsi"})
+    return sulanacak
+
+
+async def _dizi_gonder(ad: str, adimlar: list[dict[str, Any]],
+                       hiz: Any = None) -> dict[str, Any]:
+    """Adım listesini çözüp ajana yollar.
+
+    Nokta adları koordinata BURADA çevriliyor — kayıtlı programlarla aynı
+    yol. Bir nokta bulunamazsa dizi HİÇ başlamıyor; yarıda "nokta yok"
+    diye durmaktansa.
+    """
     try:
-        # Nokta adları koordinata burada çevriliyor — kayıtlı programlarla
-        # aynı yol. Bir nokta bulunamazsa dizi HİÇ başlamıyor.
-        cozulmus = await asyncio.to_thread(programlar.coz, gecici)
+        cozulmus = await asyncio.to_thread(
+            programlar.coz, {"ad": ad, "adimlar": adimlar, "tekrar": 1})
     except programlar.ProgramHatasi as hata:
         raise HTTPException(status_code=400, detail=str(hata))
-
     return await merkez.komut_gonder("dizi_baslat", {
-        "ad": gecici["ad"], "adimlar": cozulmus, "tekrar": 1,
-        "hiz": govde.get("hiz"),
-    })
+        "ad": ad, "adimlar": cozulmus, "tekrar": 1, "hiz": hiz})
 
 
 # --------------------------------------------------------------------------- #
@@ -1042,11 +1059,22 @@ def _istek_saniye(govde: dict[str, Any] | None) -> float | None:
         return None
 
 
-def _sulama_coz(adlar: list[str], saniye: float | None) -> dict[str, Any]:
+def _sulama_coz(adlar: list[str], saniye: float | None,
+                okumalar: list[dict[str, Any]] | None = None,
+                nem_bak: bool = True) -> dict[str, Any]:
     """Seçili bitkiler için sulama noktalarını ve adım listesini üretir.
 
     Eşzamanlı çağrılmıyor; `asyncio.to_thread` ile tek seferde koşuyor,
     çünkü dört ayrı depoyu (nokta, tür, eğri, dikim) okuyor.
+
+    `okumalar` verilmezse depodan çekiliyor — her zamanki yol. "Ölç,
+    düşükse sula" görevi ise o bitkinin AZ ÖNCE alınmış TEK ölçümünü
+    veriyor: depoya bırakılsaydı komşuda yirmi dakika önce alınmış bir
+    okuma yeni ölçümü yenebilirdi ve o görevin var olma sebebi tam olarak
+    bu değil.
+
+    `nem_bak=False` nem kapısını atlıyor (koşulsuz sulama); kararın
+    kendisi yine `sulama.noktalar` içinde, tek yerde.
     """
     kayitli = {n.get("ad"): n for n in noktalar.hepsi()}
     tur_indeks = {t.get("slug"): t for t in turler.hepsi()}
@@ -1063,8 +1091,9 @@ def _sulama_coz(adlar: list[str], saniye: float | None) -> dict[str, Any]:
     # Konumlu TOPRAK nemi okumaları — sulama kararı bunlara bakıyor.
     # Hava nemi (DHT) buraya hiç girmiyor: yağmurlu bir günde hava nemi
     # yüksek olur ve karışırsa susuz toprakta sulama atlanır.
-    okumalar = depo.konumlu_okumalar(
-        int(sulama.NEM_AZAMI_YAS_SN / 60), 400)
+    if okumalar is None:
+        okumalar = depo.konumlu_okumalar(
+            int(sulama.NEM_AZAMI_YAS_SN / 60), 400)
     simdi = time.time()
 
     adimlar: list[dict[str, Any]] = []
@@ -1090,7 +1119,7 @@ def _sulama_coz(adlar: list[str], saniye: float | None) -> dict[str, Any]:
             bitki, tur, toplam_saniye=bitki_sn, simdi=simdi, guvenli_z=guvenli_z,
             genel_toprak_z=toprak_z, egri_listesi=egri_listesi,
             dikim_alanlari=alanlar, baslik=baslik, okumalar=okumalar,
-            toprak_kalib=kalib)
+            toprak_kalib=kalib, nem_bak=nem_bak)
         ret.extend(f"{ad}: {m}" for m in c["ret"])
         uyari.extend(f"{ad}: {m}" for m in c["uyari"])
         ozet.append({"ad": ad, "desen": c["desen"], "ofset_mm": c["ofset_mm"],
@@ -4020,6 +4049,10 @@ async def _kuyruk_dongusu() -> None:
 
 async def _kuyruk_calistir(is_: dict[str, Any]) -> str:
     tip, adlar = is_["tip"], is_["noktalar"]
+    # BİRLEŞİK TİPLER KENDİ YOLUNDAN. Ötekiler tek bir dizi; bunlar bitki
+    # bitki ilerleyen bir tur ve arada karar veriyorlar.
+    if tip in ("olc_sula", "olc_hep_sula"):
+        return await _olc_sula_calistir(is_, tip == "olc_sula")
     if tip == "foto":
         sonuc = await asyncio.to_thread(_bahce_foto_cek, adlar, True)
         if not sonuc["ok"]:
@@ -4068,6 +4101,188 @@ async def _dizi_bitmesini_bekle(azami_sn: float = 900.0) -> None:
             return
         await asyncio.sleep(0.4)
     logger.warning("Kuyruk: iş %.0f sn'de bitmedi, sıradakine geçiliyor", azami_sn)
+
+
+# --------------------------------------------------------------------------- #
+# "Ölç, düşükse sula" ve "Ölç ve sula"
+#
+# NEDEN BİTKİ BİTKİ. Bütün bahçeyi ölçüp sonra baştan sulamaya dönmek
+# makineyi iki tam tur yürütür. Prob ile sulama başlığı ayrı kaymalarda
+# olduğu için aynı bitkide küçük bir kayma hareketi oluyor — iki turdan
+# hâlâ çok ucuz.
+#
+# KARAR O AN ÖLÇÜLENE DAYANIYOR. `_sulama_coz`a okuma listesini AÇIKÇA
+# veriyoruz ve içinde yalnız o bitkinin az önce alınmış ölçümü var.
+# Depodan çekilen "en yakın okuma"ya bırakılsaydı komşuda yirmi dakika
+# önce alınmış bir okuma yeni ölçümü yenebilirdi — bu görevin var olma
+# sebebi tam olarak bu.
+#
+# EŞİK KARARI BURADA YOK. `sulama.noktalar` `sulanacak` ve `nem_gerekce`
+# üretiyor; biz onu okuyoruz. İkinci bir eşik hesabı yazmak, panelde
+# "susadı" görünen bitkiyle görevin suladığı bitkinin ayrışması demekti.
+#
+# YARIDA KALMA. Her bitki kendi içinde tamamlanıyor; makine koparsa,
+# acil durdurma basılırsa ya da araya başka bir iş girerse tur BİTKİLER
+# ARASINDA duruyor, nerede ve neden durduğunu yazıyor. Yarım kalmış bir
+# liste hatırlanmıyor: bir sonraki tetiklemede kapsam yeniden çözülüyor,
+# çünkü o liste bu arada eskimiş olur (sulanan bitki artık susamıyor).
+# --------------------------------------------------------------------------- #
+async def _olc_sula_gunluk(metin: str, seviye: str = "bilgi") -> None:
+    await merkez.yayinla({"tip": "gunluk", "seviye": seviye, "metin": metin})
+
+
+def _olc_sula_engel() -> str:
+    """Sıradaki bitkiye geçilebilir mi — geçilemiyorsa SEBEBİ.
+
+    `_bahce_mesgul`den ayrı: orası "makine meşgul mü" diye evet/hayır
+    diyor, burada sebep gerekiyor ve bir de fark var — bu denetim
+    bitkiler ARASINDA yapılıyor, yani kendi dizimiz çoktan bitmiş
+    olmalı. Hâlâ bir dizi dönüyorsa onu başlatan biz değiliz.
+    """
+    d = merkez.durum()
+    if not d.get("bagli"):
+        return "makine bağlı değil"
+    if (d.get("acil") or {}).get("acik"):
+        return "acil durdurma mandallı"
+    if _ekim.goruntu().get("aktif"):
+        return "ekim oturumu araya girdi"
+    if (d.get("dizi") or {}).get("calisiyor"):
+        return "başka bir dizi çalışıyor"
+    if d.get("hareket"):
+        return "makine elle hareket ettiriliyor"
+    return ""
+
+
+async def _taze_olcum_bekle(ad: str, onceki_ts: float,
+                            azami_sn: float = 8.0) -> dict[str, Any] | None:
+    """Ölçüm bitkinin kaydına düştü mü; düştüyse noktayı döner.
+
+    NEDEN BEKLİYORUZ. Ölçümü yazan `_nem_topla` ayrı bir görevde dönüyor
+    ve yazma, dizi bittikten SONRA oluyor. Hemen bakarsak eski damgayı
+    görür, "ölçüm alınamadı" der ve sulamayı boşuna atlardık.
+    ÖLÇÜM BAŞARILI SAYILMASININ TEK ÖLÇÜTÜ DAMGANIN YENİLENMESİ:
+    `_nem_topla` makine o bitkinin ölçüm noktasında (X/Y/Z) değilken
+    hiçbir şey yazmıyor, yani yeni damga "prob toprakta, okundu" demek.
+    Ayrı bir "şüpheli mi" ölçütü uydurmuyoruz.
+    """
+    basla = time.time()
+    while time.time() - basla < azami_sn:
+        n = await asyncio.to_thread(noktalar.bul, ad)
+        if n and _sayi_guvenli(n.get("nem_ts")) > onceki_ts + 0.001:
+            return n
+        await asyncio.sleep(0.3)
+    return None
+
+
+async def _olc_sula_calistir(is_: dict[str, Any], kosullu: bool) -> str:
+    """Kapsamdaki bitkileri tek tek ölçer, sonra sular.
+
+    `kosullu=True`  → "Nem ölç, düşükse sula": eşiğin altındakiler sulanır,
+                      ölçülemeyen bitki SULANMAZ.
+    `kosullu=False` → "Nem ölç ve sula": ölçüm yine yapılır ve kaydedilir
+                      (nem eğilimi verisi birikiyor) ama sulama koşulsuz;
+                      ölçüm başarısızlığı sulamayı engellemez, günlüğe düşer.
+    """
+    adlar = [str(a) for a in (is_.get("noktalar") or [])]
+    saniye = (is_.get("veri") or {}).get("saniye")
+    baslik = "Ölç-düşükse sula" if kosullu else "Ölç ve sula (koşulsuz)"
+    sulanan: list[str] = []
+    atlanan: list[str] = []
+    olculemeyen: list[str] = []
+
+    def ozet() -> str:
+        p = [f"{len(sulanan)} sulandı"]
+        if atlanan:
+            p.append(f"{len(atlanan)} atlandı")
+        if olculemeyen:
+            p.append(f"{len(olculemeyen)} ölçülemedi")
+        return " · ".join(p)
+
+    await _olc_sula_gunluk(f"{baslik}: {len(adlar)} bitki — başlıyor")
+
+    for sira, ad in enumerate(adlar, 1):
+        engel = _olc_sula_engel()
+        if engel:
+            # TEMİZ DURUŞ. Kendi dizimiz bitti, yenisini başlatmıyoruz.
+            await _olc_sula_gunluk(
+                f"{baslik}: {ad} sırasında durdu ({sira}/{len(adlar)}) — "
+                f"{engel}. Yapılanlar: {ozet()}. "
+                f"Bir sonraki turda baştan başlar.", "uyari")
+            raise HTTPException(
+                status_code=409,
+                detail=(f"{ad} sırasında durdu ({sira}/{len(adlar)}) — {engel}. "
+                        f"{ozet()}. Bir sonraki turda baştan başlar."))
+
+        n0 = await asyncio.to_thread(noktalar.bul, ad)
+        onceki_ts = _sayi_guvenli((n0 or {}).get("nem_ts"))
+
+        # --- 1) ÖLÇ ------------------------------------------------------
+        taze = None
+        try:
+            await _nem_olc_baslat([ad])
+        except HTTPException as hata:
+            olculemeyen.append(ad)
+            await _olc_sula_gunluk(
+                f"{ad}: nem ölçümü başlatılamadı — {hata.detail}", "uyari")
+        else:
+            await _dizi_bitmesini_bekle()
+            taze = await _taze_olcum_bekle(ad, onceki_ts)
+            if taze is None:
+                olculemeyen.append(ad)
+                await _olc_sula_gunluk(
+                    f"{ad}: prob o noktada okuma vermedi — ölçüm alınamadı",
+                    "uyari")
+
+        # --- 2) ÖLÇEMEDİYSEK (koşullu tipte) SULAMA YOK -------------------
+        if kosullu and taze is None:
+            # "Herhalde susamıştır" diye su dökmek, ölçmeden sulamaktır.
+            await _olc_sula_gunluk(f"{ad}: ölçüm yok — sulanmadı", "uyari")
+            continue
+        if taze is None:
+            await _olc_sula_gunluk(
+                f"{ad}: ölçüm alınamadı ama koşulsuz sulama istendi — "
+                f"sulanıyor", "uyari")
+
+        # --- 3) SULAMAYI O ANKİ ÖLÇÜMLE ÇÖZ ------------------------------
+        okuma = None
+        if taze is not None:
+            # Tek okuma, bitkinin KENDİ koordinatında ve az önce: uzaklık 0,
+            # yaş ~0. Gerekçede de böyle yazıyor.
+            okuma = [{"x": _sayi_guvenli(taze.get("x")),
+                      "y": _sayi_guvenli(taze.get("y")),
+                      "toprak_nem": _sayi_guvenli(taze.get("nem_ham")),
+                      "ts": _sayi_guvenli(taze.get("nem_ts"))}]
+        try:
+            cozum = await asyncio.to_thread(
+                _sulama_coz, [ad], saniye, okuma, kosullu)
+            if cozum["ret"]:
+                atlanan.append(ad)
+                await _olc_sula_gunluk(
+                    f"{ad}: sulanamadı — " + " · ".join(cozum["ret"]), "uyari")
+                continue
+            o = (cozum["ozet"] or [{}])[0]
+            gerekce = str(o.get("nem_gerekce") or "")
+            if not o.get("sulanacak", True):
+                # GEREKÇE GÜNLÜĞE. "Neden sulanmadı" sorusu her turda
+                # yeniden sorulmasın diye: "toprak nemi %38 ≥ eşik %30".
+                atlanan.append(ad)
+                await _olc_sula_gunluk(f"{ad}: {gerekce}")
+                continue
+            await _sulama_uygula(cozum)
+            await _dizi_gonder(f"Sulama · {ad}", cozum["adimlar"])
+            await _dizi_bitmesini_bekle()
+            sulanan.append(ad)
+            await _olc_sula_gunluk(f"{ad}: {gerekce}")
+        except HTTPException as hata:
+            # Bir bitkinin reddi (yasak bölge, sınır dışı) turu bitirmiyor:
+            # o bitki atlanıyor, sebebi yazılıyor, sıradakine geçiliyor.
+            # Makinenin kendisiyle ilgili engeller yukarıda, tur başında
+            # yakalanıyor ve orada duruyoruz.
+            atlanan.append(ad)
+            await _olc_sula_gunluk(f"{ad}: sulanamadı — {hata.detail}", "uyari")
+
+    await _olc_sula_gunluk(f"{baslik}: tur bitti — {ozet()}")
+    return ozet()
 
 
 # --------------------------------------------------------------------------- #

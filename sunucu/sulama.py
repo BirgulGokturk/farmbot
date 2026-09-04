@@ -279,6 +279,7 @@ def noktalar(bitki: dict[str, Any], tur: dict[str, Any] | None, *,
              baslik: dict[str, Any] | None = None,
              okumalar: list[dict[str, Any]] | None = None,
              toprak_kalib: dict[str, Any] | None = None,
+             nem_bak: bool = True,
              ) -> dict[str, Any]:
     """Bir bitki için sulama noktalarını çözer.
 
@@ -302,7 +303,19 @@ def noktalar(bitki: dict[str, Any], tur: dict[str, Any] | None, *,
     esik = _sayi(ayar.get("sulama_nem_esigi"), 100.0)
     yuzde, uzak, yas = en_yakin_nem(bx, by, okumalar, simdi, toprak_kalib)
     sulanacak, nem_gerekce = True, ""
-    if esik >= 100.0:
+    if not nem_bak:
+        # KOŞULSUZ SULAMA. Çağıran nem kapısını AÇIKÇA atlamak istedi
+        # ("Nem ölç ve sula" görev tipi). Karar yine TEK yerde: ikinci bir
+        # eşik hesabı yazmak yerine bu dal atlanıyor — iki ayrı yerde
+        # yazılmış bir eşik, ikisinin ayrışması demektir.
+        #
+        # ÖLÇÜLEN SAYI YİNE GEREKÇEDE. Karar vermiyor ama gizlenmiyor da:
+        # "%38 ölçüldü, yine de sulandı" ile "ölçüm yoktu, sulandı" aynı
+        # şey değil ve günlüğe bakan kişi ikisini ayırabilmeli.
+        nem_gerekce = ("nem bakılmadan sulanıyor — koşulsuz sulama istendi"
+                       + (f" (o an ölçülen %{yuzde:.0f})" if yuzde is not None
+                          else " (ölçüm yok)"))
+    elif esik >= 100.0:
         nem_gerekce = "nem eşiği kapalı (%100) — her zaman sulanıyor"
     elif yuzde is None:
         # Okuma yoksa SULUYORUZ. Bitki kaybetmek, su israfından kötü;

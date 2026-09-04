@@ -38,3 +38,13 @@
 
 .zm-islem { display: flex; gap: 6px; flex-wrap: wrap; }
 .zm-bos { color: var(--metin-3, #82847a); font-size: var(--yazi-kucuk, 12px); }
+
+/* Nemi dikkate almayan iş tipinin uyarısı. Metin sunucudan geliyor
+ * (`zamanli.IS_UYARI`); burada yalnız göze batması sağlanıyor —
+ * kullanıcının yanlışlıkla seçmemesi gereken tek seçenek o. */
+.zm-is-uyari {
+  margin: 6px 0; padding: 8px 10px;
+  border: 1px solid var(--uyari, #d9a520); border-radius: var(--yaricap-2, 8px);
+  background: rgba(217, 165, 32, .10);
+  color: var(--uyari, #d9a520); font-size: var(--yazi-kucuk, 12px);
+}

@@ -68,11 +68,32 @@ BAKMA_SN = 5.0
 
 # Yapılabilecek işler — kuyruğun tanıdığı tiplerin AYNISI. Buraya yeni bir
 # satır eklemek, kuyruğun da o tipi bilmesini gerektiriyor.
+#
+# İLK DÖRDÜ TEK BİR DİZİ: bütün kapsama aynı işlem uygulanıyor.
+# SON İKİSİ BİRLEŞİK: bitki bitki önce ölçüm, sonra sulama kararı
+# (bkz. `main._olc_sula_calistir`). Bütün bahçeyi ölçüp sonra baştan
+# sulamaya dönmek makineyi iki tur yürütürdü.
+#
+# ESKİ KAYITLAR BOZULMUYOR: `zamanli.json` içindeki tanımlar `is` alanını
+# bu sözlükte arıyor ve ilk dört anahtar aynen duruyor.
 ISLER = {
     "nem": "Nem ölçümü",
     "sula": "Sulama",
     "foto": "Fotoğraf",
     "gez": "Ziyaret",
+    "olc_sula": "Nem ölç, düşükse sula",
+    "olc_hep_sula": "Nem ölç ve sula (nem bakılmaz)",
+}
+
+# Yanlışlıkla seçilmemesi gereken işler ve NEDENİ. Metin sunucuda duruyor,
+# panelde değil: iki yerde yazılsaydı biri değişir öteki eski kalırdı ve
+# eskisi tam da uyarı olduğu için tehlikeli olan o olurdu.
+IS_UYARI = {
+    "olc_hep_sula": (
+        "Bu seçenek NEMİ DİKKATE ALMIYOR. Ölçüm yapılır ve kaydedilir "
+        "(nem eğilimi verisi birikir) ama sulama koşulsuzdur: toprak ıslak "
+        "olsa da su verilir ve aşırı sulamaya yol açabilir. Eşiğe göre "
+        "karar vermesini istiyorsanız \u201cNem ölç, düşükse sula\u201d seçin."),
 }
 
 # Hangi bitkilere. "susayanlar" ve "olcumsuz" her tikte YENİDEN
@@ -309,7 +330,8 @@ def goruntu(simdi: float | None = None) -> dict[str, Any]:
             "sonraki_ts": _sayi(g["sonraki_ts"]) if g.get("calisiyor") else None,
             "kalan_sn": None if kalan is None else max(0.0, round(kalan, 1)),
         })
-    return {"gorevler": gorevler, "isler": ISLER, "kapsamlar": KAPSAMLAR,
+    return {"gorevler": gorevler, "isler": ISLER, "is_uyarilar": IS_UYARI,
+            "kapsamlar": KAPSAMLAR,
             "en_kisa_sn": EN_KISA_ARALIK_SN, "en_uzun_sn": EN_UZUN_ARALIK_SN,
             "azami": AZAMI_GOREV, "ts": simdi}
 

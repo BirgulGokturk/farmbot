@@ -110,6 +110,7 @@
               </select>
             </div>
           </div>
+          <p class="zm-is-uyari gizli" id="zm-is-uyari"></p>
           <div class="satir-8 alt-hizali" id="zm-secili-satir" hidden>
             <div class="alan esnek-alan">
               <label for="zm-noktalar">Bitkiler (virgülle)</label>
@@ -129,6 +130,7 @@
       </section>`;
 
     $("#zm-kapsam").onchange = kapsamBak;
+    $("#zm-is").onchange = isBak;
     $("#d-zm-kaydet").onclick = kaydet;
     $("#d-zm-vazgec").onclick = () => { formTemizle(); ciz(); };
     $("#d-zm-secim").onclick = () => {
@@ -145,6 +147,18 @@
     if (s) s.hidden = $("#zm-kapsam").value !== "secili";
   }
 
+  /* Seçilen işin uyarısı — metin SUNUCUDAN geliyor (`zamanli.IS_UYARI`).
+   * Burada yazsaydık iki kopya olurdu ve eskiyeni tam da uyarı olduğu için
+   * tehlikeli olurdu. "Nem ölç ve sula" nemi dikkate almıyor; kullanıcının
+   * bunu yanlışlıkla seçmemesi gerekiyor, o yüzden seçer seçmez yazıyor. */
+  function isBak() {
+    const el = $("#zm-is-uyari");
+    if (!el) return;
+    const metin = (veri && veri.is_uyarilar && veri.is_uyarilar[$("#zm-is").value]) || "";
+    el.textContent = metin;
+    el.classList.toggle("gizli", !metin);
+  }
+
   function formTemizle() {
     duzenlenen = "";
     $("#zm-ad").value = "";
@@ -152,6 +166,7 @@
     $("#d-zm-kaydet").textContent = "Kaydet";
     $("#d-zm-vazgec").classList.add("gizli");
     kapsamBak();
+    isBak();
   }
 
   function formDoldur(g) {
@@ -169,6 +184,7 @@
     $("#d-zm-kaydet").textContent = "Güncelle";
     $("#d-zm-vazgec").classList.remove("gizli");
     kapsamBak();
+    isBak();
     $("#zm-ad").focus();
   }
 
@@ -199,6 +215,7 @@
         ([k, a]) => `<option value="${kacisli(k)}">${kacisli(a)}</option>`).join("");
       kapsamBak();
     }
+    isBak();
   }
 
   async function kaydet() {
@@ -287,6 +304,9 @@
             ? `<span><i>Bitkiler:</i> <b>${kacisli((g.noktalar || []).join(", "))}</b></span>`
             : ""}
         </div>
+        ${(veri.is_uyarilar || {})[g.is]
+          ? `<div class="zm-is-uyari">${kacisli(veri.is_uyarilar[g.is])}</div>`
+          : ""}
         ${g.son_atlama ? `<div class="zm-satirlar zm-atlama">
           <span>Son tur atlandı (${saatMetni(g.son_atlama_ts)}):
             ${kacisli(g.son_atlama)}</span></div>` : ""}
