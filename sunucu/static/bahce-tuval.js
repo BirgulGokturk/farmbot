@@ -89,6 +89,7 @@ window.BahceTuval = (function () {
     basAn: {},             // ad -> 0..1 yumuşatılmış basma
     dogus: {},             // ad -> yeni gelen bitkinin beliriş anı
     canlanma: {},          // ad -> sulandıktan sonraki canlanma anı
+    etiketAn: {},          // ad -> 0..1 baloncuk görünürlüğü
     kartAd: "",
     ek: null,              // /api/bitki — kuruma geçmişi, sulama süresi
     secilenTur: "",        // eline aldığı tohum
@@ -1216,7 +1217,80 @@ window.BahceTuval = (function () {
    * çizgiyle bağlanıyor — kutu bitkiyi örterse bitkiye bakılmıyor
    * demektir. Sol kenardaki renk şeridi türün katalog rengi.
    */
-  function etiketCiz(ct, b, kutular, I) {
+  /* BALONCUK — sahnenin parçası, arayüz kutusu değil.
+   *
+   * Siyah bir dikdörtgen sahnenin diliyle uyuşmuyordu. Şimdi yumuşak
+   * bir kapsül: altında dağılan bir gölge, üstünde ince bir ışık, ve
+   * bağlandığı şeye doğru küçük bir kuyruk. Yazı gölgeli, çünkü
+   * baloncuk yarı saydam ve altından toprak da yaprak da geçebiliyor.
+   *
+   * GİRİP ÇIKIŞ YUMUŞAK: `alfa` 0'dan 1'e giderken baloncuk hem
+   * beliriyor hem birkaç piksel yükseliyor. Anında görünüp kaybolan bir
+   * kutu, ekranın kendi kendine sıçraması gibi duruyordu.
+   */
+  function baloncuk(ct, x, y, en, boy, renk, alfa, kuyruk) {
+    const r = boy / 2;
+    ct.save();
+    ct.globalAlpha = kis(alfa, 0, 1);
+    ct.translate(0, (1 - kis(alfa, 0, 1)) * 6);
+
+    if (kuyruk) {
+      ct.fillStyle = "rgba(22,24,20,0.80)";
+      ct.beginPath();
+      ct.moveTo(kuyruk.x, kuyruk.y);
+      ct.lineTo(x + en * 0.30, y + boy - 2);
+      ct.lineTo(x + en * 0.52, y + boy - 2);
+      ct.closePath();
+      ct.fill();
+    }
+
+    ct.shadowColor = "rgba(0,0,0,0.45)";
+    ct.shadowBlur = 12;
+    ct.shadowOffsetY = 3;
+    ct.fillStyle = "rgba(22,24,20,0.80)";
+    yuvarlakKutu(ct, x, y, en, boy, r);
+    ct.fill();
+    ct.shadowColor = "transparent";
+    ct.shadowBlur = 0;
+    ct.shadowOffsetY = 0;
+
+    // Üstte ince bir ışık: kapsül düz bir leke değil, bir yüzey.
+    const g = ct.createLinearGradient(0, y, 0, y + boy);
+    g.addColorStop(0, "rgba(255,255,255,0.10)");
+    g.addColorStop(0.5, "rgba(255,255,255,0.02)");
+    g.addColorStop(1, "rgba(0,0,0,0.06)");
+    ct.fillStyle = g;
+    yuvarlakKutu(ct, x, y, en, boy, r);
+    ct.fill();
+
+    if (renk) {
+      ct.fillStyle = rgba(renk, 0.95);
+      ct.beginPath();
+      ct.arc(x + r * 0.86, y + boy / 2, 3.2, 0, Math.PI * 2);
+      ct.fill();
+    }
+    ct.restore();
+  }
+
+  /** Baloncuğun içine iki satır yazı — gölgeli, yarı saydam zeminde
+   *  okunsun diye. */
+  function baloncukYazi(ct, x, y, boy, ust, alt, altRenk, alfa) {
+    ct.save();
+    ct.globalAlpha = kis(alfa, 0, 1);
+    ct.translate(0, (1 - kis(alfa, 0, 1)) * 6);
+    ct.textBaseline = "top";
+    ct.shadowColor = "rgba(0,0,0,0.55)";
+    ct.shadowBlur = 3;
+    ct.fillStyle = "#f4f2ea";
+    ct.font = yazTipi(11, true);
+    ct.fillText(ust, x, y + boy / 2 - 12);
+    ct.font = yazTipi(10, false);
+    ct.fillStyle = altRenk;
+    ct.fillText(alt, x, y + boy / 2 + 1);
+    ct.restore();
+  }
+
+  function etiketCiz(ct, b, kutular, alfa) {
     const o = b.olcum || {};
     const ad = String(b.tur_ad || b.tur || "bitki");
     const nem = o.var ? `%${sayi(o.yuzde).toFixed(0)}` : "nem ölçülmedi";
@@ -1224,20 +1298,19 @@ window.BahceTuval = (function () {
     const enAd = ct.measureText(ad).width;
     ct.font = yazTipi(10, false);
     const enNem = ct.measureText(nem).width;
-    const en = Math.round(Math.max(enAd, enNem) + 16 + (b.susadi ? 13 : 0));
-    const boy = 28;
+    const boy = 30;
+    const solPay = boy / 2 * 0.86 + 9;                 // renk noktası + boşluk
+    const en = Math.round(Math.max(enAd, enNem) + solPay + 12 + (b.susadi ? 14 : 0));
 
     // Kutu KAMERASIZ uzayda: bitkinin dünya noktası ekrana çevriliyor,
-    // yarıçap da kamera ölçeğiyle çarpılıyor. Yazı yakınlaşınca
-    // büyümüyor, baloncuk bitkinin tepesinde kalıyor.
+    // yarıçap da kamera ölçeğiyle çarpılıyor.
     const R = (b.cizimPx / 2) * S.kam.o;
     const tepe = ekranNok(b.x, b.y - yukseklikPx(16, b.v));
-    const tx = tepe.x + R * 0.62;
-    const ty = tepe.y - R * 0.52;
-    let x = Math.round(tx + 10);
-    let yy = Math.round(ty - boy - 6);
-    // Tuvalin dışına taşmasın.
-    if (x + en > S.en - 6) x = Math.round(tx - 10 - en);
+    const tx = tepe.x;
+    const ty = tepe.y - R * 0.72;
+    let x = Math.round(tx - en / 2);
+    let yy = Math.round(ty - boy - 10);
+    x = kis(x, 6, Math.max(6, S.en - en - 6));
     if (yy < 4) yy = 4;
 
     const kutu = { x1: x, y1: yy, x2: x + en, y2: yy + boy };
@@ -1245,44 +1318,19 @@ window.BahceTuval = (function () {
                               || kutu.y2 < k.y1 - 4 || kutu.y1 > k.y2 + 4))) return;
     kutular.push(kutu);
 
-    ct.strokeStyle = "rgba(255,255,255,0.28)";
-    ct.lineWidth = 1;
-    ct.beginPath();
-    ct.moveTo(tx, ty);
-    ct.lineTo(x < tx ? x + en : x, yy + boy - 4);
-    ct.stroke();
-    ct.fillStyle = "rgba(255,255,255,0.28)";
-    ct.beginPath();
-    ct.arc(tx, ty, 2, 0, Math.PI * 2);
-    ct.fill();
-    void tepe;
-
-    ct.fillStyle = "rgba(16,18,15,0.88)";
-    yuvarlakKutu(ct, x, yy, en, boy, 8);
-    ct.fill();
-    // Sol kenarda türün katalog rengi: aynı türün bitkileri bir bakışta
-    // eşleşsin. Renk TEK BAŞINA bilgi taşımıyor, ad zaten yazılı.
-    ct.save();
-    yuvarlakKutu(ct, x, yy, en, boy, 8);
-    ct.clip();
-    ct.fillStyle = rgba(b.aksan, 0.95);
-    ct.fillRect(x, yy, 3, boy);
-    ct.restore();
-
-    ct.textBaseline = "top";
-    ct.fillStyle = "#f2f2ee";
-    ct.font = yazTipi(11, true);
-    ct.fillText(ad, x + 9, yy + 4);
-    ct.font = yazTipi(10, false);
-    ct.fillStyle = o.var ? "#c8c9bf" : "#82847a";
-    ct.fillText(nem, x + 9, yy + 16);
+    baloncuk(ct, x, yy, en, boy, b.aksan, alfa, { x: tx, y: ty });
+    baloncukYazi(ct, x + solPay, yy, boy, ad, nem,
+                 o.var ? "#c8c9bf" : "#8f9188", alfa);
 
     if (b.susadi) {
-      const dx = x + en - 9, dy = yy + 15;
+      ct.save();
+      ct.globalAlpha = kis(alfa, 0, 1);
+      ct.translate(0, (1 - kis(alfa, 0, 1)) * 6);
+      const dx = x + en - 11, dy = yy + boy / 2;
       ct.beginPath();
-      ct.moveTo(dx, dy - 6);
-      ct.quadraticCurveTo(dx + 4.5, dy + 0.5, dx, dy + 5);
-      ct.quadraticCurveTo(dx - 4.5, dy + 0.5, dx, dy - 6);
+      ct.moveTo(dx, dy - 7);
+      ct.quadraticCurveTo(dx + 5, dy + 0.5, dx, dy + 5.5);
+      ct.quadraticCurveTo(dx - 5, dy + 0.5, dx, dy - 7);
       // TAHMİN içi boş ve kesikli: ölçülmüş bir kararla aynı görünmesin.
       if (b.tahmin) {
         ct.setLineDash([2, 2]);
@@ -1294,8 +1342,8 @@ window.BahceTuval = (function () {
         ct.fillStyle = "#4fb8e8";
         ct.fill();
       }
+      ct.restore();
     }
-    void I;
   }
 
   /* ==================================================================== *
@@ -1571,30 +1619,11 @@ window.BahceTuval = (function () {
     const yy = Math.round(yer.y - kopruY - boy - 14);
     if (x + en > S.en - 6) x = Math.round(yer.x - 16 - en);
 
-    ct.strokeStyle = "rgba(255,255,255,0.30)";
-    ct.lineWidth = 1;
-    ct.beginPath();
-    ct.moveTo(yer.x, yer.y - kopruY);
-    ct.lineTo(x < yer.x ? x + en : x, yy + boy - 4);
-    ct.stroke();
-
-    ct.fillStyle = "rgba(16,18,15,0.90)";
-    yuvarlakKutu(ct, x, yy, en, boy, 8);
-    ct.fill();
-    ct.save();
-    yuvarlakKutu(ct, x, yy, en, boy, 8);
-    ct.clip();
-    ct.fillStyle = v.mesgul ? "#4a90e2" : "#7c8089";
-    ct.fillRect(x, yy, 3, boy);
-    ct.restore();
-
-    ct.textBaseline = "top";
-    ct.fillStyle = "#f2f2ee";
-    ct.font = yazTipi(11, true);
-    ct.fillText(bas1, x + 9, yy + 4);
-    ct.font = yazTipi(10, false);
-    ct.fillStyle = "#b9bab0";
-    ct.fillText(alt, x + 9, yy + 17);
+    const solPay = boy / 2 * 0.86 + 9;
+    baloncuk(ct, x, yy, en + solPay, boy,
+             v.mesgul ? { r: 74, g: 144, b: 226 } : { r: 124, g: 128, b: 137 },
+             1, { x: yer.x, y: yer.y - kopruY });
+    baloncukYazi(ct, x + solPay, yy, boy, bas1, alt, "#b9bab0", 1);
   }
 
   /* ==================================================================== *
@@ -2281,22 +2310,12 @@ window.BahceTuval = (function () {
     let x = Math.round(p.x + r * 0.7 + 10);
     const yy = Math.round(p.y - r * 0.66 - 46);
     if (x + en > S.en - 6) x = Math.round(p.x - r * 0.7 - 10 - en);
-    ct.fillStyle = "rgba(16,18,15,0.92)";
-    yuvarlakKutu(ct, x, yy, en, 30, 8);
-    ct.fill();
-    ct.save();
-    yuvarlakKutu(ct, x, yy, en, 30, 8);
-    ct.clip();
-    ct.fillStyle = o.ok ? "#7bbf5a" : "#e05252";
-    ct.fillRect(x, yy, 3, 30);
-    ct.restore();
-    ct.textBaseline = "top";
-    ct.fillStyle = "#f2f2ee";
-    ct.font = yazTipi(11, true);
-    ct.fillText(bas1, x + 9, yy + 4);
-    ct.font = yazTipi(10, false);
-    ct.fillStyle = o.ok ? "#b9bab0" : "#e8a0a0";
-    ct.fillText(alt, x + 9, yy + 17);
+    const solPay = 30 / 2 * 0.86 + 9;
+    baloncuk(ct, x, yy, en + solPay, 30,
+             o.ok ? { r: 123, g: 191, b: 90 } : { r: 224, g: 82, b: 82 },
+             1, { x: p.x, y: p.y - 6 });
+    baloncukYazi(ct, x + solPay, yy, 30, bas1, alt,
+                 o.ok ? "#b9bab0" : "#e8a0a0", 1);
   }
 
   /* ------------------------------------------------------- sürükleme */
@@ -2717,10 +2736,24 @@ window.BahceTuval = (function () {
     // ETİKETLER KAMERASIZ: yakınlaştırınca yazı büyümesin, baloncuk
     // sahnenin ölçeğinden bağımsız okunur kalsın.
     ct.setTransform(S.dpr, 0, 0, S.dpr, 0, 0);
+    // BALONCUKLAR YUMUŞAK GİRİP ÇIKIYOR. Seçim her karede yeniden
+    // yapılıyor; anında görünüp kaybolan bir kutu ekranın kendi kendine
+    // sıçraması gibi duruyordu.
+    const secilenAd = new Set(secilen.map((b) => b.ad));
+    const ke = 1 - Math.exp(-dt / 0.16);
+    S.bitki.forEach((b) => {
+      const h = secilenAd.has(b.ad) ? 1 : 0;
+      const a2 = sayi(S.etiketAn[b.ad], 0);
+      const yeni2 = a2 + (h - a2) * ke;
+      S.etiketAn[b.ad] = Math.abs(yeni2 - h) < 0.005 ? h : yeni2;
+    });
     const kutular = [];
     onizlemeEtiketi(ct);
     makineEtiketi(ct);
-    secilen.forEach((b) => etiketCiz(ct, b, kutular, I));
+    [...S.bitki]
+      .filter((b) => sayi(S.etiketAn[b.ad], 0) > 0.01)
+      .sort((a2, b2) => sayi(S.etiketAn[b2.ad], 0) - sayi(S.etiketAn[a2.ad], 0))
+      .forEach((b) => etiketCiz(ct, b, kutular, sayi(S.etiketAn[b.ad], 0)));
 
     S.kare += 1;
   }
