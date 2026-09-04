@@ -48,6 +48,10 @@
   let zamanlayici = null;
   let sira = "dikkat";
   const suzgec = { arama: "", tur: "", bayrak: new Set() };
+  // AÇIK DETAYLAR HATIRLANIYOR. Liste 20 saniyede bir yeniden çiziliyor;
+  // hatırlanmasaydı kullanıcının açtığı detay her tazelemede kapanırdı ve
+  // okurken kartın altından kayardı.
+  const acikDetay = new Set();
 
   const $ = (s) => document.querySelector(s);
   const P = () => window.Panel || null;
@@ -78,30 +82,37 @@
    * "Hiç ölçülmedi" ile "nemi yeterli" ayrı şeyler: ilki bilgi eksikliği,
    * ikincisi bilgi. Sıra sayısı küçüldükçe kart yukarı çıkıyor ve her
    * hâlin bir NEDENİ var — kartta o neden yazıyor. */
+  /* DÖRT HÂL, SIRASI `katmanlar/35-susuz.js` İLE AYNI.
+   *
+   * O katman 3B sahnede aynı kararı veriyor ve sırası şu: kendi ölçümü
+   * yoksa "bilmiyoruz", varsa susama bakılıyor. Buradaki sıra ondan
+   * farklı olsaydı aynı bitki iki ekranda iki ayrı şey görünürdü ve
+   * kullanıcı ikisini ayrı bitki sanardı.
+   *
+   * KOMŞUDAN ÖDÜNÇ OKUMA "ÖLÇÜLMEDİ" SAYILIYOR — katmandaki kural bu
+   * (`else if (!olcum.kendi) hal = "yok"`). Sayı bilgidir ama BU
+   * bitkinin bilgisi değil; ona bakıp susadı demek, ölçmeden karar
+   * vermek olurdu. Sayının kendisi saklanmıyor, Detay'da duruyor.
+   *
+   * HASAT BURADA YOK. Kart tek bir durum işareti taşıyor ve o işaret
+   * NEM hakkında; olgunluk ayrı bir eksen ve Detay'da yazıyor. İkisini
+   * tek rozette toplamak, "hasada hazır" diyen bir kartın susadığını
+   * gizlemek olurdu. Sıralama yine hasadı gözetiyor (bkz. `sirala`). */
   function durum(b) {
     const o = b.su_olcum || {};
-    if (b.susadi) {
-      return b.su_tahmin
-        ? { ad: "susadi", etiket: "susadı (ölçümsüz)", oncelik: 12,
-            neden: "karar ölçüme değil, son sulamadan geçen güne dayanıyor" }
-        : { ad: "susadi", etiket: "susadı", oncelik: 2,
-            neden: "ölçülen toprak nemi eşiğin altında" };
-    }
-    if (!o.var) {
-      return { ad: "olculmedi", etiket: "hiç ölçülmedi", oncelik: 20,
-               neden: "yakınında hiç toprak nemi okuması yok" };
+    const kendiVar = !!(o.var && o.kendi);
+    if (!kendiVar) {
+      return { ad: "olculmedi", etiket: "ölçülmedi", oncelik: 20,
+               neden: o.var ? "gösterilen sayı yandaki bir noktadan geliyor"
+                            : "yakınında hiç toprak nemi okuması yok" };
     }
     if (o.bayat) {
-      return { ad: "eskimis", etiket: "ölçüm sulamadan eski", oncelik: 30,
+      return { ad: "eskimis", etiket: "ölçüm eskimiş", oncelik: 30,
                neden: "son okuma sulamadan ÖNCE alınmış — o noktada yeni ölçüm yok" };
     }
-    if (!o.kendi) {
-      return { ad: "odunc", etiket: "kendi ölçümü yok", oncelik: 40,
-               neden: "gösterilen sayı yandaki bir noktadan geliyor" };
-    }
-    if (b.hasat) {
-      return { ad: "hasat", etiket: "hasada hazır", oncelik: 50,
-               neden: b.hasat_gerekce || "" };
+    if (b.susadi) {
+      return { ad: "susadi", etiket: "susadı", oncelik: 2,
+               neden: "ölçülen toprak nemi eşiğin altında" };
     }
     return { ad: "iyi", etiket: "nemi yeterli", oncelik: 100, neden: "" };
   }
@@ -111,7 +122,7 @@
     { anahtar: "susadi", ad: "Susayanlar",
       sec: (b) => !!b.susadi },
     { anahtar: "olcum", ad: "Ölçüm gerekli",
-      sec: (b) => ["olculmedi", "eskimis", "odunc"].includes(durum(b).ad) },
+      sec: (b) => ["olculmedi", "eskimis"].includes(durum(b).ad) },
     { anahtar: "hasat", ad: "Hasada hazır",
       sec: (b) => !!b.hasat },
     { anahtar: "cakisik", ad: "Çakışanlar",
@@ -156,7 +167,11 @@
         String(b.tur_ad || b.tur), "tr") || adKarsi(a, b));
     } else {
       // Dikkat: önce hâl, eşitse en kuru, o da eşitse ölçümü en eski.
-      kopya.sort((a, b) => durum(a).oncelik - durum(b).oncelik
+      // HASAT ROZETTEN ÇIKTI AMA SIRADAN ÇIKMADI: olgunluğu gelmiş bir
+      // bitki, nemi yeterli olanların önünde durmalı — yoksa 40 kartlık
+      // bir listede en sona düşer ve kimse görmez.
+      const p = (x) => durum(x).oncelik - (x.hasat && durum(x).ad === "iyi" ? 50 : 0);
+      kopya.sort((a, b) => p(a) - p(b)
         || nemDegeri(a) - nemDegeri(b)
         || olcumYasi(b) - olcumYasi(a) || adKarsi(a, b));
     }
@@ -274,7 +289,7 @@
    * dugme de bu kumeyi kullaniyor. */
   function tazesizler() {
     return ((bahce && bahce.bitkiler) || [])
-      .filter((b) => ["olculmedi", "eskimis", "odunc"].includes(durum(b).ad))
+      .filter((b) => ["olculmedi", "eskimis"].includes(durum(b).ad))
       .map((b) => b.ad);
   }
 
@@ -495,6 +510,12 @@
     izgara.querySelectorAll("[data-is]").forEach((d) => {
       d.onclick = () => isGonder(d.dataset.is, d.dataset.ad, d.dataset.saniye);
     });
+    izgara.querySelectorAll("details[data-detay]").forEach((el) => {
+      el.addEventListener("toggle", () => {
+        if (el.open) acikDetay.add(el.dataset.detay);
+        else acikDetay.delete(el.dataset.detay);
+      });
+    });
   }
 
   function ozetYaz(hepsi, simdi) {
@@ -503,9 +524,11 @@
     const parca = [];
     const say = (f) => hepsi.filter(f).length;
     const ekle = (n, ad) => { if (n) parca.push(`<b>${n}</b> ${ad}`); };
-    ekle(say((b) => b.susadi), "susadı");
-    ekle(say((b) => durum(b).ad === "olculmedi"), "hiç ölçülmedi");
-    ekle(say((b) => durum(b).ad === "odunc"), "kendi ölçümü yok");
+    // ÖZET KARTIN DİLİYLE SAYIYOR. Sunucunun "susadı" bayrağıyla saymak,
+    // rozette "ölçülmedi" yazan bir bitkiyi özette susamış göstermek
+    // olurdu — ölçümü olmayan bitkiye susadı demiyoruz (bkz. `durum`).
+    ekle(say((b) => durum(b).ad === "susadi"), "susadı");
+    ekle(say((b) => durum(b).ad === "olculmedi"), "ölçülmedi");
     ekle(say((b) => durum(b).ad === "eskimis"), "ölçümü eskimiş");
     ekle(say((b) => b.hasat), "hasada hazır");
     const o = ek && ek.ortanca != null
@@ -535,18 +558,218 @@
       <i>${kacisli(baslik)}</i><b>${deger}</b>${alt ? `<em>${alt}</em>` : ""}</div>`;
   }
 
+  /* --------------------------------------------------------- nem halkası
+   *
+   * NEDEN HALKA. Kartta "%26 · eşik %30" yazıyordu: iki sayıyı okuyup
+   * karşılaştırmayı gerektiriyordu ve 25 kartlık bir listede kimse bunu
+   * yapmıyor. Halkanın DOLGUSU nem, üstündeki ÇENTİK eşik; dolgu
+   * çentiğin gerisinde kalıyorsa bitki susamış demektir ve bu, tek bir
+   * sayı okumadan görünüyor. Sayı halkanın ortasında küçük duruyor.
+   *
+   * SOLUKLUK BİR ÖLÇÜT, SÜS DEĞİL. Dünkü bir okuma bugünkü kadar
+   * güvenilir değil ve ekranda da öyle görünmemeli: halka ölçümün
+   * yaşıyla soluyor. Bayat okuma (sulamadan ÖNCE alınmış) yaşı küçük
+   * olsa bile en solukta duruyor — o sayı bugünkü toprağı anlatmıyor.
+   *
+   * KENDİ ÖLÇÜMÜ YOKSA HALKA DOLDURULMUYOR. Sunucu komşudan bir okuma
+   * ödünç veriyor; onu dolu bir halka olarak göstermek, ölçmediğimiz bir
+   * şeyi ölçmüş gibi sunmak olurdu. Orada kesikli boş bir iz ve ortada
+   * "?" var. Ödünç sayı yok olmuyor, Detay'da parantez içinde duruyor.
+   *
+   * RENK KÖRLÜĞÜ NOTU. Yeşil (#4caf50) ile turuncu (#e8a33c) protanopi
+   * altında ΔE 3,2 (OKLab ×100) — yani ayırt edilemiyor. Renkler
+   * `35-susuz.js` ile aynı olmak ZORUNDA (aynı durum iki ekranda aynı
+   * renk), o yüzden ayrımı renge bırakmıyoruz: rozette durumun adı
+   * yazıyor ve halkanın BİÇİMİ farklı — ölçülmemiş halka hiç dolmuyor,
+   * kesikli ve ortasında "?" var. Renk üçüncü kanal, tek kanal değil. */
+  const HALKA = { boy: 76, r: 30, kalin: 6 };
+
+  function solukluk(o) {
+    const azami = sayi(o.azami_yas_sn, 86400) || 86400;
+    const t = Math.min(1, Math.max(0, sayi(o.yas_sn, 0)) / azami);
+    const d = 1 - 0.65 * t;                 // taze 1,00 → 24 saatlik 0,35
+    return o.bayat ? Math.min(d, 0.4) : d;
+  }
+
+  function halka(b) {
+    const o = b.su_olcum || {};
+    const { boy, r, kalin } = HALKA;
+    const c = boy / 2;
+    const cevre = 2 * Math.PI * r;
+    const kendiVar = !!(o.var && o.kendi);
+    const yuzde = o.var ? Math.max(0, Math.min(100, sayi(o.yuzde, 0))) : null;
+    const esik = o.esik_acik ? Math.max(0, Math.min(100, sayi(o.esik, 0))) : null;
+
+    let centik = "";
+    if (esik != null) {
+      // Açı tepeden başlıyor ve saat yönünde ilerliyor — dolgu da öyle.
+      const a = (esik / 100) * 2 * Math.PI - Math.PI / 2;
+      const ic = r - kalin / 2 - 2.5, dis = r + kalin / 2 + 2.5;
+      centik = `<line x1="${(c + ic * Math.cos(a)).toFixed(2)}"
+        y1="${(c + ic * Math.sin(a)).toFixed(2)}"
+        x2="${(c + dis * Math.cos(a)).toFixed(2)}"
+        y2="${(c + dis * Math.sin(a)).toFixed(2)}" class="bk-centik"/>`;
+    }
+
+    const dolgu = (kendiVar && yuzde != null)
+      ? `<circle cx="${c}" cy="${c}" r="${r}" class="bk-yay"
+           stroke-dasharray="${(cevre * yuzde / 100).toFixed(2)} ${(cevre + 1).toFixed(2)}"
+           transform="rotate(-90 ${c} ${c})"
+           style="opacity:${solukluk(o).toFixed(2)}"/>`
+      : "";
+
+    const ic = kendiVar
+      ? `<b>%${Math.round(yuzde)}</b>`
+      : '<b class="bk-soru" aria-hidden="true">?</b>';
+
+    const baslik = kendiVar
+      ? `Toprak nemi %${Math.round(yuzde)}`
+        + (esik != null ? `, eşik %${Math.round(esik)}` : ", eşik kapalı")
+        + `, ${sureMetni(o.yas_sn)} önce kendi üstünden ölçüldü`
+      : (o.var
+         ? `Kendi ölçümü yok — halka boş. Yandaki bir noktada `
+           + `%${Math.round(sayi(o.yuzde, 0))} okundu.`
+         : "Kendi ölçümü yok — halka boş.");
+
+    return `<div class="bk-halka" role="img" aria-label="${kacisli(baslik)}"
+                 title="${kacisli(baslik)}">
+      <svg viewBox="0 0 ${boy} ${boy}" width="${boy}" height="${boy}" aria-hidden="true">
+        <circle cx="${c}" cy="${c}" r="${r}"
+                class="bk-iz${kendiVar ? "" : " bk-iz-bos"}"/>
+        ${dolgu}${centik}
+      </svg>
+      <span class="bk-halka-ic">
+        <i class="bk-simge">${kacisli(b.simge || "🌱")}</i>${ic}
+      </span>
+    </div>`;
+  }
+
+  /* -------------------------------------------------------- kuruma eğrisi
+   *
+   * AMAÇ SAYI OKUTMAK DEĞİL, EĞİMİ GÖSTERMEK: dik iniyorsa toprak hızlı
+   * kuruyor, düzse durum iyi. Eşik yatay bir çizgi olarak duruyor, eğrinin
+   * ona ne kadar yaklaştığı görünsün diye. Nokta başına sayı yazmıyoruz —
+   * her noktaya değer koymak grafiği okunmaz yapıyor; sayılar Detay'da.
+   *
+   * YETMİYORSA HİÇ ÇİZMİYORUZ. İki noktadan çizilen şey eğilim değil,
+   * çizgidir ve ona bakıp karar vermek yanıltır. En az dört nokta
+   * istiyoruz (saatlik kovada bir bükülmenin görünebileceği en küçük
+   * sayı) ve en az iki saatlik bir açıklık (daha kısasında eğimi
+   * ölçümün kendi gürültüsü belirliyor). Bu iki sayı ÖLÇÜLMÜŞ değil,
+   * seçilmiş bir sınır — kaç ölçümden çizildiği notta yazıyor ki okuyan
+   * kendi kararını verebilsin.
+   *
+   * KOPUK YERDE ÇİZGİ YOK. Prob ancak makine o bitkiye gittiğinde
+   * okuyor; iki okuma arasında bir gün olabiliyor. Aradan çizgi geçirmek
+   * ölçülmemiş bir günü ölçülmüş gibi göstermek olurdu, o yüzden üç
+   * saatten uzun boşlukta çizgi kesiliyor. Gerçek okumalar küçük
+   * noktalarla duruyor: eğrinin nereden geçtiği değil, nereden ÖLÇÜLDÜĞÜ.
+   *
+   * Y EKSENİ EN AZ 15 PUAN. Dar pencerede %1'lik bir dalgalanma dik bir
+   * iniş gibi görünür; düz olanı düz göstermek bu grafiğin bütün işi. */
+  const EGRI = { en: 240, boy: 54, ust: 7, alt: 9, sol: 2, sag: 40 };
+  const EGRI_EN_AZ_NOKTA = 4;
+  const EGRI_EN_AZ_SURE_SN = 2 * 3600;
+  const EGRI_KOPUK_SN = 3 * 3600;
+  const EGRI_EN_DAR = 15;
+
+  function egri(b, e) {
+    const g = ((e && e.gecmis) || []).filter(
+      (p) => Number.isFinite(Number(p && p.yuzde)) && Number.isFinite(Number(p && p.ts)));
+    const o = b.su_olcum || {};
+    const esik = o.esik_acik ? Math.max(0, Math.min(100, sayi(o.esik, 0))) : null;
+
+    if (g.length < EGRI_EN_AZ_NOKTA) {
+      return `<p class="bk-egri-yok">Eğilim için yeterli ölçüm yok —
+        ${g.length} ölçüm var, en az ${EGRI_EN_AZ_NOKTA} gerekiyor.</p>`;
+    }
+    const sure = sayi(g[g.length - 1].ts) - sayi(g[0].ts);
+    if (sure < EGRI_EN_AZ_SURE_SN) {
+      return `<p class="bk-egri-yok">Eğilim için yeterli ölçüm yok —
+        ${g.length} ölçümün hepsi ${sureMetni(sure)} içinde alınmış,
+        eğim için en az ${sureMetni(EGRI_EN_AZ_SURE_SN)} gerekiyor.</p>`;
+    }
+
+    const { en, boy, ust, alt, sol, sag } = EGRI;
+    let dip = Math.min(...g.map((p) => p.yuzde));
+    let tep = Math.max(...g.map((p) => p.yuzde));
+    if (esik != null) { dip = Math.min(dip, esik); tep = Math.max(tep, esik); }
+    const pay = Math.max(2.5, (tep - dip) * 0.15);
+    dip -= pay; tep += pay;
+    if (tep - dip < EGRI_EN_DAR) {
+      const orta = (dip + tep) / 2;
+      dip = orta - EGRI_EN_DAR / 2; tep = orta + EGRI_EN_DAR / 2;
+    }
+    dip = Math.max(0, dip); tep = Math.min(100, tep);
+    if (tep - dip < EGRI_EN_DAR) {                 // 0 ya da 100'e dayandıysa
+      if (dip <= 0) tep = EGRI_EN_DAR; else dip = tep - EGRI_EN_DAR;
+    }
+
+    const t0 = sayi(g[0].ts), t1 = sayi(g[g.length - 1].ts);
+    const X = (ts) => sol + (en - sol - sag) * (t1 > t0 ? (sayi(ts) - t0) / (t1 - t0) : 1);
+    const Y = (v) => ust + (boy - ust - alt) * (1 - (sayi(v) - dip) / (tep - dip));
+
+    // Kopuk yerde çizgiyi kesiyoruz: parçalar ayrı polyline.
+    const parcalar = [];
+    let simdiki = [g[0]];
+    for (let i = 1; i < g.length; i += 1) {
+      if (sayi(g[i].ts) - sayi(g[i - 1].ts) > EGRI_KOPUK_SN) {
+        parcalar.push(simdiki); simdiki = [];
+      }
+      simdiki.push(g[i]);
+    }
+    parcalar.push(simdiki);
+
+    const cizgiler = parcalar.filter((p) => p.length > 1).map((p) =>
+      `<polyline class="bk-cizgi" points="${p.map(
+        (q) => `${X(q.ts).toFixed(1)},${Y(q.yuzde).toFixed(1)}`).join(" ")}"/>`).join("");
+    const noktalar = g.map((p) =>
+      `<circle class="bk-nokta" cx="${X(p.ts).toFixed(1)}"
+               cy="${Y(p.yuzde).toFixed(1)}" r="1.4"/>`).join("");
+    const son = g[g.length - 1];
+    const uc = `<circle class="bk-uc" cx="${X(son.ts).toFixed(1)}"
+                        cy="${Y(son.yuzde).toFixed(1)}" r="3"/>`;
+
+    let esikCizgi = "";
+    if (esik != null) {
+      const y = Y(esik).toFixed(1);
+      esikCizgi = `<line class="bk-esik-cizgi" x1="${sol}" y1="${y}"
+                         x2="${(en - sag + 4).toFixed(1)}" y2="${y}"/>
+        <text class="bk-esik-yazi" x="${(en - sag + 8).toFixed(1)}" y="${y}"
+              dominant-baseline="middle">eşik %${Math.round(esik)}</text>`;
+    }
+
+    const deg = sayi(son.yuzde) - sayi(g[0].yuzde);
+    const yon = deg > 0.5 ? "yükseldi" : deg < -0.5 ? "düştü" : "değişmedi";
+    const ozet = `${sureMetni(sure)} içinde ${Math.abs(deg).toFixed(1)} puan ${yon}`;
+
+    return `<div class="bk-egri">
+      <svg viewBox="0 0 ${en} ${boy}" preserveAspectRatio="xMidYMid meet"
+           role="img" aria-label="Toprak nemi eğrisi: ${kacisli(ozet)}, ${g.length} ölçüm">
+        <title>${kacisli(ozet)} · ${g.length} ölçüm</title>
+        ${esikCizgi}${cizgiler}${noktalar}${uc}
+      </svg>
+      <p class="bk-egri-not">${kacisli(ozet)} · ${g.length} ölçüm</p>
+    </div>`;
+  }
+
+  /* --------------------------------------------------------------- bir kart
+   *
+   * AÇIK HÂLDE YALNIZ KARAR VERDİREN ŞEYLER: ad, tek bir durum işareti,
+   * nem halkası, kuruma eğrisi ve o bitkiye uygulanan işlemler. Geri
+   * kalan her şey Detay'ın arkasında — hiçbiri silinmedi, yalnız yer
+   * değiştirdi. Eskiden kart on iki alanlık bir yığındı ve "bu bitki bir
+   * şey istiyor mu" sorusu paragraf okumadan cevaplanamıyordu. */
   function kart(b, simdi) {
     const d = durum(b);
     const o = b.su_olcum || {};
     const e = (ek && ek.ek && ek.ek[b.ad]) || {};
     const alanlar = [];
 
-    // Konum: makinenin gittiği sayı, yuvarlanmadan okunur hâlde.
     alanlar.push(alan("Yatak koordinatı",
       `X ${Math.round(sayi(b.x))} · Y ${Math.round(sayi(b.y))} mm`,
       sayi(b.z) ? `Z ${Math.round(sayi(b.z))} mm` : ""));
 
-    // Ekim: tarih YOKSA yaş da yok. "0 günlük" demek uydurma olurdu.
     if (b.ekim) {
       const gun = sayi(b.yas_gun, (simdi - sayi(b.ekim)) / 86400);
       alanlar.push(alan("Ekildi", `${Math.round(gun)} günlük`, tarihMetni(b.ekim)));
@@ -554,7 +777,6 @@
       alanlar.push(alan("Ekildi", "tarih yok", "yaşı bilinmiyor", true));
     }
 
-    // Olgunluk: tür kataloğunda olgunluk günü yoksa karar yok.
     const olgun = sayi(b.olgun_gun, 0);
     if (olgun) {
       const gun = sayi(b.yas_gun, 0);
@@ -565,15 +787,13 @@
       alanlar.push(alan("Hasat", "—", "türde olgunluk süresi yazılı değil", true));
     }
 
-    // Yayılma çapı: KARTTAKİ sayı o anki çap (eğri bağlıysa yaşa göre
-    // değişiyor); türün olgun çapı altta, ikisi karışmasın diye.
     const cap = Math.round(sayi(b.yaricap_mm) * 2);
     alanlar.push(alan("Yayılma çapı", cap ? `${cap} mm` : "—",
       sayi(b.yayilim_mm) ? `türün olgun çapı ${Math.round(sayi(b.yayilim_mm))} mm` : "",
       !cap));
 
-    // NEM: ödünç okuma PARANTEZ içinde — sayı görünüyor ama bu bitkinin
-    // ölçülmüş nemi gibi durmuyor.
+    // Ödünç okuma PARANTEZ içinde: sayı görünüyor ama bu bitkinin
+    // ölçülmüş nemi gibi durmuyor. Halka onu zaten doldurmuyor.
     if (o.var) {
       const yuzde = `%${Math.round(sayi(o.yuzde))}`;
       alanlar.push(alan("Toprak nemi", o.kendi ? yuzde : `(${yuzde})`,
@@ -587,16 +807,12 @@
       alanlar.push(alan("Ölçüm zamanı", "—", "", true));
     }
 
-    // Eşik: %100 "nem bakılmaz" demek ve bunu açıkça yazmak gerekiyor,
-    // yoksa kullanıcı ölçüm alıp neden sulanmadığını anlamıyor.
     alanlar.push(o.esik_acik
       ? alan("Sulama eşiği", `%${Math.round(sayi(o.esik))} altında`,
-             "bu değerin altına düşerse sulanır")
+             "halkadaki çentik bu değeri gösteriyor")
       : alan("Sulama eşiği", "kapalı",
              "eşik %100 — nem bakılmadan sulanıyor", true));
 
-    // Sulama süresi ezme zincirinden çözülmüş hâli (bitkinin özeli > tür >
-    // varsayılan). Düğme de tam bu süreyi gönderiyor.
     alanlar.push(e.sulama_saniye != null
       ? alan("Sulama süresi", `${e.sulama_saniye} sn`,
              e.sulama_deseni && e.sulama_deseni !== "ust"
@@ -604,15 +820,12 @@
                : "pompanın açık kalacağı süre")
       : alan("Sulama süresi", "—", "", true));
 
-    // Son sulama. "Sulandı" = SULAMA KOMUTU GİTTİ demek; akış sensörü yok.
     alanlar.push(b.sulama_ts
       ? alan("Son sulama", `${sureMetni(simdi - sayi(b.sulama_ts))} önce`,
              tarihMetni(b.sulama_ts))
       : alan("Son sulama", "hiç sulanmadı",
              b.ekim ? "ekimden beri su gitmedi" : "", true));
 
-    // Sayaç DEFTERİN başlangıcından beri sayıyor ve kart bunu yazıyor:
-    // geçmişi geriye doğru uydurmuyoruz.
     if (ek && ek.defter_bas_ts) {
       alanlar.push(alan("Kaç kez sulandı", `${sayi(e.sula_adet, 0)} kez`,
         `${sayi(e.nem_adet, 0)} kez nem ölçüldü · kayıt `
@@ -622,20 +835,18 @@
         "sayaç ilk sulamadan sonra dolmaya başlar", true));
     }
 
-    // EĞİLİM: iki ölçülen uç sayı ve aradaki süre. Ara değer uydurulmuyor.
     if (e.egilim) {
       const g = e.egilim;
-      const yon = g.degisim > 0.5 ? "yükseldi" : g.degisim < -0.5 ? "düştü" : "değişmedi";
+      const y = g.degisim > 0.5 ? "yükseldi" : g.degisim < -0.5 ? "düştü" : "değişmedi";
       alanlar.push(alan("Nem eğilimi",
         `%${Math.round(g.ilk)} → %${Math.round(g.son)}`,
         `${sureMetni(g.sure_sn)} içinde ${Math.abs(g.degisim).toFixed(1)} puan `
-        + `${yon} · ${g.adet} okuma`));
+        + `${y} · ${g.adet} okuma`));
     } else {
       alanlar.push(alan("Nem eğilimi", "yeterli okuma yok",
-        `eğilim için yakınında en az iki okuma gerekiyor`, true));
+        "eğilim için yakınında en az iki okuma gerekiyor", true));
     }
 
-    // Komşulara göre: yalnız KENDİ taze ölçümü olanlar karşılaştırılıyor.
     if (e.ortanca_fark != null && ek && ek.ortanca != null) {
       const f = e.ortanca_fark;
       const yazi = Math.abs(f) < 1 ? "bahçe ortancasında"
@@ -657,19 +868,14 @@
 
     return `<article class="bk-kart bk-d-${d.ad}">
       <div class="bk-bas">
-        <span class="bk-simge">${kacisli(b.simge || "🌱")}</span>
-        <span class="bk-ad">
+        ${halka(b)}
+        <div class="bk-kimlik">
           <b>${kacisli(b.tur_ad || b.tur || "Bitki")}</b>
           <span>${ad}</span>
-        </span>
-        <span class="bk-rozet bk-r-${d.ad}">${kacisli(d.etiket)}</span>
+          <span class="bk-durum"><i></i>${kacisli(d.etiket)}</span>
+        </div>
       </div>
-      <div class="bk-alanlar">${alanlar.join("")}</div>
-      <p class="bk-gerekce">${kacisli(b.su_gerekce || d.neden || "")}${
-        b.su_tahmin
-          ? ' <span class="bk-tahmin">— bu karar ÖLÇÜME değil, geçen güne dayanıyor</span>'
-          : ""}</p>
-      ${uyarilar.map((u) => `<p class="bk-uyari">${kacisli(u)}</p>`).join("")}
+      ${egri(b, e)}
       <div class="bk-islem">
         <button class="dugme" type="button" data-is="nem" data-ad="${ad}"
                 title="Makine bu bitkinin üstüne gidip probu toprağa daldırır"
@@ -681,6 +887,15 @@
                 title="Makineyi bu bitkinin üstüne gönderir"
           >📍 Konumuna git</button>
       </div>
+      <details class="bk-detay" data-detay="${ad}"${acikDetay.has(b.ad) ? " open" : ""}>
+        <summary>Detay</summary>
+        <div class="bk-alanlar">${alanlar.join("")}</div>
+        <p class="bk-gerekce">${kacisli(b.su_gerekce || d.neden || "")}${
+          b.su_tahmin
+            ? ' <span class="bk-tahmin">— bu karar ÖLÇÜME değil, geçen güne dayanıyor</span>'
+            : ""}</p>
+        ${uyarilar.map((u) => `<p class="bk-uyari">${kacisli(u)}</p>`).join("")}
+      </details>
     </article>`;
   }
 

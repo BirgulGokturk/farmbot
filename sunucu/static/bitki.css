@@ -5,10 +5,22 @@
  * `bk-` ile başlıyor, yani hiçbir mevcut kuralı ezmiyor ve mevcut
  * kuralların ezmesi de gerekmiyor.
  *
- * Renkler `stil.css`in değişkenlerinden geliyor; ikinci bir palet
+ * RENK DİLİ `katmanlar/35-susuz.js` İLE AYNI ve öyle kalmalı: susadı
+ * mavi (#4aa8d8), ölçülmedi turuncu (#e8a33c), nemi yeterli yeşil.
+ * O dosya 3B sahnede aynı durumları çiziyor; aynı bitki iki ekranda iki
+ * ayrı renkte görünürse kullanıcı ikisini ayrı şey sanar. Sayılar oradan
+ * KOPYALANDI, türetilmedi — değişirse ikisi birlikte değişmeli.
+ *
+ * "Ölçüm eskimiş" için ayrı bir renk YOK: o da bir bilgi eksikliği hâli
+ * ve 35-susuz.js'in dilinde turuncu tarafta duruyor. Ayrımı renk değil,
+ * rozetteki yazı ve halkanın biçimi taşıyor (dolu ama solgun halka /
+ * hiç dolmayan kesikli halka).
+ *
+ * Geri kalan renkler `stil.css` değişkenlerinden; ikinci bir palet
  * kurmuyoruz. Yedek değerler yalnız stil.css yüklenemezse diye var.
  */
 
+/* --------------------------------------------------------------- şerit */
 .bk-ust {
   display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-end;
   margin-bottom: 10px;
@@ -18,9 +30,7 @@
 
 /* Süzgeç düğmeleri AÇIK BİR KİP: basılı olan renkleniyor ve
  * `aria-pressed` ile okuyucuya da söyleniyor. */
-.bk-suz {
-  display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 10px;
-}
+.bk-suz { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0; }
 .bk-suz button {
   background: var(--yuzey-2, #232422); color: var(--metin-2, #b9bab0);
   border: 1px solid var(--cizgi-2, #3f423c); border-radius: 999px;
@@ -28,7 +38,7 @@
 }
 .bk-suz button:hover { color: var(--metin, #f2f2ee); }
 .bk-suz button[aria-pressed="true"] {
-  background: var(--vurgu-sis, rgba(74,144,226,.14));
+  background: var(--vurgu-sis, rgba(74, 144, 226, .14));
   border-color: var(--vurgu, #4a90e2); color: var(--metin, #f2f2ee);
 }
 .bk-suz button .sayi { opacity: .7; margin-left: 4px; }
@@ -36,50 +46,120 @@
 .bk-ozet { margin: 0 0 10px; color: var(--metin-2, #b9bab0);
            font-size: var(--yazi-kucuk, 12px); }
 .bk-ozet b { color: var(--metin, #f2f2ee); }
+.bk-not { font-size: var(--yazi-kucuk, 12px); color: var(--metin-2, #b9bab0);
+          min-height: 1em; }
+.bk-bos-liste { color: var(--metin-3, #82847a); padding: 24px 0; }
 
+/* ----------------------------------------------------------------- kart */
 .bk-izgara {
   display: grid; gap: 12px;
   grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
 }
 
 .bk-kart {
+  --bk-renk: var(--cizgi-2, #3f423c);
   background: var(--yuzey, #191a18);
   border: 1px solid var(--cizgi, #2e302c);
-  border-left: 3px solid var(--cizgi-2, #3f423c);
+  border-left: 3px solid var(--bk-renk);
   border-radius: var(--yaricap, 12px);
   padding: 12px 14px; display: flex; flex-direction: column; gap: 10px;
 }
-/* Sol şerit KART NEDEN LİSTEDE ÖNDE olduğunu söylüyor: renk sıralamanın
- * görünen hâli, süs değil. */
-.bk-kart.bk-d-susadi   { border-left-color: var(--kritik, #e05252); }
-.bk-kart.bk-d-olculmedi{ border-left-color: var(--vurgu, #4a90e2); }
-.bk-kart.bk-d-eskimis  { border-left-color: var(--metin-3, #82847a); }
-.bk-kart.bk-d-odunc    { border-left-color: #b37be0; }
-.bk-kart.bk-d-hasat    { border-left-color: var(--uyari, #d9a520); }
-.bk-kart.bk-d-iyi      { border-left-color: var(--iyi, #4caf50); }
+.bk-kart.bk-d-susadi    { --bk-renk: #4aa8d8; }
+.bk-kart.bk-d-olculmedi { --bk-renk: #e8a33c; }
+.bk-kart.bk-d-eskimis   { --bk-renk: #e8a33c; }
+.bk-kart.bk-d-iyi       { --bk-renk: var(--iyi, #4caf50); }
 
-.bk-bas { display: flex; align-items: flex-start; gap: 10px; }
-.bk-simge { font-size: 24px; line-height: 1; }
-.bk-ad { flex: 1; min-width: 0; }
-.bk-ad b { display: block; font-size: 14px; color: var(--metin, #f2f2ee); }
-.bk-ad span { display: block; font-size: var(--yazi-kucuk, 12px);
-              color: var(--metin-3, #82847a); }
-
-.bk-rozet {
-  font-size: 11px; font-weight: 600; padding: 3px 8px; border-radius: 999px;
-  border: 1px solid currentColor; white-space: nowrap;
+.bk-bas { display: flex; align-items: center; gap: 14px; }
+.bk-kimlik { flex: 1; min-width: 0; }
+.bk-kimlik > b {
+  display: block; font-size: 15px; color: var(--metin, #f2f2ee);
+  overflow-wrap: anywhere;
 }
-.bk-r-susadi    { color: var(--kritik, #e05252); }
-.bk-r-olculmedi { color: var(--vurgu, #4a90e2); }
-.bk-r-eskimis   { color: var(--metin-3, #82847a); }
-.bk-r-odunc     { color: #b37be0; }
-.bk-r-hasat     { color: var(--uyari, #d9a520); }
-.bk-r-iyi       { color: var(--iyi, #4caf50); }
+.bk-kimlik > span {
+  display: block; font-size: var(--yazi-kucuk, 12px);
+  color: var(--metin-3, #82847a);
+}
+/* TEK VE BÜYÜK DURUM İŞARETİ. Yanındaki nokta yalnız renk taşıyor;
+ * durumu ADI söylüyor, yani renk körlüğünde de okunuyor. */
+.bk-durum {
+  display: inline-flex; align-items: center; gap: 6px; margin-top: 6px;
+  font-size: 14px; font-weight: 600; color: var(--bk-renk);
+}
+.bk-durum i {
+  width: 9px; height: 9px; border-radius: 50%;
+  background: currentColor; flex: 0 0 9px;
+}
+
+/* ----------------------------------------------------------- nem halkası */
+.bk-halka { position: relative; width: 76px; height: 76px; flex: 0 0 76px; }
+.bk-halka svg { display: block; }
+/* İz (boş kısım) tek kademe zeminden farklı — çizgi değil, yatak. */
+.bk-iz { fill: none; stroke: var(--yuzey-2, #232422); stroke-width: 6; }
+/* Ölçülmemiş bitkide iz KESİKLİ: doluluk yok, biçim de "eksik" diyor. */
+.bk-iz-bos { stroke: var(--cizgi-2, #3f423c); stroke-dasharray: 3 5; }
+.bk-yay {
+  fill: none; stroke: var(--bk-renk); stroke-width: 6; stroke-linecap: round;
+}
+/* Çentik eşiği gösteriyor: bir ölçüm değil, bir SINIR — o yüzden seri
+ * rengini değil, metin rengini giyiyor. */
+.bk-centik {
+  stroke: var(--metin, #f2f2ee); stroke-width: 2; stroke-linecap: round;
+}
+.bk-halka-ic {
+  position: absolute; inset: 0; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 1px; pointer-events: none;
+}
+.bk-halka-ic .bk-simge { font-size: 20px; line-height: 1; font-style: normal; }
+.bk-halka-ic b {
+  font-size: 11px; font-weight: 600; color: var(--metin-2, #b9bab0);
+}
+.bk-halka-ic .bk-soru { font-size: 13px; color: var(--bk-renk); }
+
+/* --------------------------------------------------------- kuruma eğrisi */
+.bk-egri svg { display: block; width: 100%; height: auto; }
+.bk-cizgi {
+  fill: none; stroke: var(--bk-renk); stroke-width: 2;
+  stroke-linejoin: round; stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+}
+/* Gerçekten okunan noktalar. Eğrinin nereden geçtiği değil, nereden
+ * ÖLÇÜLDÜĞÜ — aralar seyrekse bu görünüyor. */
+.bk-nokta { fill: var(--bk-renk); opacity: .45; }
+/* Son okuma: yüzey renginde 2 px halka, çizginin üstünde kaybolmasın. */
+.bk-uc { fill: var(--bk-renk); stroke: var(--yuzey, #191a18); stroke-width: 2; }
+.bk-esik-cizgi {
+  stroke: var(--metin-3, #82847a); stroke-width: 1; stroke-dasharray: 3 3;
+  vector-effect: non-scaling-stroke;
+}
+.bk-esik-yazi { fill: var(--metin-3, #82847a); font-size: 9px; }
+.bk-egri-not {
+  margin: 2px 0 0; font-size: 11px; color: var(--metin-2, #b9bab0);
+}
+.bk-egri-yok {
+  margin: 0; font-size: 11px; color: var(--metin-3, #82847a);
+  background: var(--yuzey-2, #232422); border-radius: var(--yaricap-2, 8px);
+  padding: 8px 9px;
+}
+
+/* --------------------------------------------------------------- işlemler */
+.bk-islem { display: flex; flex-wrap: wrap; gap: 6px; }
+.bk-islem .dugme { flex: 1 1 auto; }
+
+/* ------------------------------------------------------------------ detay */
+.bk-detay { border-top: 1px solid var(--cizgi, #2e302c); padding-top: 8px; }
+.bk-detay > summary {
+  cursor: pointer; list-style: none; font-size: var(--yazi-kucuk, 12px);
+  color: var(--metin-2, #b9bab0); user-select: none;
+}
+.bk-detay > summary::-webkit-details-marker { display: none; }
+.bk-detay > summary::before { content: "▸"; margin-right: 6px; }
+.bk-detay[open] > summary::before { content: "▾"; }
+.bk-detay > summary:hover { color: var(--metin, #f2f2ee); }
 
 /* Alan ızgarası: etiket üstte küçük, değer altta. Tablo değil, çünkü
  * kart dar ekranda tek sütuna düşebilmeli. */
 .bk-alanlar {
-  display: grid; gap: 8px 12px;
+  display: grid; gap: 8px 12px; margin-top: 10px;
   grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
 }
 .bk-alan { min-width: 0; }
@@ -98,19 +178,13 @@
 .bk-alan.bk-bos b { color: var(--metin-3, #82847a); font-weight: 400; }
 
 .bk-gerekce {
-  margin: 0; font-size: var(--yazi-kucuk, 12px); color: var(--metin-2, #b9bab0);
+  margin: 10px 0 0; font-size: var(--yazi-kucuk, 12px);
+  color: var(--metin-2, #b9bab0);
   background: var(--yuzey-2, #232422); border-radius: var(--yaricap-2, 8px);
   padding: 7px 9px;
 }
 .bk-gerekce .bk-tahmin { color: var(--uyari, #d9a520); font-weight: 600; }
-
 .bk-uyari {
-  margin: 0; font-size: var(--yazi-kucuk, 12px); color: var(--uyari, #d9a520);
+  margin: 8px 0 0; font-size: var(--yazi-kucuk, 12px);
+  color: var(--uyari, #d9a520);
 }
-
-.bk-islem { display: flex; flex-wrap: wrap; gap: 6px; }
-.bk-islem .dugme { flex: 1 1 auto; }
-
-.bk-not { font-size: var(--yazi-kucuk, 12px); color: var(--metin-2, #b9bab0);
-          min-height: 1em; }
-.bk-bos-liste { color: var(--metin-3, #82847a); padding: 24px 0; }
