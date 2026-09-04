@@ -157,6 +157,7 @@
       <div class="etiket-satir"><span>Alan dışı</span>
         <span><b>${son.alan_disi || 0}</b> leke dikim alanının dışında
           kaldığı için elendi</span></div>
+      ${kadrajSatiri()}
       ${kaliteSatiri()}
       ${kapiSatiri()}`;
 
@@ -191,6 +192,27 @@
     k.innerHTML = g;
     k.classList.remove("gizli");
     onizleme();
+  }
+
+  /** Kadrajın ne kadarı dikim alanına düşüyor — "kamera yatağa mı
+   *  bakıyor" sorusunun ölçülebilir hâli.
+   *
+   * Sıfır çıkması kesin: bu kamera yatağı hiç görmüyor, hangi eşik
+   * konursa konsun fide bulunamaz. Yüksek çıkması kameranın doğru
+   * baktığını KANITLAMIYOR — kamera fiziksel olarak çevrildiyse
+   * kalibrasyon eskimiştir ve eski sayılar kadrajı hâlâ yatağın üstünde
+   * gösterir. O yüzden "kalibrasyona göre" diyoruz. */
+  function kadrajSatiri() {
+    if (!son.kadraj_alan_var || son.kadraj_oran == null) return "";
+    const o = Number(son.kadraj_oran) * 100;
+    const kotu = o < 5;
+    return `<div class="etiket-satir${kotu ? " uyari" : ""}">
+      <span>Kadraj</span>
+      <span>kalibrasyona göre karenin <b>${o.toFixed(0)}%</b>'i dikim
+        alanına düşüyor${kotu
+          ? " — kamera yatağa bakmıyor ya da kalibrasyon eskimiş;"
+            + " hiçbir eşik bu durumu düzeltmez"
+          : ""}</span></div>`;
   }
 
   /** Karenin ölçülebilir olup olmadığı — parlaklık ve doyma.

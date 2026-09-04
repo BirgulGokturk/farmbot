@@ -254,6 +254,16 @@ def yonlendirici_kur(parola_dogrula, canli_kare):
         # "bu şey ne renk" değil, "bu şey toprağın üstünde mi".
         gecerli = tespit.alan_suzgeci(kalib, en, boy)
 
+        # KADRAJ YATAĞA BAKIYOR MU. Alan süzgeci lekeleri eliyorsa iki
+        # ayrı sebep olabilir: leke gerçekten toprağın dışında, ya da
+        # KADRAJIN KENDİSİ yatağın dışında. İkisi panelde aynı görünüyordu
+        # ("hepsi alan dışı") ve ilkini varsayıp fideyi aramak boşuna
+        # emek. Örtüşme sıfırsa hangi eşik konursa konsun fide bulunamaz.
+        try:
+            ortusme = tespit.kadraj_ortusme(kalib, en, boy)
+        except Exception:                                   # noqa: BLE001
+            ortusme = None
+
         y = goruntu.bul(rgb, esik=esik, en_az_piksel=en_az, gecerli_mi=gecerli)
         c = cozumle(y["lekeler"], kalib, en, boy)
         fideler = (kume(c["lekeler"], birlestir)
@@ -283,6 +293,9 @@ def yonlendirici_kur(parola_dogrula, canli_kare):
             # öğüt yanlış ve kullanıcıyı boşuna uğraştırıyor. `tani`
             # önce karenin ölçülebilir olup olmadığına bakıyor.
             "tani": y.get("tani") or "",
+            "kadraj_oran": (None if not ortusme
+                            else round(float(ortusme.get("oran") or 0), 4)),
+            "kadraj_alan_var": bool(ortusme and ortusme.get("alan_var")),
             "kare_kalite": y.get("kare") or {},
             "yontem": c["yontem"], "ret": c["ret"],
             "lekeler": c["lekeler"], "fideler": fideler,
