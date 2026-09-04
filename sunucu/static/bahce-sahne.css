@@ -107,19 +107,55 @@
   position: relative;
   flex: 1 1 auto;
   min-width: 0;
-  height: var(--bs-yukseklik, 420px);
+  /* Yükseklik JAVASCRIPT'TE ÖLÇÜLMÜYOR, esneklikten geliyor. Ölçmek
+     denendi ve kırılgandı: panelin kendi kaydırma kutusu var, alttaki
+     şeritler açılıp kapanıyor ve her ölçüm bir sonraki yerleşimde
+     bayatlıyordu — sahne panelin dibinden taşıp tohum rafını ekranın
+     dışına itiyordu. Esnek yerleşimde kalan yer neyse sahne o. */
+  height: 100%;
   display: grid;
   place-items: center;
   border-radius: 18px;
   overflow: hidden;
   perspective: 1400px;
   touch-action: none;
+  /* Yatağın ÇEVRESİ de bir yer: çim. Boş koyu bir alan, yatağı bir
+     ekranın ortasındaki dikdörtgen yapıyordu; çim onu bir bahçeye
+     koyuyor. Bilgi taşımıyor — yatak sınırı yine kalasın kendisi. */
   background:
-    radial-gradient(120% 90% at 50% -10%, #23301f 0%, #141a12 55%, #0d100c 100%);
+    radial-gradient(120% 80% at 50% -20%, rgba(255, 240, 200, .07), transparent 60%),
+    repeating-linear-gradient(74deg,
+      rgba(255, 255, 255, .022) 0 2px, transparent 2px 6px),
+    repeating-linear-gradient(-66deg,
+      rgba(0, 0, 0, .05) 0 3px, transparent 3px 8px),
+    radial-gradient(130% 110% at 50% 0%, #2c3a26 0%, #1d2719 55%, #131a11 100%);
+}
+
+/* Yatağın toprağa oturduğu belli olsun: tek kademe gölge. */
+.bs-duzlem::after {
+  content: "";
+  position: absolute;
+  inset: 2% -3% -6% -3%;
+  z-index: -1;
+  border-radius: 12px;
+  background: radial-gradient(closest-side, rgba(0, 0, 0, .55), transparent 75%);
+  pointer-events: none;
 }
 .bs-sahne.yakinlasmis { cursor: grab; }
 
-.bs-zum { will-change: transform; transform-origin: 50% 50%; }
+/* Yakınlaştırma katının KENDİ ÖLÇÜSÜ OLMAK ZORUNDA. Düzlemin
+   yüksekliği yüzdeyle veriliyor ve yüzde, ölçüsü olmayan bir ebeveynde
+   sıfır çözülüyor: kat boyutsuz bırakıldığında yatak 0 × 0 çiziliyor,
+   bitkiler tek bir noktada üst üste yığılıyor ve dört köşe ölçüsü aynı
+   pikseli okuduğu için homografi de çıkmıyordu. */
+.bs-zum {
+  width: 100%;
+  height: 100%;
+  display: grid;
+  place-items: center;
+  will-change: transform;
+  transform-origin: 50% 50%;
+}
 
 .bs-duzlem {
   position: relative;
@@ -654,3 +690,34 @@
 }
 .bs-onay b { display: block; margin-bottom: var(--b1); }
 .bs-onay p { margin: 0; color: var(--metin-2); }
+
+
+/* ==================================================================== *
+ * Bahçe sekmesi AÇIKKEN kabuğun tamamı
+ *
+ * Sol panel teknik sekmeler için dar bir liste sütunu ve orada doğru.
+ * Bahçe "kullanıcının göreceği tek yüz" ve 350 pikselde yüz olmuyor.
+ * Sahnenin sağdaki 3B tarla görünümü bu sekmede zaten kapalı
+ * (`Tarla.gorunurluk(false)`), yani yer boşta duruyordu; onun araç
+ * çubuğu da kapalı bir sahnenin denetimleri olduğu için gizleniyor.
+ * ==================================================================== */
+body.bahce-sahnesi .yuzen.sol {
+  grid-column: 1 / -1;
+  width: auto;
+}
+/* Sayfa panelin boyunu dolduruyor: sahne kalan yeri alıyor, tohum rafı
+   ve sıra şeridi her zaman ekranda kalıyor. */
+body.bahce-sahnesi .yuzen-govde { overflow: hidden; }
+body.bahce-sahnesi #sayfa-bahce { height: 100%; display: flex; flex-direction: column; }
+body.bahce-sahnesi .bs { flex: 1 1 auto; min-height: 0; }
+body.bahce-sahnesi .bs-sahne-sar { flex: 1 1 auto; min-height: 0; }
+/* Dar ekranda panel akışın içinde ve yüzde yükseklik çöküyor: sahneye
+   ekranın altıda beşi kadar bir taban veriliyor. */
+@media (max-width: 900px) {
+  body.bahce-sahnesi .yuzen-govde { overflow-y: auto; }
+  body.bahce-sahnesi .bs-sahne-sar { min-height: 62vh; }
+}
+body.bahce-sahnesi #sahne-cubuk { display: none; }
+/* Sahne ortada durur, kenarlarda boşluk kalır: yatağın oranı yatağın
+   oranı, ekranı doldurmak için esnetilmiyor. */
+body.bahce-sahnesi .bs-sahne-sar { justify-content: center; }

@@ -327,34 +327,6 @@ window.BahceSahne = (function () {
     S.tersMatris = null;
   }
 
-  /** Sahnenin yüksekliği = EKRANDA KALAN yer, sabit bir yüzde değil.
-   *
-   * Altta duran şeritler (tohum rafı, kuyruk) ÖLÇÜLÜYOR, tahmin
-   * edilmiyor: sabit bir pay, şerit açılınca yanlış oluyor ve bahçe
-   * ekranın dışına düşüyordu.
-   *
-   * PARMAK EKRANDAYKEN BOY DEĞİŞMİYOR: sürükleme başladığı andaki ekran
-   * ölçüsüne dayanıyor, sahne ortada büyürse tohum bambaşka bir
-   * milimetreye düşer. */
-  function sahneBoyu() {
-    const sahne = $("#bs-sahne");
-    const sar = document.querySelector(".bs-sahne-sar");
-    if (!sahne || !sar) return;
-    if (S.isaretciler.size || S.surukle) return;
-    const kutu = sar.getBoundingClientRect();
-    let altPayi = 24;
-    ["#bs-raf", "#bs-serit"].forEach((sec) => {
-      const e = $(sec);
-      if (e && !e.hidden && e.offsetParent) altPayi += e.offsetHeight + 8;
-    });
-    const kalan = window.innerHeight - kutu.top - altPayi;
-    // GENİŞLİK DE SINIRLIYOR: dar bir telefonda yalnız yüksekliğe
-    // bakmak, oranı gereği genişliğe sığmayan bir sahneyi taşırıyor.
-    const enSiniri = Math.max(1, kutu.width) / Math.max(0.05, yatakOran());
-    const boy = Math.max(200, Math.min(640, kalan, enSiniri));
-    sahne.style.setProperty("--bs-yukseklik", `${Math.round(boy)}px`);
-  }
-
   /* ==================================================================== *
    * Zemin: çizili bahçe (asıl) + kamera katı (isteğe bağlı)
    * ==================================================================== */
@@ -1207,7 +1179,6 @@ window.BahceSahne = (function () {
   function ciz() {
     if (!S.veri) return;
     sahneKur();
-    sahneBoyu();
     kameraKatYaz();
     cizimYaz();
     bitkileriYaz();
@@ -1312,6 +1283,8 @@ window.BahceSahne = (function () {
     S.acik = !!acik;
     const kok = $("#bs");
     if (kok) kok.hidden = !S.acik || S.klasik;
+    // Gövde sınıfı: kabuğun yerleşimi bu sekmede değişiyor (bkz. CSS).
+    document.body.classList.toggle("bahce-sahnesi", S.acik && !S.klasik);
     if (!S.acik) {
       canliIste(false);
       kartKapat();
@@ -1320,7 +1293,6 @@ window.BahceSahne = (function () {
     }
     if (S.klasik) return;
     sahneKur();
-    sahneBoyu();
     yukle();
     canliIste(S.kameraKat);
   }
@@ -1516,6 +1488,7 @@ window.BahceSahne = (function () {
         klasikD.setAttribute("aria-pressed", S.klasik ? "true" : "false");
         klasikD.textContent = S.klasik ? "Yeni bahçe" : "Klasik görünüm";
         kartKapat();
+        document.body.classList.toggle("bahce-sahnesi", !S.klasik);
         kok.hidden = S.klasik;
         klasikKap.hidden = !S.klasik;
         if (window.BahceKlasik) window.BahceKlasik.sekme(S.klasik);
@@ -1526,7 +1499,7 @@ window.BahceSahne = (function () {
     addEventListener("resize", () => {
       S.tersMatris = null;
       if (S.acik && !S.klasik) {
-        S.imza = ""; sahneBoyu(); bitkileriYaz();
+        S.imza = ""; bitkileriYaz();
         if (S.gozler) gozleriYaz(S.gozler);
       }
     });
