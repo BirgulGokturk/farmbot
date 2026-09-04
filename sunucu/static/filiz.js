@@ -71,6 +71,11 @@
             <input type="number" id="filiz-birlestir" step="1" min="0" max="200"
                    placeholder="25">
           </div>
+          <div class="alan">
+            <label for="filiz-azami">En büyük fide (mm)</label>
+            <input type="number" id="filiz-azami" step="5" min="10" max="400"
+                   placeholder="60">
+          </div>
         </div>
         <p class="alt-not">Filizler bulunamıyorsa <b>en küçük fide</b>yi
           düşürün; yeşil soluksa <b>eşiği de düşürün</b> — eşik yükseldikçe
@@ -79,7 +84,10 @@
           bulmuyordu — eşiğin fiziksel karşılığı her çözünürlükte aynı
           kalıyordu. Fesleğen kotiledonu 8-10 mm. <b>Birleştirme</b>: bu
           mesafeden yakın lekeler tek fide sayılıyor — bir filizin iki yaprağı
-          ayrı lekelenip sayımı ikiye katlamasın diye.</p>
+          ayrı lekelenip sayımı ikiye katlamasın diye. <b>En büyük fide</b>:
+          birleştirmenin zincirlenmesini durduran sınır. Onsuz A–B yakın,
+          B–C yakın diye A ile C çok uzakta olsa bile tek kümeye giriyor ve
+          yoğun kırıntıda bütün kare tek "fide" oluyor.</p>
 
         <div id="filiz-hata" class="uyari-kutu gizli"></div>
         <div id="filiz-sonuc" class="gomulu gizli"></div>
@@ -112,6 +120,8 @@
       if (Number.isFinite(e) && e > 0) govde.esik = e;
       if (Number.isFinite(a) && a > 0) govde.en_kucuk_cap_mm = a;
       if (b !== "" && Number.isFinite(Number(b))) govde.birlestir_mm = Number(b);
+      const z = Number($("#filiz-azami").value);
+      if (Number.isFinite(z) && z > 0) govde.azami_fide_mm = z;
 
       son = await p.apiIste("/api/kamera/filiz/bul", {
         method: "POST", body: JSON.stringify(govde),

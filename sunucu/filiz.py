@@ -113,7 +113,13 @@ def cozumle(lekeler_px: list[dict[str, Any]], kalib: dict[str, Any] | None,
     return {"lekeler": cikti, "yontem": ad, "ret": ""}
 
 
-def kume(lekeler: list[dict[str, Any]], mesafe_mm: float) -> list[dict[str, Any]]:
+#: Bir fidenin olabileceği en büyük çap (mm). Kümelemenin zincirleme
+#: büyümesini durduran sınır — bkz. `kume`.
+AZAMI_FIDE_MM = 60.0
+
+
+def kume(lekeler: list[dict[str, Any]], mesafe_mm: float,
+         azami_mm: float = AZAMI_FIDE_MM) -> list[dict[str, Any]]:
     """Birbirine yakın lekeleri tek fide sayıyor.
 
     Bir filizin iki yaprağı ayrı ayrı lekelenebiliyor; araya giren
@@ -122,6 +128,17 @@ def kume(lekeler: list[dict[str, Any]], mesafe_mm: float) -> list[dict[str, Any]
 
     Birleştirilen merkez ALANLA AĞIRLIKLANDIRILIYOR: kopan küçük bir
     yaprak parçası, fidenin merkezini kendine doğru çekmemeli.
+
+    ZİNCİRLEME SINIRI — sahada ölçüldü. Yakınlık kuralı tek başına
+    zincirleniyor: A ile B 25 mm yakınsa, B ile C 25 mm yakınsa, A ile C
+    200 mm uzakta olsa bile üçü tek kümeye giriyor. Kırıntı yoğun
+    olduğunda bütün kare tek "fide" oluyordu — 208 leke birleşip 79 mm
+    çapında bir küme çıktı ve tablo onu bir fide diye yazdı.
+
+    Sınır fiziksel: bir fide `azami_mm`den büyük olamaz. Bir leke,
+    kümeyi bu sınırın ötesine taşıyacaksa alınmıyor; kendi kümesini
+    kuruyor. Böylece yoğunluk arttıkça sayı artıyor, tek dev leke
+    çıkmıyor.
     """
     kalan = list(lekeler)
     kumeler: list[list[dict[str, Any]]] = []
@@ -131,11 +148,17 @@ def kume(lekeler: list[dict[str, Any]], mesafe_mm: float) -> list[dict[str, Any]
         while degisti:
             degisti = False
             for b in list(kalan):
-                if any(math.dist((b["x"], b["y"]), (g["x"], g["y"])) <= mesafe_mm
+                if not any(math.dist((b["x"], b["y"]), (g["x"], g["y"])) <= mesafe_mm
+                           for g in grup):
+                    continue
+                # Kümenin ÇAPI sınırı aşacaksa alma. Yakınlık yetmiyor;
+                # sonuçtaki bütün da bir fide büyüklüğünde kalmalı.
+                if any(math.dist((b["x"], b["y"]), (g["x"], g["y"])) > azami_mm
                        for g in grup):
-                    grup.append(b)
-                    kalan.remove(b)
-                    degisti = True
+                    continue
+                grup.append(b)
+                kalan.remove(b)
+                degisti = True
         kumeler.append(grup)
 
     cikti = []
@@ -229,6 +252,7 @@ def yonlendirici_kur(parola_dogrula, canli_kare):
         esik = g.get("esik")
         esik = goruntu.ESIK if esik in (None, "") else float(esik)
         birlestir = _sayi(g.get("birlestir_mm"), 25.0)
+        azami = _sayi(g.get("azami_fide_mm"), AZAMI_FIDE_MM)
         cap_mm = _sayi(g.get("en_kucuk_cap_mm"), 0.0)
 
         import tespit
@@ -266,11 +290,12 @@ def yonlendirici_kur(parola_dogrula, canli_kare):
 
         y = goruntu.bul(rgb, esik=esik, en_az_piksel=en_az, gecerli_mi=gecerli)
         c = cozumle(y["lekeler"], kalib, en, boy)
-        fideler = (kume(c["lekeler"], birlestir)
+        fideler = (kume(c["lekeler"], birlestir, azami)
                    if c["lekeler"] and birlestir > 0 else c["lekeler"])
         return {
             "kamera": kam, "genislik_px": en, "yukseklik_px": boy,
             "esik": esik, "en_az_piksel": en_az, "birlestir_mm": birlestir,
+            "azami_fide_mm": azami,
             "en_az_kendiliginden": not int(_sayi(g.get("en_az_piksel"), 0)),
             "en_kucuk_cap_mm": cap_mm or tespit.EN_KUCUK_CAP_MM,
             "yesil_oran": round(y["oran"], 4),
