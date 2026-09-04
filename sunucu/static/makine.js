@@ -654,41 +654,43 @@
      * merkezinde; parçalar buradan aşağı diziliyor. `probUst` plakanın
      * alt yüzünün hemen altı — parçanın plakaya gömülü görünmemesi için. */
     const probUst = -P * 0.45;
-    // Üstteki siyah konnektör başlığı — kabloların girdiği blok.
-    nemProbu.add(kutu(THREE, [P * 1.0, P * 0.8, P * 0.5],
-                      [0, probUst - P * 0.4, 0],
+    /* ÖLÇÜ, KOMŞUSUNA GÖRE. Prob plakanın 7 birim altına iniyordu, tohum
+     * ucu ise 1,7 — dört katı. Görünmezlik sorununu çözerken ters uca
+     * geçildi: sahnede tek görünen şey prob oldu ve makinenin geri
+     * kalanını bastırdı.
+     *
+     * Doğru ölçü mutlak bir sayı değil, YAN YANA DURDUĞU PARÇAYA göre
+     * olanı: prob tohum ucundan biraz uzun (gerçekte de öyle), ama aynı
+     * mertebede. Görülebilirlik boydan değil, kendi ışığını veren
+     * renkten geliyor — o zaten duruyor. */
+    // Siyah konnektör başlığı — kabloların girdiği blok.
+    nemProbu.add(kutu(THREE, [P * 0.55, P * 0.4, P * 0.32],
+                      [0, probUst - P * 0.2, 0],
                       { color: "#15181a", metalness: 0.1, roughness: 0.72 }));
-    // Konnektörün altındaki ince boyun.
-    nemProbu.add(kutu(THREE, [P * 0.5, P * 0.3, P * 0.3],
-                      [0, probUst - P * 0.95, 0],
-                      { color: "#2a2e31", metalness: 0.2, roughness: 0.6 }));
     // Bıçakları taşıyan kart — gerçeğinde de altın kaplı baskı devre.
-    nemProbu.add(kutu(THREE, [P * 0.9, P * 1.1, P * 0.16],
-                      [0, probUst - P * 1.65, 0], probMal));
-    /* İKİ BIÇAK. Gerçek sensörde de en uzun parça bu; kısa ve ince
-     * çizilince tohum ucunun konisiyle aynı boyda kalıyor, ikisi
-     * uzaktan ayrışmıyordu. */
+    nemProbu.add(kutu(THREE, [P * 0.44, P * 0.42, P * 0.1],
+                      [0, probUst - P * 0.62, 0], probMal));
+    // İKİ BIÇAK — ince, yassı, çatal.
     [-1, 1].forEach((yon) => {
-      nemProbu.add(kutu(THREE, [P * 0.5, P * 4.2, P * 0.18],
-                        [yon * P * 0.3, probUst - P * 4.3, 0], probMal));
+      nemProbu.add(kutu(THREE, [P * 0.16, P * 1.4, P * 0.07],
+                        [yon * P * 0.13, probUst - P * 1.5, 0], probMal));
     });
-    // Bıçakların sivri uçları — toprağa giren kısım.
+    // Sivri uçlar — toprağa giren kısım.
     [-1, 1].forEach((yon) => {
       const sivri = new THREE.Mesh(
-        new THREE.ConeGeometry(P * 0.25, P * 0.55, 4),
-        mal(THREE, probMal));
-      sivri.position.set(yon * P * 0.3, probUst - P * 6.65, 0);
+        new THREE.ConeGeometry(P * 0.09, P * 0.24, 4), mal(THREE, probMal));
+      sivri.position.set(yon * P * 0.13, probUst - P * 2.32, 0);
       sivri.rotation.y = Math.PI / 4;
       sivri.rotation.x = Math.PI;
       nemProbu.add(sivri);
     });
-    // Turuncu kablolar: yukarı çıkıp kafanın gövdesinde gözden kayboluyorlar.
+    // Kablolar: yukarı çıkıp kafanın gövdesinde gözden kayboluyorlar.
     [-1, 1].forEach((yon) => {
       const tel = new THREE.Mesh(
-        new THREE.CylinderGeometry(P * 0.06, P * 0.06, P * 1.6, 6),
+        new THREE.CylinderGeometry(P * 0.035, P * 0.035, P * 1.1, 6),
         mal(THREE, { color: yon < 0 ? "#f0932b" : "#e6e0d2",
                      metalness: 0.05, roughness: 0.7 }));
-      tel.position.set(yon * P * 0.18, probUst + P * 0.75, P * 0.1);
+      tel.position.set(yon * P * 0.11, probUst + P * 0.5, P * 0.08);
       nemProbu.add(tel);
     });
     ucKafa.add(nemProbu);

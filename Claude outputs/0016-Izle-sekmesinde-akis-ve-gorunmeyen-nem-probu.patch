@@ -1,0 +1,548 @@
+From 039811a28b54995f4d99d1983ee4c47b3c5cdae2 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Fri, 4 Sep 2026 11:30:57 +0000
+Subject: [PATCH] Izle sekmesinde akis, ve gorunmeyen nem probu
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+IZLE SEKMESI DE AKIS ISTIYOR — SANIYEDE 1 KARE.
+Yuzen kutu yalnizca yeni bir kare geldiginde gorunur oluyordu
+(`kareyiTazele`). Uc kamerasinda farkedilmiyordu; sabit ust kameranin
+akisi Kamera sekmesinden cikinca durdugu icin Izle'de hic kare gelmiyor
+ve kutu hic acilmiyordu. "Sahnede" dugmesi kutuyu gorunur yapsa bile ici
+bos kaliyordu — beklenen kare hic gelmeyecekti.
+
+- `izleSekmesi(acik, hedef)`: Izle acikken kutusu gorunen her kameranin
+  akisi 1 kare/sn suruyor; cikarken duruyor. Kamera/Bahce sekmelerine
+  gecerken kapatilmiyor, onlar akisi kendileri yonetiyor
+- `izleAkisTazele()`: kutu gizlenince o kameranin akisi duruyor, geri
+  acilinca basliyor. Kararin tek yeri burasi
+- ajan yeniden baslarsa (kamera listesi degismedigi icin kurulum yolu
+  calismiyordu) istek en fazla 10 saniyede bir yineleniyor
+- tarayici sekmesi arkaya dusunce akis duruyor, geri donunce basliyor
+- hic kare gelmemisse kutu diskteki son kareyi bir kez cekiyor
+
+NEM PROBU: KURULUYORDU AMA HICBIR ACIDAN SECILMIYORDU.
+Once olculdu. Parca kuruluyor ve yeri de dogru (`suDurumu().probVar`
+dogru, `probX` 0) — sorun olcusundeydi:
+
+  - Tasiyici plakanin TAM ALTINDA, makine merkezinde duruyordu ve
+    plakadan yalniz 79 mm sarkiyordu. Plakanin kendi kenari 76 mm; yani
+    ucun plakanin altindan cikabilmesi icin sahneye 44 dereceden yatik
+    bakmak gerekiyordu. Ustten bakista plaka probu tamamen ortuyordu.
+  - Bicaklar 4,8 mm enindeydi. Tezgah ayagi denk geldiginde birkac
+    piksel kalip kayboluyordu.
+
+Uc sey degisti:
+- prob asagi indi: plakadan 146 mm sarkiyor, 28 derecede goruniyor
+- bicaklar gercek oranina yakin (10 mm en, 84 mm boy) ve sivri uclu;
+  ustunde altin kapli kart, onun ustunde siyah konnektor basligi
+- kendi dx/dy ayari girilmemisse makine merkezine degil SULAMA BASLIGI
+  ILE TOHUM UCUNUN TAM ORTASINA konuyor
+
+Ayrica yedek dizilim gercek sirayi gosteriyor (solda sulama, ortada
+prob, sagda tohum ucu); eskiden ayar girilmemis makinede sulama basligi
+probun SAGINDA ciziliyordu. Sulama basliginin yeri de artik oteki iki
+basla ayni koddan (`yerlestir`) geliyor.
+
+`suDurumu()` bir de `probAltMm` donduruyor: "kurulu ama gorunmuyor"
+bir dahakine ekran goruntusunden degil sayidan anlasilsin.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01GCUnC6ebsiUWoCWYhbHAXn
+---
+ README.md                           |  26 +++++
+ sunucu/static/app.js                | 155 +++++++++++++++++++++++++++-
+ sunucu/static/katmanlar/90-robot.js |  20 ++++
+ sunucu/static/makine.js             | 130 ++++++++++++++++-------
+ 4 files changed, 290 insertions(+), 41 deletions(-)
+
+diff --git a/README.md b/README.md
+index a8b5073..b8b7dd0 100644
+--- a/README.md
++++ b/README.md
+@@ -187,6 +187,17 @@ açılıyor. Kutuyu gizledikten sonra geri açan tek yer Kamera sekmesindeki
+ **Sahnede** düğmesi. Bir kamera kapalıyken ya da arızalıyken öteki çalışmaya
+ devam ediyor — her kameranın kendi iş parçacığı ve kendi hata sayacı var.
+ 
++**İzle sekmesi de akış istiyor — saniyede 1 kare.** Yüzen kutu eskiden
++yalnızca yeni bir kare geldiğinde görünür oluyordu. Uç kamerasında bu
++farkedilmiyordu; sabit üst kameranın akışı ise Kamera sekmesinden çıkınca
++duruyor, İzle'de hiç kare gelmiyor ve kutu hiç açılmıyordu — "Sahnede"
++düğmesine basmak bile boş bir kutu açıyordu, çünkü beklenen kare hiç
++gelmeyecekti. Artık İzle sekmesi açıkken kutusu görünen her kameranın akışı
++sürüyor. Kamera sekmesindeki 5 kare/sn oraya bakan biri için; köşedeki
++gözcü kutuya 1 yetiyor ve Pi'nin işlemcisi beşte biri kadar yükleniyor.
++Kutu gizlenince o kameranın akışı duruyor, tarayıcı sekmesi arkaya
++düşünce hepsi duruyor, ajan yeniden başlarsa istek yineleniyor.
++
+ Canlı akış yapamayan bir yolda (`fswebcam` gibi) "Canlı" düğmesi kapalı
+ geliyor ve sebebini söylüyor; basıp hata almak dürüst değil. Akış
+ yapabilenlerde kamera MJPEG üretiyorsa Pi'de yeniden kodlama yapılmıyor,
+@@ -535,6 +546,21 @@ Hesap tek yerde (`sunucu/baslar.py`) ve sulama, nem ölçümü, ekim üçü de
+ oradan geçiyor. Her akış kendi hesabını yapsaydı üçü birbirinden
+ ayrışırdı.
+ 
++**3B sahnede de üçü yan yana.** Nem probu bir süre "görünmüyor" diye
++kaldı ve sebebi ölçülünce çıktı: parça kuruluyordu, yeri de doğruydu
++(`Tarla.katmanTanimi("robot").suDurumu()` → `probVar` doğru, `probX` 0)
++— ama taşıyıcı plakanın tam altında duruyor ve plakadan yalnız 79 mm
++sarkıyordu; plakanın kendi kenarı 76 mm. Yani ucun plakanın altından
++görünebilmesi için sahneye 44 dereceden daha yatık bakmak gerekiyordu,
++üstten bakışta plaka probu tamamen örtüyordu. Bıçaklar da 4,8 mm
++enindeydi — tezgâh ayağı denk geldiğinde birkaç piksel kalıp
++kayboluyordu. Prob artık plakadan 146 mm sarkıyor (28 derecede
++görünüyor), bıçaklar gerçek oranına yakın (10 mm en) ve kendi `dx/dy`
++ayarı girilmemişse makine merkezine değil **sulama başlığı ile tohum
++ucunun tam ortasına** konuyor. Ayar girilmemiş makinede yedek dizilim de
++gerçek sırayı gösteriyor: solda sulama, ortada prob, sağda tohum ucu —
++eskiden yedek değerler sulamayı probun sağına koyuyordu.
++
+ **Erişilebilir alan da başa göre.** Makine `hedef + kayma`ya gittiği ve
+ kendisi yumuşak sınırların dışına çıkamadığı için pozitif kaymalı bir
+ baş yatağın uzak kenarına yetişemiyor. Sulama başlığı için sağ ve üst
+diff --git a/sunucu/static/app.js b/sunucu/static/app.js
+index ddbc287..f623197 100644
+--- a/sunucu/static/app.js
++++ b/sunucu/static/app.js
+@@ -2346,9 +2346,24 @@ function kameralarYaz(liste) {
+     kamYarilariKur();
+     kamKutulariKur();
+     kalibSekmeleriYaz();
++    // LİSTE SONRADAN GELİYOR. Sayfa açıldığında kamera listesi henüz
++    // yoktu, dolayısıyla açılıştaki `izleSekmesi(true)` hiçbir kameraya
++    // ulaşamıyordu. Liste değiştiği anda akış isteğini yineliyoruz;
++    // ajan yeniden bağlandığında da bu yoldan geçiyor.
++    if (S.sekme === "izle") izleSekmesi(true);
+   } else {
+     S.kameralar = yeni;
+   }
++  /* AKIŞ ÖLDÜYSE YENİDEN İSTE. Ajan yeniden başladığında canlı akış
++   * duruyor ama kamera listesi değişmiyor; kurulum yolu çalışmadığı için
++   * İzle'deki kutu bir daha hiç tazelenmiyordu. */
++  if (S.sekme === "izle" && Date.now() - IZLE_AKIS.son > IZLE_YINELEME_MS
++      && yeni.some((k) => k.acik && k.canli_var && !k.canli
++                          && S.kamCanliElle[k.ad] !== false
++                          && izleKutuAcikMi(k.ad))) {
++    izleAkisTazele();
++  }
++
+   // Her yarı KENDİ kamerasının hâlini yazıyor.
+   yeni.forEach((k) => {
+     kameraDurumYaz(k);
+@@ -2486,6 +2501,8 @@ function kamYariBagla(yari, ad) {
+         }
+       }
+       kamSahnedeYaz(ad);
++      // Gizli kutu için akış istemiyoruz, geri açılınca istiyoruz.
++      izleAkisTazele();
+       gunluk(`${kamEtiket(ad)} sahnede ${kapali ? "gizlendi" : "gösteriliyor"}`);
+     };
+   }
+@@ -2708,8 +2725,115 @@ function kamCanliIste(ac) {
+   });
+ }
+ 
++/* İZLE SEKMESİ — yüzen kutular burada ve KENDİ akışlarını istiyorlar.
++ *
++ * SORUN. Yüzen kutu yalnızca yeni bir kare geldiğinde görünür oluyordu
++ * (`kareyiTazele`). Uç kamerasında bu farkedilmiyordu: bahçe/kamera
++ * sekmelerinden dönüldüğünde akışı bir süre daha sürüyor ve kare akmaya
++ * devam ediyor. Sabit üst kameranın akışı ise Kamera sekmesinden çıkınca
++ * duruyor; İzle'de hiç kare gelmiyor, kutu hiç açılmıyordu. "Sahnede"
++ * düğmesi kutuyu görünür yapsa bile içi boş kalıyordu — gelmeyecek bir
++ * kareyi bekliyordu.
++ *
++ * ÇÖZÜM İKİ PARÇALI:
++ *   1. İzle sekmesi açıkken, kutusu görünür olan her kameranın canlı akışı
++ *      SÜRÜYOR — ama saniyede 1 kare. Kamera sekmesindeki 5 kare/sn oraya
++ *      bakan biri için; buradaki kutu köşede duran bir gözcü, 1 yetiyor ve
++ *      Pi'nin işlemcisi beşte biri kadar yükleniyor.
++ *   2. Akış yapamayan kamera (fswebcam yolu) ya da henüz hiç kare gelmemiş
++ *      olması hâlinde kutu, diskteki SON kareyi bir kez çekiyor. Boş kutu
++ *      açmak "bozuk" diye görünüyor.
++ *
++ * Kullanıcının gizlediği kutunun akışı istenmiyor: gizli bir kutu için
++ * Pi'yi meşgul etmenin sebebi yok. */
++const IZLE_FPS = 1;
++
++/* Akış isteğinin son gönderildiği an. AJAN YENİDEN BAŞLARSA akış ölüyor
++ * ve panelin bunu fark etmesi gerekiyor: kamera listesi aynı kaldığı için
++ * kurulum yolu yeniden çalışmıyor, kutu da sessizce donuyordu. Durum
++ * paketinde "istediğim kamera akmıyor" görülürse istek yineleniyor —
++ * ama en fazla bu aralıkta bir, yoksa akış açamayan bir kamera için
++ * saniyede iki komut giderdi. */
++const IZLE_AKIS = { son: 0 };
++const IZLE_YINELEME_MS = 10000;
++
++/** Bu kamera İzle sekmesinde akmalı mı — kutusu görünürse evet. */
++function izleKutuAcikMi(ad) {
++  const kutu = KAM_KUTU.get(ad);
++  if (kutu) return !kutu.classList.contains("gizli") || !S.kamKutuKapali[ad];
++  return !S.kamKutuKapali[ad];
++}
++
++/** İzle sekmesindeyken hangi kameranın akacağını yeniden hesaplıyor.
++ *
++ * Kutu gizlenip gösterildiğinde de çağrılıyor: kararın tek yeri burası,
++ * yoksa "gizledim ama akış sürüyor" gibi sessiz bir hâl kalırdı. */
++function izleAkisTazele() {
++  if (S.sekme !== "izle") return;
++  IZLE_AKIS.son = Date.now();
++  kamListe().forEach((k) => {
++    if (!k.canli_var) return;
++    if (S.kamCanliElle[k.ad] === false) return;   // kullanıcı elle kapattı
++    if (izleKutuAcikMi(k.ad)) {
++      // Hız her seferinde gönderiliyor: kamera sekmesinden 5 kare/sn ile
++      // dönüldüyse burada 1'e inmesi gerekiyor ve ajan "zaten canlı" deyip
++      // hızı yutuyordu (bkz. kamera.py/canli_ac).
++      komutGonder("kamera", { kamera: k.ad, canli: true, fps: IZLE_FPS });
++    } else if (k.canli) {
++      komutGonder("kamera", { kamera: k.ad, canli: false });
++    }
++  });
++}
++
++/** Kutuyu diskteki son kareyle dolduruyor — akış yokken tek yol.
++ *
++ * `/api/kare/son` periyodik kareyi veriyor ve o aralık saatlik olabiliyor;
++ * yani bu görüntü eski olabilir. Zaman satırı zaten karenin kendi saatini
++ * yazıyor, dolayısıyla eskiliği gizlemiyoruz. */
++async function izleKutuSonKare(ad) {
++  if (S.sonKare[ad]) return;                    // elde kare var, gerek yok
++  const kutu = KAM_KUTU.get(ad);
++  if (!kutu) return;
++  try {
++    // Yalnız KÜNYE isteniyor; JPEG'i <img> çekiyor. Kare yoksa 404
++    // dönüyor ve boş bir kutu açmıyoruz.
++    const liste = await apiIste(`/api/kare/liste?kamera=${encodeURIComponent(ad)}`);
++    const son = (liste.kareler || []).slice(-1)[0];
++    if (!son) return;
++    kareyiTazele(son.ts, false, ad);
++  } catch (hata) { /* kare yoksa kutu boş kalıyor, sebebi zaman satırında */ }
++}
++
++/** İzle sekmesine girildi / çıkıldı.
++ *
++ * `hedef` çıkışta nereye gidildiğini söylüyor: Kamera ve Bahçe sekmeleri
++ * akışı KENDİLERİ yönetiyor (biri 5, öteki 1 kare/sn). Oraya geçerken
++ * akışı kapatmak, hemen ardından yeniden açılacak bir akışı gereksiz yere
++ * durdurup ajanda cihazı kapat-aç ettirmek demekti. */
++function izleSekmesi(acik, hedef = "") {
++  if (!acik) {
++    if (hedef === "kamera" || hedef === "bahce") return;
++    kamListe().forEach((k) => {
++      if (k.canli) komutGonder("kamera", { kamera: k.ad, canli: false });
++    });
++    return;
++  }
++  kamListe().forEach((k) => {
++    if (!k.acik) return;
++    // Kutu kullanıcı tarafından gizlenmediyse görünür olsun: ilk kareyi
++    // beklemek, saatlik aralıkta bir saat boş ekran demekti.
++    const kutu = KAM_KUTU.get(k.ad);
++    if (kutu && !S.kamKutuKapali[k.ad]) {
++      kutu.classList.remove("gizli");
++      (KAM_SINIRLA.get(k.ad) || (() => {}))();
++    }
++    izleKutuSonKare(k.ad);
++  });
++  izleAkisTazele();
++}
++
+ /** Kamera sekmesine girildi / çıkıldı. */
+-function kamSekmesi(acik) {
++function kamSekmesi(acik, hedef = "") {
+   document.body.classList.toggle("kamera-sekmesi", acik);
+   if (acik) {
+     S.kamCanliElle = {};        // yeni ziyaret, yeni sayfa
+@@ -2720,7 +2844,11 @@ function kamSekmesi(acik) {
+     // bir kareye bakıp canlı sanmak, bu sekmenin en pahalı yanlışı olurdu.
+     Object.keys(S.kamDondu).forEach((a) => kamOrtuTemizle(a));
+   }
+-  kamCanliIste(acik);
++  // İZLE'YE GEÇİYORSAK AKIŞI KAPATMIYORUZ. Kapatıp hemen ardından 1
++  // kare/sn ile yeniden açmak, ajanda cihazı kapat-aç ettirmek demek:
++  // akış iş parçacığı bitiyor, periyodik döngü açılıyor ve hemen tekrar
++  // duruyor. `izleSekmesi(true)` hızı zaten 1'e indiriyor.
++  if (acik || hedef !== "izle") kamCanliIste(acik);
+   // Yerleşim değişti: çözümleme katmanları görüntünün üstüne yeniden
+   // otursun.
+   setTimeout(kamKatmanHizala, 60);
+@@ -4114,6 +4242,8 @@ function kamKutuBagla(kutu, ad, sira = 0) {
+       buyutYaz(false);
+       kutu.classList.add("gizli");
+       kamSahnedeYaz(ad);
++      // Gizli kutu için Pi'yi meşgul etmenin sebebi yok.
++      izleAkisTazele();
+       gunluk(`${kamEtiket(ad)} sahneden gizlendi — `
+              + `Kamera sekmesindeki "Sahnede" düğmesiyle geri açılır`);
+     };
+@@ -4695,12 +4825,16 @@ function olaylariBagla() {
+       // kameraya geçerken önce kamera akışı 5'e çıkıyor, hemen ardından
+       // bahçenin çıkış işlemi aynı kamerayı KAPATIYORDU. Sonuç, üst
+       // kameranın kendi sekmesinde hiç akmaması.
+-      if (oncekiSekme === "kamera" && S.sekme !== "kamera") kamSekmesi(false);
++      if (oncekiSekme === "kamera" && S.sekme !== "kamera") kamSekmesi(false, S.sekme);
+       if (window.Bahce && oncekiSekme === "bahce" && S.sekme !== "bahce") {
+         window.Bahce.sekme(false);
+       }
++      // İZLE DE AKIŞ İSTİYOR. Sahnedeki yüzen kutular orada; sabit
++      // kameranın akışı durunca o kutu hiç açılmıyordu.
++      if (oncekiSekme === "izle" && S.sekme !== "izle") izleSekmesi(false, S.sekme);
+       if (S.sekme === "kamera") kamSekmesi(true);
+       if (window.Bahce && S.sekme === "bahce") window.Bahce.sekme(true);
++      if (S.sekme === "izle") izleSekmesi(true);
+       // Sekme adı panelin başlığına yazılıyor: sekme çubuğu artık üstte,
+       // panelin kendisi hangi sayfada olduğunu söylemeli.
+       const ad = $("#sol-panel-ad");
+@@ -4873,6 +5007,10 @@ function olaylariBagla() {
+     // İzle'deysek yukarıdaki tıklama hiç olmuyor; başlığı yine de yaz.
+     const ad = $("#sol-panel-ad"), ilk = $('nav.sekmeler button.etkin');
+     if (ad && ilk) ad.textContent = (ilk.textContent || "").trim();
++    // Akış isteği de olmuyordu: açılışta İzle'de duran kullanıcı sabit
++    // kameranın kutusunu hiç görmüyordu. Kamera listesi henüz gelmemiş
++    // olabilir; `kameralarYaz` liste gelince bir kez daha çağırıyor.
++    izleSekmesi(true);
+   }
+ 
+   $$(".aralik").forEach((dugme) => {
+@@ -4891,7 +5029,16 @@ function olaylariBagla() {
+   // Sekme gizlenirse, pencere odağı giderse ya da sayfa kapanırsa jog biter.
+   // Tıkla-çalış kipinde bu daha da önemli: ekrana bakan kimse kalmadığında
+   // eksenin kendi başına gitmeye devam etmesini istemiyoruz.
+-  document.addEventListener("visibilitychange", () => { if (document.hidden) jogDurdur(); });
++  document.addEventListener("visibilitychange", () => {
++    if (document.hidden) jogDurdur();
++    /* SEKME GİZLENİNCE AKIŞ DA DURUYOR. İzle sekmesindeki kutu, tarayıcı
++     * sekmesi arkada kalınca hiç kimseye görünmüyor ama Pi kare üretmeye
++     * devam ediyordu — dizüstü kapatılıp gidildiğinde saatlerce. Geri
++     * dönünce akış yeniden isteniyor. */
++    if (S.sekme !== "izle") return;
++    if (document.hidden) izleSekmesi(false);
++    else izleSekmesi(true);
++  });
+   window.addEventListener("blur", jogDurdur);
+   window.addEventListener("pagehide", jogDurdur);
+ 
+diff --git a/sunucu/static/katmanlar/90-robot.js b/sunucu/static/katmanlar/90-robot.js
+index 5ba337b..03b458f 100644
+--- a/sunucu/static/katmanlar/90-robot.js
++++ b/sunucu/static/katmanlar/90-robot.js
+@@ -137,12 +137,32 @@ Tarla.katman({
+      * bir yerde durmak. İkisini ekran görüntüsünden ayırmak mümkün
+      * değildi; sayı olarak yazınca ayrılıyor. */
+     const np = p.ucKafa && p.ucKafa.userData && p.ucKafa.userData.nemProbu;
++    /* SARKMA DA GEREKİYOR. "Kuruldu ve yeri doğru" ölçülebiliyordu ama
++     * prob yine görünmüyordu: taşıyıcı plakanın tam altında duruyor ve
++     * plakadan yeterince sarkmazsa üstten bakışta plaka onu tamamen
++     * örtüyor. Ölçülen sayı buydu — 79 mm sarkma, 76 mm plaka kenarı,
++     * yani ancak 44 dereceden yatık bakışta görünüyordu. Sarkmayı da
++     * yazıyoruz ki bir daha "kurulu ama görünmüyor" ekran görüntüsünden
++     * değil sayıdan anlaşılsın. */
++    let probAltMm = null;
++    if (np && np.children.length) {
++      let alt = Infinity;
++      np.children.forEach((c) => {
++        const g = c.geometry && c.geometry.parameters;
++        const boy = g ? (g.height != null ? g.height : 0) : 0;
++        alt = Math.min(alt, c.position.y - boy / 2);
++      });
++      probAltMm = Number.isFinite(alt) ? +(alt * 1000).toFixed(1) : null;
++    }
+     return {
+       kuruldu: true,
+       probVar: !!np,
+       probParca: np ? np.children.length : 0,
+       probX: np ? +np.position.x.toFixed(4) : null,
+       probZ: np ? +np.position.z.toFixed(4) : null,
++      // Probun kafa merkezine göre en alt noktası (mm). Plakanın altı
++      // yaklaşık -1 mm; aradaki fark probun plakadan sarkması.
++      probAltMm: probAltMm,
+       baslikVar: !!b,
+       baslikX: b ? +b.position.x.toFixed(4) : null,
+       baslikParca: b ? b.children.length : 0,
+diff --git a/sunucu/static/makine.js b/sunucu/static/makine.js
+index 6f2ab64..c62a23e 100644
+--- a/sunucu/static/makine.js
++++ b/sunucu/static/makine.js
+@@ -618,19 +618,29 @@
+      */
+     /* NEM PROBU — YL-69 tipi çatal sensör.
+      *
+-     * Tek bir paslanmaz çubuktu ve gerçekteki parçaya hiç benzemiyordu.
+-     * Gerçeği: siyah bir başlık, altında YAN YANA İKİ YASSI BIÇAK ve
+-     * yukarı giden turuncu kablolar. Ayırt edici olan çatal biçimi;
+-     * sahnede probu tohum ucundan ayıran tek şey o.
++     * Gerçeği: siyah bir konnektör başlığı, altında altın kaplı baskı
++     * devre ve ondan aşağı inen YAN YANA İKİ YASSI BIÇAK. Ayırt edici
++     * olan çatal biçimi; sahnede probu tohum ucundan ayıran tek şey o.
++     *
++     * "GÖRÜNMÜYOR" ÖLÇÜLDÜ, TAHMİN EDİLMEDİ. Parça kuruluyordu ve yeri de
++     * doğruydu (`suDurumu().probVar` doğru, `probX` 0) — ama ölçüsü
++     * yüzünden hiçbir açıdan seçilmiyordu:
++     *
++     *   - Taşıyıcı plakanın TAM ALTINDA, makine merkezinde duruyordu ve
++     *     plakadan yalnız 79 mm sarkıyordu. Plakanın kendi kenarı 76 mm;
++     *     yani ucun plakanın altından çıkabilmesi için sahneye 44
++     *     dereceden daha yatık bakmak gerekiyordu. Üstten bakışta plaka
++     *     probu tam olarak örtüyordu.
++     *   - Bıçaklar 4,8 mm enindeydi. Yataktan bakınca birkaç piksel;
++     *     tezgâhın ayağı denk geldiğinde tamamen kayboluyordu.
++     *
++     * Üç şey değişti: prob AŞAĞI indirildi (plakadan 150 mm sarkıyor,
++     * her açıdan plakanın dışına çıkıyor), bıçaklar GERÇEK ORANINA
++     * yakın genişletildi (10 mm en), ve konumu artık makine merkezine
++     * değil ÖTEKİ İKİ BAŞIN ORTASINA göre — kullanıcının gördüğü düzen
++     * "solda sulama, ortada prob, sağda tohum ucu".
+      */
+     const nemProbu = new THREE.Group();
+-    /* ÖLÇÜLER BÜYÜTÜLDÜ. İlk hâli gerçek orana sadıktı ama sahnede
+-     * seçilmiyordu: parça zaten küçük, rengi de koyu zemine yakın.
+-     * Buradaki iş ölçek doğruluğu değil, hangi başın hangisi olduğunu
+-     * bir bakışta söyleyebilmek. */
+-    // Üstteki siyah konnektör başlığı.
+-    nemProbu.add(kutu(THREE, [P * 0.6, P * 0.5, P * 0.32], [0, -P * 0.12, 0],
+-                      { color: "#15181a", metalness: 0.1, roughness: 0.72 }));
+     /* KENDİ IŞIĞI OLAN ALTIN SARISI.
+      *
+      * Düz bir renkti ve kafanın koyu gövdesinin önünde kayboluyordu:
+@@ -639,24 +649,46 @@
+      * gerçeğe sadakat değil, görülebilirlik kararı.
+      */
+     const probMal = { color: "#f0c93a", metalness: 0.3, roughness: 0.35,
+-                      emissive: "#6b5410", emissiveIntensity: 0.55 };
+-    // Bıçakları taşıyan kart — gerçeğinde de baskı devre.
+-    nemProbu.add(kutu(THREE, [P * 0.62, P * 0.5, P * 0.12],
+-                      [0, -P * 0.52, 0], probMal));
+-    /* İKİ BIÇAK — UZUN. Gerçek sensörde de en uzun parça bu; kısa
+-     * çizilince tohum ucunun konisiyle aynı boyda kalıyor ve ikisi
++                      emissive: "#7d6112", emissiveIntensity: 0.7 };
++    /* PROB PLAKANIN ALTINDAN BAŞLIYOR. Grubun kendi sıfırı kafanın
++     * merkezinde; parçalar buradan aşağı diziliyor. `probUst` plakanın
++     * alt yüzünün hemen altı — parçanın plakaya gömülü görünmemesi için. */
++    const probUst = -P * 0.45;
++    // Üstteki siyah konnektör başlığı — kabloların girdiği blok.
++    nemProbu.add(kutu(THREE, [P * 1.0, P * 0.8, P * 0.5],
++                      [0, probUst - P * 0.4, 0],
++                      { color: "#15181a", metalness: 0.1, roughness: 0.72 }));
++    // Konnektörün altındaki ince boyun.
++    nemProbu.add(kutu(THREE, [P * 0.5, P * 0.3, P * 0.3],
++                      [0, probUst - P * 0.95, 0],
++                      { color: "#2a2e31", metalness: 0.2, roughness: 0.6 }));
++    // Bıçakları taşıyan kart — gerçeğinde de altın kaplı baskı devre.
++    nemProbu.add(kutu(THREE, [P * 0.9, P * 1.1, P * 0.16],
++                      [0, probUst - P * 1.65, 0], probMal));
++    /* İKİ BIÇAK. Gerçek sensörde de en uzun parça bu; kısa ve ince
++     * çizilince tohum ucunun konisiyle aynı boyda kalıyor, ikisi
+      * uzaktan ayrışmıyordu. */
+     [-1, 1].forEach((yon) => {
+-      nemProbu.add(kutu(THREE, [P * 0.24, P * 3.2, P * 0.1],
+-                        [yon * P * 0.2, -P * 2.4, 0], probMal));
++      nemProbu.add(kutu(THREE, [P * 0.5, P * 4.2, P * 0.18],
++                        [yon * P * 0.3, probUst - P * 4.3, 0], probMal));
+     });
+-    // Turuncu kablolar: yukarı çıkıp gözden kayboluyorlar.
++    // Bıçakların sivri uçları — toprağa giren kısım.
++    [-1, 1].forEach((yon) => {
++      const sivri = new THREE.Mesh(
++        new THREE.ConeGeometry(P * 0.25, P * 0.55, 4),
++        mal(THREE, probMal));
++      sivri.position.set(yon * P * 0.3, probUst - P * 6.65, 0);
++      sivri.rotation.y = Math.PI / 4;
++      sivri.rotation.x = Math.PI;
++      nemProbu.add(sivri);
++    });
++    // Turuncu kablolar: yukarı çıkıp kafanın gövdesinde gözden kayboluyorlar.
+     [-1, 1].forEach((yon) => {
+       const tel = new THREE.Mesh(
+-        new THREE.CylinderGeometry(P * 0.05, P * 0.05, P * 1.5, 6),
++        new THREE.CylinderGeometry(P * 0.06, P * 0.06, P * 1.6, 6),
+         mal(THREE, { color: yon < 0 ? "#f0932b" : "#e6e0d2",
+                      metalness: 0.05, roughness: 0.7 }));
+-      tel.position.set(yon * P * 0.14, P * 0.65, P * 0.07);
++      tel.position.set(yon * P * 0.18, probUst + P * 0.75, P * 0.1);
+       nemProbu.add(tel);
+     });
+     ucKafa.add(nemProbu);
+@@ -680,17 +712,27 @@
+     // Kaymaları uygula. `mmP` bir milimetrenin sahnedeki karşılığı.
+     const bslr = opt.baslar || {};
+     const mmP = opt.mmP || 1;
+-    const yerlestir = (grup, kimlik, yedekX) => {
++    /* İŞARET TERS: `dx` "makine bu kadar kayarak gider" demek, yani baş
++     * merkezin TERS yönünde duruyor. Sahnede kaymayı olduğu gibi
++     * uygulasaydık başlar gerçekte oldukları yerin aynasında görünürdü. */
++    const basYeri = (kimlik) => {
+       const b = bslr[kimlik];
+-      const varMi = b && (Number(b.dx) || Number(b.dy));
+-      grup.position.x = varMi ? -Number(b.dx || 0) * mmP : yedekX;
+-      grup.position.z = varMi ? -Number(b.dy || 0) * mmP : 0;
++      if (!b || !(Number(b.dx) || Number(b.dy))) return null;   // ayar girilmemiş
++      return { x: -Number(b.dx || 0) * mmP, z: -Number(b.dy || 0) * mmP };
++    };
++    /* AYAR GİRİLMEMİŞSE YEDEK DÜZEN — ve o düzen de GERÇEK SIRAYI
++     * göstermeli: solda sulama, ortada prob, sağda tohum ucu. Eskiden
++     * yedek değerler sulamayı +0,6P'ye, probu 0'a koyuyordu; yani ayar
++     * girilmemiş bir makinede sulama başlığı PROBUN SAĞINDA çiziliyor,
++     * dizilim gerçeğin tersi oluyordu. */
++    const YEDEK = { sulama: -P * 2.4, nem: 0, tohum: P * 2.4 };
++    const yerlestir = (grup, kimlik) => {
++      const y = basYeri(kimlik);
++      grup.position.x = y ? y.x : YEDEK[kimlik];
++      grup.position.z = y ? y.z : 0;
++      return grup.position;
+     };
+-    // İŞARET TERS: `dx` "makine bu kadar kayarak gider" demek, yani baş
+-    // merkezin TERS yönünde duruyor. Sahnede kaymayı olduğu gibi
+-    // uygulasaydık başlar gerçekte oldukları yerin aynasında görünürdü.
+-    yerlestir(nemProbu, "nem", 0);
+-    yerlestir(tohumUcu, "tohum", P * 2.4);
++    yerlestir(tohumUcu, "tohum");
+     // Merkez işareti: Z ekseninin gerçek merkezi. Üç baş da bunun
+     // etrafında duruyor ve hiçbiri tam ortada değil — bunu göstermek
+     // kaymaların neden var olduğunu anlatan tek şey.
+@@ -729,12 +771,10 @@
+      * sabit yer kullanılıyor. */
+     const basY = -P * 0.62;
+     const baslik = new THREE.Group();
+-    const sb = (opt.baslar || {}).sulama;
+-    const sbVar = sb && (Number(sb.dx) || Number(sb.dy));
+-    baslik.position.set(
+-      sbVar ? -Number(sb.dx || 0) * (opt.mmP || 1) : P * 0.6,
+-      basY,
+-      sbVar ? -Number(sb.dy || 0) * (opt.mmP || 1) : 0);
++    // Yeri öteki iki başla AYNI kaynaktan (`yerlestir`); ayrı bir hesap
++    // yazmak, üç başın birbirine göre yerini iki yerden almak demekti.
++    yerlestir(baslik, "sulama");
++    baslik.position.y = basY;
+     /* Başlık gövdesi — KISA ve GENİŞ silindir, altı delikli.
+      *
+      * Önce ince bir silindirdi ve sahnede uç kafasının gölgesinde
+@@ -782,6 +822,22 @@
+      * plakasına asılı, ayrı bir bağlantı parçası gerekmiyor. */
+     ucKafa.add(baslik);
+ 
++    /* NEM PROBU İKİ BAŞIN ORTASINDA. Kendi `dx/dy` ayarı girilmişse o
++     * geçerli — ölçülen sayı her zaman kazanır. Girilmemişse makine
++     * merkezine değil, SULAMA BAŞLIĞI İLE TOHUM UCUNUN TAM ORTASINA
++     * konuyor: makinede de üçü yan yana ve prob ortadaki.
++     *
++     * Merkeze koymak sessizce yanlıştı: sulama başlığı 60 mm solda,
++     * tohum ucu sağda; merkez ikisinin ortası DEĞİL ve prob, üç başın
++     * dizilimine bakan biri için yanlış yerde duruyordu. Üstüne, makine
++     * merkezi tam da Z kılavuzunun ve merkez işaretinin bulunduğu yer. */
++    if (!basYeri("nem")) {
++      nemProbu.position.x = (baslik.position.x + tohumUcu.position.x) / 2;
++      nemProbu.position.z = (baslik.position.z + tohumUcu.position.z) / 2;
++    } else {
++      yerlestir(nemProbu, "nem");
++    }
++
+     /* --- TAŞIYICI PLAKA ----------------------------------------------------
+      * Üç başı da taşıyan alt plaka. ÖLÇÜSÜ VE YERİ BAŞLARDAN ÇIKIYOR.
+      *
+-- 
+2.43.0
+
