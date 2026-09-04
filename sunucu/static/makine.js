@@ -853,7 +853,21 @@
      * pay bırakarak. Gerçekte de öyle: tek bir alüminyum plaka, üstüne
      * üç baş vidalı.
      */
-    const basYerleri = [nemProbu.position, tohumUcu.position, baslik.position];
+    /* MAKİNE MERKEZİ DE PLAKANIN İÇİNDE.
+     *
+     * Plaka yalnız başların arasını köprülüyordu ve plakayı Z ARABASINA
+     * bağlayan hiçbir şey yoktu. Kaymalar bir yöne büyük olduğunda bütün
+     * küme kafadan uzağa kayıyor, sahnede havada duran ayrı bir parça
+     * gibi görünüyordu — kullanıcı "uçlar arkada ve ayrık" dedi, tam da
+     * bu.
+     *
+     * Gerçekte plaka doğrudan arabanın altına cıvatalı. Sıfır noktasını
+     * (arabanın merkezi) da kapsama katınca plaka her zaman arabaya
+     * değiyor ve küme ona asılı görünüyor. Başların KENDİ yerleri
+     * değişmiyor: kaymalar hâlâ gerçek sayıdan geliyor. */
+    const sifir = new THREE.Vector3(0, 0, 0);
+    const basYerleri = [nemProbu.position, tohumUcu.position,
+                        baslik.position, sifir];
     const payX = P * 0.9, payZ = P * 0.8;
     const enKucukX = Math.min(...basYerleri.map((v) => v.x)) - payX;
     const enBuyukX = Math.max(...basYerleri.map((v) => v.x)) + payX;
@@ -865,6 +879,12 @@
     const plakaZ = (enKucukZ + enBuyukZ) / 2;
     ucKafa.add(kutu(THREE, [plakaEn, P * 0.34, plakaBoy],
                     [plakaX, P * 0.12, plakaZ], baski));
+    /* BAĞLANTI KULAĞI. Plakayı arabanın gövdesine bağlayan kısa dikey
+     * parça. Plaka artık merkeze değiyor ama üstü boştu; sahnede plaka
+     * gövdenin altında YÜZÜYOR gibi duruyordu. Bu parça ikisinin
+     * arasındaki boşluğu kapatıyor. */
+    ucKafa.add(kutu(THREE, [P * 0.9, P * 0.7, P * 0.9],
+                    [0, P * 0.42, 0], baski));
     // Vida başları plakanın KENDİ dört köşesinde — plaka büyüyünce
     // onlar da onunla gidiyor, yoksa vidalar havada kalırdı.
     [[-1, -1], [1, -1], [-1, 1], [1, 1]].forEach(([ix, iz]) => {
