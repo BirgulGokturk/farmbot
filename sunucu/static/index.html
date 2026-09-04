@@ -762,11 +762,16 @@
             <button class="dugme" data-home="x" title="Yalnız X">⌂ X</button>
             <button class="dugme" data-home="y" title="Yalnız Y">⌂ Y</button>
             <button class="dugme" data-home="z" title="Yalnız Z">⌂ Z</button>
+            <!-- T de home'a gidebiliyor: hedefi 0, yani tohum ucunun
+                 TAMAMEN ÇEKİLMİŞ hâli. Eksen kalibre değilse kilitli. -->
+            <button class="dugme" data-home="t" id="d-home-t"
+                    title="Yalnız T — tohum ucunu tamamen çeker">⌂ T</button>
           </div>
           <p class="alt-not">
             Ortadaki <b>⌂</b> üç ekseni sırayla arar (Z, X, Y) — Z önce
             kalktığı için güvenlidir. Tek eksen ararken Z güvenli yükseklikte
-            değilse X ve Y reddedilir.
+            değilse X ve Y reddedilir. <b>⌂ T</b> tohum ucunu tamamen yukarı
+            çeker; T'nin home'u sıfır, yani çekilmiş konum.
           </p>
 
           <div class="satir-8">

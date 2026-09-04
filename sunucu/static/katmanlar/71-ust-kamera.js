@@ -111,13 +111,41 @@ Tarla.katman({
 
   /* --------------------------------------------------------- 3B */
 
+  /** Neden çizilemediğini BİR KEZ söylüyor.
+   *
+   * Katman açıkken hiçbir şey çıkmıyorsa kullanıcının elinde tek bir
+   * bilgi kalmıyordu: katmanı açtı, ekran değişmedi, sebep yok. Sessiz
+   * başarısızlık, en pahalı hata türü — burada da öyle oldu.
+   *
+   * Bir kez, çünkü sahne saniyede birçok kez çiziliyor ve aynı satırı
+   * günlüğe yığmak sebebi bulmayı daha da zorlaştırırdı. */
+  sebepYaz(o, metin) {
+    if (this._sebep === metin) return;
+    this._sebep = metin;
+    if (metin) o.gunluk(`Üst kamera görüntüsü çizilemiyor — ${metin}`, "uyari");
+  },
+
   guncelle(o) {
     o.bosalt(o.grup);
     this.veriAl(o);
+    if (!this._kalib) {
+      this.sebepYaz(o, "kalibrasyon okunamadı (üst kamera tanımlı mı?)");
+      return;
+    }
     const k4 = this.koseler();
-    if (!k4) return;
+    if (!k4) {
+      this.sebepYaz(o, "üst kamera kalibre edilmemiş. Kamera sekmesi → "
+        + "'AprilTag ile kalibre et' ile en az iki etiketten kalibrasyon "
+        + "kaydedin; kameranın yatağın neresine baktığı ancak ondan sonra "
+        + "biliniyor.");
+      return;
+    }
     const im = this.gorsel(o);
-    if (!im) return;
+    if (!im) {
+      this.sebepYaz(o, "üst kameradan kare alınamadı (kamera açık mı?)");
+      return;
+    }
+    this.sebepYaz(o, "");
 
     // DÖRT KÖŞEDEN İKİ ÜÇGEN. Homografi tam olarak bir dörtgen dönüşümü;
     // üçgen başına doğrusal enterpolasyon onu birebir vermiyor ama

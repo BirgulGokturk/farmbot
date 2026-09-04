@@ -1034,7 +1034,7 @@ function tohumUcuYaz(d) {
         + ` Yukarı = T ${Number(t.yukari_mm || 0).toFixed(1)} mm`
         + " (ters ise Ayarlar → Başlar'dan değiştirin).";
   }
-  ["#d-t-in", "#d-t-kalk", "#t-mm"].forEach((sec) => {
+  ["#d-t-in", "#d-t-kalk", "#t-mm", "#d-home-t"].forEach((sec) => {
     const el = $(sec);
     if (el) el.disabled = kilit;
   });
