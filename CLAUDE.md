@@ -87,3 +87,25 @@ Söz dizimi denetimi ucuz, her değişiklikten sonra çalıştır:
 
     python -c "import ast,io; ast.parse(io.open('DOSYA',encoding='utf-8').read())"
     node --check sunucu/static/DOSYA.js
+
+## Çalışma kuralları — her görevde geçerli
+
+Bunlar her seferinde tekrar yazılmasın diye burada. İstisna isteniyorsa
+görev metni açıkça söyler.
+
+- **Görsel üretme.** Şema, tablo, mockup, önizleme, "şöyle görünecek"
+  gösterimi yok. İş kodda bitiyor, resimde değil.
+- **Deneme, sahte veri, simülasyon üretme.** Gerçek uçlara bağlan.
+  Donanım yoksa o kısmı denenmemiş bırak ve öyle söyle — çalıştığını
+  varsaymaktansa denenmediğini bilmek iyidir.
+- **Doğrulama = söz dizimi denetimi.** Yukarıdaki iki komut yeter.
+  Gerçek donanımda deneyemeyeceğin şeyi denemeye kalkma.
+- **Kısa yaz.** Ne değiştirdiğini iki üç cümleyle söyle; gerekçe commit
+  mesajına gider, sohbete değil.
+- **Ölçmeden değiştirme.** Sayıya dayanan bir sorunda önce ölç. Tutmayan
+  bir düzeltmeyi ikinci kez tahminle deneme; ölçüm ekle.
+- **Sıradan kararları kendin ver, körü körüne ilerleme.** İstenen şey
+  iki türlü anlaşılıyorsa, kalıcı bir davranış değişiyorsa ya da geri
+  alınması zor bir şey yapılacaksa dur ve iki üç satırla sor.
+- **`git add -A` KULLANMA.** Aynı çalışma ağacında birden çok oturum
+  çalışıyor; yalnız kendi dosyalarını ekle. Commit at, push kullanıcıda.
