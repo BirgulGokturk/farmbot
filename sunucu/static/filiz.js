@@ -170,9 +170,11 @@
             <td>${f.parca > 1 ? f.parca + " leke" : "—"}</td>
           </tr>`).join("")
         + `</tbody></table></div>
-        <p class="alt-not">Teyit için bir satırın X/Y'sini
-          <b>Konuma git</b>e yazıp probu üstüne gönderin. Sapma varsa
-          kalibrasyonun hatası kadar olmalı — daha fazlaysa haber verin.</p>`;
+        <p class="alt-not">Teyit için bir satırın X/Y'sini Sür sekmesindeki
+          <b>Seçtiğiniz başı bu noktaya götür</b> alanına yazıp
+          <b>Nem probu</b>yu gönderin — <b>Konuma git</b> değil, o makineyi
+          götürür ve başın kayması hesaba girmez. Sapma kalibrasyonun hatası
+          kadar olmalı; daha fazlaysa haber verin.</p>`;
     }
     k.innerHTML = g;
     k.classList.remove("gizli");

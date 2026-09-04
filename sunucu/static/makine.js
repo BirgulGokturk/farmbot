@@ -602,15 +602,8 @@
      * merkezi kafadan kaymıştı ve plaka sağa doğru sarkıyordu; iki uç da
      * plakanın bir ucuna toplanmıştı. Merkez artık kafanın merkeziyle
      * aynı, iki uç merkeze göre simetrik. */
-    ucKafa.add(kutu(THREE, [P * 3.4, P * 0.34, P * 2.4], [P * 1.5, P * 0.12, 0], baski));
-    // Plakadaki vida başları: dört köşe, küçük ve parlak.
-    [[-1, -1], [1, -1], [-1, 1], [1, 1]].forEach(([ix, iz]) => {
-      const v = new THREE.Mesh(
-        new THREE.CylinderGeometry(P * 0.12, P * 0.12, P * 0.1, 8),
-        mal(THREE, { color: "#9aa1a8", metalness: 0.85, roughness: 0.3 }));
-      v.position.set(P * 1.5 + ix * P * 1.4, P * 0.3, iz * P * 0.85);
-      ucKafa.add(v);
-    });
+    /* PLAKA AŞAĞIDA, ÜÇ BAŞ YERLEŞTİKTEN SONRA kuruluyor — bkz.
+     * "TAŞIYICI PLAKA". Ölçüsü başların gerçek kaymalarından çıkıyor. */
     /* --- ÜÇ BAŞ YAN YANA ---------------------------------------------------
      * Makinede Z ekseninin ucunda üç baş KALICI olarak vidalı: soldaki
      * sulama başlığı, ortadaki toprak nemi probu, sağdaki tohum alma ucu.
@@ -754,6 +747,42 @@
      * takılı görünmesinin sebebi oydu. Başlık artık kafanın kendi
      * plakasına asılı, ayrı bir bağlantı parçası gerekmiyor. */
     ucKafa.add(baslik);
+
+    /* --- TAŞIYICI PLAKA ----------------------------------------------------
+     * Üç başı da taşıyan alt plaka. ÖLÇÜSÜ VE YERİ BAŞLARDAN ÇIKIYOR.
+     *
+     * Sabit bir yerdeydi (x = P*1.5) ve sabit bir boydaydı; başlar ise
+     * `uclar.json`daki gerçek kaymalara göre yerleşiyor. İkisi
+     * birbirinden bağımsız olunca plaka bir yana, uçlar başka yana
+     * düşüyordu — sahnede uçlar "kafadan kopmuş" gibi duruyordu ve
+     * kaymalar her değiştiğinde bu daha da kötüleşiyordu.
+     *
+     * Plaka artık üç başın en solundan en sağına uzanıyor, iki yanına da
+     * pay bırakarak. Gerçekte de öyle: tek bir alüminyum plaka, üstüne
+     * üç baş vidalı.
+     */
+    const basYerleri = [nemProbu.position, tohumUcu.position, baslik.position];
+    const payX = P * 0.9, payZ = P * 0.8;
+    const enKucukX = Math.min(...basYerleri.map((v) => v.x)) - payX;
+    const enBuyukX = Math.max(...basYerleri.map((v) => v.x)) + payX;
+    const enKucukZ = Math.min(...basYerleri.map((v) => v.z)) - payZ;
+    const enBuyukZ = Math.max(...basYerleri.map((v) => v.z)) + payZ;
+    const plakaEn = Math.max(P * 2.0, enBuyukX - enKucukX);
+    const plakaBoy = Math.max(P * 1.6, enBuyukZ - enKucukZ);
+    const plakaX = (enKucukX + enBuyukX) / 2;
+    const plakaZ = (enKucukZ + enBuyukZ) / 2;
+    ucKafa.add(kutu(THREE, [plakaEn, P * 0.34, plakaBoy],
+                    [plakaX, P * 0.12, plakaZ], baski));
+    // Vida başları plakanın KENDİ dört köşesinde — plaka büyüyünce
+    // onlar da onunla gidiyor, yoksa vidalar havada kalırdı.
+    [[-1, -1], [1, -1], [-1, 1], [1, 1]].forEach(([ix, iz]) => {
+      const v = new THREE.Mesh(
+        new THREE.CylinderGeometry(P * 0.12, P * 0.12, P * 0.1, 8),
+        mal(THREE, { color: "#9aa1a8", metalness: 0.85, roughness: 0.3 }));
+      v.position.set(plakaX + ix * (plakaEn / 2 - P * 0.25), P * 0.3,
+                     plakaZ + iz * (plakaBoy / 2 - P * 0.25));
+      ucKafa.add(v);
+    });
 
     /* SU HUZMESİ. Pompa açıkken görünüyor, kapalıyken değil — 90-robot.js
      * röle durumundan sürüyor. Konisi aşağı doğru hafif açılıyor: gerçek

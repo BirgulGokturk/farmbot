@@ -47,8 +47,10 @@
    * bitkiyi "sorunsuz" saymak, bilmediğini bilmemek demek. */
   function hal(b) {
     const o = b.su_olcum || {};
-    if (!o.var) return { ad: "yok", etiket: "ölçülmedi", sinif: "nem-yok" };
-    if (o.bayat) return { ad: "bayat", etiket: "eski ölçüm", sinif: "nem-bayat" };
+    if (!o.var) return { ad: "yok", etiket: "hiç ölçülmedi", sinif: "nem-yok",
+                         ozet: "hiç ölçülmedi" };
+    if (o.bayat) return { ad: "bayat", etiket: "ölçüm eskimiş", sinif: "nem-bayat",
+                          ozet: "ölçümü eskimiş" };
     /* ÖDÜNÇ OKUMA AYRI BİR HÂL.
      *
      * Sunucu, bitkinin kendi ölçümü yoksa 100 mm içindeki bir komşu
@@ -59,9 +61,15 @@
      *
      * Sayıyı saklamıyoruz — bilgi bilgidir — ama ONA GÖRE KARAR
      * VERMİYORUZ: bu bitkiler iyi ya da susadı sayılmıyor. */
-    if (!o.kendi) return { ad: "odunc", etiket: "komşudan", sinif: "nem-odunc" };
-    if (b.susadi) return { ad: "susadi", etiket: "susadı", sinif: "nem-susadi" };
-    return { ad: "iyi", etiket: "iyi", sinif: "nem-iyi" };
+    // "komşudan" diyordu ve bu, ekranda tek başına duran bir kelimeydi:
+    // neyin komşusu, ne olduğu belli değildi. Söylenmek istenen şey
+    // bitkinin KENDİ ölçümünün olmadığı.
+    if (!o.kendi) return { ad: "odunc", etiket: "kendi ölçümü yok",
+                           sinif: "nem-odunc", ozet: "kendi ölçümü yok" };
+    if (b.susadi) return { ad: "susadi", etiket: "susadı", sinif: "nem-susadi",
+                           ozet: "susadı" };
+    return { ad: "iyi", etiket: "nemi yeterli", sinif: "nem-iyi",
+             ozet: "nemi yeterli" };
   }
 
   const SIRA = { yok: 0, odunc: 1, susadi: 2, bayat: 3, iyi: 4 };
@@ -74,8 +82,12 @@
         <summary>Bitkilerin toprak nemi <span id="nem-ozet" class="nem-ozet"></span></summary>
         <p class="ikincil">
           Nem ölçümü bitkinin üstüne gidip probu toprağa daldırıyor.
-          <b>“Ölçülmedi” ile “iyi” ayrı şeyler:</b> ilki bilgi eksikliği,
-          ikincisi bilgi. Liste önce ölçülmeyenleri gösteriyor.
+          <b>“Hiç ölçülmedi” ile “nemi yeterli” ayrı şeyler:</b> ilki bilgi
+          eksikliği, ikincisi bilgi. Liste önce ölçülmeyenleri gösteriyor.
+          <b>“Kendi ölçümü yok”</b> demek: bu bitkinin üstünde hiç ölçüm
+          yapılmadı, yandaki bir noktadan alınan sayı gösteriliyor —
+          parantez içinde. O sayıya bakıp sulama kararı vermeyin, önce
+          bitkinin kendi nemini ölçün.
         </p>
         <div class="satir-8 alt-hizali">
           <button class="dugme" id="d-nem-tazele">Yenile</button>
@@ -219,12 +231,18 @@
 
     const ozet = $("#nem-ozet");
     if (ozet) {
+      // ÖZET CÜMLE GİBİ OKUNMALI. Önceki hâli "2 susadı · 14 komşudan ·
+      // 9 iyi" idi ve ortadaki iki kelime hiçbir şey anlatmıyordu.
+      // Sayının ardından neyin sayıldığı tam olarak yazılıyor.
       const parca = [];
-      if (sayim.susadi) parca.push(`<b class="nem-susadi">${sayim.susadi} susadı</b>`);
-      if (sayim.yok) parca.push(`<b class="nem-yok">${sayim.yok} ölçülmedi</b>`);
-      if (sayim.odunc) parca.push(`<b class="nem-odunc">${sayim.odunc} komşudan</b>`);
-      if (sayim.bayat) parca.push(`<b class="nem-bayat">${sayim.bayat} eski</b>`);
-      if (sayim.iyi) parca.push(`<b class="nem-iyi">${sayim.iyi} iyi</b>`);
+      const ekle = (n, ad, sinif) => {
+        if (n) parca.push(`<b class="${sinif}">${n} bitki ${ad}</b>`);
+      };
+      ekle(sayim.susadi, "susadı", "nem-susadi");
+      ekle(sayim.yok, "hiç ölçülmedi", "nem-yok");
+      ekle(sayim.odunc, "kendi ölçümü yok", "nem-odunc");
+      ekle(sayim.bayat, "ölçümü eskimiş", "nem-bayat");
+      ekle(sayim.iyi, "nemi yeterli", "nem-iyi");
       ozet.innerHTML = parca.join(" · ") || "bitki yok";
     }
 
