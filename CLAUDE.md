@@ -29,6 +29,7 @@ AI HAT'i ve iki kamerası var. Panel `http://<pi>:8000` adresinde.
 | Kamera kalibrasyonu ve harita (homografi) | `sunucu/kalibrasyon.py` |
 | AprilTag ile kalibrasyon | `sunucu/etiket.py` |
 | Filizlerin yatak koordinatı | `sunucu/filiz.py` |
+| Fide türü tanıma (ONNX) ve veri toplama | `sunucu/tanima.py` |
 | Sulama, ekim, dikim alanları | `sunucu/sulama.py`, `ekim.py`, `dikim.py` |
 | Panel kabuğu, kameralar, ayar kartları | `sunucu/static/app.js` |
 | 3B/2B sahne çekirdeği, katman sistemi | `sunucu/static/tarla.js` |
@@ -49,6 +50,10 @@ girmek gerekiyor.
 
 **Sırlar.** `sunucu/ortam` panel parolasını tutuyor; okuma, yazma, log'a
 düşürme.
+
+**Model ve toplanan veri.** `<veri>/model/` (fide.onnx + siniflar.json) ve
+`<veri>/fide_veri/` depoda değil, makinede. Model yoksa tanıma sessizce
+kapanıyor; toplanan veri üst sınıra gelince yazmayı kesiyor, silmiyor.
 
 ## İki oturum aynı depoda çalışıyor
 

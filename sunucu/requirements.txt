@@ -13,3 +13,10 @@ Pillow>=10.0
 #   sudo apt install -y python3-opencv
 # Bu satir pip ile kuranlar icin; apt surumu varsa gerekmiyor.
 opencv-python-headless>=4.7 ; platform_machine != "aarch64"
+
+# Fide turu tanima (tanima.py) icin. ISTEGE BAGLI ve BILEREK oyle:
+# kurulu degilse yalniz tur tahmini kapaniyor, her leke "bilinmiyor"
+# donuyor ve sebebi yaziliyor; leke bulma, koordinat ve eslestirme
+# etkilenmiyor. Hailo derlemesi YOK: birkac leke icin MobileNet CPU'da
+# yeterince hizli.
+onnxruntime>=1.16 ; platform_machine != "armv7l"

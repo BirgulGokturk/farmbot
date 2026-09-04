@@ -2525,7 +2525,9 @@ def _kamera_etiket(ad: str) -> str:
 
 
 def _goruntu_coz(damga: str, esik: float | None, en_az_piksel: int,
-                 kamera: str = kareler.VARSAYILAN_KAMERA) -> dict[str, Any]:
+                 kamera: str = kareler.VARSAYILAN_KAMERA, *,
+                 tanima_sahte: bool = False,
+                 veri_topla: bool = True) -> dict[str, Any]:
     """Bir kareyi çözümler: lekeler + milimetre + kayıtlı bitki eşlemesi.
 
     KALİBRASYON KARENİN KAMERASINDAN geliyor. Uç kamerasının mm/px'ini sabit
@@ -2583,6 +2585,43 @@ def _goruntu_coz(damga: str, esik: float | None, en_az_piksel: int,
         caplar, yasa = _yaricaplar(icerdeki)
         eslesme = tespit.eslestir(cozum["lekeler"], icerdeki,
                                   yaricap_mm=caplar, yasa_gore=yasa)
+
+    # TÜR TANIMA VE VERİ TOPLAMA — ikisi de `tanima.py` içinde.
+    #
+    # Buraya bağlanmasının sebebi: bu yol lekeleri kayıtlı bitkilerle
+    # EŞLEŞTİREN tek yol (`eslesme`). Etiket oradan geliyor — nereye ne
+    # ektiğimizi zaten biliyoruz, kalibrasyon oturunca her lekeye
+    # "bu, X noktasındaki şu tür" etiketi kendiliğinden yapışıyor.
+    #
+    # İkisi de hiçbir şeyi kırmıyor: model yoksa her leke "bilinmiyor",
+    # veri klasörü yazılamıyorsa sayı sıfır kalıyor ve sebebi yanıtta.
+    tani = {"sonuc": {}, "hazir": False, "sebep": "çalıştırılmadı"}
+    veri = None
+    try:
+        import tanima
+        tani = tanima.siniflandir(rgb, sonuc["lekeler"], sahte=tanima_sahte)
+        # Sınıf LEKEYE İLİŞTİRİLİYOR: hem piksel hem milimetre listesine,
+        # `no` üstünden. Panelin iki listeyi ayrı ayrı eşleştirmesi
+        # gerekmesin diye.
+        for b in sonuc["lekeler"]:
+            k = tani["sonuc"].get(b.get("no")) or {}
+            b["sinif"] = k.get("sinif")
+            b["guven"] = k.get("guven")
+            b["sinif_sahte"] = k.get("sahte", False)
+        for b in cozum["lekeler"]:
+            k = tani["sonuc"].get(b.get("no")) or {}
+            b["sinif"] = k.get("sinif")
+            b["guven"] = k.get("guven")
+            b["sinif_sahte"] = k.get("sahte", False)
+        if veri_topla:
+            veri = tanima.topla(rgb, sonuc["lekeler"], eslesme["eslesen"],
+                                damga=damga, kamera=kam)
+    except ImportError as hata:
+        tani = {"sonuc": {}, "hazir": False, "sebep": f"tanima yüklenemedi: {hata}"}
+    except Exception as hata:                              # noqa: BLE001
+        # Tanıma bir eklenti: patlarsa çözümlemenin geri kalanı (leke,
+        # koordinat, eşleşme) yine dönmeli.
+        tani = {"sonuc": {}, "hazir": False, "sebep": f"tanıma hatası: {hata}"}
     return {
         "damga": damga, "ts": kayit.get("ts"),
         "kamera": kam, "kamera_etiket": str(bilgi.get("etiket") or kam),
@@ -2608,6 +2647,14 @@ def _goruntu_coz(damga: str, esik: float | None, en_az_piksel: int,
         # gerekçesi. "Filiz yok" ile "kare yanmış" iki ayrı şey ve
         # çareleri de ayrı; ikisini ayırt etmeden "eşiği düşürün"
         # demek yanlış yönlendirme.
+        # TÜR TAHMİNİ. `sinif` None ise "bilinmiyor" — model yok, sınıf
+        # adları yok ya da güven eşiğin altında. `sahte` bayrağı gerçek
+        # tahminle karıştırılmaması için; panel onu görmezden gelmemeli.
+        "tanima": {"hazir": tani.get("hazir"), "sebep": tani.get("sebep"),
+                   "sahte": tani.get("sahte", False),
+                   "en_az_guven": tani.get("en_az_guven"),
+                   "sure_ms": tani.get("sure_ms")},
+        "veri_toplama": veri,
         "kare_kalite": sonuc.get("kare"),
         "asamalar": sonuc.get("asamalar"),
         "tani": sonuc.get("tani"),
@@ -2678,8 +2725,31 @@ async def api_goruntu_coz(govde: dict[str, Any], jeton: str = Query(default=""))
     esik = None if esik in (None, "") else float(esik)
     en_az = int(govde.get("en_az_piksel") or 0) or None
     goruntu, _, _, _ = _goruntu_yukle()
+    # `tanima_sahte`: model gelmeden hattın uçtan uca çalıştığını
+    # görebilmek için. Çıktı `sahte: true` taşıyor, gerçek tahminle
+    # karıştırılmasın. `veri_topla`: kırpmaları diske yazmayı bu çağrı
+    # için kapatmak isteyen olursa.
     return await asyncio.to_thread(
-        _goruntu_coz, damga, esik, en_az or goruntu.EN_AZ_PIKSEL, kam)
+        _goruntu_coz, damga, esik, en_az or goruntu.EN_AZ_PIKSEL, kam,
+        tanima_sahte=bool(govde.get("tanima_sahte")),
+        veri_topla=bool(govde.get("veri_topla", True)))
+
+
+@app.get("/api/tanima/durum")
+async def api_tanima_durum(jeton: str = Query(default="")):
+    """Tanıma hazır mı, ve toplanan veri ne durumda.
+
+    "Neden tür yazmıyor" sorusunun tek yerden cevabı: model dosyası var
+    mı, onnxruntime kurulu mu, sınıf adları geldi mi. Sessiz kalıp
+    "bilinmiyor" demek yetmiyor, sebebi de söylenmeli.
+    """
+    _parola_dogrula(jeton)
+    try:
+        import tanima
+    except ImportError as hata:
+        raise HTTPException(status_code=503, detail=f"tanima yüklenemedi: {hata}")
+    return {"model": await asyncio.to_thread(tanima.hazir_mi),
+            "veri": await asyncio.to_thread(tanima.veri_durumu)}
 
 
 def _goruntu_fark(damga_a: str, damga_b: str,
