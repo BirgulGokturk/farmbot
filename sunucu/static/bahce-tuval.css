@@ -374,3 +374,26 @@ body.bahce-tuval .bt { flex: 1 1 auto; }
   font-size: var(--yazi-kucuk, .82rem);
   padding: var(--b2) var(--b3);
 }
+
+/* ==================================================================== *
+ * Zaman çubuğu
+ * ==================================================================== */
+.bt-zaman {
+  display: flex;
+  align-items: center;
+  gap: var(--b2);
+  flex: none;
+  background: var(--yuzey-2);
+  border-radius: 12px;
+  padding: var(--b2) var(--b3);
+}
+.bt-zaman[hidden] { display: none; }
+.bt-zaman input[type="range"] { flex: 1 1 auto; min-width: 80px; accent-color: var(--vurgu); }
+.bt-zaman-yazi {
+  font-size: var(--yazi-kucuk, .82rem);
+  color: var(--metin-2);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.bt-zaman.gecmis { background: rgba(74, 144, 226, .12); }
+.bt-zaman.gecmis .bt-zaman-yazi { color: var(--metin); }

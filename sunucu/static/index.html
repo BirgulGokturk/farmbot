@@ -253,6 +253,21 @@
           <p class="bt-bos" id="bt-bos" hidden></p>
         </div>
 
+        <!-- ZAMAN ÇUBUĞU. Üst kamera kalibre olduğu için arşivdeki her
+             kare kendi milimetre yerine oturtulabiliyor: çizili yatak
+             ile gerçek toprak AYNI yerde. Geçmişe kaydırınca çizili
+             bitkiler çizilmiyor — o tarihteki boyları ölçülmedi,
+             geçmişte konuşan tek şey fotoğraf. -->
+        <div class="bt-zaman" id="bt-zaman" hidden>
+          <button class="bt-ikon" id="bt-toprak" type="button" aria-pressed="false"
+                  title="Üst kameranın son karesini çizili yatağın üstüne bindirir"
+                  >Gerçek toprak</button>
+          <input type="range" id="bt-zaman-serit" min="0" max="0" value="0"
+                 aria-label="Zaman">
+          <span class="bt-zaman-yazi" id="bt-zaman-yazi"></span>
+          <button class="bt-ikon" id="bt-zaman-simdi" type="button" hidden>Şimdiye dön</button>
+        </div>
+
         <!-- TOHUM RAFI. Bir tohuma dokunmak onu ELİNE ALMAK demek:
              o türün ekim gözleri yatakta yanıyor. Sürükleyip bırakmak
              da, tohuma sonra göze dokunmak da aynı onay adımına

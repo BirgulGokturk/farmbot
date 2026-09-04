@@ -91,6 +91,13 @@ window.BahceTuval = (function () {
     canlanma: {},          // ad -> sulandıktan sonraki canlanma anı
     etiketAn: {},          // ad -> 0..1 baloncuk görünürlüğü
     isVurgu: null,         // görev şeridinde üzerine gelinen kartın bitkileri
+    kareler: [],           // üst kamera arşivi (damga + ts)
+    foto: null,            // yüklü kare
+    fotoKat: null,         // izdüşüme oturtulmuş kare (önbellek)
+    fotoKatImza: "",
+    fotoAn: 0,             // 0..1 fotoğrafın görünürlüğü
+    toprakAcik: false,     // "Gerçek toprak" düğmesi
+    zamanDizin: null,      // null = şimdi
     isAn: {},              // ad -> 0..1 yumuşatılmış görev işareti
     kartAd: "",
     ek: null,              // /api/bitki — kuruma geçmişi, sulama süresi
@@ -2499,6 +2506,196 @@ window.BahceTuval = (function () {
   }
 
   /* ==================================================================== *
+   * Gerçek toprak ve zaman çubuğu
+   *
+   * ÜST KAMERA KALİBRE. `mm_px`, `ofset_x/y`, `dönme` ve ayna
+   * bayrakları duruyor; yani arşivdeki her kare, çizili yatağın ÜSTÜNE
+   * kendi milimetre yerine oturtulabiliyor. Çizim ile gerçek aynı yerde
+   * görünüyor ve aralarında geçiş yapılabiliyor.
+   *
+   * NEDEN ÜÇGENLERLE. Yamuk izdüşüm afin değil; `drawImage` tek bir
+   * afin dönüşüm alıyor. Kare bir ızgaraya bölünüp her hücre iki
+   * üçgen olarak çiziliyor — her üçgenin kendi afin dönüşümü var ve
+   * bileşke izdüşüme yeterince yaklaşıyor. Sonuç kareden değişince bir
+   * kez üretilip önbelleğe alınıyor, her karede değil.
+   *
+   * GEÇMİŞTE ÇİZİLİ BİTKİ YOK. O tarihteki boylar ölçülmedi; bugünkü
+   * boyu geçmişin üstüne koymak "o gün de böyleydi" sanılmasına açık
+   * olurdu. Geçmişte konuşan tek şey fotoğraf; makine de çizilmiyor,
+   * çünkü makinenin geçmişteki yeri de bilinmiyor.
+   * ==================================================================== */
+  const IZGARA = 12;                    // kareyi kaça bölerek çiziyoruz
+
+  /** Kare pikselinden yatak milimetresine — `tespit.piksel_mm` ile aynı
+   *  sıra: önce ayna, sonra dönme, sonra ofset. */
+  function karePikselMM(k, u01, v01) {
+    const olcek = sayi(k.mm_px);
+    const W = sayi(k.genislik_px, 640), H = sayi(k.yukseklik_px, 480);
+    let px = (u01 - 0.5) * W, py = (v01 - 0.5) * H;
+    if (k.ayna_x) px = -px;
+    if (k.ayna_y) py = -py;
+    const a = sayi(k.donme) * Math.PI / 180;
+    const cx = px * Math.cos(a) - py * Math.sin(a);
+    const cy = px * Math.sin(a) + py * Math.cos(a);
+    return { x: cx * olcek + sayi(k.ofset_x), y: cy * olcek + sayi(k.ofset_y) };
+  }
+
+  function ucgenCiz(ct, img, s0, s1, s2, d0, d1, d2) {
+    // Dikişleri kapatmak için hedef üçgen ağırlık merkezinden yarım
+    // piksel büyütülüyor: komşu hücreler arasında saç teli kadar boşluk
+    // kalıyordu ve ızgara ekranda görünüyordu.
+    const mx = (d0.x + d1.x + d2.x) / 3, my = (d0.y + d1.y + d2.y) / 3;
+    const buyut = (p) => {
+      const dx = p.x - mx, dy = p.y - my;
+      const u = Math.hypot(dx, dy) || 1;
+      return { x: p.x + dx / u * 0.6, y: p.y + dy / u * 0.6 };
+    };
+    const e0 = buyut(d0), e1 = buyut(d1), e2 = buyut(d2);
+    const payda = (s1.x - s0.x) * (s2.y - s0.y) - (s2.x - s0.x) * (s1.y - s0.y);
+    if (!payda) return;
+    const a = ((e1.x - e0.x) * (s2.y - s0.y) - (e2.x - e0.x) * (s1.y - s0.y)) / payda;
+    const b = ((e2.x - e0.x) * (s1.x - s0.x) - (e1.x - e0.x) * (s2.x - s0.x)) / payda;
+    const c = ((e1.y - e0.y) * (s2.y - s0.y) - (e2.y - e0.y) * (s1.y - s0.y)) / payda;
+    const d = ((e2.y - e0.y) * (s1.x - s0.x) - (e1.y - e0.y) * (s2.x - s0.x)) / payda;
+    ct.save();
+    ct.beginPath();
+    ct.moveTo(e0.x, e0.y); ct.lineTo(e1.x, e1.y); ct.lineTo(e2.x, e2.y);
+    ct.closePath();
+    ct.clip();
+    ct.transform(a, c, b, d, e0.x - a * s0.x - b * s0.y, e0.y - c * s0.x - d * s0.y);
+    ct.drawImage(img, 0, 0);
+    ct.restore();
+  }
+
+  /** Kareyi yatağın izdüşümüne oturtup önbelleğe alır. */
+  function fotoKatKur() {
+    const img = S.foto && S.foto.img;
+    const k = kalib();
+    if (!img || !img.complete || !img.naturalWidth || !k || !G.ileri) return null;
+    const imza = [S.foto.damga, S.en, S.boy, S.dpr, G.enPx.toFixed(1),
+                  yatakSinir().x1, yatakSinir().y2].join("|");
+    if (S.fotoKat && S.fotoKatImza === imza) return S.fotoKat;
+    const t = S.fotoKat || document.createElement("canvas");
+    t.width = Math.max(1, Math.round(S.en * S.dpr));
+    t.height = Math.max(1, Math.round(S.boy * S.dpr));
+    const ct = t.getContext("2d");
+    ct.setTransform(S.dpr, 0, 0, S.dpr, 0, 0);
+    ct.clearRect(0, 0, S.en, S.boy);
+    // Kare yatağın dışını da görüyor; taşan kısım kırpılıyor ki
+    // fotoğraf yatağın sınırını aşmasın.
+    ct.save();
+    yol(ct, [yansit(0, 0), yansit(1, 0), yansit(1, 1), yansit(0, 1)]);
+    ct.clip();
+    const W = img.naturalWidth, H = img.naturalHeight;
+    const nokta = [];
+    for (let j = 0; j <= IZGARA; j++) {
+      const sat = [];
+      for (let i = 0; i <= IZGARA; i++) {
+        const mm = karePikselMM(k, i / IZGARA, j / IZGARA);
+        const uv = mmUV(mm.x, mm.y);
+        sat.push({ d: yansit(uv.u, uv.v),
+                   s: { x: (i / IZGARA) * W, y: (j / IZGARA) * H } });
+      }
+      nokta.push(sat);
+    }
+    for (let j = 0; j < IZGARA; j++) {
+      for (let i = 0; i < IZGARA; i++) {
+        const a = nokta[j][i], b = nokta[j][i + 1];
+        const c = nokta[j + 1][i + 1], d = nokta[j + 1][i];
+        ucgenCiz(ct, img, a.s, b.s, c.s, a.d, b.d, c.d);
+        ucgenCiz(ct, img, a.s, c.s, d.s, a.d, c.d, d.d);
+      }
+    }
+    ct.restore();
+    S.fotoKat = t;
+    S.fotoKatImza = imza;
+    return t;
+  }
+
+  /** Kare listesi — arşivde ne varsa o. Uydurma yok: liste boşsa çubuk
+   *  görünmüyor ve sebebi yazıyor. */
+  async function kareleriYukle() {
+    try {
+      const y = await api("/api/kare/liste?kamera=ust");
+      S.kareler = (y.kareler || []).filter((k) => sayi(k.ts) > 0);
+      S.kareler.sort((a, b) => sayi(a.ts) - sayi(b.ts));
+    } catch { S.kareler = []; }
+    zamanYaz();
+  }
+
+  function kareYukle(kayit, sonra) {
+    if (!kayit) { S.foto = null; S.fotoKatImza = ""; surdur(); return; }
+    if (S.foto && S.foto.damga === kayit.damga) { if (sonra) sonra(); return; }
+    const img = new Image();
+    img.onload = () => {
+      S.foto = { damga: kayit.damga, ts: sayi(kayit.ts), img };
+      S.fotoKatImza = "";
+      surdur();
+      if (sonra) sonra();
+    };
+    img.onerror = () => {
+      S.foto = null;
+      notYaz("foto", "Seçilen kare okunamadı.");
+      surdur();
+    };
+    // Parola açıksa jeton sorguya giriyor: `<img>` başlık gönderemiyor
+    // ve panelin bütün kare adresleri de böyle kuruluyor (app.js).
+    const jeton = encodeURIComponent(((P().S || {}).jeton) || "");
+    img.src = `/api/kare/${encodeURIComponent(kayit.damga)}?kamera=ust`
+      + `&jeton=${jeton}`;
+  }
+
+  function zamanBicim(ts) {
+    try {
+      return new Date(sayi(ts) * 1000).toLocaleString("tr-TR",
+        { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+    } catch { return ""; }
+  }
+
+  function zamanYaz() {
+    const kap = $("#bt-zaman");
+    const serit = $("#bt-zaman-serit");
+    const yazi = $("#bt-zaman-yazi");
+    const simdi = $("#bt-zaman-simdi");
+    if (!kap || !serit || !yazi) return;
+    const kal = kalib();
+    const n = (S.kareler || []).length;
+    if (!kal) {
+      // Kalibrasyon yoksa kare hangi milimetreye oturacak bilinmiyor.
+      kap.hidden = true;
+      notYaz("zaman", "Üst kamera ölçeklenmediği için gerçek toprak katmanı "
+             + "açılamıyor — Kamera sekmesinden ölçek verin.");
+      return;
+    }
+    notYaz("zaman", "");
+    if (!n) {
+      kap.hidden = true;
+      return;
+    }
+    kap.hidden = false;
+    serit.max = String(n);              // n = "şimdi"
+    serit.value = String(S.zamanDizin == null ? n : S.zamanDizin);
+    const gecmis = S.zamanDizin != null && S.zamanDizin < n;
+    kap.classList.toggle("gecmis", gecmis);
+    if (simdi) simdi.hidden = !gecmis;
+    if (gecmis) {
+      const k = S.kareler[S.zamanDizin];
+      const yas = Date.now() / 1000 - sayi(k.ts);
+      yazi.textContent = `${zamanBicim(k.ts)} · ${sureKisa(yas)} · `
+        + `arşivdeki ${n} kareden ${S.zamanDizin + 1}.'si`;
+    } else {
+      const eski = S.kareler[0];
+      yazi.textContent = `Şimdi · arşivde ${n} kare, en eskisi `
+        + `${sureKisa(Date.now() / 1000 - sayi(eski.ts))}`;
+    }
+  }
+
+  /** Geçmişte miyiz? Sahnenin canlı parçaları buna bakıyor. */
+  function gecmisteMi() {
+    return S.zamanDizin != null && S.zamanDizin < (S.kareler || []).length;
+  }
+
+  /* ==================================================================== *
    * Kamera
    *
    * Yatak ekranın kahramanı ama uzaktan bakınca bitkiler nokta kalıyor.
@@ -2874,6 +3071,31 @@ window.BahceTuval = (function () {
     const k = S.kam;
     ct.setTransform(S.dpr * k.o, 0, 0, S.dpr * k.o, S.dpr * k.x, S.dpr * k.y);
     if (S.statik) ct.drawImage(S.statik, 0, 0, S.en, S.boy);
+
+    // GERÇEK TOPRAK. Geçmişte tam görünüyor; şimdide "Gerçek toprak"
+    // düğmesi açıksa çizimin üstüne biniyor. Geçiş yumuşak (200 ms),
+    // yani çizim ile fotoğraf arasında gidip gelmek bir çözülme.
+    const gecmis = gecmisteMi();
+    const fotoHedef = gecmis ? 1 : (S.toprakAcik ? 0.88 : 0);
+    S.fotoAn += (fotoHedef - S.fotoAn) * (1 - Math.exp(-dt / 0.20));
+    if (Math.abs(S.fotoAn - fotoHedef) < 0.004) S.fotoAn = fotoHedef;
+    if (S.fotoAn > 0.01) {
+      const kat = fotoKatKur();
+      if (kat) {
+        ct.globalAlpha = S.fotoAn;
+        ct.drawImage(kat, 0, 0, S.en, S.boy);
+        ct.globalAlpha = 1;
+      }
+    }
+
+    // GEÇMİŞTE CANLI HİÇBİR ŞEY ÇİZİLMİYOR: bitkilerin o günkü boyu da
+    // makinenin o günkü yeri de ölçülmedi. Konuşan tek şey fotoğraf.
+    if (gecmis) {
+      ct.setTransform(S.dpr, 0, 0, S.dpr, 0, 0);
+      S.kare += 1;
+      return;
+    }
+
     // Gözler zeminin ÜSTÜNDE, bitkilerin ALTINDA: göz bir toprak
     // işareti, bitki onun üstünde duruyor.
     gozleriCiz(ct, S.sakin ? 0 : t);
@@ -3010,6 +3232,7 @@ window.BahceTuval = (function () {
       durumYaz();
       rafYaz();
       islerYaz();
+      zamanYaz();
       bosYaz();
       surdur();
       // Kart açıksa sayıları da tazele: bayat bir nem göstermek, ölçüm
@@ -3068,7 +3291,11 @@ window.BahceTuval = (function () {
   /* ==================================================================== *
    * Çekirdekten gelen haberler
    * ==================================================================== */
-  function kareGeldi() { /* Kamera katı bu sahnede yok. */ }
+  function kareGeldi(kam) {
+    // Yeni bir periyodik kare düştüyse arşiv listesi büyümüş olabilir.
+    if (!S.acik || kam !== KAMERA) return;
+    kareleriYukle();
+  }
 
   function durumDegisti(d) {
     if (!S.acik || !S.veri) return;
@@ -3139,6 +3366,7 @@ window.BahceTuval = (function () {
     // Yerleşim yeni değişti: ölçüyü bir sonraki karede alıyoruz.
     requestAnimationFrame(() => { olcuTazele(); surdur(); });
     yukle();
+    kareleriYukle();
   }
 
   function ikonBagla(sec, anahtar, uygula) {
@@ -3300,6 +3528,41 @@ window.BahceTuval = (function () {
       kamOdak(S.en / 2, S.boy / 2, 1.25);
     });
 
+    // GERÇEK TOPRAK katmanı — şimdiki karenin çizimin üstüne binmesi.
+    ikonBagla("#bt-toprak", "farmbot_bt_toprak", (a) => {
+      S.toprakAcik = a;
+      if (a && !gecmisteMi() && S.kareler.length) {
+        kareYukle(S.kareler[S.kareler.length - 1]);
+      }
+      surdur();
+    });
+
+    const serit = $("#bt-zaman-serit");
+    if (serit) {
+      serit.addEventListener("input", () => {
+        const n = (S.kareler || []).length;
+        const i = kis(Math.round(Number(serit.value)), 0, n);
+        S.zamanDizin = i >= n ? null : i;
+        if (S.zamanDizin == null) {
+          if (S.toprakAcik && n) kareYukle(S.kareler[n - 1]);
+        } else {
+          kareYukle(S.kareler[S.zamanDizin]);
+        }
+        zamanYaz();
+        surdur();
+      });
+    }
+    const simdiD = $("#bt-zaman-simdi");
+    if (simdiD) {
+      simdiD.onclick = () => {
+        S.zamanDizin = null;
+        const n = (S.kareler || []).length;
+        if (S.toprakAcik && n) kareYukle(S.kareler[n - 1]);
+        zamanYaz();
+        surdur();
+      };
+    }
+
     ikonBagla("#bt-sakin", "farmbot_bt_sakin", (a) => {
       S.sakin = a;
       if (S.acik) surdur();
@@ -3333,6 +3596,8 @@ window.BahceTuval = (function () {
       yatakPx: Math.round(G.enPx), duvarPx: Math.round(G.duvarPx),
       kam: [Math.round(S.kam.o * 100) / 100, Math.round(S.kam.x),
             Math.round(S.kam.y)],
+      kare_arsiv: (S.kareler || []).length, zaman: S.zamanDizin,
+      toprak: S.toprakAcik, fotoAn: Math.round(S.fotoAn * 100) / 100,
       dolgu: S.en ? Math.round(G.enPx / S.en * 100) : 0,   // yatak ekranın yüzde kaçı
       bagli: !!(S.veri || {}).bagli, hata: S.hata,
       robot: S.robot.gecerli
