@@ -83,6 +83,10 @@ window.BahceTuval = (function () {
     bitki: [],             // çizime hazır bitkiler (derinliğe göre sıralı)
     robot: { hx: 0, hy: 0, hz: null, gecerli: false },
     sonKare: 0,
+    uzerinde: "",          // parmağın/farenin altındaki bitki
+    vurguAn: {},           // ad -> 0..1 yumuşatılmış vurgu
+    kartAd: "",
+    ek: null,              // /api/bitki — kuruma geçmişi, sulama süresi
     t0: performance.now(),
   };
 
@@ -1005,8 +1009,22 @@ window.BahceTuval = (function () {
       ct.restore();
     }
 
+    // ÜZERİNE GELİNCE: hafifçe kalkıyor, altında yumuşak bir ışık
+    // beliriyor. İkisi de SÜS — hangi bitkiye dokunduğunu göstermek
+    // dışında bir anlam taşımıyor.
+    if (b.vurgu > 0.01) {
+      const g = ct.createRadialGradient(b.x, b.y, R * 0.1, b.x, b.y, R * 1.25);
+      g.addColorStop(0, `rgba(255,246,214,${(0.26 * b.vurgu).toFixed(3)})`);
+      g.addColorStop(1, "rgba(255,246,214,0)");
+      ct.fillStyle = g;
+      ct.beginPath();
+      ct.ellipse(b.x, b.y, R * 1.25, R * 0.85, 0, 0, Math.PI * 2);
+      ct.fill();
+    }
+
     ct.save();
-    ct.translate(b.x, b.y - yukseklikPx(16, b.v));
+    ct.translate(b.x, b.y - yukseklikPx(16, b.v) - b.vurgu * R * 0.16);
+    if (b.vurgu > 0.01) ct.scale(1 + b.vurgu * 0.05, 1 + b.vurgu * 0.05);
     const c = b.yaprak;
     const aksan = b.aksan;
     const ozel = { genislik: 0.22 + b.faz * 0.12, dalga: b.tip === "gulce" };
@@ -1428,6 +1446,365 @@ window.BahceTuval = (function () {
   }
 
   /* ==================================================================== *
+   * Dokunma ve bitki kartı
+   *
+   * Kartın görsel dili Bitkiler sekmesindeki kartla AYNI: nem halkası
+   * (dolgu nem, çentik eşik, solukluk ölçümün yaşı) ve kuruma eğrisi.
+   * Aynı ölçüm iki ekranda aynı biçimde okunsun. `bitki.js` bir
+   * modül dışa vermiyor ve başka bir oturumun dosyası; oradan kod
+   * çağırmak yerine aynı biçim burada yeniden kuruldu, kaynağı bu
+   * yorumda yazılı.
+   * ==================================================================== */
+  const HALKA = { boy: 76, r: 30, kalin: 6 };
+  const EGRI = { en: 480, boy: 110, ust: 10, alt: 18, sol: 6, sag: 6 };
+  const EGRI_EN_AZ_NOKTA = 3;
+  const EGRI_EN_AZ_SURE_SN = 2 * 3600;
+
+  function kacisli(s) {
+    return String(s == null ? "" : s)
+      .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+  }
+
+  function sureKisa(sn) {
+    if (sn == null || !Number.isFinite(Number(sn))) return "";
+    const s = Math.max(0, Number(sn));
+    if (s < 90) return "az önce";
+    if (s < 3600) return `${Math.round(s / 60)} dk önce`;
+    if (s < 86400) return `${Math.round(s / 3600)} saat önce`;
+    return `${Math.round(s / 86400)} gün önce`;
+  }
+
+  function tarihMetni(ts) {
+    const d = sayi(ts, 0);
+    if (!d) return "";
+    try {
+      return new Date(d * 1000).toLocaleDateString("tr-TR",
+        { day: "numeric", month: "long", year: "numeric" });
+    } catch { return ""; }
+  }
+
+  /* ------------------------------------------------------- vuruş denemesi */
+  /** Ekran pikselinin altındaki bitki. Öndekiler önce sınanıyor:
+   *  üst üste binen iki bitkide parmağın seçtiği, gördüğü olmalı. */
+  function bitkiBul(ex, ey) {
+    for (let i = S.bitki.length - 1; i >= 0; i--) {
+      const b = S.bitki[i];
+      const rx = Math.max(18, b.cizimPx / 2);
+      const ry = rx * 0.72;
+      const dx = (ex - b.x) / rx;
+      const dy = (ey - (b.y - yukseklikPx(16, b.v))) / ry;
+      if (dx * dx + dy * dy <= 1) return b;
+    }
+    return null;
+  }
+
+  /* ----------------------------------------------------------- nem halkası
+   *
+   * DOLGU nem, ÇENTİK eşik: dolgu çentiğin gerisindeyse bitki susamış
+   * demektir ve bu iki sayıyı karşılaştırmadan görünüyor.
+   *
+   * SOLUKLUK BİR ÖLÇÜT, SÜS DEĞİL: dünkü okuma bugünkü kadar güvenilir
+   * değil, halka ölçümün yaşıyla soluyor. Sulamadan ÖNCE alınmış bayat
+   * okuma yaşı küçük olsa bile en solukta.
+   *
+   * KENDİ ÖLÇÜMÜ YOKSA HALKA DOLDURULMUYOR: sunucu komşudan bir okuma
+   * ödünç veriyor, onu dolu halka olarak göstermek ölçmediğimiz bir şeyi
+   * ölçmüş gibi sunmak olurdu. Kesikli boş iz ve ortada "?" var; ödünç
+   * sayı alanlarda parantez içinde duruyor. */
+  function solukluk(o) {
+    const azami = sayi(o.azami_yas_sn, 86400) || 86400;
+    const t = kis(sayi(o.yas_sn, 0) / azami, 0, 1);
+    const d = 1 - 0.65 * t;
+    return o.bayat ? Math.min(d, 0.4) : d;
+  }
+
+  function halkaYaz(b) {
+    const o = b.su_olcum || {};
+    const { boy, r, kalin } = HALKA;
+    const c = boy / 2;
+    const cevre = 2 * Math.PI * r;
+    const kendiVar = !!(o.var && o.kendi);
+    const yuzde = o.var ? kis(sayi(o.yuzde, 0), 0, 100) : null;
+    const esik = o.esik_acik ? kis(sayi(o.esik, 0), 0, 100) : null;
+
+    let centik = "";
+    if (esik != null) {
+      const a = (esik / 100) * 2 * Math.PI - Math.PI / 2;
+      const ic = r - kalin / 2 - 2.5, dis = r + kalin / 2 + 2.5;
+      centik = `<line x1="${(c + ic * Math.cos(a)).toFixed(2)}"
+        y1="${(c + ic * Math.sin(a)).toFixed(2)}"
+        x2="${(c + dis * Math.cos(a)).toFixed(2)}"
+        y2="${(c + dis * Math.sin(a)).toFixed(2)}" class="bt-centik"/>`;
+    }
+    const az = esik != null && yuzde != null && yuzde < esik;
+    const dolgu = (kendiVar && yuzde != null)
+      ? `<circle cx="${c}" cy="${c}" r="${r}" class="bt-yay${az ? " az" : ""}"
+           stroke-dasharray="${(cevre * yuzde / 100).toFixed(2)} ${(cevre + 1).toFixed(2)}"
+           transform="rotate(-90 ${c} ${c})"
+           style="opacity:${solukluk(o).toFixed(2)}"/>`
+      : "";
+    const ic = kendiVar ? `<b>%${Math.round(yuzde)}</b>`
+                        : '<b class="bt-soru">?</b>';
+    const baslik = kendiVar
+      ? `Toprak nemi %${Math.round(yuzde)}`
+        + (esik != null ? `, eşik %${Math.round(esik)}` : ", eşik kapalı")
+        + `, ${sureKisa(o.yas_sn)} kendi üstünden ölçüldü`
+      : (o.var ? `Kendi ölçümü yok — halka boş. Yandaki bir noktada `
+                 + `%${Math.round(sayi(o.yuzde, 0))} okundu.`
+               : "Kendi ölçümü yok — halka boş.");
+
+    return `<div class="bt-halka" role="img" aria-label="${kacisli(baslik)}"
+                 title="${kacisli(baslik)}">
+      <svg viewBox="0 0 ${boy} ${boy}" width="${boy}" height="${boy}" aria-hidden="true">
+        <circle cx="${c}" cy="${c}" r="${r}"
+                class="bt-iz${kendiVar ? "" : " bt-iz-bos"}"/>
+        ${dolgu}${centik}
+      </svg>
+      <span class="bt-halka-ic">${ic}</span>
+    </div>`;
+  }
+
+  /* --------------------------------------------------------- kuruma eğrisi
+   * Amaç sayı okutmak değil EĞİMİ göstermek: dik iniyorsa toprak hızlı
+   * kuruyor. Eşik yatay bir çizgi. Yeterli ölçüm yoksa eğri çizilmiyor
+   * ve KAÇ ÖLÇÜM olduğu yazılıyor — boş bir kutu göstermek, sebebi
+   * söylememek olurdu. */
+  function egriYaz(b, e) {
+    const g = ((e && e.gecmis) || []).filter(
+      (p) => Number.isFinite(Number(p && p.yuzde)) && Number.isFinite(Number(p && p.ts)));
+    const o = b.su_olcum || {};
+    const esik = o.esik_acik ? kis(sayi(o.esik, 0), 0, 100) : null;
+    if (g.length < EGRI_EN_AZ_NOKTA) {
+      return `<p class="bt-egri-yok">Eğilim için yeterli ölçüm yok —
+        ${g.length} ölçüm var, en az ${EGRI_EN_AZ_NOKTA} gerekiyor.</p>`;
+    }
+    const sure = sayi(g[g.length - 1].ts) - sayi(g[0].ts);
+    if (sure < EGRI_EN_AZ_SURE_SN) {
+      return `<p class="bt-egri-yok">Eğilim için yeterli ölçüm yok —
+        ölçümlerin hepsi ${sureKisa(sure).replace(" önce", "")} içinde alınmış.</p>`;
+    }
+    const { en, boy, ust, alt, sol, sag } = EGRI;
+    let dip = Math.min(...g.map((p) => sayi(p.yuzde)));
+    let tep = Math.max(...g.map((p) => sayi(p.yuzde)));
+    if (esik != null) { dip = Math.min(dip, esik); tep = Math.max(tep, esik); }
+    const pay = Math.max(2.5, (tep - dip) * 0.15);
+    dip -= pay; tep += pay;
+    if (tep - dip < 8) { const m = (dip + tep) / 2; dip = m - 4; tep = m + 4; }
+    const t0 = sayi(g[0].ts), t1 = sayi(g[g.length - 1].ts);
+    const px = (p) => sol + ((sayi(p.ts) - t0) / Math.max(1, t1 - t0)) * (en - sol - sag);
+    const py = (v) => ust + (1 - (sayi(v) - dip) / Math.max(1, tep - dip)) * (boy - ust - alt);
+    const yol = g.map((p, i) => `${i ? "L" : "M"}${px(p).toFixed(1)},${py(p.yuzde).toFixed(1)}`).join("");
+    const alanYol = `${yol}L${px(g[g.length - 1]).toFixed(1)},${(boy - alt).toFixed(1)}`
+      + `L${px(g[0]).toFixed(1)},${(boy - alt).toFixed(1)}Z`;
+    const esikYol = esik == null ? ""
+      : `<line x1="${sol}" y1="${py(esik).toFixed(1)}" x2="${en - sag}"
+               y2="${py(esik).toFixed(1)}" class="bt-egri-esik"/>`;
+    const eg = (e && e.egilim) || null;
+    const ozet = eg
+      ? `%${Math.round(sayi(eg.ilk))} → %${Math.round(sayi(eg.son))}`
+      : `${g.length} ölçüm`;
+    return `<div class="bt-egri">
+      <svg viewBox="0 0 ${en} ${boy}" preserveAspectRatio="none" aria-hidden="true">
+        <path d="${alanYol}" class="bt-egri-alan"/>
+        <path d="${yol}" class="bt-egri-yol"/>
+        ${esikYol}
+        <circle cx="${px(g[g.length - 1]).toFixed(1)}"
+                cy="${py(g[g.length - 1].yuzde).toFixed(1)}" r="3" class="bt-egri-nokta"/>
+      </svg>
+      <p class="bt-egri-not">Kuruma eğilimi · ${kacisli(ozet)} · ${g.length} ölçüm</p>
+    </div>`;
+  }
+
+  function alanYaz(baslik, deger, altYazi, bos) {
+    return `<div class="bt-alan${bos ? " bos" : ""}"><i>${kacisli(baslik)}</i>`
+      + `<b>${kacisli(deger)}</b>${altYazi ? `<em>${kacisli(altYazi)}</em>` : ""}</div>`;
+  }
+
+  /* ------------------------------------------------------------ kart akışı */
+  async function ekYukle() {
+    // Kartın ek verisi (kuruma geçmişi, çözülmüş sulama süresi) ayrı bir
+    // uçtan geliyor; başarısız olursa kart yine açılıyor, yalnız eğri
+    // yerine sebebi yazıyor.
+    try { S.ek = await api("/api/bitki"); }
+    catch { S.ek = null; }
+  }
+
+  function kartKapat() {
+    const o = $("#bt-ortu");
+    S.kartAd = "";
+    if (!o) return;
+    o.classList.remove("acik");
+    setTimeout(() => { if (!S.kartAd) o.hidden = true; }, 200);
+  }
+
+  function kartAc(ad) {
+    S.kartAd = ad;
+    const o = $("#bt-ortu");
+    if (!o) return;
+    o.hidden = false;
+    kartYaz();
+    // Bir kare sonra sınıf: geçiş çalışsın diye.
+    requestAnimationFrame(() => o.classList.add("acik"));
+    if (!S.ek) ekYukle().then(() => { if (S.kartAd === ad) kartYaz(); });
+  }
+
+  function kartVeri(ad) {
+    return ((S.veri || {}).bitkiler || []).find((x) => x.ad === ad) || null;
+  }
+
+  function kartYaz() {
+    const kart = $("#bt-kart");
+    const b = kartVeri(S.kartAd);
+    if (!kart || !b) return;
+    const o = b.su_olcum || {};
+    const e = ((S.ek && S.ek.ek) || {})[b.ad] || {};
+    const simdi = Date.now() / 1000;
+    const v = S.veri || {};
+
+    const alanlar = [];
+    alanlar.push(alanYaz("Yatak koordinatı",
+      `X ${Math.round(sayi(b.x))} · Y ${Math.round(sayi(b.y))} mm`,
+      sayi(b.z) ? `Z ${Math.round(sayi(b.z))} mm` : ""));
+    if (b.ekim) {
+      alanlar.push(alanYaz("Ekildi",
+        `${Math.round(sayi(b.yas_gun, (simdi - sayi(b.ekim)) / 86400))} günlük`,
+        tarihMetni(b.ekim)));
+    } else {
+      alanlar.push(alanYaz("Ekildi", "tarih yok", "yaşı bilinmiyor", true));
+    }
+    const olgun = sayi(b.olgun_gun, 0);
+    alanlar.push(olgun
+      ? alanYaz("Hasat", b.hasat ? "hazır"
+          : `${Math.max(0, Math.round(olgun - sayi(b.yas_gun, 0)))} gün kaldı`,
+          `türün olgunluğu ${Math.round(olgun)} gün`)
+      : alanYaz("Hasat", "—", "türde olgunluk süresi yazılı değil", true));
+
+    const cap = Math.round(sayi(b.yaricap_mm) * 2);
+    alanlar.push(alanYaz("Yayılma çapı", cap ? `${cap} mm` : "—",
+      b.cakisik ? "komşusuyla çakışıyor" : "", !cap));
+
+    // ÖDÜNÇ OKUMA PARANTEZ İÇİNDE: sayı görünüyor ama bu bitkinin
+    // ölçülmüş nemi gibi durmuyor. Halka onu zaten doldurmuyor.
+    if (o.var) {
+      const yuzde = `%${Math.round(sayi(o.yuzde))}`;
+      alanlar.push(alanYaz("Toprak nemi", o.kendi ? yuzde : `(${yuzde})`,
+        (o.kendi ? "kendi üstünden" : `${Math.round(sayi(o.uzak_mm))} mm ötede`)
+        + ` · ${sureKisa(o.yas_sn)}`
+        + (o.bayat ? " · sulamadan ÖNCE alınmış" : "")));
+    } else {
+      alanlar.push(alanYaz("Toprak nemi", "ölçülmedi",
+        `son ${Math.round(sayi(o.azami_yas_sn, 86400) / 3600)} saatte `
+        + `${Math.round(sayi(o.yaricap_mm, 100))} mm yakınında okuma yok`, true));
+    }
+    alanlar.push(o.esik_acik
+      ? alanYaz("Sulama eşiği", `%${Math.round(sayi(o.esik))}`,
+                "nem bunun altına düşünce sulanmalı")
+      : alanYaz("Sulama eşiği", "kapalı", "eşik %100 — nem kararı verilmiyor", true));
+
+    const sn = e.sulama_saniye != null ? sayi(e.sulama_saniye)
+                                       : sayi(b.sulama_saniye, 3);
+    alanlar.push(alanYaz("Sulama süresi", `${sn.toFixed(1)} sn`,
+      (e.sulama_deseni || b.sulama_deseni || "ust") !== "ust"
+        ? `desen: ${e.sulama_deseni || b.sulama_deseni}` : ""));
+    alanlar.push(b.sulama_ts
+      ? alanYaz("Son sulama", sureKisa(simdi - sayi(b.sulama_ts)),
+                `${tarihMetni(b.sulama_ts)} · komut damgası, akış sensörü yok`)
+      : alanYaz("Son sulama", "hiç", "ekildiğinden beri sulanmamış", true));
+    if (e.sula_adet != null) {
+      alanlar.push(alanYaz("Uygulanan işlem",
+        `${e.sula_adet} sulama · ${e.nem_adet || 0} ölçüm`,
+        e.sula_toplam_sn ? `toplam ${sayi(e.sula_toplam_sn).toFixed(0)} sn su` : ""));
+    }
+
+    const bas = (v.baslar || {}).sulama || {};
+    kart.innerHTML = `
+      <div class="bt-kart-ust">
+        ${halkaYaz(b)}
+        <div>
+          <b>${kacisli(b.tur_ad || b.tur)}</b>
+          <small>${kacisli(b.su_gerekce || "")}</small>
+        </div>
+        <span class="esnek"></span>
+        <button class="bt-ikon" data-rol="kapat" type="button">Kapat</button>
+      </div>
+      <div class="bt-alanlar">${alanlar.join("")}</div>
+      ${egriYaz(b, e)}
+      <div class="bt-dugmeler">
+        <button class="bt-dugme birincil" data-makine="1" data-rol="sula">💧 Sula</button>
+        <button class="bt-dugme" data-makine="1" data-rol="nem">🌡️ Nemini ölç</button>
+        <button class="bt-dugme" data-makine="1" data-rol="foto">📷 Fotoğrafla</button>
+      </div>`;
+
+    kart.querySelector('[data-rol="kapat"]').onclick = kartKapat;
+    kart.querySelector('[data-rol="nem"]').onclick = () => isGonder("nem", [b.ad]);
+    kart.querySelector('[data-rol="foto"]').onclick = () => isGonder("foto", [b.ad]);
+    // SULAMA GERİ ALINAMAZ: önce ne olacağı yazılıyor, sonra soruluyor.
+    kart.querySelector('[data-rol="sula"]').onclick = () => onayIste({
+      baslik: `${b.tur_ad || b.tur} sulanacak`,
+      ne: `Makine sulama başlığıyla `
+        + `${(sayi(b.x) + sayi(bas.dx)).toFixed(0)} / `
+        + `${(sayi(b.y) + sayi(bas.dy)).toFixed(0)} mm noktasına gidecek ve `
+        + `pompayı ${sn.toFixed(1)} saniye açacak. Dökülen su geri alınamaz.`
+        + (o.var ? "" : " Bu bitkinin nemi ölçülmedi, yani ne kadar "
+                        + "gerektiği bilinmiyor."),
+      tamam: "Onaylıyorum, sula",
+      tikla: () => isGonder("sula", [b.ad], { saniye: sn }),
+    });
+    durumYaz();          // kopukken düğmeler kilitli kalsın
+  }
+
+  /** Onay adımı kartın İÇİNDE açılıyor: kullanıcı neyin üstünde
+   *  olduğunu görmeden onaylamasın. */
+  function onayIste(secenek) {
+    const kart = $("#bt-kart");
+    if (!kart) return;
+    const geriAd = S.kartAd;
+    kart.innerHTML = `
+      <div class="bt-kart-ust">
+        <div><b>${kacisli(secenek.baslik)}</b><small>onay gerekiyor</small></div>
+      </div>
+      <div class="bt-onay"><b>Ne olacak</b><p>${kacisli(secenek.ne)}</p></div>
+      <div class="bt-dugmeler">
+        <button class="bt-dugme birincil" data-makine="1" data-rol="tamam">
+          ${kacisli(secenek.tamam)}</button>
+        <button class="bt-dugme" data-rol="vazgec">Vazgeç</button>
+      </div>`;
+    kart.querySelector('[data-rol="vazgec"]').onclick = () => {
+      if (geriAd) { S.kartAd = geriAd; kartYaz(); } else kartKapat();
+    };
+    kart.querySelector('[data-rol="tamam"]').onclick = async () => {
+      kartKapat();
+      await secenek.tikla();
+    };
+    durumYaz();
+  }
+
+  /* İŞLER KUYRUĞA GİRİYOR, SORU SORULMUYOR. Makine tek dizi
+     çalıştırabiliyor; iki bitkiye arka arkaya dokunan birine "makine
+     meşgul" demek, kullanıcıyı makinenin takvimine uydurmak olurdu. */
+  async function isGonder(tip, adlar, ek) {
+    kartKapat();
+    try {
+      const y = await gonder("/api/bahce/is",
+                             Object.assign({ tip, noktalar: adlar }, ek || {}));
+      kuyrukDegisti(y.kuyruk);
+      gunluk(`✓ ${({ sula: "Sulama", nem: "Nem ölçümü", foto: "Fotoğraf",
+                     ek: "Ekim" })[tip] || tip} sıraya girdi`, "ok");
+      return true;
+    } catch (hata) {
+      gunluk(`✕ ${hata.message}`, "hata");
+      notYaz("is", `İş sıraya konamadı: ${hata.message}`);
+      setTimeout(() => notYaz("is", ""), 8000);
+      return false;
+    }
+  }
+
+  function gonder(yol, govde) {
+    return api(yol, { method: "POST", body: JSON.stringify(govde) });
+  }
+
+  /* ==================================================================== *
    * Veriden çizime
    * ==================================================================== */
   function bitkileriHazirla() {
@@ -1452,6 +1829,7 @@ window.BahceTuval = (function () {
         olcum: b.su_olcum || {},
         tip: arketip(b),
         faz: tohum(b.ad),
+        vurgu: sayi(S.vurguAn[b.ad], 0),
         yaprak: yesil(b),
         aksan: hexRGB(b.renk || "#7bbf5a"),
       };
@@ -1477,6 +1855,14 @@ window.BahceTuval = (function () {
     if (S.statik) ct.drawImage(S.statik, 0, 0, S.en, S.boy);
 
     if (!G.ileri) return;
+    // Vurgu yumuşatılıyor: parmak bitkiye değince zıplamasın, kalksın.
+    S.bitki.forEach((b) => {
+      const hedef = b.ad === S.uzerinde || b.ad === S.kartAd ? 1 : 0;
+      const k = 1 - Math.exp(-dt / 0.08);
+      b.vurgu += (hedef - b.vurgu) * k;
+      if (Math.abs(b.vurgu - hedef) < 0.005) b.vurgu = hedef;
+      S.vurguAn[b.ad] = b.vurgu;
+    });
     S.bitki.forEach((b) => bitkiCiz(ct, b, S.sakin ? 0 : t, I));
     makineCiz(ct, S.sakin ? 0 : t, I);
 
@@ -1490,6 +1876,14 @@ window.BahceTuval = (function () {
                             : !b.olcum.var ? 2 : 3);
     const secilen = [...S.bitki].sort((a2, b2) =>
       oncelik(a2) - oncelik(b2) || b2.v - a2.v).slice(0, 5);
+    // Üzerine gelinen bitkinin etiketi HER ZAMAN ve İLK yazılıyor:
+    // dokunulan şeyin adı, önceliği ne olursa olsun görünmeli.
+    const vurgulu = S.bitki.find((b) => b.ad === S.uzerinde);
+    if (vurgulu) {
+      const i = secilen.indexOf(vurgulu);
+      if (i >= 0) secilen.splice(i, 1);
+      secilen.unshift(vurgulu);
+    }
     const kutular = [];
     makineEtiketi(ct);
     secilen.forEach((b) => etiketCiz(ct, b, kutular, I));
@@ -1551,6 +1945,9 @@ window.BahceTuval = (function () {
       durumYaz();
       bosYaz();
       surdur();
+      // Kart açıksa sayıları da tazele: bayat bir nem göstermek, ölçüm
+      // yapılmış gibi göstermenin en sinsi hâli.
+      if (S.kartAd) await ekYukle().then(kartYaz);
     } catch (hata) {
       S.hata = hata.message || String(hata);
       // Sessiz başarısızlık yok: ekran boş kalırsa sebebi yazıyor.
@@ -1672,6 +2069,39 @@ window.BahceTuval = (function () {
     if (!S.tuval) return;
     S.ct = S.tuval.getContext("2d");
 
+    const tv = S.tuval;
+    const yerel = (o) => {
+      const r = tv.getBoundingClientRect();
+      return { x: o.clientX - r.left, y: o.clientY - r.top };
+    };
+    // Fare: üzerine gelme. Dokunmatikte "üzerine gelme" diye bir şey
+    // yok — orada dokunuş doğrudan kartı açıyor.
+    tv.addEventListener("pointermove", (o) => {
+      if (o.pointerType === "touch") return;
+      const p = yerel(o);
+      const b = bitkiBul(p.x, p.y);
+      const ad = b ? b.ad : "";
+      tv.style.cursor = b ? "pointer" : "default";
+      if (ad !== S.uzerinde) { S.uzerinde = ad; surdur(); }
+    });
+    tv.addEventListener("pointerleave", () => {
+      if (S.uzerinde) { S.uzerinde = ""; surdur(); }
+    });
+    tv.addEventListener("click", (o) => {
+      const p = yerel(o);
+      const b = bitkiBul(p.x, p.y);
+      if (b) kartAc(b.ad);
+    });
+
+    const ortu = $("#bt-ortu");
+    if (ortu) {
+      // Kartın DIŞINA dokunmak kapatıyor, içine dokunmak değil.
+      ortu.onclick = (o) => { if (o.target === ortu) kartKapat(); };
+    }
+    addEventListener("keydown", (o) => {
+      if (o.key === "Escape" && S.kartAd) kartKapat();
+    });
+
     ikonBagla("#bt-sakin", "farmbot_bt_sakin", (a) => {
       S.sakin = a;
       if (S.acik) surdur();
@@ -1708,6 +2138,7 @@ window.BahceTuval = (function () {
       robot: S.robot.gecerli
         ? [Math.round(S.robot.hx), Math.round(S.robot.hy)] : null,
       bas: aktifBasKimlik(), ucYuksekligi: ucYuksekligi(),
+      uzerinde: S.uzerinde, kart: S.kartAd,
       tipler: S.bitki.map((b) => `${b.tur}:${b.tip}`),
       ters: !!G.ters,
     };

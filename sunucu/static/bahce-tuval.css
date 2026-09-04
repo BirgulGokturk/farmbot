@@ -125,3 +125,106 @@ body.bahce-tuval .bt { flex: 1 1 auto; }
   body.bahce-tuval .yuzen-govde { overflow-y: auto; }
   body.bahce-tuval .bt-sahne { min-height: 66vh; }
 }
+
+/* ==================================================================== *
+ * Bitki kartı
+ *
+ * Görsel dil Bitkiler sekmesindeki kartla aynı: nem halkası (dolgu nem,
+ * çentik eşik, solukluk ölçümün yaşı) ve kuruma eğrisi. Aynı ölçüm iki
+ * ekranda aynı biçimde okunsun diye kopyalandı; `bitki.css` başka bir
+ * oturumun dosyası ve ona dokunulmuyor.
+ * ==================================================================== */
+.bt-ortu {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+  padding: var(--b3);
+  background: rgba(0, 0, 0, .45);
+  opacity: 0;
+  transition: opacity .18s ease;
+}
+.bt-ortu.acik { opacity: 1; }
+.bt-ortu[hidden] { display: none; }
+
+.bt-kart {
+  width: min(560px, 100%);
+  max-height: 84vh;
+  overflow: auto;
+  background: var(--yuzey);
+  border-radius: 18px;
+  box-shadow: var(--golge);
+  padding: var(--b3);
+  transform: translateY(14px) scale(.98);
+  opacity: 0;
+  transition: transform .22s cubic-bezier(.2, .8, .3, 1), opacity .18s ease;
+}
+.bt-ortu.acik .bt-kart { transform: none; opacity: 1; }
+
+.bt-kart-ust { display: flex; align-items: center; gap: var(--b3); }
+.bt-kart-ust .esnek { flex: 1 1 auto; }
+.bt-kart-ust b { display: block; font-size: var(--yazi-baslik, 1rem); }
+.bt-kart-ust small { color: var(--metin-3); }
+
+/* --- nem halkası --- */
+.bt-halka { position: relative; width: 76px; height: 76px; flex: none; }
+.bt-halka svg { display: block; }
+.bt-iz { fill: none; stroke: var(--yuzey-2); stroke-width: 6; }
+.bt-iz-bos { stroke-dasharray: 3 5; stroke: var(--cizgi-2); }
+.bt-yay { fill: none; stroke: var(--iyi); stroke-width: 6; stroke-linecap: round; }
+.bt-yay.az { stroke: var(--uyari); }
+.bt-centik { stroke: var(--metin); stroke-width: 2; }
+.bt-halka-ic {
+  position: absolute; inset: 0;
+  display: grid; place-items: center; gap: 0;
+  font-variant-numeric: tabular-nums;
+}
+.bt-halka-ic b { font-size: .95rem; }
+.bt-soru { color: var(--metin-3); }
+
+/* --- alanlar --- */
+.bt-alanlar {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: var(--b2);
+  margin-top: var(--b3);
+}
+.bt-alan { background: var(--yuzey-2); border-radius: 10px; padding: var(--b2) var(--b3); }
+.bt-alan i { display: block; font-style: normal; font-size: .78rem; color: var(--metin-2); }
+.bt-alan b { display: block; font-variant-numeric: tabular-nums; }
+.bt-alan em { display: block; font-style: normal; font-size: .74rem; color: var(--metin-3); }
+.bt-alan.bos b { color: var(--metin-3); font-style: italic; }
+
+/* --- kuruma eğrisi --- */
+.bt-egri { margin-top: var(--b3); }
+.bt-egri svg { display: block; width: 100%; height: auto; }
+.bt-egri-yol { fill: none; stroke: var(--vurgu); stroke-width: 2; }
+.bt-egri-alan { fill: rgba(74, 144, 226, .12); }
+.bt-egri-esik { stroke: var(--uyari); stroke-width: 1; stroke-dasharray: 4 4; }
+.bt-egri-nokta { fill: var(--vurgu); }
+.bt-egri-not, .bt-egri-yok { margin: var(--b1) 0 0; font-size: .78rem; color: var(--metin-3); }
+
+/* --- onay ve düğmeler --- */
+.bt-onay {
+  margin-top: var(--b3);
+  background: rgba(217, 165, 32, .10);
+  border-radius: 12px;
+  padding: var(--b3);
+}
+.bt-onay b { display: block; margin-bottom: var(--b1); }
+.bt-onay p { margin: 0; color: var(--metin-2); }
+
+.bt-dugmeler { display: flex; gap: var(--b2); flex-wrap: wrap; margin-top: var(--b3); }
+.bt-dugme {
+  font: inherit;
+  color: var(--metin-2);
+  background: var(--yuzey-2);
+  border: 1px solid transparent;
+  border-radius: 999px;
+  padding: 8px 16px;
+  cursor: pointer;
+}
+.bt-dugme:hover { color: var(--metin); }
+.bt-dugme.birincil { color: #fff; background: var(--vurgu); }
+.bt-dugme[disabled] { opacity: .45; cursor: not-allowed; }
