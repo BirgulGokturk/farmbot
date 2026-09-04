@@ -157,12 +157,18 @@
       <div class="etiket-satir"><span>Alan dışı</span>
         <span><b>${son.alan_disi || 0}</b> leke dikim alanının dışında
           kaldığı için elendi</span></div>
+      ${kaliteSatiri()}
       ${kapiSatiri()}`;
 
     if (!fideler.length) {
+      /* SABİT ÖĞÜT YERİNE ÖLÇÜLMÜŞ GEREKÇE. "Eşiği düşürün" her
+       * durumda doğru değil: kare aşırı pozlanmışsa yaprak da beyaz
+       * çıkıyor ve eşikle oynamak hiçbir işe yaramıyor. Sunucu neyin
+       * engellediğini sırayla ölçüyor; varsa onu yazıyoruz. */
       g += `<div class="etiket-satir uyari"><span>—</span>
-        <span>Hiç yeşil leke kalmadı. <b>En az piksel</b>i düşürün ya da
-        <b>eşiği</b> aşağı çekin.</span></div>`;
+        <span>${son.tani ? kacisli(son.tani)
+          : "Hiç yeşil leke kalmadı. <b>En küçük fide</b>yi düşürün ya da "
+            + "<b>eşiği</b> aşağı çekin."}</span></div>`;
     } else {
       g += `<div class="veri-kutu"><table class="veri filiz-tablo">
         <thead><tr><th>#</th><th>X (mm)</th><th>Y (mm)</th><th>Çap (mm)</th>
@@ -185,6 +191,19 @@
     k.innerHTML = g;
     k.classList.remove("gizli");
     onizleme();
+  }
+
+  /** Karenin ölçülebilir olup olmadığı — parlaklık ve doyma.
+   *
+   * Eşiklerle oynamadan önce bakılacak yer burası: aşırı pozlanmış bir
+   * karede yaprak da beyaz çıkıyor ve hiçbir eşik onu geri getirmiyor. */
+  function kaliteSatiri() {
+    const k = son.kare_kalite || {};
+    if (!Number.isFinite(Number(k.parlaklik))) return "";
+    const doymus = Number(k.doymus) || 0;
+    return `<div class="etiket-satir"><span>Kare</span>
+      <span>parlaklık <b>${Math.round(Number(k.parlaklik))}</b>/255 ·
+        doymuş <b>${(doymus * 100).toFixed(1)}%</b></span></div>`;
   }
 
   /** Renk kapılarının ne kadar elediği — "yeşil bulunamadı"nın sebebi.

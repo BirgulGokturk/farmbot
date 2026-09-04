@@ -278,6 +278,12 @@ def yonlendirici_kur(parola_dogrula, canli_kare):
             "denge_kazanc": y.get("denge_kazanc"),
             "exg_oran": y.get("exg_oran"),
             "maske_oran": y.get("maske_oran"),
+            # SONUCUN TEK CÜMLELİK GEREKÇESİ. Panel "eşiği düşürün"
+            # diye sabit bir öğüt veriyordu; kare bembeyaz yanmışsa o
+            # öğüt yanlış ve kullanıcıyı boşuna uğraştırıyor. `tani`
+            # önce karenin ölçülebilir olup olmadığına bakıyor.
+            "tani": y.get("tani") or "",
+            "kare_kalite": y.get("kare") or {},
             "yontem": c["yontem"], "ret": c["ret"],
             "lekeler": c["lekeler"], "fideler": fideler,
             "kare": "data:image/jpeg;base64," + base64.b64encode(jpeg).decode(),
