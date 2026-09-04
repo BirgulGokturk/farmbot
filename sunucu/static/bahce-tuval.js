@@ -2849,6 +2849,97 @@ window.BahceTuval = (function () {
   }
 
   /* ==================================================================== *
+   * Sıradaki yol
+   *
+   * Kuyruk bir liste olarak da okunabilirdi ama "robot sırada nereye
+   * gidecek" sorusunun cevabı yatakta duruyor: çalışan işin noktasından
+   * başlayıp bekleyen işlerin noktalarından geçen bir yol, üstünde akan
+   * kesikler ve numaralı duraklar.
+   *
+   * YOL UYDURULMUYOR. Duraklar kuyruktaki işlerin KENDİ noktaları ve
+   * sırası; makinenin gerçekte izleyeceği güzergâh (yasak bölge
+   * dolanması, güvenli Z) burada çizilmiyor çünkü onu ajan karar
+   * veriyor ve panel bilmiyor. Çizilen şey "hangi bitkiye, hangi
+   * sırayla" — o da kuyruktan geliyor.
+   * ==================================================================== */
+  const YOL_RENK = { sula: "#4fb8e8", nem: "#d9a520", ek: "#8fd27a",
+                     foto: "#9aa2aa", gez: "#9aa2aa" };
+
+  function yolDuraklar() {
+    const v = S.veri || {};
+    const k = v.kuyruk || {};
+    const isler = (k.isler || []).filter(
+      (i) => i.durum === "calisiyor" || i.durum === "bekliyor");
+    const bul = (ad) => S.bitki.find((b) => b.ad === ad);
+    const duraklar = [];
+    isler.forEach((i) => {
+      (i.noktalar || []).forEach((ad) => {
+        const b = bul(ad);
+        if (b) duraklar.push({ x: b.x, y: b.y, tip: i.tip, ad,
+                               calisan: i.durum === "calisiyor" });
+      });
+    });
+    return duraklar;
+  }
+
+  function yolCiz(ct, t) {
+    const v = S.veri || {};
+    if (!v.bagli) return;
+    const duraklar = yolDuraklar();
+    if (!duraklar.length) return;
+
+    // Yol makinenin BULUNDUĞU yerden başlıyor: bir sonraki adımın
+    // nereden nereye olduğu görünsün.
+    const nokta = [];
+    if (S.robot.gecerli) {
+      const uv = mmUV(S.robot.hx, S.robot.hy);
+      nokta.push(yansit(kis(uv.u, -0.1, 1.1), kis(uv.v, -0.1, 1.1)));
+    }
+    duraklar.forEach((d) => nokta.push({ x: d.x, y: d.y }));
+    if (nokta.length < 2) return;
+
+    ct.save();
+    ct.lineCap = "round";
+    ct.lineJoin = "round";
+    // Altta koyu bir iz: açık toprakta da görünsün.
+    ct.strokeStyle = "rgba(0,0,0,0.35)";
+    ct.lineWidth = 5;
+    ct.beginPath();
+    nokta.forEach((p, i) => (i ? ct.lineTo(p.x, p.y) : ct.moveTo(p.x, p.y)));
+    ct.stroke();
+    // Üstte akan kesikler: yön buradan okunuyor.
+    ct.strokeStyle = "rgba(160,215,255,0.85)";
+    ct.lineWidth = 2.2;
+    ct.setLineDash([10, 9]);
+    ct.lineDashOffset = -t * 34;
+    ct.beginPath();
+    nokta.forEach((p, i) => (i ? ct.lineTo(p.x, p.y) : ct.moveTo(p.x, p.y)));
+    ct.stroke();
+    ct.setLineDash([]);
+
+    // Numaralı duraklar.
+    duraklar.forEach((d, i) => {
+      const renk = YOL_RENK[d.tip] || "#9aa2aa";
+      const r = d.calisan ? 11 + Math.sin(t * 4) * 1.2 : 9;
+      ct.fillStyle = "rgba(16,18,15,0.88)";
+      ct.beginPath();
+      ct.arc(d.x, d.y, r, 0, Math.PI * 2);
+      ct.fill();
+      ct.strokeStyle = renk;
+      ct.lineWidth = d.calisan ? 2.6 : 1.8;
+      ct.stroke();
+      ct.fillStyle = "#f2f2ee";
+      ct.font = yazTipi(10, true);
+      ct.textAlign = "center";
+      ct.textBaseline = "middle";
+      ct.fillText(String(i + 1), d.x, d.y + 0.5);
+      ct.textAlign = "start";
+      ct.textBaseline = "alphabetic";
+    });
+    ct.restore();
+  }
+
+  /* ==================================================================== *
    * Kuruma tahmini — yarını göster
    *
    * VERİ GERÇEK, KARAR TAHMİN. `/api/bitki` her bitki için ölçülmüş nem
@@ -3268,6 +3359,7 @@ window.BahceTuval = (function () {
     });
     S.bitki.forEach((b) => bitkiCiz(ct, b, S.sakin ? 0 : t, I));
     onizlemeCiz(ct, S.sakin ? 0 : t);
+    yolCiz(ct, S.sakin ? 0 : t);
     makineCiz(ct, S.sakin ? 0 : t, I);
 
     // Etiketler en üstte: bitkiler birbirinin üstüne binse de yazı
@@ -3748,6 +3840,7 @@ window.BahceTuval = (function () {
       kam: [Math.round(S.kam.o * 100) / 100, Math.round(S.kam.x),
             Math.round(S.kam.y)],
       tahmin: Object.keys(S.tahmin || {}).length,
+      yol: yolDuraklar().length,
       kare_arsiv: (S.kareler || []).length, zaman: S.zamanDizin,
       toprak: S.toprakAcik, fotoAn: Math.round(S.fotoAn * 100) / 100,
       dolgu: S.en ? Math.round(G.enPx / S.en * 100) : 0,   // yatak ekranın yüzde kaçı
