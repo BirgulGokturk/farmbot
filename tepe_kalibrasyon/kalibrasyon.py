@@ -476,7 +476,11 @@ def _kosul(p: np.ndarray) -> float:
     for i in range(n):
         for j in range(i + 1, n):
             for k in range(j + 1, n):
-                alan = abs(np.cross(p[j] - p[i], p[k] - p[i])) / 2.0
+                # 2B capraz carpim elle: np.cross iki bilesenli vektorlerde
+                # NumPy 2.0'da kullanimdan kaldirildi ve yeni surumlerde hata veriyor.
+                u = p[j] - p[i]
+                v = p[k] - p[i]
+                alan = abs(u[0] * v[1] - u[1] * v[0]) / 2.0
                 en_ince = min(en_ince, float(alan))
     kabuk = cv2.convexHull(p.astype(np.float32))
     kabuk_alan = float(abs(cv2.contourArea(kabuk)))
@@ -853,6 +857,99 @@ def kose_tutarlilik_kontrolu(
     }
 
 
+def duyarlilik(
+    Hm: np.ndarray, px: np.ndarray, mm: np.ndarray, yatak_mm: tuple[float, float],
+    sigma_px: float = 0.5, N: int = 300, tohum: int = 0,
+) -> dict:
+    """
+    Merkez bulmadaki piksel gurultusunun yatakta kac mm'ye mal oldugunu olcer.
+
+    Yontem: etiket merkezlerine sigma_px'lik gurultu eklenip homografi yeniden
+    kurulur, yatak uzerindeki bir izgaranin ne kadar kaydigi olculur, N kez.
+    Gercek referansa ihtiyac duymaz — girdideki gurultunun cikista kac katina
+    ciktigini olcer, ki asil merak edilen budur.
+
+    Neden onemli: hata yalnizca gurultuye degil, etiketlerin yataga NE KADAR
+    YAYILDIGINA da bagli. Etiketler kucuk bir bolgede toplanmissa harita
+    yatagin geri kalanina dis degerbicimle uzatilir ve gurultu buyutulur.
+    Olculdu (640 px kare, sigma 0.5 px): etiketler yatagin bir kosesinde
+    toplandiginda 2.89 mm RMS, dort koseye dagitildiginda 0.89 mm.
+    """
+    X, Y = yatak_mm
+    if len(px) < 4:
+        return {"hesaplanabilir": False, "sebep": "Duyarlılık analizi için 4 nokta gerekiyor."}
+    kabuk = cv2.convexHull(mm.astype(np.float32))
+    kabuk_alan = float(abs(cv2.contourArea(kabuk)))
+    kapsama = kabuk_alan / (X * Y) if X * Y > 0 else 0.0
+
+    izgara = np.array([[x, y] for x in np.linspace(X * 0.03, X * 0.97, 10)
+                       for y in np.linspace(Y * 0.03, Y * 0.97, 10)], dtype=np.float64)
+    try:
+        gpx = uygula(np.linalg.inv(Hm), izgara)
+    except np.linalg.LinAlgError:
+        return {"hesaplanabilir": False, "sebep": "Homografi tersi alınamadı."}
+    gecerli = np.isfinite(gpx).all(axis=1)
+    gpx, izgara_g = gpx[gecerli], izgara[gecerli]
+    if len(gpx) < 10:
+        return {"hesaplanabilir": False, "sebep": "Yatak köşeleri kareye geri taşınamadı."}
+    ic = np.array([cv2.pointPolygonTest(kabuk, (float(a), float(b)), False) >= 0 for a, b in izgara_g])
+
+    rng = np.random.default_rng(tohum)
+    hep, icl, disl, maksl = [], [], [], []
+    for _ in range(N):
+        Hi = homografi_uydur(px + rng.normal(0, sigma_px, px.shape), mm)
+        if Hi is None:
+            continue
+        tah = uygula(Hi, gpx)
+        if not np.isfinite(tah).all():
+            continue
+        d = np.linalg.norm(tah - izgara_g, axis=1)
+        hep.append(float(np.sqrt((d ** 2).mean())))
+        maksl.append(float(d.max()))
+        if ic.any():
+            icl.append(float(np.sqrt((d[ic] ** 2).mean())))
+        if (~ic).any():
+            disl.append(float(np.sqrt((d[~ic] ** 2).mean())))
+    if not hep:
+        return {"hesaplanabilir": False, "sebep": "Hiçbir denemede homografi kurulamadı."}
+
+    yerel = float(np.median([_yerel_olcek(Hm, p) for p in gpx]))
+    rms = float(np.median(hep))
+    sonuc = {
+        "hesaplanabilir": True,
+        "sigma_px": sigma_px,
+        "deneme": len(hep),
+        "yatak_kapsama_yuzde": round(kapsama * 100.0, 1),
+        "yerel_olcek_mm_px": round(yerel, 4),
+        "rms_mm": round(rms, 3),
+        "maks_mm": round(float(np.median(maksl)), 3),
+        "mm_per_px_gurultu": round(rms / sigma_px, 3),
+        "aciklama": (
+            f"Etiket merkezlerine {sigma_px} px gürültü eklendiğinde yatak üzerindeki harita "
+            f"{round(rms, 2)} mm kayıyor. Etkisi doğrusaldır: 1 px gürültü ≈ "
+            f"{round(rms / sigma_px, 2)} mm."
+        ),
+    }
+    if icl:
+        sonuc["etiket_dortgeni_ici_rms_mm"] = round(float(np.median(icl)), 3)
+    if disl:
+        sonuc["etiket_dortgeni_disi_rms_mm"] = round(float(np.median(disl)), 3)
+
+    uyarilar = []
+    if kapsama < 0.35:
+        kat = (sonuc.get("etiket_dortgeni_disi_rms_mm", 0) /
+               max(sonuc.get("etiket_dortgeni_ici_rms_mm", 1e-9), 1e-9))
+        uyarilar.append(
+            f"Etiketler çalışma alanının yalnızca %{kapsama * 100:.0f}'ini kapsıyor. Haritanın geri kalanı "
+            f"dış değerbiçimle uzatılıyor ve gürültü orada büyüyor: etiket dörtgeninin içinde "
+            f"{sonuc.get('etiket_dortgeni_ici_rms_mm')} mm, dışında "
+            f"{sonuc.get('etiket_dortgeni_disi_rms_mm')} mm ({kat:.1f} kat). Etiketleri yatağın dört "
+            f"köşesine yaymak bu farkı büyük ölçüde kapatır."
+        )
+    sonuc["uyarilar"] = uyarilar
+    return sonuc
+
+
 # ---------------------------------------------------------------------------
 # 5) Egiklik olcusu
 # ---------------------------------------------------------------------------
@@ -1053,6 +1150,19 @@ def kalibre_et(
         if h["kose_tutarliligi"].get("hesaplanabilir"):
             cikti["uyarilar"].extend(h["kose_tutarliligi"].get("uyarilar", []))
         h["egiklik"] = egiklik_olcusu(Hm, Sm, yatak_mm)
+        h["duyarlilik"] = duyarlilik(Hm, px, mm, yatak_mm)
+        if h["duyarlilik"].get("hesaplanabilir"):
+            cikti["uyarilar"].extend(h["duyarlilik"].get("uyarilar", []))
+        # Etiket piksel boyutu: kucuk etiket hem tespiti hem kose hassasiyetini zorlar.
+        kucukler = [t for t in kullanilan if t.kenar_px < 20.0]
+        if kucukler:
+            en_kucuk = min(t.kenar_px for t in kucukler)
+            cikti["uyarilar"].append(
+                f"{len(kucukler)} etiketin kare üzerindeki kenarı 20 px'in altında (en küçüğü "
+                f"{en_kucuk:.1f} px). Bu boru hattında ölçülen tespit alt sınırı ~16 px; bulunuyor olmaları "
+                f"iyi ama pay çok az — aydınlatma ya da odak biraz değişince kaybolurlar. Daha büyük "
+                f"etiket basmak ya da kareyi tam çözünürlükte almak en ucuz iyileştirmedir."
+            )
         cikti["homografi"] = h
 
     # --- Bagimsiz dogrulama noktalari ---

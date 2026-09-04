@@ -196,6 +196,41 @@ Sayı raporlanıyor, hüküm verilmiyor.
 
 ---
 
+## Doğruluğu belirleyen iki şey: çözünürlük ve etiketlerin yayılımı
+
+Uygulama, sizin gerçek geometriniz üzerinde bir **duyarlılık analizi** çalıştırır: etiket
+merkezlerine piksel gürültüsü ekleyip homografiyi yeniden kurar ve yatak üzerindeki
+haritanın kaç mm kaydığını ölçer (300 deneme). Gerçek referans gerektirmez — girdideki
+gürültünün çıkışta kaç katına çıktığını ölçer.
+
+Sonuç sadece gürültüye değil, etiketlerin yatağa **ne kadar yayıldığına** da bağlı.
+Etiketler küçük bir bölgede toplanmışsa harita yatağın geri kalanına dış değerbiçimle
+uzatılır ve gürültü orada büyür. Ölçüldü (aynı sahne, 0.5 px merkez gürültüsü):
+
+| yerleşim | çözünürlük | ölçek | yatak geneli RMS | dörtgen içi | dörtgen dışı |
+|---|---|---|---|---|---|
+| bir köşede toplu (alanın %16'sı) | 640 px | 1.41 mm/px | **2.9 mm** | 0.70 mm | 3.24 mm |
+| dört köşeye yayılmış (%60) | 640 px | 1.41 mm/px | **0.83 mm** | 0.73 mm | 0.97 mm |
+| bir köşede toplu | 3840 px | 0.23 mm/px | **0.48 mm** | 0.11 mm | 0.52 mm |
+| dört köşeye yayılmış | 3840 px | 0.23 mm/px | **0.15 mm** | 0.13 mm | 0.18 mm |
+
+Yani iki bağımsız çarpan var: etiketleri yaymak ~3.2 kat, kareyi tam çözünürlükte almak
+~6 kat. Uygulama etiketler çalışma alanının %35'inden azını kapsıyorsa uyarır.
+
+Merkez bulma gürültüsünün kendisi etiket boyutuna beklendiği kadar duyarlı değil
+(ölçüldü, sahne başına 4 etiket, 5 sahne):
+
+| etiket kenarı | merkez hatası RMS |
+|---|---|
+| 42.6 px | 0.325 px |
+| 29.0 px | 0.308 px |
+| 21.1 px | 0.446 px |
+| 17.5 px | 0.381 px |
+| 15.4 px | 0.250 px (yalnızca 12/20 etiket bulunabildi) |
+
+Yani ~0.3–0.5 px iyi bir çalışma değeri; küçük etiketin asıl bedeli hassasiyet değil,
+**tespit edilememe riski**. 20 px'in altında etiket varsa uygulama bunu ayrıca söyler.
+
 ## Dosyalar
 
 | dosya | ne yapar |

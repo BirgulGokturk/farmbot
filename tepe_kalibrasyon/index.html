@@ -495,6 +495,15 @@ function sonucCiz(){
       h += kv("etiketler arası ölçek yayılımı", s2(kk.olcek_yayilimi_yuzde,2)+" %")
         +  kv("sistematik kenar sapması", s2(kk.sistematik_sapma_yuzde,2)+" %");
     }
+    const dy = H.duyarlilik||{};
+    if(dy.hesaplanabilir){
+      h += '<div style="margin-top:8px"><b style="font-size:12px">Duyarlılık — gürültü kaç mm ediyor</b></div>'
+        + '<div class="kucuk" style="margin:3px 0 5px">'+dy.aciklama+'</div>'
+        + kv("etiketlerin kapsadığı alan", "<b>%"+s2(dy.yatak_kapsama_yuzde,1)+"</b>")
+        + kv("1 px merkez gürültüsü", "<b>"+s2(dy.mm_per_px_gurultu,2)+" mm</b>")
+        + kv("&nbsp;&nbsp;etiket dörtgeni içinde", s2(dy.etiket_dortgeni_ici_rms_mm,2)+" mm")
+        + kv("&nbsp;&nbsp;etiket dörtgeni dışında", s2(dy.etiket_dortgeni_disi_rms_mm,2)+" mm");
+    }
     if(eg.hesaplanabilir){
       h += '<div style="margin-top:8px"><b style="font-size:12px">Kamera ne kadar eğik?</b></div>'
         + kv("yerel ölçek", s2(eg.yerel_olcek_min_mm_px,4)+" – "+s2(eg.yerel_olcek_maks_mm_px,4)+" mm/px")
