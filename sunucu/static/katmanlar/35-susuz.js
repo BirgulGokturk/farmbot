@@ -174,13 +174,24 @@ Tarla.katman({
           <b>Nem ölç</b> deyin.</p>`;
     }
     const sure = Number(b.sulama_saniye) || null;
+    /* MAKİNE KOPUKSA DÜĞMEYİ AÇMIYORUZ.
+     *
+     * Açık bir düğme "bu iş yapılabilir" diye söz veriyor. Ajan
+     * bağlı değilken basılınca hiçbir şey olmuyordu: ilk basış onaya
+     * geçiyor, ikincisi sunucudan hata alıyor ve hata yalnız olay
+     * günlüğüne düşüyordu — kullanıcı karta bakıyordu, günlüğe değil.
+     * "Denedim, sulamıyor" tam olarak bu. */
+    const bagli = !!(window.Panel && window.Panel.S
+                     && window.Panel.S.ajanBagli);
     return `<h4>${o.kacisli(b.ad)} · susadı</h4>
       <p class="alt-not">Toprak nemi <b>${nem}</b>${
         b.su_gerekce ? ` — ${o.kacisli(b.su_gerekce)}` : ""}.
         ${sure ? `Sulama süresi <b>${sure} sn</b>.` : ""}</p>
       <div class="satir-8">
-        <button class="dugme birincil" data-rol="sula">💧 Sula</button>
-        <span class="alt-not" data-rol="not"></span>
+        <button class="dugme birincil" data-rol="sula"${bagli ? "" : " disabled"}
+          >💧 Sula</button>
+        <span class="alt-not" data-rol="not">${bagli ? ""
+          : "Makine bağlı değil — sulama yapılamaz."}</span>
       </div>`;
   },
 
@@ -207,7 +218,10 @@ Tarla.katman({
         o.gunluk(y.mesaj || `💧 ${h.bitki.ad} sulanıyor`, "iyi");
         this._son = 0;            // nem verisi yeniden çekilsin
       } catch (hata) {
+        // HATA KARTTA DA YAZIYOR. Yalnız günlüğe yazmak, kullanıcının
+        // bakmadığı yere yazmak demekti.
         o.gunluk(`✕ Sulama: ${hata.message}`, "hata");
+        if (not) not.textContent = hata.message || "Sulama başlatılamadı";
         d.disabled = false;
         onayli = false;
         d.textContent = "💧 Sula";
