@@ -87,6 +87,11 @@ window.BahceTuval = (function () {
     vurguAn: {},           // ad -> 0..1 yumuşatılmış vurgu
     kartAd: "",
     ek: null,              // /api/bitki — kuruma geçmişi, sulama süresi
+    secilenTur: "",        // eline aldığı tohum
+    gozler: null,          // o türün GERÇEK boş yerleri (/api/bahce/bos-yer)
+    surukle: null,
+    suruklendi: false,
+    onizleme: null,        // bırakılırsa ne olacağı
     t0: performance.now(),
   };
 
@@ -1805,6 +1810,379 @@ window.BahceTuval = (function () {
   }
 
   /* ==================================================================== *
+   * Tohum rafı, ekim gözleri ve sürükle-bırak
+   *
+   * GÖZ UYDURULMUYOR. `/api/bahce/bos-yer` seçilen TÜRÜN yayılım çapına
+   * göre gerçekten ekilebilir noktaları veriyor: dikim alanının içinde,
+   * yumuşak sınırların içinde ve hiçbir bitkinin yayılım çemberine
+   * girmeyen. Marulun gözü rokanınkinden az, çünkü marul geniş.
+   *
+   * BIRAKMADAN ÖNCE CEVAP. Parmak toprakta gezerken geçerlilik ANINDA
+   * hesaplanıyor — sunucudaki `bos_yerler` ile aynı üç ölçüt, aynı
+   * yerde. Sunucuya sormak her hareket için bir istek demekti ve cevap
+   * geldiğinde parmak çoktan başka yerdeydi. Karar yine sunucuda
+   * veriliyor (`/api/bahce/ek` → `dikim.nokta_kabul`); buradaki hesap
+   * yalnız ÖNCEDEN göstermek için, ve iki taraf ayrışırsa sunucu
+   * reddediyor — yani yanılma yönü güvenli.
+   * ==================================================================== */
+
+  function rafYaz() {
+    const raf = $("#bt-raf");
+    if (!raf) return;
+    const v = S.veri || {};
+    const turler = v.turler || [];
+    const hazne = new Set(v.hazne_turleri || []);
+    const imza = turler.map((t) => t.slug).join(",") + "|" + [...hazne].join(",");
+    if (raf.dataset.imza === imza) return;
+    raf.dataset.imza = imza;
+    // Bahçede zaten olan türler önde: en çok kullanılan tohum en yakında.
+    const bahcede = new Set((v.bitkiler || []).map((b) => b.tur));
+    const sirali = [...turler].sort((a, b) =>
+      (bahcede.has(b.slug) ? 1 : 0) - (bahcede.has(a.slug) ? 1 : 0));
+    raf.innerHTML = sirali.map((t) => `
+      <button class="bt-tohum" type="button" data-tur="${kacisli(t.slug)}"
+              data-makine="1" aria-pressed="false"
+              aria-label="${kacisli(t.ad)} — toprağa sürükleyin ya da dokunup bir göz seçin">
+        <span class="im">${kacisli(t.simge || "🌱")}</span>
+        <span>${kacisli(t.ad)}<small>${
+          hazne.has(t.slug)
+            ? `olgun çapı ${Math.round(sayi(t.yayilim_mm))} mm`
+            : '<span class="haznesiz">haznede tohumu yok</span>'}</small></span>
+      </button>`).join("");
+    raf.querySelectorAll(".bt-tohum").forEach((d) => {
+      d.addEventListener("pointerdown", surukleBasla);
+      d.addEventListener("click", (o) => {
+        // Sürükleme olduysa tıklamayı yutuyoruz: parmağını kaldırınca
+        // tohum hem bırakılıp hem seçilmiş olmasın.
+        if (S.suruklendi) { S.suruklendi = false; return; }
+        o.preventDefault();
+        tohumSec(d.dataset.tur === S.secilenTur ? "" : d.dataset.tur);
+      });
+    });
+    durumYaz();
+  }
+
+  function turBul(slug) {
+    return ((S.veri || {}).turler || []).find((t) => t.slug === slug) || null;
+  }
+
+  /** Bir türü "eline almak": o türün ekim gözleri yatakta yanıyor. */
+  async function tohumSec(slug) {
+    S.secilenTur = slug || "";
+    S.onizleme = null;
+    document.querySelectorAll("#bt-raf .bt-tohum").forEach((d) => {
+      d.setAttribute("aria-pressed", d.dataset.tur === S.secilenTur ? "true" : "false");
+    });
+    if (!S.secilenTur) { S.gozler = null; notYaz("goz", ""); surdur(); return; }
+    try {
+      const y = await api(`/api/bahce/bos-yer?tur=${encodeURIComponent(slug)}&azami=96`);
+      if (S.secilenTur !== slug) return;      // kullanıcı arada fikir değiştirdi
+      S.gozler = y;
+      notYaz("goz", y.adet ? "" :
+        `${y.ad} için boş yer kalmamış — mevcut bitkilerin yayılım `
+        + "çemberleri yatağı doldurmuş.");
+    } catch (hata) {
+      S.gozler = null;
+      // Sessiz başarısızlık yok: göz çizilmiyorsa sebebi yazıyor.
+      notYaz("goz", `Ekim gözleri hesaplanamadı: ${hata.message}`);
+    }
+    surdur();
+  }
+
+  /* ------------------------------------------------------- geçerlilik */
+  /** Bu noktaya bu yayılımdaki bir bitki sığar mı?
+   *  Ölçütler `bahce.bos_yerler` ile aynı ve aynı sırada. */
+  function yerGecerli(x, y, yayilim) {
+    const v = S.veri || {};
+    const r = Math.max(0, sayi(yayilim) / 2);
+    const alanlar = v.alanlar || [];
+    if (!alanlar.length) {
+      return { ok: false, sebep: "Dikim alanı tanımlı değil — toprağın nerede "
+                                + "olduğu bilinmiyor." };
+    }
+    const icinde = alanlar.some((a) =>
+      x >= Math.min(sayi(a.x1), sayi(a.x2)) && x <= Math.max(sayi(a.x1), sayi(a.x2))
+      && y >= Math.min(sayi(a.y1), sayi(a.y2)) && y <= Math.max(sayi(a.y1), sayi(a.y2)));
+    if (!icinde) return { ok: false, sebep: "Burada toprak yok — dikim alanının dışı." };
+
+    const s = (v.sinirlar || {});
+    const sx = s.x || {}, sy = s.y || {};
+    if ((sx.min != null && x < sayi(sx.min)) || (sx.max != null && x > sayi(sx.max))
+        || (sy.min != null && y < sayi(sy.min)) || (sy.max != null && y > sayi(sy.max))) {
+      return { ok: false, sebep: "Makinenin yumuşak sınırlarının dışı." };
+    }
+    let en = null, enPay = Infinity;
+    (v.bitkiler || []).forEach((b) => {
+      const d = Math.hypot(x - sayi(b.x), y - sayi(b.y));
+      const gerek = (r + sayi(b.yaricap_mm)) * 0.98;
+      const pay = d - gerek;
+      if (pay < enPay) { enPay = pay; en = b; }
+    });
+    if (en && enPay < 0) {
+      return { ok: false, cakisan: en,
+               sebep: `${en.tur_ad || en.tur} çok yakın — çemberleri `
+                      + `${Math.round(-enPay)} mm çakışıyor.` };
+    }
+    return { ok: true, cakisan: null, sebep: "" };
+  }
+
+  /* --------------------------------------------------------- çizim */
+  /** Ekim gözleri. Elde tohum varken yatağın GERİ KALANI karartılıyor:
+   *  sığmayan yer sönük kalsın, sığan yer kendiliğinden öne çıksın. */
+  function gozleriCiz(ct, t) {
+    const g = S.gozler;
+    if (!g || !g.yerler || !g.yerler.length) return;
+    const q = [yansit(0, 0), yansit(1, 0), yansit(1, 1), yansit(0, 1)];
+    const cap = Math.max(16, sayi(g.yayilim_mm));
+    const nabiz = 0.5 + 0.5 * Math.sin(t * 2.2);
+
+    // Karartma: yatak eksi gözler (even-odd).
+    ct.save();
+    ct.beginPath();
+    q.forEach((p, i) => (i ? ct.lineTo(p.x, p.y) : ct.moveTo(p.x, p.y)));
+    ct.closePath();
+    g.yerler.forEach((yer) => {
+      const uv = mmUV(yer.x, yer.y);
+      const p = yansit(uv.u, uv.v);
+      const r = (cap / 2) * mmPx(uv.v);
+      ct.moveTo(p.x + r, p.y);
+      ct.ellipse(p.x, p.y, r, r * 0.66, 0, 0, Math.PI * 2, true);
+    });
+    ct.fillStyle = "rgba(6,8,5,0.45)";
+    ct.fill("evenodd");
+    ct.restore();
+
+    // Gözün kendisi: toprakta hafif bir çukur ve nabız gibi bir halka.
+    g.yerler.forEach((yer, i) => {
+      const uv = mmUV(yer.x, yer.y);
+      const p = yansit(uv.u, uv.v);
+      const r = (cap / 2) * mmPx(uv.v);
+      const ic = ct.createRadialGradient(p.x, p.y - r * 0.1, r * 0.05, p.x, p.y, r);
+      ic.addColorStop(0, "rgba(0,0,0,0.30)");
+      ic.addColorStop(0.75, "rgba(0,0,0,0.05)");
+      ic.addColorStop(1, "rgba(255,240,200,0.10)");
+      ct.fillStyle = ic;
+      ct.beginPath();
+      ct.ellipse(p.x, p.y, r, r * 0.66, 0, 0, Math.PI * 2);
+      ct.fill();
+      ct.strokeStyle = `rgba(150,220,130,${(0.28 + nabiz * 0.30).toFixed(3)})`;
+      ct.lineWidth = 1.6;
+      ct.setLineDash([6, 6]);
+      ct.lineDashOffset = -t * 14 + i;
+      ct.beginPath();
+      ct.ellipse(p.x, p.y, r, r * 0.66, 0, 0, Math.PI * 2);
+      ct.stroke();
+      ct.setLineDash([]);
+    });
+  }
+
+  /** Hayalet önizleme: bırakılırsa ne olacağı.
+   *  Bitki yarı saydam ve OLGUN çapında; çember o türün yayılımı. */
+  function onizlemeCiz(ct, t) {
+    const o = S.onizleme;
+    if (!o) return;
+    const tur = turBul(S.secilenTur);
+    if (!tur) return;
+    const uv = mmUV(o.x, o.y);
+    const p = yansit(uv.u, uv.v);
+    const olcek = mmPx(uv.v);
+    const r = Math.max(14, (sayi(tur.yayilim_mm) / 2) * olcek);
+
+    // Çakışan komşu varsa ONUN çemberi de yanıyor: neyin engellediği
+    // yazıyla değil, görünerek anlaşılsın.
+    if (o.cakisan) {
+      const cuv = mmUV(o.cakisan.x, o.cakisan.y);
+      const cp = yansit(cuv.u, cuv.v);
+      const cr = sayi(o.cakisan.yaricap_mm) * mmPx(cuv.v);
+      ct.strokeStyle = "rgba(224,82,82,0.75)";
+      ct.lineWidth = 2;
+      ct.beginPath();
+      ct.ellipse(cp.x, cp.y, cr, cr * 0.66, 0, 0, Math.PI * 2);
+      ct.stroke();
+      ct.setLineDash([4, 4]);
+      ct.beginPath();
+      ct.moveTo(cp.x, cp.y);
+      ct.lineTo(p.x, p.y);
+      ct.stroke();
+      ct.setLineDash([]);
+    }
+
+    ct.save();
+    ct.globalAlpha = 0.85;
+    ct.strokeStyle = o.ok ? "rgba(150,220,130,0.95)" : "rgba(224,82,82,0.95)";
+    ct.fillStyle = o.ok ? "rgba(150,220,130,0.12)" : "rgba(224,82,82,0.12)";
+    ct.lineWidth = 2;
+    ct.beginPath();
+    ct.ellipse(p.x, p.y, r, r * 0.66, 0, 0, Math.PI * 2);
+    ct.fill();
+    ct.stroke();
+
+    ct.globalAlpha = o.ok ? 0.62 : 0.35;
+    ct.translate(p.x, p.y - yukseklikPx(16, uv.v));
+    const sahte = { tur: tur.slug, tur_ad: tur.ad };
+    cizGulce(ct, r * 0.92, yesil(sahte), null, t, tohum(tur.slug),
+             { genislik: 0.24, dalga: true });
+    ct.restore();
+
+    // Künye: ne, nereye, olgun çapı — ve olmuyorsa sebebi.
+    const bas1 = `${tur.ad} · ${Math.round(o.x)} / ${Math.round(o.y)} mm`;
+    const alt = o.ok ? `olgun çapı ${Math.round(sayi(tur.yayilim_mm))} mm · bırakınca sorulacak`
+                     : o.sebep;
+    ct.font = yazTipi(11, true);
+    const en1 = ct.measureText(bas1).width;
+    ct.font = yazTipi(10, false);
+    const en = Math.round(Math.max(en1, ct.measureText(alt).width) + 18);
+    let x = Math.round(p.x + r * 0.7 + 10);
+    const yy = Math.round(p.y - r * 0.66 - 46);
+    if (x + en > S.en - 6) x = Math.round(p.x - r * 0.7 - 10 - en);
+    ct.fillStyle = "rgba(16,18,15,0.92)";
+    yuvarlakKutu(ct, x, yy, en, 30, 8);
+    ct.fill();
+    ct.save();
+    yuvarlakKutu(ct, x, yy, en, 30, 8);
+    ct.clip();
+    ct.fillStyle = o.ok ? "#7bbf5a" : "#e05252";
+    ct.fillRect(x, yy, 3, 30);
+    ct.restore();
+    ct.textBaseline = "top";
+    ct.fillStyle = "#f2f2ee";
+    ct.font = yazTipi(11, true);
+    ct.fillText(bas1, x + 9, yy + 4);
+    ct.font = yazTipi(10, false);
+    ct.fillStyle = o.ok ? "#b9bab0" : "#e8a0a0";
+    ct.fillText(alt, x + 9, yy + 17);
+  }
+
+  /* ------------------------------------------------------- sürükleme */
+  /** Ekrandaki noktadan yatak milimetresine; gözlere yakınsa GÖZE
+   *  oturuyor — parmak birkaç milimetre şaşabilir, göz şaşmaz. */
+  function birakmaYeri(ex, ey) {
+    const uv = ekranUV(ex, ey);
+    if (!uv) return null;
+    const ham = uvMM(uv.u, uv.v);
+    const g = S.gozler;
+    if (g && g.yerler) {
+      const cek = Math.max(25, sayi(g.yayilim_mm) / 2);
+      let en = null, enD = Infinity;
+      g.yerler.forEach((yer) => {
+        const d = Math.hypot(yer.x - ham.x, yer.y - ham.y);
+        if (d < enD) { enD = d; en = yer; }
+      });
+      if (en && enD <= cek) return { x: en.x, y: en.y, goz: true };
+    }
+    return { x: Math.round(ham.x * 10) / 10, y: Math.round(ham.y * 10) / 10, goz: false };
+  }
+
+  function onizlemeTazele(ex, ey) {
+    const tur = turBul(S.secilenTur);
+    if (!tur) { S.onizleme = null; return; }
+    const yer = birakmaYeri(ex, ey);
+    if (!yer) { S.onizleme = null; return; }
+    const d = yerGecerli(yer.x, yer.y, sayi(tur.yayilim_mm));
+    S.onizleme = { x: yer.x, y: yer.y, goz: yer.goz, ok: d.ok,
+                   sebep: d.sebep, cakisan: d.cakisan };
+    surdur();
+  }
+
+  function surukleBasla(o) {
+    const t = o.target.closest(".bt-tohum");
+    if (!t || t.disabled) return;
+    const tur = turBul(t.dataset.tur);
+    if (!tur) return;
+    S.surukle = { tur, el: t, tasindi: false, x: o.clientX, y: o.clientY };
+    S.suruklendi = false;
+    if (S.secilenTur !== tur.slug) tohumSec(tur.slug);
+  }
+
+  function surukleTasi(o) {
+    const s = S.surukle;
+    if (!s) return;
+    if (!s.tasindi && Math.hypot(o.clientX - s.x, o.clientY - s.y) < 6) return;
+    if (!s.tasindi) { s.tasindi = true; s.el.classList.add("tutuluyor"); }
+    o.preventDefault();
+    const tv = S.tuval;
+    const r = tv.getBoundingClientRect();
+    const ic = o.clientX >= r.left && o.clientX <= r.right
+      && o.clientY >= r.top && o.clientY <= r.bottom;
+    const h = $("#bt-hayalet");
+    if (h) {
+      // Parmak tuvalin dışındayken hayalet parmağın altında; içine
+      // girince sahnedeki önizleme devralıyor.
+      h.hidden = ic;
+      h.textContent = s.tur.simge || "🌱";
+      h.style.left = `${o.clientX}px`;
+      h.style.top = `${o.clientY}px`;
+    }
+    if (ic) onizlemeTazele(o.clientX - r.left, o.clientY - r.top);
+    else { S.onizleme = null; surdur(); }
+  }
+
+  function surukleBirak(o) {
+    const s = S.surukle;
+    if (!s) return;
+    S.surukle = null;
+    const h = $("#bt-hayalet");
+    if (h) h.hidden = true;
+    s.el.classList.remove("tutuluyor");
+    if (!s.tasindi) return;            // dokunuş sayılır, sürükleme değil
+    S.suruklendi = true;
+    const tv = S.tuval;
+    const r = tv.getBoundingClientRect();
+    const ic = o.clientX >= r.left && o.clientX <= r.right
+      && o.clientY >= r.top && o.clientY <= r.bottom;
+    const on = S.onizleme;
+    S.onizleme = null;
+    surdur();
+    if (!ic || !on) return;
+    if (!on.ok) {
+      notYaz("birak", `Buraya ekilemez — ${on.sebep}`);
+      setTimeout(() => notYaz("birak", ""), 6000);
+      return;
+    }
+    ekOnayi(s.tur, on);
+  }
+
+  /** EKİM ONAYI. Ne olacağı önce yazılıyor, sonra soruluyor: hangi tür,
+   *  hangi koordinat, hangi göz, makine nereye gidecek. */
+  function ekOnayi(tur, yer) {
+    const v = S.veri || {};
+    const bas = (v.baslar || {}).tohum || {};
+    const mx = sayi(yer.x) + sayi(bas.dx), my = sayi(yer.y) + sayi(bas.dy);
+    const goz = (v.hazne_gozleri || []).find(
+      (g) => g.dolu && String(g.tohum || "") === tur.slug);
+    const ortu = $("#bt-ortu");
+    if (ortu) ortu.hidden = false;
+    S.kartAd = "";
+    requestAnimationFrame(() => ortu && ortu.classList.add("acik"));
+    onayIste({
+      baslik: `${tur.ad} ekilecek`,
+      ne: `Tohum ${Math.round(sayi(yer.x))} / ${Math.round(sayi(yer.y))} mm `
+        + `noktasına düşecek; makine tohum ucuyla ${mx.toFixed(0)} / `
+        + `${my.toFixed(0)} mm noktasına gidiyor (başın kayması eklenmiş). `
+        + (goz ? `Tohum "${goz.ad}" gözünden alınacak. `
+               : "Bu türe ayrılmış DOLU bir göz görünmüyor; makine ekimi "
+                 + "reddedebilir. ")
+        + `Olgun çapı ${Math.round(sayi(tur.yayilim_mm))} mm. `
+        + "Nokta hemen yaratılıyor, ekim sıraya giriyor. Ekim geri alınamaz.",
+      tamam: "Ek",
+      tikla: async () => {
+        try {
+          const y = await gonder("/api/bahce/ek",
+                                 { tur: tur.slug, x: yer.x, y: yer.y });
+          kuyrukDegisti(y.kuyruk);
+          gunluk(`✓ ${tur.ad} sıraya girdi`, "ok");
+          tohumSec("");
+          await yukle();
+        } catch (hata) {
+          gunluk(`✕ ${hata.message}`, "hata");
+          notYaz("ek", `Ekilemedi: ${hata.message}`);
+          setTimeout(() => notYaz("ek", ""), 10000);
+        }
+      },
+    });
+  }
+
+  /* ==================================================================== *
    * Veriden çizime
    * ==================================================================== */
   function bitkileriHazirla() {
@@ -1855,6 +2233,9 @@ window.BahceTuval = (function () {
     if (S.statik) ct.drawImage(S.statik, 0, 0, S.en, S.boy);
 
     if (!G.ileri) return;
+    // Gözler zeminin ÜSTÜNDE, bitkilerin ALTINDA: göz bir toprak
+    // işareti, bitki onun üstünde duruyor.
+    gozleriCiz(ct, S.sakin ? 0 : t);
     // Vurgu yumuşatılıyor: parmak bitkiye değince zıplamasın, kalksın.
     S.bitki.forEach((b) => {
       const hedef = b.ad === S.uzerinde || b.ad === S.kartAd ? 1 : 0;
@@ -1864,6 +2245,7 @@ window.BahceTuval = (function () {
       S.vurguAn[b.ad] = b.vurgu;
     });
     S.bitki.forEach((b) => bitkiCiz(ct, b, S.sakin ? 0 : t, I));
+    onizlemeCiz(ct, S.sakin ? 0 : t);
     makineCiz(ct, S.sakin ? 0 : t, I);
 
     // Etiketler en üstte: bitkiler birbirinin üstüne binse de yazı
@@ -1943,6 +2325,7 @@ window.BahceTuval = (function () {
       bitkileriHazirla();
       S.statikImza = "";
       durumYaz();
+      rafYaz();
       bosYaz();
       surdur();
       // Kart açıksa sayıları da tazele: bayat bir nem göstermek, ölçüm
@@ -2039,6 +2422,8 @@ window.BahceTuval = (function () {
     if (!S.acik) {
       if (S.dongu) cancelAnimationFrame(S.dongu);
       S.dongu = 0;
+      kartKapat();
+      tohumSec("");
       return;
     }
     // Yerleşim yeni değişti: ölçüyü bir sonraki karede alıyoruz.
@@ -2077,8 +2462,15 @@ window.BahceTuval = (function () {
     // Fare: üzerine gelme. Dokunmatikte "üzerine gelme" diye bir şey
     // yok — orada dokunuş doğrudan kartı açıyor.
     tv.addEventListener("pointermove", (o) => {
-      if (o.pointerType === "touch") return;
+      if (S.surukle) return;               // sürükleme belge düzeyinde
       const p = yerel(o);
+      // Elde tohum varsa toprak bir bırakma yeri: önizleme onu izliyor.
+      if (S.secilenTur && o.pointerType !== "touch") {
+        onizlemeTazele(p.x, p.y);
+        tv.style.cursor = "copy";
+        return;
+      }
+      if (o.pointerType === "touch") return;
       const b = bitkiBul(p.x, p.y);
       const ad = b ? b.ad : "";
       tv.style.cursor = b ? "pointer" : "default";
@@ -2086,12 +2478,35 @@ window.BahceTuval = (function () {
     });
     tv.addEventListener("pointerleave", () => {
       if (S.uzerinde) { S.uzerinde = ""; surdur(); }
+      if (S.onizleme && !S.surukle) { S.onizleme = null; surdur(); }
     });
     tv.addEventListener("click", (o) => {
+      if (S.suruklendi) { S.suruklendi = false; return; }
       const p = yerel(o);
+      // TOHUM ELDEYKEN TOPRAĞA DOKUNMAK DA EKİYOR: dokunmatikte
+      // sürüklemeyi kendiliğinden bulamayan biri gözde kalmasın.
+      if (S.secilenTur) {
+        onizlemeTazele(p.x, p.y);
+        const on = S.onizleme;
+        const tur = turBul(S.secilenTur);
+        if (on && tur) {
+          if (on.ok) { ekOnayi(tur, on); }
+          else {
+            notYaz("birak", `Buraya ekilemez — ${on.sebep}`);
+            setTimeout(() => notYaz("birak", ""), 6000);
+          }
+        }
+        return;
+      }
       const b = bitkiBul(p.x, p.y);
       if (b) kartAc(b.ad);
     });
+
+    // Sürükleme BELGE DÜZEYİNDE izleniyor: parmak rafın dışına çıkınca
+    // olay akışı kesilmesin.
+    document.addEventListener("pointermove", surukleTasi, { passive: false });
+    document.addEventListener("pointerup", surukleBirak);
+    document.addEventListener("pointercancel", surukleBirak);
 
     const ortu = $("#bt-ortu");
     if (ortu) {
@@ -2099,7 +2514,9 @@ window.BahceTuval = (function () {
       ortu.onclick = (o) => { if (o.target === ortu) kartKapat(); };
     }
     addEventListener("keydown", (o) => {
-      if (o.key === "Escape" && S.kartAd) kartKapat();
+      if (o.key !== "Escape") return;
+      if (S.kartAd) { kartKapat(); return; }
+      if (S.secilenTur) tohumSec("");
     });
 
     ikonBagla("#bt-sakin", "farmbot_bt_sakin", (a) => {
@@ -2139,6 +2556,8 @@ window.BahceTuval = (function () {
         ? [Math.round(S.robot.hx), Math.round(S.robot.hy)] : null,
       bas: aktifBasKimlik(), ucYuksekligi: ucYuksekligi(),
       uzerinde: S.uzerinde, kart: S.kartAd,
+      tohum: S.secilenTur, goz: S.gozler ? S.gozler.adet : 0,
+      onizleme: S.onizleme ? [S.onizleme.x, S.onizleme.y, S.onizleme.ok] : null,
       tipler: S.bitki.map((b) => `${b.tur}:${b.tip}`),
       ters: !!G.ters,
     };

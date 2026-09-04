@@ -3536,6 +3536,16 @@ def _bahce_veri() -> dict[str, Any]:
         # boş bir türü "ekilebilir" diye göstermek, kullanıcıyı makinenin
         # reddedeceği bir işe göndermek olurdu.
         "hazne_turleri": _bahce_hazne_turleri(),
+        # HANGİ GÖZ. Ekim onayı "hangi hazneden" diye soruyor ve türü
+        # bilmek yetmiyor: aynı tür birden çok gözde olabilir, biri
+        # boşalmış olabilir. Gözün adı ve doluluğu buradan geliyor;
+        # konum yazılmıyor, çünkü kullanıcıya gereken şey gözün kendisi.
+        "hazne_gozleri": [
+            {"ad": g.get("ad"), "tohum": g.get("tohum"), "dolu": bool(g.get("dolu"))}
+            for g in (((merkez.son_durum or {}).get("uc") or {})
+                      .get("tohumluk_gozleri") or [])
+            if isinstance(g, dict)
+        ],
         "bolgeler": durum.get("bolgeler") or [],
         "konum": durum.get("konum") or {},
         # Z REFERANSLARI. Bahçe sahnesi ucun toprağa inişini çiziyor ve

@@ -228,3 +228,57 @@ body.bahce-tuval .bt { flex: 1 1 auto; }
 .bt-dugme:hover { color: var(--metin); }
 .bt-dugme.birincil { color: #fff; background: var(--vurgu); }
 .bt-dugme[disabled] { opacity: .45; cursor: not-allowed; }
+
+/* ==================================================================== *
+ * Tohum rafı
+ * ==================================================================== */
+.bt-raf {
+  display: flex;
+  gap: var(--b2);
+  overflow-x: auto;
+  padding-bottom: 2px;
+  flex: none;
+}
+.bt-tohum {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--b2);
+  font: inherit;
+  text-align: left;
+  color: var(--metin-2);
+  background: var(--yuzey-2);
+  border: 1px solid transparent;
+  border-radius: 12px;
+  padding: var(--b2) var(--b3);
+  cursor: grab;
+  touch-action: none;          /* sürükleme tuvale ait, sayfaya değil */
+  -webkit-tap-highlight-color: transparent;
+}
+.bt-tohum .im {
+  font-family: "BitkiEmoji", system-ui, sans-serif;
+  font-size: 22px;
+  line-height: 1;
+}
+.bt-tohum small { display: block; font-size: 11px; color: var(--metin-3); }
+.bt-tohum[aria-pressed="true"] {
+  color: var(--metin);
+  border-color: var(--iyi);
+  background: rgba(76, 175, 80, .14);
+}
+.bt-tohum.tutuluyor { opacity: .45; }
+.bt-tohum[disabled] { opacity: .45; cursor: not-allowed; }
+/* Haznesi boş tür gizlenmiyor, SÖYLENİYOR: ekim denenebilir ama makine
+   reddedebilir ve sebebini önceden bilmek iyidir. */
+.bt-tohum .haznesiz { color: var(--uyari); }
+
+.bt-hayalet {
+  position: fixed;
+  z-index: 60;
+  pointer-events: none;
+  transform: translate(-50%, -50%);
+  font-family: "BitkiEmoji", system-ui, sans-serif;
+  font-size: 28px;
+  filter: drop-shadow(0 4px 6px rgba(0, 0, 0, .55));
+}
+.bt-hayalet[hidden] { display: none; }
