@@ -2649,12 +2649,31 @@ function kamYariBagla(yari, ad) {
   const sahnede = rol("sahnede");
   if (sahnede) {
     sahnede.onclick = () => {
-      const kapali = !S.kamKutuKapali[ad];
-      S.kamKutuKapali[ad] = kapali;
       const kutu = KAM_KUTU.get(ad);
+      /* DURUM BAYRAKTAN DEĞİL KUTUDAN OKUNUYOR.
+       *
+       * `S.kamKutuKapali` sayfa yenilenince sıfırlanıyor ve o an
+       * `undefined` oluyordu; `!undefined` true, yani YENİLEMEDEN SONRAKİ
+       * İLK BASIŞ HER ZAMAN GİZLE demekti. Kutu zaten görünmez olduğu
+       * için ekranda hiçbir şey değişmiyor, günlüğe "gizlendi"
+       * düşüyordu. Kullanıcı "açamıyorum" dedi; düğme gerçekten
+       * açmıyordu.
+       *
+       * Kutunun kendi görünürlüğü tek doğru kaynak: ekranda ne
+       * görünüyorsa durum odur. */
+      const suAnKapali = kutu ? kutu.classList.contains("gizli")
+                              : !!S.kamKutuKapali[ad];
+      const kapali = !suAnKapali;
+      S.kamKutuKapali[ad] = kapali;
       if (kutu) {
         kutu.classList.toggle("gizli", kapali);
         if (kapali) kutu.classList.remove("buyuk");
+        /* GERİ AÇARKEN EKRANA SIĞDIRIYORUZ. Kutular sağa sıralı
+         * diziliyor ve sürüklenebiliyor; gizliyken pencere küçüldüyse
+         * ya da kutu kenara sürüklendiyse "gizli" sınıfını kaldırmak
+         * onu GÖRÜNÜR yapıyor ama ekranın DIŞINDA bırakıyordu.
+         * Sığdırma kurulumda çağrılıyordu, geri açmada çağrılmıyordu. */
+        if (!kapali) (KAM_SINIRLA.get(ad) || (() => {}))();
       }
       kamSahnedeYaz(ad);
       gunluk(`${kamEtiket(ad)} sahnede ${kapali ? "gizlendi" : "gösteriliyor"}`);
