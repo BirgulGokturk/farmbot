@@ -558,6 +558,53 @@ def kartlar(noktalar: list[dict[str, Any]], tur_indeks: dict[str, dict[str, Any]
             "noktalar": [str(b.get("ad")) for b in hasat][:40],
         })
 
+    # --- nemi bilinmeyenler ----------------------------------------------
+    #
+    # EKRANDAKİ "bilinmiyor"LARIN KAYNAĞI BURASI. Bir bitkinin nemi ya
+    # hiç ölçülmemiştir, ya okuma sulamadan ÖNCE alınmıştır (yani bugünkü
+    # toprağı anlatmıyor), ya da komşudan ödünç alınmıştır. Üçünde de
+    # karar geçen güne düşüyor, yani TAHMİNE.
+    #
+    # Kart bunu bir işe çeviriyor: makine gidip ölçerse ekran tahmin
+    # etmeyi bırakıp ölçüyü söyler. Susama kartıyla çakışmıyor — o
+    # "sula" diyor, bu "önce bak" diyor ve ikisi aynı bitkiler için
+    # aynı anda çıkabilir; hangisinin seçileceği kullanıcının kararı.
+    olculmemis: list[tuple[dict[str, Any], str]] = []
+    for b in hepsi:
+        d = (durumlar.get(str(b.get("ad"))) or {}).get("su") or {}
+        o = d.get("olcum") or {}
+        if not o.get("var"):
+            olculmemis.append((b, "hiç ölçüm yok"))
+        elif o.get("bayat"):
+            olculmemis.append((b, "son ölçüm sulamadan önce alınmış"))
+        elif not o.get("kendi"):
+            olculmemis.append(
+                (b, f"{_sayi(o.get('uzak_mm')):.0f} mm ötedeki okuma ödünç alındı"))
+    if olculmemis:
+        # Hiç ölçümü olmayanlar önde: en çok bilinmeyen onlar.
+        olculmemis.sort(key=lambda p: 0 if p[1] == "hiç ölçüm yok" else 1)
+        adlar = [str(b.get("ad")) for b, _ in olculmemis][:40]
+        hic = sum(1 for _, n in olculmemis if n == "hiç ölçüm yok")
+        _kart({
+            "kimlik": "olc",
+            "tip": "nem",
+            "simge": "🌡️",
+            "baslik": (f"{len(olculmemis)} bitkinin nemi bilinmiyor"
+                       if len(olculmemis) > 1
+                       else f"{_tur_ad(tur_indeks, olculmemis[0][0])} ölçülmedi"),
+            "aciklama": _liste_yaz([_tur_ad(tur_indeks, b) for b, _ in olculmemis])
+                        + " için karar ölçüme değil geçen güne dayanıyor. "
+                        + "Prob gidip ölçerse ekran tahmin etmeyi bırakır.",
+            "gerekce": [f"{b.get('ad')}: {n}" for b, n in olculmemis[:6]],
+            "kanit": "ölçümün künyesi — var mı, kendi üstünden mi, bayat mı",
+            "olculen_adet": 0,
+            "tahmin_adet": len(olculmemis),
+            "tahmin": True,
+            "hic_olcum_adet": hic,
+            "evet": "Nemini ölç",
+            "noktalar": adlar,
+        })
+
     # --- boş yer ---------------------------------------------------------
     kart = bos_yer_karti(noktalar, tur_indeks, yaricaplar, alanlar,
                          hazne_turleri, sinirlar)

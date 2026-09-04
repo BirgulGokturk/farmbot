@@ -90,6 +90,8 @@ window.BahceTuval = (function () {
     dogus: {},             // ad -> yeni gelen bitkinin beliriş anı
     canlanma: {},          // ad -> sulandıktan sonraki canlanma anı
     etiketAn: {},          // ad -> 0..1 baloncuk görünürlüğü
+    isVurgu: null,         // görev şeridinde üzerine gelinen kartın bitkileri
+    isAn: {},              // ad -> 0..1 yumuşatılmış görev işareti
     kartAd: "",
     ek: null,              // /api/bitki — kuruma geçmişi, sulama süresi
     secilenTur: "",        // eline aldığı tohum
@@ -1132,6 +1134,24 @@ window.BahceTuval = (function () {
       ct.restore();
     }
 
+    // GÖREV İŞARETİ: şerittteki karta gelince o kartın bitkilerinin
+    // çevresinde dönen bir halka. "Hangileri" sorusunun cevabı yazıyla
+    // değil, yatakta.
+    if (b.isv > 0.01) {
+      ct.save();
+      ct.globalAlpha = b.isv;
+      ct.strokeStyle = "rgba(120,200,255,0.85)";
+      ct.lineWidth = 2.2;
+      ct.setLineDash([8, 7]);
+      ct.lineDashOffset = -t * 26;
+      const rr = R * (1.25 + 0.06 * Math.sin(t * 3));
+      ct.beginPath();
+      ct.ellipse(b.x, b.y, rr, rr * 0.66, 0, 0, Math.PI * 2);
+      ct.stroke();
+      ct.setLineDash([]);
+      ct.restore();
+    }
+
     // ÜZERİNE GELİNCE: hafifçe kalkıyor, altında yumuşak bir ışık
     // beliriyor. İkisi de SÜS.
     if (b.vurgu > 0.01) {
@@ -2080,12 +2100,14 @@ window.BahceTuval = (function () {
     document.querySelectorAll("#bt-raf .bt-tohum").forEach((d) => {
       d.setAttribute("aria-pressed", d.dataset.tur === S.secilenTur ? "true" : "false");
     });
+    islerYaz();          // kartlardaki tür çipleri de seçimi göstersin
     if (!S.secilenTur) { S.gozler = null; notYaz("goz", ""); surdur(); return; }
     try {
       const y = await api(`/api/bahce/bos-yer?tur=${encodeURIComponent(slug)}&azami=96`);
       if (S.secilenTur !== slug) return;      // kullanıcı arada fikir değiştirdi
       S.gozler = y;
       S.gozT0 = (performance.now() - S.t0) / 1000;
+      islerYaz();
       notYaz("goz", y.adet ? "" :
         `${y.ad} için boş yer kalmamış — mevcut bitkilerin yayılım `
         + "çemberleri yatağı doldurmuş.");
@@ -2627,6 +2649,167 @@ window.BahceTuval = (function () {
   }
 
   /* ==================================================================== *
+   * Görev şeridi — "bugün ne yapmalıyım"
+   *
+   * KARTLARI SUNUCU ÜRETİYOR (`bahce.kartlar`). Ölçüt yoksa kart yok;
+   * kart varsa gerekçesi de var ve gerekçe kartın üstünde yazıyor. Bu
+   * ekran onları LİSTELEMİYOR, bir işe çeviriyor:
+   *
+   *   · karta gelince o kartın bitkileri yatakta işaretleniyor
+   *   · karta dokununca kamera onlara gidiyor
+   *   · düğme mevcut onay adımından geçip işi kuyruğa koyuyor
+   *
+   * Yani sulama, ölçüm, ekim ve hasat kontrolü başka bir sekmeye
+   * gitmeden burada bitiyor.
+   *
+   * TAHMİNE DAYANAN KART BUNU SÖYLÜYOR. Sunucu her kartta `tahmin` ve
+   * `kanit` veriyor; kesikli çerçeveli "tahmin" işareti ölçülmüş bir
+   * kararla karışmasın diye var.
+   * ==================================================================== */
+  function islerYaz() {
+    const kap = $("#bt-isler");
+    if (!kap) return;
+    const v = S.veri || {};
+    const kartlar = v.kartlar || [];
+    const imza = JSON.stringify(kartlar.map((k) => [k.kimlik, k.baslik,
+      (k.noktalar || []).length, k.ertelendi || 0, S.secilenTur]));
+    if (kap.dataset.imza === imza) return;
+    kap.dataset.imza = imza;
+
+    if (!kartlar.length) {
+      kap.innerHTML = '<p class="bt-bos-is">Şu an gereken bir iş görünmüyor — '
+        + 'ölçütlerin hiçbiri karşılanmadı.</p>';
+      return;
+    }
+    kap.innerHTML = kartlar.map((k) => {
+      const adet = (k.noktalar || []).length;
+      const kanit = k.kanit ? `<span class="kanit">${
+        k.tahmin ? '<i class="tahmin">tahmin</i>' : ""}Ölçüt: ${kacisli(k.kanit)}</span>`
+        : "";
+      const turler = k.secenekler
+        ? `<div class="bt-turler">${k.secenekler.slice(0, 8).map((t) => `
+            <button class="bt-tur-cip" type="button" data-tur="${kacisli(t.slug)}"
+                    aria-pressed="${t.slug === S.secilenTur ? "true" : "false"}"
+                    title="${kacisli(t.ad)} · yayılım ${Math.round(sayi(t.yayilim_mm))} mm">
+              ${kacisli(t.simge || "🌱")} ${kacisli(t.ad)}${
+                t.hazne ? "" : ' <span class="yok">(hazne boş)</span>'}
+            </button>`).join("")}</div>`
+        : "";
+      const dugmeler = k.ertelendi
+        ? `<button class="bt-dugme" data-rol="geri">Ertelemeyi geri al</button>`
+        : `${k.evet && !k.secenekler
+              ? `<button class="bt-dugme birincil" data-makine="1"
+                         data-rol="yap">${kacisli(k.evet)}</button>` : ""}
+           <button class="bt-dugme" data-rol="ertele">Yarın sor</button>`;
+      return `
+      <article class="bt-is${k.ertelendi ? " ertelendi" : ""}"
+               data-kimlik="${kacisli(k.kimlik)}" tabindex="0">
+        <span class="bt-is-simge">${kacisli(k.simge || "•")}</span>
+        <div class="bt-is-govde">
+          <b>${kacisli(k.baslik)}</b>
+          <small>${kacisli(k.aciklama || "")}</small>
+          ${kanit}
+          ${k.ertelendi ? `<small>${kacisli(k.ertelendi_yazi || "")} ertelendi</small>` : ""}
+          ${turler}
+          <div class="bt-is-dugmeler">${dugmeler}</div>
+        </div>
+      </article>`;
+    }).join("");
+
+    kap.querySelectorAll(".bt-is").forEach((el) => {
+      const k = kartlar.find((x) => x.kimlik === el.dataset.kimlik);
+      if (!k) return;
+      const adlar = k.noktalar || [];
+      const isaretle = (a) => {
+        S.isVurgu = a ? new Set(adlar) : null;
+        surdur();
+      };
+      el.addEventListener("pointerenter", () => isaretle(true));
+      el.addEventListener("pointerleave", () => isaretle(false));
+      el.addEventListener("focus", () => isaretle(true));
+      el.addEventListener("blur", () => isaretle(false));
+      el.addEventListener("click", (o) => {
+        if (o.target.closest("button")) return;
+        kamOdakBitkiler(adlar);
+      });
+      const d = (rol) => el.querySelector(`[data-rol="${rol}"]`);
+      if (d("yap")) d("yap").onclick = () => kartIsi(k);
+      if (d("ertele")) d("ertele").onclick = () => kartErtele(k.kimlik, false);
+      if (d("geri")) d("geri").onclick = () => kartErtele(k.kimlik, true);
+      el.querySelectorAll("[data-tur]").forEach((c) => {
+        c.onclick = () => {
+          // Tür seçmek tohumu ELE ALIYOR: gözler yanıyor, kullanıcı
+          // bırakacağı yeri kendi seçiyor. Kart yerine karar vermiyor.
+          tohumSec(c.dataset.tur === S.secilenTur ? "" : c.dataset.tur);
+          kap.dataset.imza = "";
+          islerYaz();
+        };
+      });
+    });
+    durumYaz();
+  }
+
+  async function kartErtele(kimlik, iptal) {
+    try {
+      await gonder("/api/bahce/ertele", { kimlik, iptal: !!iptal });
+      await yukle();
+    } catch (hata) { gunluk(`✕ ${hata.message}`, "hata"); }
+  }
+
+  /** Kartın işi. Geri alınamaz olanlar (sulama) onay adımından geçiyor;
+   *  ölçüm ve fotoğraf makineyi hareket ettiriyor ama geri alınamaz bir
+   *  şey bırakmıyor, doğrudan kuyruğa giriyor. */
+  function kartIsi(k) {
+    const adlar = k.noktalar || [];
+    if (!adlar.length) return;
+    if (k.tip === "sula") {
+      const v = S.veri || {};
+      const bas = (v.baslar || {}).sulama || {};
+      // Süre GÖNDERİLMİYOR: her bitkinin kendi çözülmüş süresi var
+      // (tür ezmesi > varsayılan) ve tek bir sayı dayatmak onu ezerdi.
+      const sureler = adlar.map((ad) => {
+        const b = (v.bitkiler || []).find((x) => x.ad === ad);
+        return b ? sayi(b.sulama_saniye, 3) : 3;
+      });
+      const enAz = Math.min(...sureler), enCok = Math.max(...sureler);
+      onayIste({
+        baslik: k.baslik,
+        ne: `${adlar.length} bitki sulanacak. Makine her birine sulama `
+          + `başlığıyla gidiyor (baş kayması ${sayi(bas.dx).toFixed(0)} / `
+          + `${sayi(bas.dy).toFixed(0)} mm) ve pompayı `
+          + (enAz === enCok ? `${enAz.toFixed(1)} saniye` : `${enAz.toFixed(1)}–${enCok.toFixed(1)} saniye`)
+          + " açıyor — süre her bitkinin kendi ayarından. "
+          + (k.tahmin ? "Bu kartın bir kısmı ÖLÇÜME DEĞİL geçen güne dayanıyor. "
+                      : "")
+          + "Dökülen su geri alınamaz.",
+        tamam: `Onaylıyorum, ${adlar.length} bitkiyi sula`,
+        tikla: () => isGonder("sula", adlar),
+      });
+      return;
+    }
+    if (k.tip === "nem") { isGonder("nem", adlar); return; }
+    if (k.tip === "hasat") { isGonder("foto", adlar); return; }
+  }
+
+  /** Kamera bir grup bitkiyi çerçeveliyor — "hangileri" sorusunun
+   *  cevabı yazıyla değil, bakışla. */
+  function kamOdakBitkiler(adlar) {
+    const kume = new Set(adlar || []);
+    const secili = S.bitki.filter((b) => kume.has(b.ad));
+    if (!secili.length) return;
+    let x1 = Infinity, y1 = Infinity, x2 = -Infinity, y2 = -Infinity;
+    secili.forEach((b) => {
+      const r = Math.max(30, b.cizimPx * 0.7);
+      x1 = Math.min(x1, b.x - r); x2 = Math.max(x2, b.x + r);
+      y1 = Math.min(y1, b.y - r); y2 = Math.max(y2, b.y + r);
+    });
+    const en = Math.max(40, x2 - x1), boy = Math.max(40, y2 - y1);
+    const oran = Math.min(S.en / en, S.boy / boy) * 0.75;
+    S.kamElle = true;
+    kamOdak((x1 + x2) / 2, (y1 + y2) / 2, kis(oran, 1, 3.2));
+  }
+
+  /* ==================================================================== *
    * Veriden çizime
    * ==================================================================== */
   function bitkileriHazirla() {
@@ -2661,6 +2844,7 @@ window.BahceTuval = (function () {
         faz: tohum(b.ad),
         vurgu: sayi(S.vurguAn[b.ad], 0),
         bas: sayi(S.basAn[b.ad], 0),
+        isv: sayi(S.isAn[b.ad], 0),
         yaprak: yesil(b),
         aksan: hexRGB(b.renk || "#7bbf5a"),
       };
@@ -2707,6 +2891,11 @@ window.BahceTuval = (function () {
       b.bas += (bh - b.bas) * bk;
       if (Math.abs(b.bas - bh) < 0.005) b.bas = bh;
       S.basAn[b.ad] = b.bas;
+      // Görev şeridindeki karta gelince o kartın bitkileri işaretleniyor.
+      const ih = S.isVurgu && S.isVurgu.has(b.ad) ? 1 : 0;
+      b.isv += (ih - b.isv) * (1 - Math.exp(-dt / 0.12));
+      if (Math.abs(b.isv - ih) < 0.005) b.isv = ih;
+      S.isAn[b.ad] = b.isv;
     });
     S.bitki.forEach((b) => bitkiCiz(ct, b, S.sakin ? 0 : t, I));
     onizlemeCiz(ct, S.sakin ? 0 : t);
@@ -2820,6 +3009,7 @@ window.BahceTuval = (function () {
       S.statikImza = "";
       durumYaz();
       rafYaz();
+      islerYaz();
       bosYaz();
       surdur();
       // Kart açıksa sayıları da tazele: bayat bir nem göstermek, ölçüm

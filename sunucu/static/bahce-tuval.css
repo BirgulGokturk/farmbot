@@ -300,3 +300,77 @@ body.bahce-tuval .bt { flex: 1 1 auto; }
   flex: none;
 }
 .bt-geri:hover { color: var(--metin); }
+
+/* ==================================================================== *
+ * Görev şeridi — "bugün ne yapmalıyım"
+ *
+ * Kartları sunucu üretiyor; burası onları bir işe çeviriyor. Şerit
+ * sahnenin ÜSTÜNDE duruyor çünkü ekranı açan kişinin ilk okuyacağı şey
+ * durum değil, yapılacak iş.
+ * ==================================================================== */
+.bt-isler {
+  display: flex;
+  gap: var(--b2);
+  overflow-x: auto;
+  flex: none;
+  padding-bottom: 2px;
+}
+.bt-isler:empty { display: none; }
+
+.bt-is {
+  flex: none;
+  min-width: 250px;
+  max-width: 330px;
+  display: flex;
+  gap: var(--b2);
+  align-items: flex-start;
+  background: var(--yuzey-2);
+  border: 1px solid transparent;
+  border-radius: 14px;
+  padding: var(--b2) var(--b3);
+  cursor: pointer;
+  transition: border-color .15s, background .15s, transform .15s;
+}
+.bt-is:hover { border-color: var(--cizgi-2); transform: translateY(-1px); }
+.bt-is.ertelendi { opacity: .55; }
+.bt-is-simge { font-size: 20px; line-height: 1.2; flex: none; }
+.bt-is-govde { min-width: 0; flex: 1 1 auto; }
+.bt-is b { display: block; }
+.bt-is small { display: block; color: var(--metin-3); font-size: 11px; }
+/* Kanıt satırı: kararın neye dayandığı. Tahmine dayanan kart bunu
+   kesikli çerçeveyle söylüyor — ölçülmüş bir kararla karışmasın. */
+.bt-is .kanit { color: var(--metin-2); font-size: 11px; }
+.bt-is .tahmin {
+  display: inline-block;
+  border: 1px dashed var(--uyari);
+  color: var(--uyari);
+  border-radius: 6px;
+  padding: 0 4px;
+  margin-right: 4px;
+}
+.bt-is-dugmeler { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
+.bt-is-dugmeler .bt-dugme { padding: 5px 12px; font-size: 12px; }
+.bt-turler { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 6px; }
+.bt-tur-cip {
+  font: inherit;
+  font-size: 12px;
+  color: var(--metin-2);
+  background: var(--yuzey);
+  border: 1px solid transparent;
+  border-radius: 999px;
+  padding: 3px 10px;
+  cursor: pointer;
+}
+.bt-tur-cip:hover { color: var(--metin); border-color: var(--cizgi-2); }
+.bt-tur-cip[aria-pressed="true"] {
+  color: var(--metin); border-color: var(--iyi);
+  background: rgba(76, 175, 80, .14);
+}
+.bt-tur-cip .yok { color: var(--metin-3); }
+
+.bt-bos-is {
+  flex: none;
+  color: var(--metin-3);
+  font-size: var(--yazi-kucuk, .82rem);
+  padding: var(--b2) var(--b3);
+}
