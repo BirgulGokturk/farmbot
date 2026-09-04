@@ -31,6 +31,21 @@ Tarla.katman({
 
   /* --------------------------------------------------------- veri */
 
+  /** Sabit kameranın ADI — durum paketinden, sabit yazılmıyor.
+   *
+   * "ust" diye sabit yazılmıştı ve sahada kalibrasyon hiç okunamadı:
+   * kameranın adı başka. Ad kullanıcıya ait bir şey, koda gömülemez.
+   * Doğru soru "adı ne" değil, "hangisi HAREKET ETMİYOR" — bu katmanın
+   * işi tam olarak hareket etmeyen kameranın görüntüsünü yatağa
+   * sermek. Hiç sabit kamera yoksa katmanın yapacak işi de yok.
+   */
+  kameraAdi() {
+    const liste = (window.Panel && window.Panel.S
+                   && window.Panel.S.kameralar) || [];
+    const sabit = liste.find((k) => k && k.hareketli === false);
+    return sabit ? sabit.ad : null;
+  },
+
   /** Kalibrasyon ve kare, katman AÇIKKEN ve seyrek tazeleniyor.
    *
    * Katman kapalıyken hiç istek atmıyoruz: sabit kamera saatte bir kare
@@ -41,9 +56,12 @@ Tarla.katman({
     if (!P || !P.apiIste) return;
     const simdi = Date.now();
     if (this._istek || simdi - (this._sonIstek || 0) < 4000) return;
+    const kam = this.kameraAdi();
+    if (!kam) { this._kalib = null; return; }
+    this._kam = kam;
     this._istek = true;
     this._sonIstek = simdi;
-    P.apiIste("/api/kamera/kalibrasyon?kamera=ust")
+    P.apiIste(`/api/kamera/kalibrasyon?kamera=${encodeURIComponent(kam)}`)
       .then((y) => {
         const k = y && y.kalibrasyon;
         const imza = k ? JSON.stringify([k.mm_px, k.donme, k.ofset_x, k.ofset_y,
@@ -71,8 +89,8 @@ Tarla.katman({
       im.crossOrigin = "anonymous";
       im.onload = () => { this._im = im; o.tazele(); };
       im.onerror = () => { this._im = null; };
-      im.src = `/api/kare/son?kamera=ust&t=${kova}`
-        + `&jeton=${encodeURIComponent(jeton)}`;
+      im.src = `/api/kare/son?kamera=${encodeURIComponent(this._kam || "ust")}`
+        + `&t=${kova}&jeton=${encodeURIComponent(jeton)}`;
     }
     return this._im && this._im.naturalWidth ? this._im : null;
   },
@@ -180,8 +198,15 @@ Tarla.katman({
   guncelle(o) {
     o.bosalt(o.grup);
     this.veriAl(o);
+    if (!this.kameraAdi()) {
+      this.sebepYaz(o, "sabit (hareketsiz) bir kamera tanımlı değil. "
+        + "Kamera sekmesindeki ayar kartında üst kameranın 'hareketli' "
+        + "kutusu işaretsiz olmalı.");
+      return;
+    }
     if (!this._kalib) {
-      this.sebepYaz(o, "kalibrasyon okunamadı (üst kamera tanımlı mı?)");
+      this.sebepYaz(o, "kalibrasyon henüz okunmadı — bir saniye içinde "
+        + "yeniden denenecek.");
       return;
     }
     const k4 = this.koseler();
