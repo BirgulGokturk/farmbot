@@ -152,6 +152,11 @@ class Kuyruk:
             "kimlik": i["kimlik"], "tip": i["tip"], "etiket": i["etiket"],
             "durum": i["durum"], "mesaj": i["mesaj"], "ts": i["ts"],
             "adet": len(i["noktalar"]),
+            # HANGİ BİTKİLER. Sayı, "makine şu an ne yapıyor" sorusunu
+            # yanıtlamıyor: bahçe sahnesi çalışan işin hedefini ekranda
+            # işaretliyor ve robota dokununca adını yazıyor. Ad listesi
+            # zaten kuyrukta duruyordu, özet onu düşürüyordu.
+            "noktalar": list(i["noktalar"]),
             "sure_sn": round((i["bitti_ts"] or time.time()) - i["basladi_ts"], 1)
                        if i["basladi_ts"] else 0.0,
         }

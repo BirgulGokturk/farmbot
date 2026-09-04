@@ -34,6 +34,7 @@ from fastapi.staticfiles import StaticFiles
 import arsiv
 import bahce
 import baslar
+import bitki
 import depo
 import etiket
 import filiz
@@ -49,6 +50,7 @@ import noktalar
 import programlar
 import sulama
 import turler
+import zamanli
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger("tarim")
@@ -270,7 +272,12 @@ async def yasam(app: FastAPI):
     merkez.son_olcum = await asyncio.to_thread(depo.son_kayit) or {}
     gorevler = [asyncio.create_task(_budama_dongusu()),
                 asyncio.create_task(_kuyruk_dongusu()),
-                asyncio.create_task(_arsiv_dongusu())]
+                asyncio.create_task(_arsiv_dongusu()),
+                # Zamanlanmis gorevler DURMUS baslıyor (bkz. zamanli.py):
+                # dongu doner ama hicbir gorev "calisiyor" degildir.
+                asyncio.create_task(zamanli.dongu(
+                    _zamanli_engel, _zamanli_adlar, _zamanli_is_ekle,
+                    _zamanli_yayinla))]
     logger.info("Sunucu hazır. Panel parolası: %s", "var" if PANEL_PAROLA else "yok (açık)")
     yield
     for g in gorevler:
@@ -793,6 +800,18 @@ async def api_toplu(govde: dict[str, Any], jeton: str = Query(default="")):
             await asyncio.to_thread(
                 noktalar.alanlari_yaz,
                 {ad: {"sulama_ts": simdi} for ad in sulanacak})
+            # OLAY DEFTERI. Nokta deposu yalniz SON damgayi tutuyor; "kac
+            # kez sulandi" ancak her sulamanin bir satir birakmasiyla
+            # bilinebiliyor. Sure bitki basina: desen acikken toplam su
+            # noktalara BOLUNUYOR, o yuzden noktalarin sureleri toplaniyor
+            # -- istekteki `saniye` degil, gercekten gonderilen sure.
+            sureler = {
+                str(o["ad"]): round(sum(_sayi_guvenli(n.get("saniye"))
+                                        for n in (o.get("noktalar") or [])), 2)
+                for o in cozum["ozet"] if o.get("sulanacak", True)}
+            await asyncio.to_thread(
+                bitki.olay_yaz,
+                [(ad, "sula", sureler.get(ad)) for ad in sulanacak], simdi)
             await merkez.yayinla({"tip": "tepsi"})
     else:
         adimlar = [{"tip": "nokta", "ad": ad} for ad in adlar]
@@ -972,6 +991,11 @@ async def _nem_topla(hedefler: list[dict[str, Any]]) -> None:
                 break
         if yazilan:
             await asyncio.to_thread(noktalar.alanlari_yaz, yazilan)
+            # Olcum de deftere dusuyor: kart "kac kez olculdu" diyebilsin.
+            # Nokta kaydi yalniz SONUNCUSUNU tutuyor.
+            await asyncio.to_thread(
+                bitki.olay_yaz,
+                [(a, "nem", v["nem_yuzde"]) for a, v in yazilan.items()])
             await merkez.yayinla({"tip": "tepsi"})
             await merkez.yayinla({"tip": "bahce", "kuyruk": kuyruk.goruntu(),
                                   "tazele": True})
@@ -3120,6 +3144,12 @@ def _kamera_hareketli(ad: str) -> bool:
 app.include_router(etiket.yonlendirici_kur(
     _parola_dogrula, _cozumleme_karesi, _makine_xy, _kamera_hareketli))
 app.include_router(filiz.yonlendirici_kur(_parola_dogrula, _cozumleme_karesi))
+# BITKI KARTLARI. Kartin EK verisi (sulama suresi, nem egilimi, olay
+# sayaclari) burada; bitkinin kendisi ve susama karari `/api/bahce`de
+# kaliyor ve panel ikisini birlestiriyor. Toprak kalibrasyonu ajandan
+# geliyor, o yuzden buradan veriliyor.
+app.include_router(bitki.yonlendirici_kur(
+    _parola_dogrula, lambda: (merkez.durum().get("toprak_kalib") or {})))
 
 
 async def _git_ve_bekle(x: float, y: float, z: float | None,
@@ -3393,6 +3423,7 @@ def _bahce_veri() -> dict[str, Any]:
     liste = []
     for b in bahce.bitkiler(hepsi):
         tur = tur_indeks.get(str(b.get("tur") or "")) or {}
+        sulama_ayar = sulama.ayar_coz(b, tur)
         su = bahce.susama_durumu(b, tur, okumalar, toprak_kalib, simdi)
         hasat = bahce.hasat_durumu(b, tur, simdi)
         durumlar[str(b.get("ad"))] = {"su": su, "hasat": hasat}
@@ -3409,6 +3440,13 @@ def _bahce_veri() -> dict[str, Any]:
             "susadi": su["susadi"], "su_gerekce": su["gerekce"],
             "su_kanit": su["kanit"], "nem_yuzde": su.get("nem_yuzde"),
             "su_olcum": su.get("olcum"), "su_tahmin": bool(su.get("tahmin")),
+            # SULAMA SÜRESİ VE DESENİ bitkinin kendi ezme zincirinden
+            # çözülüyor (bitkinin `ozel` alanı > tür ezmesi > varsayılan).
+            # Bahçe kartı "kaç saniye sulanacak" diye soruyordu ve cevap
+            # yalnız sunucuda vardı; kullanıcıya sayıyı göstermeden
+            # sulamak, ne olacağını söylemeden iş yaptırmak demekti.
+            "sulama_saniye": _sayi_guvenli(sulama_ayar.get("sulama_saniye"), 3.0),
+            "sulama_deseni": str(sulama_ayar.get("sulama_deseni") or "ust"),
             "hasat": hasat["hazir"], "hasat_gerekce": hasat["gerekce"],
             "yas_gun": hasat.get("gun"), "olgun_gun": hasat.get("olgun"),
             "olgunluk": hasat.get("oran"),
@@ -3979,7 +4017,21 @@ async def _kuyruk_calistir(is_: dict[str, Any]) -> str:
         return f"{len(sonuc['cekilen'])} fotoğraf"
     govde: dict[str, Any] = {"islem": tip, "noktalar": adlar}
     if tip == "sula":
-        govde["saniye"] = is_["veri"].get("saniye") or 3
+        # SURE VERILMEDIYSE GONDERILMIYOR — `or 3` degil.
+        #
+        # Burada `or 3` vardi ve kuyruktan gecen HER sulama 3 saniye
+        # suruyordu: bitkinin `ozel.sulama_saniye` ezmesi de turun degeri
+        # de sessizce yok sayiliyordu. Panelde "4 sn" yazan bir bitkiye 3
+        # saniye su vermek, ayarin islemedigini kimseye soylemeden ayari
+        # yok saymak demek — ve ayarin neden ise yaramadigi aranirken
+        # bakilacak son yer burasiydi.
+        #
+        # None gecince `_istek_saniye` None donuyor ve her bitki KENDI
+        # ezme zincirinden cozuluyor (`sulama.ayar_coz`): bitkinin ozeli >
+        # tur > katalog varsayilani (3 sn). Yani kimse bir sey ayarlamadiysa
+        # davranis aynen eskisi gibi. `tarla.js`teki toplu sulama ayni
+        # karari zaten vermisti; kuyruk yolu geride kalmisti.
+        govde["saniye"] = is_["veri"].get("saniye")
     await api_toplu(govde, jeton=PANEL_PAROLA)
     # Dizi başladı; bitmesini bekliyoruz ki sıradaki iş üstüne binmesin.
     await _dizi_bitmesini_bekle()
@@ -4005,6 +4057,100 @@ async def _dizi_bitmesini_bekle(azami_sn: float = 900.0) -> None:
             return
         await asyncio.sleep(0.4)
     logger.warning("Kuyruk: iş %.0f sn'de bitmedi, sıradakine geçiliyor", azami_sn)
+
+
+# --------------------------------------------------------------------------- #
+# Zamanlanmis gorevler
+#
+# ISI BU TARAF CALISTIRMIYOR: zamani gelince bahcenin KENDI kuyruguna bir
+# is koyuyor, gerisi kuyrugun yolundan geciyor (ayni cozumleme, ayni yasak
+# bolge on kontrolu). Asagidaki dort islev `zamanli.dongu` ile buranin tek
+# bagi.
+# --------------------------------------------------------------------------- #
+def _zamanli_engel() -> str:
+    """Su an tik atilabilir mi — atilamiyorsa SEBEBI.
+
+    `_bahce_mesgul` yalniz evet/hayir diyor. Burada sebep de donuyor, cunku
+    panelde "14:30 atlandi" tek basina kullaniciya hicbir sey soylemiyor;
+    "makine bagli degildi" bir sonraki adimi da soyluyor.
+
+    KUYRUKTA BEKLEYEN IS DE ENGEL. Aralik isin suresinden kisaysa kuyruk
+    sessizce siser ve zamanlayici gercekte "her 15 dakikada bir" degil
+    "durmadan" calisir hale gelirdi.
+    """
+    d = merkez.durum()
+    if not d.get("bagli"):
+        return "makine bağlı değil"
+    if (d.get("dizi") or {}).get("calisiyor"):
+        return "bir dizi çalışıyor"
+    if d.get("hareket"):
+        return "makine hareket hâlinde"
+    if _ekim.goruntu().get("aktif"):
+        return "ekim oturumu sürüyor"
+    calisan = kuyruk.calisan()
+    if calisan:
+        return f"kuyrukta çalışan iş var ({calisan['etiket']})"
+    bekleyen = kuyruk.bekleyenler()
+    if bekleyen:
+        return f"kuyrukta {len(bekleyen)} iş bekliyor"
+    return ""
+
+
+def _zamanli_adlar_coz(kapsam: str, secili: list[str] | None) -> list[str]:
+    """Kapsamin O ANKI karsiligi — her tikte yeniden.
+
+    Donmus bir liste, sulanmis bitkiyi sulamaya devam ederdi. Susama hali
+    BAHCEYLE AYNI islevden (`bahce.susama_durumu`) geliyor; ikinci bir
+    olcut yazmak, panelde "susadi" gorunen bitkiyle zamanlayicinin
+    suladigi bitkinin ayrismasi demekti.
+    """
+    hepsi = bahce.bitkiler(noktalar.hepsi())
+    if kapsam == "secili":
+        istenen = {str(a) for a in (secili or [])}
+        return [str(b.get("ad")) for b in hepsi
+                if str(b.get("ad")) in istenen][:AZAMI_SECIM]
+    if kapsam == "hepsi":
+        return [str(b.get("ad")) for b in hepsi][:AZAMI_SECIM]
+    simdi = time.time()
+    tur_indeks = _bahce_tur_indeks()
+    okumalar = _bahce_okumalar()
+    kalib = merkez.durum().get("toprak_kalib") or {}
+    cikti: list[str] = []
+    for b in hepsi:
+        tur = tur_indeks.get(str(b.get("tur") or "")) or {}
+        su = bahce.susama_durumu(b, tur, okumalar, kalib, simdi)
+        o = su.get("olcum") or {}
+        if kapsam == "susayanlar":
+            if su.get("susadi"):
+                cikti.append(str(b.get("ad")))
+        elif kapsam == "olcumsuz":
+            # "Kendi taze olcumu var" = olcum var, bitkinin KENDI ustunden
+            # ve sulamadan sonra alinmis. Ucunden biri eksikse o bitkinin
+            # olculmesi gerekiyor.
+            if not (o.get("var") and o.get("kendi") and not o.get("bayat")):
+                cikti.append(str(b.get("ad")))
+    return cikti[:AZAMI_SECIM]
+
+
+async def _zamanli_adlar(kapsam: str, secili: list[str] | None) -> list[str]:
+    # Dort ayri depoyu okuyor; olay dongusunu tikamasin.
+    return await asyncio.to_thread(_zamanli_adlar_coz, kapsam, secili)
+
+
+async def _zamanli_is_ekle(tip: str, etiket: str, adlar: list[str]) -> None:
+    """Kuyruga koyar. `saniye` VERILMIYOR: her bitki kendi sulama suresinden
+    cozulsun diye — zamanlanmis gorev tek bir sureyi butun bahceye
+    dayatmiyor. Kuyruk doluysa hata firliyor ve dongu onu atlama sebebi
+    olarak yaziyor."""
+    kuyruk.ekle(tip, etiket, adlar, {"saniye": None})
+    await merkez.yayinla({"tip": "bahce", "kuyruk": kuyruk.goruntu()})
+
+
+async def _zamanli_yayinla() -> None:
+    await merkez.yayinla({"tip": "zamanli", "zamanli": zamanli.goruntu()})
+
+
+app.include_router(zamanli.yonlendirici_kur(_parola_dogrula))
 
 
 async def _arsiv_dongusu() -> None:

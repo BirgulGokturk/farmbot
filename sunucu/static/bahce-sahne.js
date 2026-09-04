@@ -67,6 +67,7 @@ window.BahceSahne = (function () {
     ileriMatris: null,
     olcuTs: 0,
     notlar: {},
+    kart: null,
     sayac: { cizim: 0, kare: 0, istek: 0 },
   };
 
@@ -637,6 +638,194 @@ window.BahceSahne = (function () {
     }
   }
 
+
+  /* ==================================================================== *
+   * Makine
+   *
+   * Üstten bakışta makine bir nokta değil: köprü makine Y'sinde yürüyor
+   * ve X boyunca uzanıyor, kızak köprünün üstünde X'te kayıyor. Ekranda
+   * da öyle duruyor.
+   *
+   * KONUM BİLDİRİLMİYORSA ÇİZİLMİYOR. Robotu "herhâlde şuradadır" diye
+   * bir yere koymak, bu ekranın söyleyebileceği en kötü yalan olurdu.
+   * ==================================================================== */
+
+  /** Çalışan iş hangi başı kullanıyor? İş yoksa boş — hiçbir baş aktif
+   *  değil demek, "herhâlde sulama başlığıdır" demek değil. */
+  function aktifBasKimlik() {
+    const v = S.veri || {};
+    const calisan = (v.kuyruk || {}).calisan;
+    if (!calisan) return "";
+    return String((v.is_basi || {})[calisan.tip] || "");
+  }
+
+  function aktifBas() {
+    const kimlik = aktifBasKimlik();
+    if (!kimlik) return null;
+    const b = ((S.veri || {}).baslar || {})[kimlik];
+    return b ? { kimlik, ...b } : null;
+  }
+
+  /** Bir başın İŞ NOKTASI: makine hedefe kaymayı EKLEYEREK gidiyor,
+   *  yani işin olduğu yer makinenin yeri EKSİ kayma (`baslar.geri_al`).
+   *  İkisini aynı yere çizmek, ekimin yanlış yere düştüğü hatayı
+   *  ekranda tekrarlamak olurdu. */
+  function basNoktasi(konum, bas) {
+    return { x: sayi(konum.x) - sayi(bas.dx), y: sayi(konum.y) - sayi(bas.dy) };
+  }
+
+  function makineYaz() {
+    const kap = $("#bs-makine");
+    if (!kap) return;
+    const v = S.veri || {};
+    const k = v.konum || {};
+    if (!v.bagli || k.x == null || k.y == null) { kap.hidden = true; return; }
+    const p = mmUV(k.x, k.y);
+    if (p.u < -0.35 || p.u > 1.35 || p.v < -0.35 || p.v > 1.35) {
+      // Makine yatağın dışında (park, home): çizilmiyor ama sebebi
+      // yazılıyor — kaybolmuş gibi durmasın.
+      kap.hidden = true;
+      notYaz("makine", "Makine şu an yatağın dışında.");
+      return;
+    }
+    notYaz("makine", "");
+    kap.hidden = false;
+    kap.classList.toggle("calisiyor", !!v.mesgul);
+
+    const portal = $("#bs-portal");
+    if (portal) portal.style.top = `${(p.v * 100).toFixed(2)}%`;
+    const kizak = $("#bs-kizak");
+    if (kizak) {
+      kizak.style.left = `${(p.u * 100).toFixed(2)}%`;
+      kizak.style.top = `${(p.v * 100).toFixed(2)}%`;
+    }
+
+    // Aktif baş ve işin görüntüsü: su, prob, tohum.
+    const bas = aktifBas();
+    const el = $("#bs-bas");
+    if (!el) return;
+    if (!bas) { el.hidden = true; el.className = "bs-bas"; return; }
+    const nokta = basNoktasi(k, bas);
+    const bp = mmUV(nokta.x, nokta.y);
+    const tip = (v.kuyruk.calisan || {}).tip;
+    el.hidden = false;
+    el.className = `bs-bas ${bas.kimlik === "sulama" ? "su"
+                          : bas.kimlik === "nem" ? "nem" : "tohum"}`;
+    el.style.left = `${(bp.u * 100).toFixed(2)}%`;
+    el.style.top = `${(bp.v * 100).toFixed(2)}%`;
+    // Su ve prob YALNIZ o iş çalışırken. Röle durumu `olcum` paketinde ve
+    // beş saniyede bir geliyor; üç saniyelik bir sulamayı kaçırırdı.
+    // "Sulama işi çalışıyor" ölçülen bir gerçek — ekranın dediği de bu.
+    const ic = tip === "sula"
+      ? '<span class="bs-damla" style="animation-delay:0s"></span>'
+        + '<span class="bs-damla" style="animation-delay:.37s"></span>'
+        + '<span class="bs-damla" style="animation-delay:.74s"></span>'
+      : (tip === "nem" ? '<span class="bs-prob"></span>' : "");
+    el.innerHTML = ic + `<span class="bs-bas-ad">${kacisli(bas.ad || bas.kimlik)}</span>`;
+  }
+
+  /** Çalışan işin hedefi olan bitkiler işaretleniyor — hangi bitkiyle
+   *  uğraşıldığı ekranda görünsün. Sınıf değişimi, yeniden çizim değil. */
+  function hedefYaz() {
+    const v = S.veri || {};
+    const calisan = (v.kuyruk || {}).calisan;
+    const hedefler = new Set((calisan && calisan.noktalar) || []);
+    document.querySelectorAll("#bs-bitkiler .bs-bitki").forEach((el) => {
+      el.classList.toggle("hedef", hedefler.has(el.dataset.ad));
+    });
+  }
+
+  /* ==================================================================== *
+   * Ayrıntı kartı — hem bitki hem makine bunu kullanıyor
+   *
+   * SATIRIN DEĞERİ YOKSA "bilinmiyor" YAZIYOR. Boş bırakmak ya da sıfır
+   * göstermek, ölçülmemiş bir şeyi ölçülmüş gibi göstermenin iki yolu.
+   * ==================================================================== */
+  function satir(etiket, deger, not) {
+    const bos = deger == null || deger === "";
+    return `<div class="bs-satir"><dt>${kacisli(etiket)}</dt><dd>`
+      + (bos ? '<span class="yok">bilinmiyor</span>' : kacisli(deger))
+      + (not ? `<small>${kacisli(not)}</small>` : "")
+      + "</dd></div>";
+  }
+
+  function kartKapat() {
+    const o = $("#bs-ortu");
+    if (o) o.hidden = true;
+    S.kart = null;
+  }
+
+  function kartAc(kart) {
+    const o = $("#bs-ortu");
+    if (!o) return;
+    S.kart = kart;
+    o.querySelector('[data-rol="simge"]').textContent = kart.simge || "";
+    o.querySelector('[data-rol="baslik"]').textContent = kart.baslik || "";
+    o.querySelector('[data-rol="alt"]').textContent = kart.alt || "";
+    o.querySelector('[data-rol="satirlar"]').innerHTML = (kart.satirlar || []).join("");
+    const dg = o.querySelector('[data-rol="dugmeler"]');
+    dg.innerHTML = "";
+    (kart.dugmeler || []).forEach((d) => {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = `bs-dugme ${d.birincil ? "birincil" : ""}`;
+      if (d.makine) b.dataset.makine = "1";
+      b.textContent = d.yazi;
+      b.onclick = d.tikla;
+      dg.appendChild(b);
+    });
+    o.hidden = false;
+    baglantiYaz();          // karttaki iş düğmeleri de kopuklukta kilitli
+  }
+
+  /** Makineye dokununca: nerede, ne yapıyor, hangi baş, hedefi ne. */
+  function makineKarti() {
+    const v = S.veri || {};
+    const k = v.konum || {};
+    const kuy = v.kuyruk || {};
+    const calisan = kuy.calisan;
+    const bas = aktifBas();
+    const mm = (d) => (d == null ? null : `${sayi(d).toFixed(1)} mm`);
+    const satirlar = [
+      satir("Durum", !v.bagli ? "Kopuk" : (v.mesgul ? "Çalışıyor" : "Bekliyor"),
+            v.bagli ? "" : "Ajan bağlı değil — Raspberry Pi çevrimdışı olabilir."),
+      satir("Konum X", mm(k.x)),
+      satir("Konum Y", mm(k.y)),
+      satir("Konum Z", mm(k.z)),
+    ];
+    if (k.t != null) satirlar.push(satir("Tohum ucu (T)", mm(k.t)));
+    satirlar.push(satir("Şu an ne yapıyor",
+      calisan ? calisan.etiket : (v.bagli ? "Bir şey yapmıyor" : null)));
+    satirlar.push(satir("Aktif baş",
+      bas ? (bas.ad || bas.kimlik) : null,
+      bas ? `merkeze göre kayma: ${sayi(bas.dx).toFixed(1)} / `
+            + `${sayi(bas.dy).toFixed(1)} mm — makine hedefin bu kadar `
+            + "ötesine gidiyor ki baş hedefe otursun"
+          : "Çalışan iş yok, yani bir başla iş yapılmıyor."));
+
+    const hedefAd = (calisan && calisan.noktalar) || [];
+    const bul = (ad) => (v.bitkiler || []).find((b) => b.ad === ad);
+    satirlar.push(satir("Hedef",
+      hedefAd.length
+        ? hedefAd.slice(0, 3).map((a) => {
+            const b = bul(a);
+            return b ? `${b.tur_ad} (${sayi(b.x).toFixed(0)}, ${sayi(b.y).toFixed(0)})` : a;
+          }).join(" · ") + (hedefAd.length > 3 ? ` +${hedefAd.length - 3}` : "")
+        : null,
+      hedefAd.length ? "" : "Çalışan bir iş olmadığı için hedef yok."));
+    satirlar.push(satir("Sırada bekleyen",
+      kuy.bekleyen == null ? null : `${kuy.bekleyen} iş`));
+
+    kartAc({
+      simge: "🤖", baslik: "Makine",
+      alt: v.bagli ? "canlı durum paketinden" : "bağlantı yok",
+      satirlar,
+      // Kart açıkken konum canlı kalıyor: donmuş bir sayı, duran bir
+      // makine sanılır.
+      tazele: makineKarti,
+    });
+  }
+
   /* ==================================================================== *
    * Çizim ve veri
    * ==================================================================== */
@@ -647,6 +836,8 @@ window.BahceSahne = (function () {
     kameraKatYaz();
     cizimYaz();
     bitkileriYaz();
+    makineYaz();
+    hedefYaz();
     baglantiYaz();
   }
 
@@ -712,6 +903,10 @@ window.BahceSahne = (function () {
       S.veri.mesgul = mesgul;
       baglantiYaz();
     }
+    makineYaz();
+    // Kart açıksa yazdığı sayı da canlı: kapalı bir sayfada donmuş bir
+    // konum göstermek, makinenin durduğunu sandırır.
+    if (S.kart && S.kart.tazele) S.kart.tazele();
   }
 
   function ekimDegisti() { /* Ekim akışı bir sonraki adımda bağlanıyor. */ }
@@ -719,6 +914,8 @@ window.BahceSahne = (function () {
   function kuyrukDegisti(k, tazele) {
     if (!S.veri) return;
     S.veri.kuyruk = k;
+    makineYaz();
+    hedefYaz();
     // İş bitti: bahçenin hâli değişmiş olabilir (sulama damgası, yeni
     // bitki). `tazele` ise başka bir panel bahçeyi değiştirmiş.
     if (S.acik && (tazele || (k && !k.calisan && !k.bekleyen))) yukle();
@@ -846,6 +1043,17 @@ window.BahceSahne = (function () {
     if (!kok) return;
     sahneBagla();
 
+    const kizak = $("#bs-kizak");
+    if (kizak) kizak.onclick = makineKarti;
+
+    const ortu = $("#bs-ortu");
+    if (ortu) {
+      // Kartın DIŞINA dokunmak kapatıyor; kartın içine dokunmak değil.
+      ortu.onclick = (o) => { if (o.target === ortu) kartKapat(); };
+      const kapat = ortu.querySelector('[data-rol="kapat"]');
+      if (kapat) kapat.onclick = kartKapat;
+    }
+
     // Eğik bakış VARSAYILAN AÇIK: yatağa yukarıdan hafif eğik bakmak,
     // bitkilerin üst üste binmesini azaltıyor ve bahçeyi bir yer gibi
     // gösteriyor. Tam tepeden bakmak, iki bitkinin hangisinin önde
@@ -890,6 +1098,7 @@ window.BahceSahne = (function () {
         S.klasik = !S.klasik;
         klasikD.setAttribute("aria-pressed", S.klasik ? "true" : "false");
         klasikD.textContent = S.klasik ? "Yeni bahçe" : "Klasik görünüm";
+        kartKapat();
         kok.hidden = S.klasik;
         klasikKap.hidden = !S.klasik;
         if (window.BahceKlasik) window.BahceKlasik.sekme(S.klasik);
@@ -902,10 +1111,9 @@ window.BahceSahne = (function () {
       if (S.acik && !S.klasik) { S.imza = ""; sahneBoyu(); bitkileriYaz(); }
     });
     addEventListener("keydown", (o) => {
-      if (o.key === "Escape" && S.zum.o > 1.02) {
-        S.zum = { o: 1, x: 0, y: 0 };
-        zumUygula();
-      }
+      if (o.key !== "Escape") return;
+      if (S.kart) { kartKapat(); return; }
+      if (S.zum.o > 1.02) { S.zum = { o: 1, x: 0, y: 0 }; zumUygula(); }
     });
   }
 
@@ -923,7 +1131,8 @@ window.BahceSahne = (function () {
       bitki: ((S.veri || {}).bitkiler || []).length,
       zum: Math.round(S.zum.o * 100) / 100,
       bagli: !!(S.veri || {}).bagli, mesgul: !!(S.veri || {}).mesgul,
-      hata: S.hata, sayac: Object.assign({}, S.sayac),
+      hata: S.hata, kart: S.kart ? S.kart.baslik : "",
+      bas: aktifBasKimlik(), sayac: Object.assign({}, S.sayac),
       matris: !!olcumTazele(true),
     };
   }

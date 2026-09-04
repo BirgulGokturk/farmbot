@@ -260,6 +260,18 @@
                      preserveAspectRatio="none" aria-hidden="true"></svg>
                 <div class="bs-gozler" id="bs-gozler"></div>
                 <div class="bs-bitkiler" id="bs-bitkiler"></div>
+                <!-- MAKİNE. Köprü uzun kenar boyunca (makine Y'sinde)
+                     yürüyor ve X boyunca uzanıyor; kızak köprünün üstünde
+                     X'te kayıyor. Tek imleç, makinenin bahçenin üstünden
+                     geçtiğini anlatmıyordu. Konum bildirilmiyorsa hiç
+                     çizilmiyor — "herhâlde şuradadır" diye bir yer
+                     uydurulmuyor. -->
+                <div class="bs-makine" id="bs-makine" hidden>
+                  <div class="bs-portal" id="bs-portal"></div>
+                  <button class="bs-kizak" id="bs-kizak" type="button"
+                          aria-label="Makine — dokununca ne yaptığını yazar"></button>
+                  <div class="bs-bas" id="bs-bas" hidden><span class="bs-bas-ad"></span></div>
+                </div>
                 <!-- Dört köşe ölçü noktası: ekran koordinatını yatak
                      milimetresine çeviren dönüşüm bunlardan ÖLÇÜLEREK
                      çıkarılıyor, elle hesaplanmıyor. Görünmezler ama
@@ -274,6 +286,21 @@
             <span class="bs-rozet-zum" id="bs-zum-rozet" hidden></span>
           </div>
         </div>
+      </div>
+
+      <!-- AYRINTI KARTI — hem bitki hem makine bunu kullanıyor.
+           Sahnenin 3B dönüşümünden etkilenmemesi için düzlemin DIŞINDA. -->
+      <div class="bs-ortu" id="bs-ortu" hidden>
+        <section class="bs-kart" role="dialog" aria-label="Ayrıntı">
+          <header>
+            <span class="bs-kart-simge" data-rol="simge"></span>
+            <div><b data-rol="baslik"></b><small data-rol="alt"></small></div>
+            <span class="esnek"></span>
+            <button class="bs-ikon" data-rol="kapat" type="button">Kapat</button>
+          </header>
+          <dl class="bs-satirlar" data-rol="satirlar"></dl>
+          <div class="bs-kart-dugmeler" data-rol="dugmeler"></div>
+        </section>
       </div>
 
       <!-- ESKİ BAHÇE EKRANI. Kabı kapalıyken `bahce.js` haber almıyor. -->
@@ -956,8 +983,6 @@
                   aria-controls="tur-duzen">Tür varsayılanlarını düzenle</button>
           <div id="tur-duzen" class="gomulu gizli"></div>
           <div id="tarla-cakisma" class="gomulu gizli"></div>
-          <!-- Bitki basina toprak nemi; kendi dosyasinda (nem.js). -->
-          <div id="nem-bolum"></div>
         </div>
       </section>
 
@@ -2279,7 +2304,10 @@
 <script src="/statik/app.js"></script>
 <script src="/statik/etiket.js"></script>
 <script src="/statik/filiz.js"></script>
-<script src="/statik/nem.js"></script>
+<!-- `nem.js` BILEREK YUKLENMIYOR. Tarla'daki nem tablosu her sutunuyla
+     Bitkiler sekmesinin kartina tasindi (prob bekleme suresi ve
+     "olculmeyenleri olc" dahil); iki yerde duran ayni sayi, hangisinin
+     dogru oldugunu bilinmez yapiyordu. Dosya duruyor, kimse cagirmiyor. -->
 <script src="/statik/bitki.js"></script>
 <script src="/statik/zamanli.js"></script>
 </body>
