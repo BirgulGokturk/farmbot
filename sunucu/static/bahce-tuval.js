@@ -68,7 +68,6 @@ window.BahceTuval = (function () {
 
   const S = {
     acik: false,
-    klasik: false,
     veri: null,
     hata: "",
     yukleniyor: false,
@@ -1215,7 +1214,7 @@ window.BahceTuval = (function () {
 
   function dongu() {
     S.dongu = 0;
-    if (!S.acik || S.klasik || document.hidden) return;
+    if (!S.acik || document.hidden) return;
     olcuTazele();
     ciz();
     // SAKİN MOD: tek kare çizilip duruluyor. Hareket bazı insanlar için
@@ -1325,9 +1324,9 @@ window.BahceTuval = (function () {
   function sekme(acik) {
     S.acik = !!acik;
     const kok = $("#bt");
-    if (kok) kok.hidden = !S.acik || S.klasik;
-    document.body.classList.toggle("bahce-tuval", S.acik && !S.klasik);
-    if (!S.acik || S.klasik) {
+    if (kok) kok.hidden = !S.acik;
+    document.body.classList.toggle("bahce-tuval", S.acik);
+    if (!S.acik) {
       if (S.dongu) cancelAnimationFrame(S.dongu);
       S.dongu = 0;
       return;
@@ -1362,29 +1361,12 @@ window.BahceTuval = (function () {
 
     ikonBagla("#bt-sakin", "farmbot_bt_sakin", (a) => {
       S.sakin = a;
-      if (S.acik && !S.klasik) surdur();
+      if (S.acik) surdur();
     });
-
-    // KLASİK GÖRÜNÜM: yeni sahne bir şeyi kaçırıyorsa geri dönülecek
-    // yer. Eski ekran yalnız açıkken haber alıyor.
-    const klasikD = $("#bt-klasik");
-    const klasikKap = $("#bh-klasik");
-    if (klasikD && klasikKap) {
-      klasikD.onclick = () => {
-        S.klasik = !S.klasik;
-        klasikD.setAttribute("aria-pressed", S.klasik ? "true" : "false");
-        klasikD.textContent = S.klasik ? "Yeni bahçe" : "Klasik görünüm";
-        kok.hidden = S.klasik;
-        klasikKap.hidden = !S.klasik;
-        document.body.classList.toggle("bahce-tuval", !S.klasik);
-        if (window.BahceKlasik) window.BahceKlasik.sekme(S.klasik);
-        if (!S.klasik) sekme(true);
-      };
-    }
 
     if (window.ResizeObserver) {
       new ResizeObserver(() => {
-        if (S.acik && !S.klasik) { olcuTazele(); surdur(); }
+        if (S.acik) { olcuTazele(); surdur(); }
       }).observe($("#bt-sahne"));
     } else {
       addEventListener("resize", () => { olcuTazele(); surdur(); });
@@ -1404,7 +1386,7 @@ window.BahceTuval = (function () {
   /* Deneme kancası: ekranın kendi ölçtükleri. */
   function olcum() {
     return {
-      acik: S.acik, klasik: S.klasik, sakin: S.sakin,
+      acik: S.acik, sakin: S.sakin,
       en: S.en, boy: S.boy, dpr: S.dpr,
       bitki: S.bitki.length, kare: S.kare,
       yatakPx: Math.round(G.enPx), duvarPx: Math.round(G.duvarPx),
@@ -1416,8 +1398,7 @@ window.BahceTuval = (function () {
   }
 
   return { sekme, kareGeldi, durumDegisti, kuyrukDegisti, ekimDegisti,
-           baglandi, yukle, olcum, mmUV, uvMM, ekranUV, yansit,
-           klasikMi: () => S.klasik };
+           baglandi, yukle, olcum, mmUV, uvMM, ekranUV, yansit };
 })();
 
 /* ---------------------------------------------------------------------- *
@@ -1425,24 +1406,10 @@ window.BahceTuval = (function () {
  *
  * `app.js` bahçeyi `window.Bahce` üzerinden çağırıyor (beş kanca). O
  * dosya paylaşılan bir dosya ve başka oturumlar orada çalışıyor; tek
- * satır bile değiştirmemek için köprü burada. Eski ekran
- * `window.BahceKlasik` adıyla saklanıyor ve yalnız "Klasik görünüm"
- * açıkken haber alıyor — görünmeyen bir ekranı beslemek boşuna iş.
+ * satır bile değiştirmemek için ad burada bağlanıyor.
+ *
+ * ESKİ BAHÇE EKRANI SİLİNDİ. İki ekranı birden tutmak iki ayrı doğruluk
+ * kaynağı demekti: bir gün ayrışırlar ve hangisinin doğru olduğu
+ * bilinmez. Tek ekran var, o da bu.
  * ---------------------------------------------------------------------- */
-window.BahceKlasik = window.Bahce || null;
-window.Bahce = (function () {
-  "use strict";
-  const yeni = window.BahceTuval;
-  const eski = window.BahceKlasik;
-  const klasik = () => !!(eski && yeni.klasikMi());
-  return {
-    sekme(a) { yeni.sekme(a); if (eski) eski.sekme(a && yeni.klasikMi()); },
-    kareGeldi(k) { yeni.kareGeldi(k); if (klasik()) eski.kareGeldi(k); },
-    durumDegisti(d) { yeni.durumDegisti(d); if (klasik()) eski.durumDegisti(d); },
-    kuyrukDegisti(k, t) { yeni.kuyrukDegisti(k, t); if (klasik()) eski.kuyrukDegisti(k, t); },
-    ekimDegisti(e) { yeni.ekimDegisti(e); if (klasik()) eski.ekimDegisti(e); },
-    baglandi() { yeni.baglandi(); if (klasik()) eski.baglandi(); },
-    yukle() { yeni.yukle(); if (klasik()) eski.yukle(); },
-    olcum() { return yeni.olcum(); },
-  };
-})();
+window.Bahce = window.BahceTuval;
