@@ -2668,12 +2668,40 @@ function kamYariBagla(yari, ad) {
       if (kutu) {
         kutu.classList.toggle("gizli", kapali);
         if (kapali) kutu.classList.remove("buyuk");
-        /* GERİ AÇARKEN EKRANA SIĞDIRIYORUZ. Kutular sağa sıralı
-         * diziliyor ve sürüklenebiliyor; gizliyken pencere küçüldüyse
-         * ya da kutu kenara sürüklendiyse "gizli" sınıfını kaldırmak
-         * onu GÖRÜNÜR yapıyor ama ekranın DIŞINDA bırakıyordu.
-         * Sığdırma kurulumda çağrılıyordu, geri açmada çağrılmıyordu. */
-        if (!kapali) (KAM_SINIRLA.get(ad) || (() => {}))();
+        if (!kapali) {
+          /* İÇİNİ HEMEN DOLDURUYORUZ.
+           *
+           * Kutu şimdiye kadar YALNIZCA yeni bir kare geldiğinde
+           * görünür oluyordu (`kareyiTazele`). Canlı akış Kamera
+           * sekmesinden çıkınca duruyor, yani İzle sekmesindeyken sabit
+           * kameradan yeni kare gelmiyor — düğmeye basılıyor, kutu
+           * açılıyor ama içi boş kalıyor ve gelmeyecek bir kareyi
+           * bekliyor. Kullanıcının gördüğü şey "hiç açılmadı".
+           *
+           * Elimizde her zaman son kare var; kurulum sırasında da
+           * ondan dolduruluyordu. Aynı şeyi burada da yapıyoruz. */
+          const son = S.sonKare[ad];
+          if (son) {
+            const im = kutu.querySelector('[data-rol="kare"]');
+            if (im && !im.src) im.src = son.adres;
+            const z = kutu.querySelector('[data-rol="zaman"]');
+            if (z) {
+              z.textContent = (son.canli ? "canlı " : "")
+                + new Date(son.ts * 1000).toLocaleTimeString("tr-TR");
+            }
+          } else {
+            /* Hiç kare gelmemişse boş bir kutu açmak, kullanıcıya
+             * "bozuk" diye görünür. Sebebi söylüyoruz. */
+            gunluk(`${kamEtiket(ad)} kutusu açıldı ama henüz kare yok — `
+                   + "Kamera sekmesini bir kez açıp kare gelmesini bekleyin",
+                   "uyari");
+          }
+          /* GERİ AÇARKEN EKRANA SIĞDIRIYORUZ. Kutu daha önce kenara
+           * sürüklendiyse ya da pencere küçüldüyse, "gizli" sınıfını
+           * kaldırmak onu GÖRÜNÜR yapıyor ama ekranın DIŞINDA
+           * bırakıyordu. */
+          (KAM_SINIRLA.get(ad) || (() => {}))();
+        }
       }
       kamSahnedeYaz(ad);
       gunluk(`${kamEtiket(ad)} sahnede ${kapali ? "gizlendi" : "gösteriliyor"}`);
