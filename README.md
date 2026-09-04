@@ -847,6 +847,72 @@ kaydediliyor ve okuyan taraf kareyle arasındaki farkı ekliyor. Kayıtlı
 değilse harita hareketli kamerada **kullanılmıyor** — kaydırmayı tahmin
 etmektense eski modele düşmek doğru.
 
+### Yeşil bulma — ExG tek başına yetmiyor
+
+Sahada iki yönlü hata verdi: yatağın önündeki **mavi-turkuaz plastik
+kabın kenarı** "filiz" sayıldı, toprağın ortasındaki **gerçek fesleğen
+filizleri** ise hiç bulunamadı. Üç ayrı sebep ölçüldü ve üçü de ayrı
+düzeltme istiyor.
+
+**1. Beyaz dengesi.** Kare soğuk geliyor. Üst kameranın gerçek karesinde
+ölçüldü: kanal ortalamaları R 65 · G 72 · B 85 — kadrajın çoğu kahverengi
+toprakken en güçlü kanal mavi. Kabın gün gören beyaz üst kenarı
+0.295/0.336/0.369 okuyor (nötr 0.333). ExG piksel başına
+normalleştirdiği için PARLAKLIKTAN bağımsız ama RENK SAPMASINDAN değil.
+"Shades of grey" (Minkowski p=6) düzeltmesi o beyaz kenarı
+0.328/0.334/0.338'e getiriyor — ölçülebilir biçimde nötr.
+
+Gri-dünya (p=1) burada YANLIŞ olurdu: kadrajın çoğu tek renk (toprak) ve
+o yöntem sahnenin ortalamasının gri olduğunu varsayıyor, dolayısıyla
+maviyi aşırı kaldırırdı. Beyaz-yama (p=∞) da yanlış: en parlak piksel
+çoğu zaman bir yansıma parıltısı. p=6 ikisinin arasında.
+
+**2. Renk kapıları.** ExG (`2g − r − b`) aslında "yeşil"i değil
+"kırmızının azlığını" ölçüyor. Turkuazda r düşük, g ve b birlikte
+yüksek; indeks pozitif çıkıyor. Kabın kenarında ölçülen ExG %11 pikselde
+0.12 eşiğini geçiyor. Karara `g > b`, `g > r`, ExGR ve küçük bir
+doygunluk tabanı eklendi; ölçülen kesim kabın kenarında %29–67 arası.
+Yaprak dördünü de rahat geçiyor (yaprakta `g − b` 0.10 üstü, eşik 0.02).
+
+**3. Alan sınırı — en etkilisi.** Kalibrasyon artık pikselden milimetreye
+çevirdiği için her lekenin yatak koordinatı biliniyor. Kabın kenarı
+Y 609 mm'ye düşüyor, dikim alanı Y 80–400 mm; tezgâh, arka plan, çimen
+hepsi dışarıda. Tek denetim, yanlış bulguların çoğu — ve sorduğu soru
+renk sorusundan başka: "bu şey ne renk" değil, "bu şey toprağın üstünde
+mi". `tespit.alan_suzgeci()` bu süzgeci üretiyor, `goruntu.bul()` de
+`gecerli_mi=` ile alıyor.
+
+**Eşiği kareden türetmek denendi, çalışmıyor.** Gerçek karede ExG
+ortancası −0.103, sigma 0.131, "ortanca + 4σ" +0.42 çıkıyor — o eşikte
+karenin binde beşi geçiyor. Yöntem arka planın tek ve dar bir yığın
+olduğunu varsayıyor; bizim kadrajımızda arka plan üç ayrı şey (kızıl
+toprak, mavi plastik, gri arka plan) ve sigma yığının genişliğini değil
+grupların birbirinden uzaklığını ölçüyor. Sabit eşik + renk kapıları
+kalıyor.
+
+### Çözünürlüğü yükseltmek tek başına küçük fideyi bulmuyor
+
+Üst kamerayı 1920'ye çıkarmak gerekli ama yeterli değil, çünkü en küçük
+leke eşiği **piksel** cinsindeydi ve kare alanıyla ölçekleniyordu:
+
+| Çözünürlük | mm/piksel | en_az_piksel | fiziksel karşılığı |
+|---|---|---|---|
+| 640×480 | 0.938 | 150 | 13.0 mm çapında leke |
+| 1920×1440 | 0.312 | 1350 | 13.0 mm çapında leke |
+
+Eşik de ölçeklendiği için oran aynı kalıyor: **13 mm'nin altındaki her
+fide iki çözünürlükte de eleniyor** ve fesleğen kotiledonu 8–10 mm.
+Çözünürlük fideyi daha iyi ÇÖZÜYOR (JPEG bulamacı azalıyor) ama boy
+kapısını açan o değil — kapının milimetre cinsinden konması.
+`tespit.en_az_piksel(kalib, W, H, cap_mm=4)` bu çeviriyi yapıyor: 640'ta
+14 piksel, 1920'de 129 piksel. Aynı fiziksel fide, iki çözünürlükte de
+geçiyor — ve 1920'de 129 piksellik bir leke gürültüden rahatça ayrılıyor.
+
+Morfoloji yarıçapı da piksel cinsindeydi ve ölçeklenmiyordu: 1920'lik
+karede sabit 5×5 pencere, 640'takinin kapsadığı alanın dokuzda biri.
+`goruntu.yaricap_varsayilan()` kare genişliğiyle ölçekliyor (640 → 2,
+1920 → 6).
+
 ## Bahçe modu
 
 Panelin ikinci katmanı: bahçeyle uğraşan ama robotla uğraşmak istemeyen

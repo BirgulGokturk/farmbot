@@ -365,10 +365,141 @@ def boyutlar_mm(lekeler_px: list[dict[str, Any]], kalib: dict[str, Any] | None,
             "ret": []}
 
 
+#: Dikim alanının kenarına bu kadar pay bırakılıyor (mm). Sıfır pay,
+#: alanın tam kenarındaki bir fideyi kalibrasyonun birkaç milimetrelik
+#: sapması yüzünden elerdi. Haritanın ölçülen sapması 9 mm; iki katı
+#: güvenli bir yastık ve kabın kenarı zaten çok daha uzakta.
+ALAN_PAYI_MM = 20.0
+
+
+#: En küçük fide — ÇAP olarak, milimetre. Fesleğen kotiledonu 8-10 mm;
+#: 4 mm'nin altı JPEG gürültüsü ya da yosun.
+EN_KUCUK_CAP_MM = 4.0
+
+
+def yerel_mm_px(kalib: dict[str, Any] | None,
+                genislik_px: float | None = None,
+                yukseklik_px: float | None = None,
+                kare: dict[str, Any] | None = None,
+                px: float | None = None, py: float | None = None) -> float:
+    """Bir pikselin kaç mm olduğu — İSTENEN NOKTADA. 0 = ölçülemedi.
+
+    Haritalı (eğik bakan) kamerada bu sayı karenin bir ucundan öbürüne
+    değişiyor, o yüzden tek bir `mm_px` yetmiyor. Noktanın kendisini ve
+    bir piksel sağını çevirip aradaki mesafeyi ölçüyoruz.
+    """
+    k = kalib or {}
+    kare_bilgi = kare if kare is not None else {"x": None, "y": None}
+    W, H, _, _ = _kalib_piksel(k, genislik_px, yukseklik_px)
+    u = W / 2.0 if px is None else float(px)
+    v = H / 2.0 if py is None else float(py)
+    try:
+        a = piksel_mm(u, v, kare_bilgi, k, genislik_px, yukseklik_px)
+        b = piksel_mm(u + 1.0, v, kare_bilgi, k, genislik_px, yukseklik_px)
+        c = piksel_mm(u, v + 1.0, kare_bilgi, k, genislik_px, yukseklik_px)
+    except Exception:                                      # noqa: BLE001
+        return 0.0
+    yatay = math.dist(a, b)
+    dikey = math.dist(a, c)
+    return float(math.sqrt(max(yatay * dikey, 0.0)))
+
+
+def en_az_piksel(kalib: dict[str, Any] | None,
+                 genislik_px: float | None = None,
+                 yukseklik_px: float | None = None, *,
+                 cap_mm: float = EN_KUCUK_CAP_MM,
+                 kare: dict[str, Any] | None = None,
+                 taban: int = 12) -> int:
+    """"En küçük fide kaç mm" sorusunu bu kare için PİKSELE çeviriyor.
+
+    NEDEN GEREKLİ — ölçüldü. En küçük leke eşiği piksel cinsindeydi ve
+    kare alanıyla ölçekleniyordu (150 px @ 640x480 → 1350 px @ 1920x1440).
+    Ölçekleme doğru görünüyor ama sonucu şu: eşiğin FİZİKSEL karşılığı
+    iki çözünürlükte de aynı kalıyor —
+
+        640x480    0.938 mm/px    150 px  →  13.0 mm çapında leke
+        1920x1440  0.312 mm/px   1350 px  →  13.0 mm çapında leke
+
+    Yani çözünürlüğü yükseltmek küçük fideyi bulmuyor: 13 mm'nin altındaki
+    her şey iki çözünürlükte de eleniyor ve fesleğen kotiledonu 8-10 mm.
+    Çözünürlük fideyi daha iyi ÇÖZÜYOR (JPEG bulamacı azalıyor), ama boy
+    kapısını açan şey o değil — kapının milimetre cinsinden konması.
+
+    Kalibrasyon yoksa `taban` dönüyor: uydurma bir mm/px'ten çıkan piksel
+    sayısı, sayı olmamasından kötü.
+    """
+    mmpx = yerel_mm_px(kalib, genislik_px, yukseklik_px, kare)
+    if mmpx <= 0:
+        return int(taban)
+    alan_mm2 = math.pi * (float(cap_mm) / 2.0) ** 2
+    return int(max(taban, round(alan_mm2 / (mmpx * mmpx))))
+
+
+def alan_suzgeci(kalib: dict[str, Any] | None,
+                 genislik_px: float | None = None,
+                 yukseklik_px: float | None = None, *,
+                 kare: dict[str, Any] | None = None,
+                 alanlar: list[dict[str, Any]] | None = None,
+                 pay_mm: float = ALAN_PAYI_MM):
+    """PİKSEL lekesini yatak koordinatına çevirip dikim alanına bakıyor.
+
+    -> `gecerli_mi(leke) -> bool` — doğrudan `goruntu.bul(gecerli_mi=…)`e
+    verilebilir. Kalibrasyon yoksa ya da hiç dikim alanı tanımlı değilse
+    HER ŞEYE True diyen bir işlev dönüyor: "alan bilinmiyor" ile "alan
+    var ama leke dışında" birbirinden ayrı iki durum ve bilmediğimiz bir
+    şeye dayanarak eleme yapmıyoruz.
+
+    NEDEN BU KADAR İŞE YARIYOR. Yeşil arayan bir indeks, kadrajda ne
+    varsa hepsine bakıyor: yatağın önündeki mavi plastik kabın kenarı,
+    tezgâhın profili, arka plandaki çimen. Bunların hiçbiri dikim
+    alanının içinde değil ve alan koordinatı zaten biliniyor —
+    kalibrasyon pikselden milimetreye çeviriyor. Renk ölçütlerini
+    keskinleştirmek bu yanlış bulguların bir kısmını kesiyor; alan
+    denetimi hepsini birden kesiyor, çünkü sorduğu soru başka: "bu şey
+    ne renk" değil, "bu şey toprağın üstünde mi".
+    """
+    import dikim
+
+    k = kalib or {}
+    kare_bilgi = kare if kare is not None else {"x": None, "y": None}
+    if not kalibre_mi(k):
+        return lambda leke: True
+    if alanlar is None:
+        try:
+            alanlar = dikim.listele()
+        except Exception:                                  # noqa: BLE001
+            alanlar = []
+    if not alanlar:
+        return lambda leke: True
+
+    # Payı bir kez uygulayıp genişletilmiş dikdörtgenleri hazırlıyoruz;
+    # leke başına yeniden hesaplamanın anlamı yok.
+    genis = [{**a,
+              "x1": _sayi(a.get("x1")) - pay_mm, "x2": _sayi(a.get("x2")) + pay_mm,
+              "y1": _sayi(a.get("y1")) - pay_mm, "y2": _sayi(a.get("y2")) + pay_mm}
+             for a in alanlar]
+
+    def gecerli_mi(leke: dict[str, Any]) -> bool:
+        try:
+            x, y = piksel_mm(leke.get("cx"), leke.get("cy"), kare_bilgi, k,
+                             genislik_px, yukseklik_px)
+        except Exception:                                  # noqa: BLE001
+            # Dönüşüm yapılamıyorsa eleme de yapmıyoruz: bilmediğimiz bir
+            # şey yüzünden gerçek bir fideyi atmak, fazladan bir yanlış
+            # bulgudan kötü.
+            return True
+        return dikim.alan_bul(x, y, genis) is not None
+
+    return gecerli_mi
+
+
 def cozumle(lekeler_px: list[dict[str, Any]], kare: dict[str, Any],
             kalib: dict[str, Any] | None, *,
             genislik_px: float | None = None, yukseklik_px: float | None = None,
-            hareket: bool = False) -> dict[str, Any]:
+            hareket: bool = False,
+            alan_disi_ele: bool = False,
+            alanlar: list[dict[str, Any]] | None = None,
+            pay_mm: float = ALAN_PAYI_MM) -> dict[str, Any]:
     """Piksel lekelerini milimetreye çevirir. -> {lekeler, ret}
 
     `ret` doluysa dönüşüm YAPILMADI ve sebebi orada. Kısmi sonuç
@@ -408,11 +539,32 @@ def cozumle(lekeler_px: list[dict[str, Any]], kare: dict[str, Any],
         kare_mm["kose"] = [[round(x, 1), round(y, 1)]
                            for x, y in kare_koseler(kare, kalib,
                                                     genislik_px, yukseklik_px)]
+    cikti = [leke_mm(b, kare, kalib, genislik_px, yukseklik_px)
+             for b in lekeler_px]
+    alan_disi = 0
+    if alan_disi_ele:
+        # Milimetre zaten hesaplandı; alan denetimi burada bedava.
+        import dikim
+        if alanlar is None:
+            try:
+                alanlar = dikim.listele()
+            except Exception:                              # noqa: BLE001
+                alanlar = []
+        if alanlar:
+            genis = [{**a,
+                      "x1": _sayi(a.get("x1")) - pay_mm,
+                      "x2": _sayi(a.get("x2")) + pay_mm,
+                      "y1": _sayi(a.get("y1")) - pay_mm,
+                      "y2": _sayi(a.get("y2")) + pay_mm} for a in alanlar]
+            kalan = [b for b in cikti
+                     if dikim.alan_bul(b["x"], b["y"], genis) is not None]
+            alan_disi = len(cikti) - len(kalan)
+            cikti = kalan
     return {
-        "lekeler": [leke_mm(b, kare, kalib, genislik_px, yukseklik_px)
-                    for b in lekeler_px],
+        "lekeler": cikti,
         "ret": [],
         "kare_mm": kare_mm,
+        "alan_disi": alan_disi,
     }
 
 

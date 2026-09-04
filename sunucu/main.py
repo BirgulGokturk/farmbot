@@ -2563,8 +2563,13 @@ def _goruntu_coz(damga: str, esik: float | None, en_az_piksel: int,
     if hareketli or mutlak:
         # Sabit kamerada kareye konum yazmıyoruz — harita mutlak, konum
         # alanları None kalıyor ve `tespit` onları hiç okumuyor.
+        # ALAN DIŞI LEKELER ELENİYOR. Kadrajda dikim alanı dışında da
+        # yeşile yakın çok şey var — kabın mavi-turkuaz kenarı, tezgâhın
+        # profili, arka plandaki çimen. Koordinatı bilinen bir leke için
+        # "toprağın üstünde mi" sorusu renk sorusundan çok daha keskin.
         cozum = tespit.cozumle(sonuc["lekeler"], kayit, kalib,
-                               genislik_px=en, yukseklik_px=boy)
+                               genislik_px=en, yukseklik_px=boy,
+                               alan_disi_ele=True)
     else:
         boyut = tespit.boyutlar_mm(sonuc["lekeler"], kalib, genislik_px=en)
         cozum = {"lekeler": boyut["lekeler"], "kare_mm": None,
@@ -2591,6 +2596,15 @@ def _goruntu_coz(damga: str, esik: float | None, en_az_piksel: int,
                  "en_px": en, "boy_px": boy},
         "esik": sonuc["esik"], "oran": round(sonuc["oran"], 4),
         "ham_leke": sonuc["ham_leke"],
+        # Kararın nasıl verildiği — "neden bulmadı/neden buldu" sayıyla
+        # cevaplansın diye. `denge_kazanc` 1'den uzaksa karede renk
+        # sapması vardı, `elenen` hangi renk kapısının ne kadar attığını,
+        # `alan_disi` dikim alanı dışına düştüğü için atılan leke
+        # sayısını söylüyor.
+        "denge_kazanc": sonuc.get("denge_kazanc"),
+        "elenen": sonuc.get("elenen"),
+        "exg_oran": sonuc.get("exg_oran"),
+        "alan_disi": cozum.get("alan_disi", 0),
         "lekeler_px": sonuc["lekeler"],
         "lekeler": cozum["lekeler"],
         "kare_mm": cozum["kare_mm"],
