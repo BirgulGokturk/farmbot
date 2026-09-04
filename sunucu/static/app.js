@@ -4145,7 +4145,12 @@ function kamKutuBagla(kutu, ad, sira = 0) {
      *
      * Doğru sınır çubuğun ALT kenarı. Çubuk ölçülüyor, sabit yazılmıyor:
      * yüksekliği yazı boyuna ve pencere genişliğine göre değişiyor. */
-    const cubuk = document.querySelector("body > header");
+    /* Çubuk `#uygulama` sarmalayıcısının içinde; `body > header` diye
+     * arayınca bulunamıyordu ve sınır sessizce sıfıra düşüyordu — yani
+     * düzeltme hiç çalışmadı. Sarmalayıcıyı da hesaba katıyoruz, yedek
+     * olarak da ilk `header`ı. */
+    const cubuk = document.querySelector("#uygulama > header")
+               || document.querySelector("header");
     const ustSinir = (cubuk ? cubuk.getBoundingClientRect().bottom : 0) + 8;
     kayma.y = Math.max(ustSinir - y.top,
                        Math.min(innerHeight - y.top - pay, kayma.y));
