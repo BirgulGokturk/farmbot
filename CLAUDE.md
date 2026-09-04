@@ -31,7 +31,11 @@ AI HAT'i ve iki kamerası var. Panel `http://<pi>:8000` adresinde.
 | Filizlerin yatak koordinatı | `sunucu/filiz.py` |
 | Fide türü tanıma (ONNX) ve veri toplama | `sunucu/tanima.py` |
 | Sulama, ekim, dikim alanları | `sunucu/sulama.py`, `ekim.py`, `dikim.py` |
+| Bitki kartının ek verisi, olay defteri | `sunucu/bitki.py` |
+| Zamanlanmış görevler (aralıklı iş) | `sunucu/zamanli.py` |
 | Panel kabuğu, kameralar, ayar kartları | `sunucu/static/app.js` |
+| Bitki kartları sekmesi | `sunucu/static/bitki.js` |
+| Zamanlanmış görevler bölümü | `sunucu/static/zamanli.js` |
 | 3B/2B sahne çekirdeği, katman sistemi | `sunucu/static/tarla.js` |
 | Makinenin geometrisi (portal, kızak, başlar) | `sunucu/static/makine.js` |
 | Sahnedeki her görsel katman | `sunucu/static/katmanlar/*.js` |

@@ -54,8 +54,16 @@ window.Bahce = (function () {
      beşte birine indiriyor ve gözle fark edilmiyor. */
   const BH_FPS = 1;
   const KAMERA = "ust";
-  /* Sulama süresi: teknik paneldeki toplu sulamanın varsayılanıyla aynı. */
-  const SULAMA_SN = 3;
+  /* SULAMA SURESI GONDERILMIYOR — burada sabit bir 3 saniye vardi.
+   *
+   * Her bitkinin kendi sulama suresi var (`ozel.sulama_saniye` > tur >
+   * katalog varsayilani) ve kullanici onu tur kartindan ya da bitkinin
+   * kartindan ayarliyor. Buradan sabit bir sayi gondermek o ayari
+   * sessizce eziyordu: fide ile olgun bir marul ayni suyu aliyordu ve
+   * ayarin neden islemedigi anlasilmiyordu. Sure verilmeyince sunucu her
+   * bitkiyi kendi zincirinden cozuyor; hicbir ayar yapilmamissa sonuc
+   * yine 3 saniye, yani kimsenin kurulumu degismiyor.
+   * (`tarla.js`teki toplu sulama ayni karari daha once verdi.) */
 
   const B = {
     acik: false,
@@ -568,7 +576,7 @@ window.Bahce = (function () {
         if (P().geriAlGoster && y.geri_al) P().geriAlGoster(y.geri_al);
         if (P().noktalariYukle) P().noktalariYukle();
       } else {
-        await isEkle(is, adlar, is === "sula" ? { saniye: SULAMA_SN } : null);
+        await isEkle(is, adlar, null);
         gunluk(`✓ ${adlar.length} bitki sıraya girdi`, "ok");
       }
       secimBirak();
@@ -1254,7 +1262,7 @@ window.Bahce = (function () {
     }, 380);
     try {
       if (kart.tip === "sula") {
-        await isEkle("sula", kart.noktalar, { saniye: SULAMA_SN });
+        await isEkle("sula", kart.noktalar);
       } else if (kart.tip === "hasat") {
         await isEkle("foto", kart.noktalar);
       } else if (kart.tip === "ek") {
@@ -1398,7 +1406,7 @@ window.Bahce = (function () {
   async function menuIs(bitki, is) {
     try {
       if (is === "sula") {
-        await isEkle("sula", [bitki.ad], { saniye: SULAMA_SN });
+        await isEkle("sula", [bitki.ad]);
         gunluk(`💧 ${bitki.tur_ad} sıraya girdi`, "ok");
       } else if (is === "hasat") {
         // HASAT KAYITTIR, hareket değil: makine toplayamıyor, toplayan
@@ -1824,7 +1832,7 @@ window.Bahce = (function () {
       if (s.su) {
         const hedef = suHedefBul(o);
         if (!hedef) { gunluk("Sulama kabını bir bitkinin üstüne bırakın"); return; }
-        await isEkle("sula", [hedef.ad], { saniye: SULAMA_SN });
+        await isEkle("sula", [hedef.ad]);
         gunluk(`💧 ${hedef.tur_ad} sıraya girdi`, "ok");
         kuyrukYaz();
         return;

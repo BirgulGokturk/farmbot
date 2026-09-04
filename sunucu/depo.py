@@ -173,3 +173,48 @@ def buda() -> int:
         imlec = db.execute("DELETE FROM olcum WHERE ts < ?", (sinir,))
         db.commit()
     return imlec.rowcount
+
+
+def kilit():
+    """Paylaşılan bağlantının kilidi.
+
+    Bağlantı `check_same_thread=False` ile açılıyor ve FastAPI'nin iş
+    parçacığı havuzundan çağrılıyor; aynı bağlantıda eşzamanlı yazmak
+    SQLite'ta "recursive use of cursors" ile patlıyor. Bu dosyanın dışında
+    da bu bağlantıya yazan bir modül varsa (bkz. `bitki.py` olay defteri)
+    aynı kilidi alması gerekiyor — ikinci bir bağlantı açmak WAL'da
+    kilitlenme demek olurdu.
+    """
+    return _KILIT
+
+
+def kova_okumalari(gun: int = SAKLAMA_GUN, kova_sn: float = 3600.0,
+                   hucre_mm: float = 50.0) -> list[dict[str, Any]]:
+    """Konumlu toprak nemi okumaları — ZAMAN ekseniyle, kovalanmış.
+
+    `konumlu_okumalar` "şu noktada EN SON ne okundu" sorusunu cevaplıyor ve
+    zamanı düşürüyor; haritadaki nokta için doğru, EĞİLİM için değil. "Bu
+    bitkinin nemi düşüyor mu" sorusu zaman istiyor, ham satır ise çok:
+    ajan iki saniyede bir yazıyor, yedi gün ~300 bin satır.
+
+    Saatlik kova × 50 mm hücre, her kutunun EN YENİ okumasını veriyor.
+    Ara değer UYDURULMUYOR — dönen her nokta gerçekten okunmuş bir satır;
+    yalnız aynı kutudaki eskileri düşürüyoruz.
+
+    (SQLite'ta bir MIN/MAX toplaması varken çıplak sütunlar O SATIRDAN
+    geliyor; belgelenmiş davranış ve burada tam olarak istediğimiz şey.)
+    """
+    db = baglan()
+    esik = time.time() - max(1, int(gun)) * 86400
+    kova = max(60.0, float(kova_sn))
+    hucre = max(1.0, float(hucre_mm))
+    with _KILIT:
+        satirlar = db.execute(
+            "SELECT MAX(ts) AS ts, konum_x, konum_y, toprak_nem FROM olcum "
+            "WHERE ts >= ? AND konum_x IS NOT NULL AND konum_y IS NOT NULL "
+            "AND toprak_nem IS NOT NULL "
+            "GROUP BY CAST(ts / ? AS INT), CAST(konum_x / ? AS INT), "
+            "CAST(konum_y / ? AS INT) ORDER BY ts",
+            (esik, kova, hucre, hucre)).fetchall()
+    return [{"ts": s["ts"], "x": s["konum_x"], "y": s["konum_y"],
+             "ham": s["toprak_nem"]} for s in satirlar]

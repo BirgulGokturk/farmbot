@@ -499,7 +499,9 @@ async function tepsiTopluIslem(islem) {
     return;
   }
   const govde = { islem, noktalar: adlar };
-  if (islem === "sula") govde.saniye = 3;
+  /* SURE GONDERILMIYOR: burada sabit 3 saniye vardi ve tepsideki fidenin
+   * turune ayarlanmis sulama suresini eziyordu. Sunucu her bitkiyi kendi
+   * ezme zincirinden cozuyor; ayar yoksa yine 3 saniye. */
   try {
     const y = await apiIste("/api/toplu", {
       method: "POST", body: JSON.stringify(govde),

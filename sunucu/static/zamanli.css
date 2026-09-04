@@ -1,0 +1,40 @@
+/* Zamanlanmış görevler — Kurulum sekmesindeki bölüm.
+ * Seçiciler `zm-` ile başlıyor; mevcut hiçbir kuralı ezmiyor.
+ * Renkler `stil.css` değişkenlerinden; yedekler o dosya yüklenemezse diye.
+ */
+.zm-liste { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+
+.zm-gorev {
+  background: var(--yuzey-2, #232422);
+  border: 1px solid var(--cizgi, #2e302c);
+  border-left: 3px solid var(--cizgi-2, #3f423c);
+  border-radius: var(--yaricap-2, 8px);
+  padding: 10px 12px; display: flex; flex-direction: column; gap: 8px;
+}
+/* Şerit "çalışıyor mu" sorusunun görünen hâli. */
+.zm-gorev.zm-calisiyor { border-left-color: var(--iyi, #4caf50); }
+.zm-gorev.zm-duruyor   { border-left-color: var(--metin-3, #82847a); }
+
+.zm-bas { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.zm-bas b { font-size: var(--yazi-govde, 13px); color: var(--metin, #f2f2ee); }
+.zm-tanim { color: var(--metin-2, #b9bab0); font-size: var(--yazi-kucuk, 12px); }
+.zm-esnek { flex: 1; }
+
+.zm-isik {
+  font-size: 11px; font-weight: 600; padding: 3px 8px; border-radius: 999px;
+  border: 1px solid currentColor; white-space: nowrap;
+}
+.zm-calisiyor .zm-isik { color: var(--iyi, #4caf50); }
+.zm-duruyor   .zm-isik { color: var(--metin-3, #82847a); }
+
+.zm-satirlar {
+  display: grid; gap: 4px 16px;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  font-size: var(--yazi-kucuk, 12px); color: var(--metin-2, #b9bab0);
+}
+.zm-satirlar i { font-style: normal; color: var(--metin-3, #82847a); }
+.zm-satirlar b { color: var(--metin, #f2f2ee); font-weight: 600; }
+.zm-atlama { color: var(--uyari, #d9a520); }
+
+.zm-islem { display: flex; gap: 6px; flex-wrap: wrap; }
+.zm-bos { color: var(--metin-3, #82847a); font-size: var(--yazi-kucuk, 12px); }

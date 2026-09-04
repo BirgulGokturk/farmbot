@@ -1,0 +1,116 @@
+/* Bitki kartları sekmesi.
+ *
+ * AYRI DOSYA, `etiket.css` ile aynı gerekçe: `stil.css`, `bahce.css` ve
+ * `index.html` başka bir oturumda sürekli değişiyor. Buradaki her seçici
+ * `bk-` ile başlıyor, yani hiçbir mevcut kuralı ezmiyor ve mevcut
+ * kuralların ezmesi de gerekmiyor.
+ *
+ * Renkler `stil.css`in değişkenlerinden geliyor; ikinci bir palet
+ * kurmuyoruz. Yedek değerler yalnız stil.css yüklenemezse diye var.
+ */
+
+.bk-ust {
+  display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-end;
+  margin-bottom: 10px;
+}
+.bk-ust .alan { min-width: 140px; }
+.bk-ara { min-width: 200px; }
+
+/* Süzgeç düğmeleri AÇIK BİR KİP: basılı olan renkleniyor ve
+ * `aria-pressed` ile okuyucuya da söyleniyor. */
+.bk-suz {
+  display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 10px;
+}
+.bk-suz button {
+  background: var(--yuzey-2, #232422); color: var(--metin-2, #b9bab0);
+  border: 1px solid var(--cizgi-2, #3f423c); border-radius: 999px;
+  padding: 4px 12px; font-size: var(--yazi-kucuk, 12px); cursor: pointer;
+}
+.bk-suz button:hover { color: var(--metin, #f2f2ee); }
+.bk-suz button[aria-pressed="true"] {
+  background: var(--vurgu-sis, rgba(74,144,226,.14));
+  border-color: var(--vurgu, #4a90e2); color: var(--metin, #f2f2ee);
+}
+.bk-suz button .sayi { opacity: .7; margin-left: 4px; }
+
+.bk-ozet { margin: 0 0 10px; color: var(--metin-2, #b9bab0);
+           font-size: var(--yazi-kucuk, 12px); }
+.bk-ozet b { color: var(--metin, #f2f2ee); }
+
+.bk-izgara {
+  display: grid; gap: 12px;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+}
+
+.bk-kart {
+  background: var(--yuzey, #191a18);
+  border: 1px solid var(--cizgi, #2e302c);
+  border-left: 3px solid var(--cizgi-2, #3f423c);
+  border-radius: var(--yaricap, 12px);
+  padding: 12px 14px; display: flex; flex-direction: column; gap: 10px;
+}
+/* Sol şerit KART NEDEN LİSTEDE ÖNDE olduğunu söylüyor: renk sıralamanın
+ * görünen hâli, süs değil. */
+.bk-kart.bk-d-susadi   { border-left-color: var(--kritik, #e05252); }
+.bk-kart.bk-d-olculmedi{ border-left-color: var(--vurgu, #4a90e2); }
+.bk-kart.bk-d-eskimis  { border-left-color: var(--metin-3, #82847a); }
+.bk-kart.bk-d-odunc    { border-left-color: #b37be0; }
+.bk-kart.bk-d-hasat    { border-left-color: var(--uyari, #d9a520); }
+.bk-kart.bk-d-iyi      { border-left-color: var(--iyi, #4caf50); }
+
+.bk-bas { display: flex; align-items: flex-start; gap: 10px; }
+.bk-simge { font-size: 24px; line-height: 1; }
+.bk-ad { flex: 1; min-width: 0; }
+.bk-ad b { display: block; font-size: 14px; color: var(--metin, #f2f2ee); }
+.bk-ad span { display: block; font-size: var(--yazi-kucuk, 12px);
+              color: var(--metin-3, #82847a); }
+
+.bk-rozet {
+  font-size: 11px; font-weight: 600; padding: 3px 8px; border-radius: 999px;
+  border: 1px solid currentColor; white-space: nowrap;
+}
+.bk-r-susadi    { color: var(--kritik, #e05252); }
+.bk-r-olculmedi { color: var(--vurgu, #4a90e2); }
+.bk-r-eskimis   { color: var(--metin-3, #82847a); }
+.bk-r-odunc     { color: #b37be0; }
+.bk-r-hasat     { color: var(--uyari, #d9a520); }
+.bk-r-iyi       { color: var(--iyi, #4caf50); }
+
+/* Alan ızgarası: etiket üstte küçük, değer altta. Tablo değil, çünkü
+ * kart dar ekranda tek sütuna düşebilmeli. */
+.bk-alanlar {
+  display: grid; gap: 8px 12px;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+}
+.bk-alan { min-width: 0; }
+.bk-alan i {
+  display: block; font-style: normal; font-size: 11px; letter-spacing: .02em;
+  color: var(--metin-3, #82847a); text-transform: uppercase;
+}
+.bk-alan b {
+  display: block; font-weight: 600; color: var(--metin, #f2f2ee);
+  font-size: var(--yazi-govde, 13px); overflow-wrap: anywhere;
+}
+.bk-alan em {
+  display: block; font-style: normal; font-size: 11px;
+  color: var(--metin-2, #b9bab0);
+}
+.bk-alan.bk-bos b { color: var(--metin-3, #82847a); font-weight: 400; }
+
+.bk-gerekce {
+  margin: 0; font-size: var(--yazi-kucuk, 12px); color: var(--metin-2, #b9bab0);
+  background: var(--yuzey-2, #232422); border-radius: var(--yaricap-2, 8px);
+  padding: 7px 9px;
+}
+.bk-gerekce .bk-tahmin { color: var(--uyari, #d9a520); font-weight: 600; }
+
+.bk-uyari {
+  margin: 0; font-size: var(--yazi-kucuk, 12px); color: var(--uyari, #d9a520);
+}
+
+.bk-islem { display: flex; flex-wrap: wrap; gap: 6px; }
+.bk-islem .dugme { flex: 1 1 auto; }
+
+.bk-not { font-size: var(--yazi-kucuk, 12px); color: var(--metin-2, #b9bab0);
+          min-height: 1em; }
+.bk-bos-liste { color: var(--metin-3, #82847a); padding: 24px 0; }

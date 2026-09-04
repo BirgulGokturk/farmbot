@@ -9,6 +9,9 @@ sunucu/farmbot.db*
 sunucu/noktalar.json
 sunucu/egriler.json
 sunucu/programlar.json
+# Zamanlanmis gorevler: hangi isin hangi aralikla yapilacagi
+# makineye ozel bir karar, depoya girmiyor.
+sunucu/zamanli.json
 sunucu/tur_ezme.json
 sunucu/dikim_alanlari.json
 sunucu/kareler/
@@ -31,3 +34,10 @@ sunucu/etiket_konumlari.json
 # commitlerde duruyor.
 Claude outputs/
 *.patch
+
+# Aktarim sirasinda kalan gecici arsivler
+_deneme.tgz
+
+# Aktarim sirasinda kalan gecici arsivler
+_deneme.tgz
+_mesaj.txt
