@@ -132,8 +132,17 @@ Tarla.katman({
     // görüntüsünden cevaplanamıyor, sahnede küçük ve koyu.
     const b = p.ucKafa && p.ucKafa.children.find(
       (c) => c.type === "Group" && c.children.length > 5);
+    /* NEM PROBUNUN YERİ DE BURADA. "Prob görünmüyor" sorusu iki ayrı
+     * şey olabiliyor: kurulmamış olmak, ya da kurulup gözden kaçacak
+     * bir yerde durmak. İkisini ekran görüntüsünden ayırmak mümkün
+     * değildi; sayı olarak yazınca ayrılıyor. */
+    const np = p.ucKafa && p.ucKafa.userData && p.ucKafa.userData.nemProbu;
     return {
       kuruldu: true,
+      probVar: !!np,
+      probParca: np ? np.children.length : 0,
+      probX: np ? +np.position.x.toFixed(4) : null,
+      probZ: np ? +np.position.z.toFixed(4) : null,
       baslikVar: !!b,
       baslikX: b ? +b.position.x.toFixed(4) : null,
       baslikParca: b ? b.children.length : 0,

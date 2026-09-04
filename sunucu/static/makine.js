@@ -631,14 +631,24 @@
     // Üstteki siyah konnektör başlığı.
     nemProbu.add(kutu(THREE, [P * 0.6, P * 0.5, P * 0.32], [0, -P * 0.12, 0],
                       { color: "#15181a", metalness: 0.1, roughness: 0.72 }));
+    /* KENDİ IŞIĞI OLAN ALTIN SARISI.
+     *
+     * Düz bir renkti ve kafanın koyu gövdesinin önünde kayboluyordu:
+     * sahnedeki ışık yukarıdan geliyor, kafanın altında kalan her şey
+     * gölgede duruyor. `emissive` parçayı ışıktan bağımsız kılıyor —
+     * gerçeğe sadakat değil, görülebilirlik kararı.
+     */
+    const probMal = { color: "#f0c93a", metalness: 0.3, roughness: 0.35,
+                      emissive: "#6b5410", emissiveIntensity: 0.55 };
     // Bıçakları taşıyan kart — gerçeğinde de baskı devre.
-    nemProbu.add(kutu(THREE, [P * 0.56, P * 0.42, P * 0.1], [0, -P * 0.48, 0],
-                      { color: "#e0b93a", metalness: 0.35, roughness: 0.4 }));
-    // İKİ BIÇAK. Yassı ve altın sarısı: kaplama böyle görünüyor.
+    nemProbu.add(kutu(THREE, [P * 0.62, P * 0.5, P * 0.12],
+                      [0, -P * 0.52, 0], probMal));
+    /* İKİ BIÇAK — UZUN. Gerçek sensörde de en uzun parça bu; kısa
+     * çizilince tohum ucunun konisiyle aynı boyda kalıyor ve ikisi
+     * uzaktan ayrışmıyordu. */
     [-1, 1].forEach((yon) => {
-      nemProbu.add(kutu(THREE, [P * 0.2, P * 1.9, P * 0.08],
-                        [yon * P * 0.17, -P * 1.6, 0],
-                        { color: "#e0b93a", metalness: 0.4, roughness: 0.38 }));
+      nemProbu.add(kutu(THREE, [P * 0.24, P * 3.2, P * 0.1],
+                        [yon * P * 0.2, -P * 2.4, 0], probMal));
     });
     // Turuncu kablolar: yukarı çıkıp gözden kayboluyorlar.
     [-1, 1].forEach((yon) => {
