@@ -866,7 +866,10 @@
      * birbirine göre yerleri hiç değişmiyor. Ölçüme giren de zaten o
      * göreli mesafe.
      */
-    const ONDE = P * 2.2;
+    /* İŞARET SAHADA BULUNDU. +X denendi ve küme arkaya gitti; ön yön
+     * -X. Kızağın motor bloğu +X'te diye o yönü seçmiştim, o blok
+     * makinenin ARKA tarafındaymış. */
+    const ONDE = -P * 2.2;
     [nemProbu, tohumUcu, baslik].forEach((g) => { g.position.x += ONDE; });
 
     /* MAKİNE MERKEZİ DE PLAKANIN İÇİNDE.
