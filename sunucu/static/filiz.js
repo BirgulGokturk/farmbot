@@ -59,8 +59,8 @@
           </div>
           <div class="alan">
             <label for="filiz-enaz">En az piksel</label>
-            <input type="number" id="filiz-enaz" step="10" min="10" max="20000"
-                   placeholder="150">
+            <input type="number" id="filiz-enaz" step="10" min="10" max="2000000"
+                   placeholder="kare ölçüsüne göre">
           </div>
           <div class="alan">
             <label for="filiz-birlestir">Birleştirme (mm)</label>
@@ -69,9 +69,11 @@
           </div>
         </div>
         <p class="alt-not">Filizler küçükse <b>en az piksel</b>i düşürün, yeşil
-          soluksa <b>eşiği</b>. <b>Birleştirme</b>: bu mesafeden yakın lekeler
-          tek fide sayılıyor — bir filizin iki yaprağı ayrı lekelenip sayımı
-          ikiye katlamasın diye.</p>
+          soluksa <b>eşiği</b>. Boş bırakırsanız eşik <b>kare ölçüsüne göre</b>
+          hesaplanıyor — mutlak bir sayı, 640 pikselde ve 1920 pikselde
+          bambaşka şeyler demek olurdu. <b>Birleştirme</b>: bu mesafeden yakın
+          lekeler tek fide sayılıyor — bir filizin iki yaprağı ayrı lekelenip
+          sayımı ikiye katlamasın diye.</p>
 
         <div id="filiz-hata" class="uyari-kutu gizli"></div>
         <div id="filiz-sonuc" class="gomulu gizli"></div>
@@ -146,7 +148,10 @@
       <div class="etiket-satir"><span>Çeviri modeli</span><span>${model}</span></div>
       <div class="etiket-satir"><span>Bulunan</span>
         <span><b>${fideler.length}</b> filiz · ${son.leke_sayisi} leke
-        (ham ${son.ham_leke}) · yeşil oran ${(son.yesil_oran * 100).toFixed(1)}%</span></div>`;
+        (ham ${son.ham_leke}) · yeşil oran ${(son.yesil_oran * 100).toFixed(1)}%</span></div>
+      <div class="etiket-satir"><span>Eşikler</span>
+        <span>yeşil ${son.esik} · en az <b>${son.en_az_piksel}</b> piksel${
+          son.en_az_kendiliginden ? " (kare ölçüsünden)" : ""}</span></div>`;
 
     if (!fideler.length) {
       g += `<div class="etiket-satir uyari"><span>—</span>

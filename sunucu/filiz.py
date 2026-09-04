@@ -170,6 +170,26 @@ def kume(lekeler: list[dict[str, Any]], mesafe_mm: float) -> list[dict[str, Any]
     return cikti
 
 
+#: `goruntu.EN_AZ_PIKSEL` hangi kare ölçüsüne göre seçilmişti.
+OLCU_KARE = 640 * 480
+
+
+def en_az_varsayilan(genislik_px: float, yukseklik_px: float, taban: int) -> int:
+    """En küçük leke eşiğini kare ALANIYLA ölçekliyor.
+
+    Eşik mutlak piksel sayısı olarak duruyordu ve bu, çözünürlük
+    değişince sessizce başka bir şey demeye başlıyor: 640x480'de 150
+    piksel yatağın binde 0.5'i, 1920x1440'ta binde 0.05'i. Aynı fide bir
+    çözünürlükte eleniyor, ötekinde geçiyordu — kullanıcı da neden
+    değiştiğini göremiyordu.
+
+    Ölçekleyince eşik FİZİKSEL bir büyüklüğe karşılık geliyor: "yatağın
+    şu kadarından küçük şeyler gürültüdür".
+    """
+    alan = max(1.0, float(genislik_px) * float(yukseklik_px))
+    return max(20, int(round(taban * alan / OLCU_KARE)))
+
+
 def _rgb(jpeg: bytes):
     """JPEG -> float32 RGB dizisi. OpenCV varsa ondan, yoksa Pillow'dan."""
     import numpy as np
@@ -226,7 +246,10 @@ def yonlendirici_kur(parola_dogrula, canli_kare):
         boy, en = int(rgb.shape[0]), int(rgb.shape[1])
         esik = g.get("esik")
         esik = goruntu.ESIK if esik in (None, "") else float(esik)
-        en_az = int(_sayi(g.get("en_az_piksel"), 0)) or goruntu.EN_AZ_PIKSEL
+        # Kullanıcı bir sayı verdiyse aynen o; vermediyse kare ölçüsüne
+        # göre ölçeklenmiş varsayılan.
+        en_az = (int(_sayi(g.get("en_az_piksel"), 0))
+                 or en_az_varsayilan(en, boy, goruntu.EN_AZ_PIKSEL))
         birlestir = _sayi(g.get("birlestir_mm"), 25.0)
 
         y = goruntu.bul(rgb, esik=esik, en_az_piksel=en_az)
@@ -236,6 +259,7 @@ def yonlendirici_kur(parola_dogrula, canli_kare):
         return {
             "kamera": kam, "genislik_px": en, "yukseklik_px": boy,
             "esik": esik, "en_az_piksel": en_az, "birlestir_mm": birlestir,
+            "en_az_kendiliginden": not int(_sayi(g.get("en_az_piksel"), 0)),
             "yesil_oran": round(y["oran"], 4),
             "leke_sayisi": len(y["lekeler"]), "ham_leke": int(y["ham_leke"]),
             "yontem": c["yontem"], "ret": c["ret"],
