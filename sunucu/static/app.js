@@ -2346,9 +2346,24 @@ function kameralarYaz(liste) {
     kamYarilariKur();
     kamKutulariKur();
     kalibSekmeleriYaz();
+    // LİSTE SONRADAN GELİYOR. Sayfa açıldığında kamera listesi henüz
+    // yoktu, dolayısıyla açılıştaki `izleSekmesi(true)` hiçbir kameraya
+    // ulaşamıyordu. Liste değiştiği anda akış isteğini yineliyoruz;
+    // ajan yeniden bağlandığında da bu yoldan geçiyor.
+    if (S.sekme === "izle") izleSekmesi(true);
   } else {
     S.kameralar = yeni;
   }
+  /* AKIŞ ÖLDÜYSE YENİDEN İSTE. Ajan yeniden başladığında canlı akış
+   * duruyor ama kamera listesi değişmiyor; kurulum yolu çalışmadığı için
+   * İzle'deki kutu bir daha hiç tazelenmiyordu. */
+  if (S.sekme === "izle" && Date.now() - IZLE_AKIS.son > IZLE_YINELEME_MS
+      && yeni.some((k) => k.acik && k.canli_var && !k.canli
+                          && S.kamCanliElle[k.ad] !== false
+                          && izleKutuAcikMi(k.ad))) {
+    izleAkisTazele();
+  }
+
   // Her yarı KENDİ kamerasının hâlini yazıyor.
   yeni.forEach((k) => {
     kameraDurumYaz(k);
@@ -2486,6 +2501,8 @@ function kamYariBagla(yari, ad) {
         }
       }
       kamSahnedeYaz(ad);
+      // Gizli kutu için akış istemiyoruz, geri açılınca istiyoruz.
+      izleAkisTazele();
       gunluk(`${kamEtiket(ad)} sahnede ${kapali ? "gizlendi" : "gösteriliyor"}`);
     };
   }
@@ -2708,8 +2725,115 @@ function kamCanliIste(ac) {
   });
 }
 
+/* İZLE SEKMESİ — yüzen kutular burada ve KENDİ akışlarını istiyorlar.
+ *
+ * SORUN. Yüzen kutu yalnızca yeni bir kare geldiğinde görünür oluyordu
+ * (`kareyiTazele`). Uç kamerasında bu farkedilmiyordu: bahçe/kamera
+ * sekmelerinden dönüldüğünde akışı bir süre daha sürüyor ve kare akmaya
+ * devam ediyor. Sabit üst kameranın akışı ise Kamera sekmesinden çıkınca
+ * duruyor; İzle'de hiç kare gelmiyor, kutu hiç açılmıyordu. "Sahnede"
+ * düğmesi kutuyu görünür yapsa bile içi boş kalıyordu — gelmeyecek bir
+ * kareyi bekliyordu.
+ *
+ * ÇÖZÜM İKİ PARÇALI:
+ *   1. İzle sekmesi açıkken, kutusu görünür olan her kameranın canlı akışı
+ *      SÜRÜYOR — ama saniyede 1 kare. Kamera sekmesindeki 5 kare/sn oraya
+ *      bakan biri için; buradaki kutu köşede duran bir gözcü, 1 yetiyor ve
+ *      Pi'nin işlemcisi beşte biri kadar yükleniyor.
+ *   2. Akış yapamayan kamera (fswebcam yolu) ya da henüz hiç kare gelmemiş
+ *      olması hâlinde kutu, diskteki SON kareyi bir kez çekiyor. Boş kutu
+ *      açmak "bozuk" diye görünüyor.
+ *
+ * Kullanıcının gizlediği kutunun akışı istenmiyor: gizli bir kutu için
+ * Pi'yi meşgul etmenin sebebi yok. */
+const IZLE_FPS = 1;
+
+/* Akış isteğinin son gönderildiği an. AJAN YENİDEN BAŞLARSA akış ölüyor
+ * ve panelin bunu fark etmesi gerekiyor: kamera listesi aynı kaldığı için
+ * kurulum yolu yeniden çalışmıyor, kutu da sessizce donuyordu. Durum
+ * paketinde "istediğim kamera akmıyor" görülürse istek yineleniyor —
+ * ama en fazla bu aralıkta bir, yoksa akış açamayan bir kamera için
+ * saniyede iki komut giderdi. */
+const IZLE_AKIS = { son: 0 };
+const IZLE_YINELEME_MS = 10000;
+
+/** Bu kamera İzle sekmesinde akmalı mı — kutusu görünürse evet. */
+function izleKutuAcikMi(ad) {
+  const kutu = KAM_KUTU.get(ad);
+  if (kutu) return !kutu.classList.contains("gizli") || !S.kamKutuKapali[ad];
+  return !S.kamKutuKapali[ad];
+}
+
+/** İzle sekmesindeyken hangi kameranın akacağını yeniden hesaplıyor.
+ *
+ * Kutu gizlenip gösterildiğinde de çağrılıyor: kararın tek yeri burası,
+ * yoksa "gizledim ama akış sürüyor" gibi sessiz bir hâl kalırdı. */
+function izleAkisTazele() {
+  if (S.sekme !== "izle") return;
+  IZLE_AKIS.son = Date.now();
+  kamListe().forEach((k) => {
+    if (!k.canli_var) return;
+    if (S.kamCanliElle[k.ad] === false) return;   // kullanıcı elle kapattı
+    if (izleKutuAcikMi(k.ad)) {
+      // Hız her seferinde gönderiliyor: kamera sekmesinden 5 kare/sn ile
+      // dönüldüyse burada 1'e inmesi gerekiyor ve ajan "zaten canlı" deyip
+      // hızı yutuyordu (bkz. kamera.py/canli_ac).
+      komutGonder("kamera", { kamera: k.ad, canli: true, fps: IZLE_FPS });
+    } else if (k.canli) {
+      komutGonder("kamera", { kamera: k.ad, canli: false });
+    }
+  });
+}
+
+/** Kutuyu diskteki son kareyle dolduruyor — akış yokken tek yol.
+ *
+ * `/api/kare/son` periyodik kareyi veriyor ve o aralık saatlik olabiliyor;
+ * yani bu görüntü eski olabilir. Zaman satırı zaten karenin kendi saatini
+ * yazıyor, dolayısıyla eskiliği gizlemiyoruz. */
+async function izleKutuSonKare(ad) {
+  if (S.sonKare[ad]) return;                    // elde kare var, gerek yok
+  const kutu = KAM_KUTU.get(ad);
+  if (!kutu) return;
+  try {
+    // Yalnız KÜNYE isteniyor; JPEG'i <img> çekiyor. Kare yoksa 404
+    // dönüyor ve boş bir kutu açmıyoruz.
+    const liste = await apiIste(`/api/kare/liste?kamera=${encodeURIComponent(ad)}`);
+    const son = (liste.kareler || []).slice(-1)[0];
+    if (!son) return;
+    kareyiTazele(son.ts, false, ad);
+  } catch (hata) { /* kare yoksa kutu boş kalıyor, sebebi zaman satırında */ }
+}
+
+/** İzle sekmesine girildi / çıkıldı.
+ *
+ * `hedef` çıkışta nereye gidildiğini söylüyor: Kamera ve Bahçe sekmeleri
+ * akışı KENDİLERİ yönetiyor (biri 5, öteki 1 kare/sn). Oraya geçerken
+ * akışı kapatmak, hemen ardından yeniden açılacak bir akışı gereksiz yere
+ * durdurup ajanda cihazı kapat-aç ettirmek demekti. */
+function izleSekmesi(acik, hedef = "") {
+  if (!acik) {
+    if (hedef === "kamera" || hedef === "bahce") return;
+    kamListe().forEach((k) => {
+      if (k.canli) komutGonder("kamera", { kamera: k.ad, canli: false });
+    });
+    return;
+  }
+  kamListe().forEach((k) => {
+    if (!k.acik) return;
+    // Kutu kullanıcı tarafından gizlenmediyse görünür olsun: ilk kareyi
+    // beklemek, saatlik aralıkta bir saat boş ekran demekti.
+    const kutu = KAM_KUTU.get(k.ad);
+    if (kutu && !S.kamKutuKapali[k.ad]) {
+      kutu.classList.remove("gizli");
+      (KAM_SINIRLA.get(k.ad) || (() => {}))();
+    }
+    izleKutuSonKare(k.ad);
+  });
+  izleAkisTazele();
+}
+
 /** Kamera sekmesine girildi / çıkıldı. */
-function kamSekmesi(acik) {
+function kamSekmesi(acik, hedef = "") {
   document.body.classList.toggle("kamera-sekmesi", acik);
   if (acik) {
     S.kamCanliElle = {};        // yeni ziyaret, yeni sayfa
@@ -2720,7 +2844,11 @@ function kamSekmesi(acik) {
     // bir kareye bakıp canlı sanmak, bu sekmenin en pahalı yanlışı olurdu.
     Object.keys(S.kamDondu).forEach((a) => kamOrtuTemizle(a));
   }
-  kamCanliIste(acik);
+  // İZLE'YE GEÇİYORSAK AKIŞI KAPATMIYORUZ. Kapatıp hemen ardından 1
+  // kare/sn ile yeniden açmak, ajanda cihazı kapat-aç ettirmek demek:
+  // akış iş parçacığı bitiyor, periyodik döngü açılıyor ve hemen tekrar
+  // duruyor. `izleSekmesi(true)` hızı zaten 1'e indiriyor.
+  if (acik || hedef !== "izle") kamCanliIste(acik);
   // Yerleşim değişti: çözümleme katmanları görüntünün üstüne yeniden
   // otursun.
   setTimeout(kamKatmanHizala, 60);
@@ -4114,6 +4242,8 @@ function kamKutuBagla(kutu, ad, sira = 0) {
       buyutYaz(false);
       kutu.classList.add("gizli");
       kamSahnedeYaz(ad);
+      // Gizli kutu için Pi'yi meşgul etmenin sebebi yok.
+      izleAkisTazele();
       gunluk(`${kamEtiket(ad)} sahneden gizlendi — `
              + `Kamera sekmesindeki "Sahnede" düğmesiyle geri açılır`);
     };
@@ -4695,12 +4825,16 @@ function olaylariBagla() {
       // kameraya geçerken önce kamera akışı 5'e çıkıyor, hemen ardından
       // bahçenin çıkış işlemi aynı kamerayı KAPATIYORDU. Sonuç, üst
       // kameranın kendi sekmesinde hiç akmaması.
-      if (oncekiSekme === "kamera" && S.sekme !== "kamera") kamSekmesi(false);
+      if (oncekiSekme === "kamera" && S.sekme !== "kamera") kamSekmesi(false, S.sekme);
       if (window.Bahce && oncekiSekme === "bahce" && S.sekme !== "bahce") {
         window.Bahce.sekme(false);
       }
+      // İZLE DE AKIŞ İSTİYOR. Sahnedeki yüzen kutular orada; sabit
+      // kameranın akışı durunca o kutu hiç açılmıyordu.
+      if (oncekiSekme === "izle" && S.sekme !== "izle") izleSekmesi(false, S.sekme);
       if (S.sekme === "kamera") kamSekmesi(true);
       if (window.Bahce && S.sekme === "bahce") window.Bahce.sekme(true);
+      if (S.sekme === "izle") izleSekmesi(true);
       // Sekme adı panelin başlığına yazılıyor: sekme çubuğu artık üstte,
       // panelin kendisi hangi sayfada olduğunu söylemeli.
       const ad = $("#sol-panel-ad");
@@ -4873,6 +5007,10 @@ function olaylariBagla() {
     // İzle'deysek yukarıdaki tıklama hiç olmuyor; başlığı yine de yaz.
     const ad = $("#sol-panel-ad"), ilk = $('nav.sekmeler button.etkin');
     if (ad && ilk) ad.textContent = (ilk.textContent || "").trim();
+    // Akış isteği de olmuyordu: açılışta İzle'de duran kullanıcı sabit
+    // kameranın kutusunu hiç görmüyordu. Kamera listesi henüz gelmemiş
+    // olabilir; `kameralarYaz` liste gelince bir kez daha çağırıyor.
+    izleSekmesi(true);
   }
 
   $$(".aralik").forEach((dugme) => {
@@ -4891,7 +5029,16 @@ function olaylariBagla() {
   // Sekme gizlenirse, pencere odağı giderse ya da sayfa kapanırsa jog biter.
   // Tıkla-çalış kipinde bu daha da önemli: ekrana bakan kimse kalmadığında
   // eksenin kendi başına gitmeye devam etmesini istemiyoruz.
-  document.addEventListener("visibilitychange", () => { if (document.hidden) jogDurdur(); });
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) jogDurdur();
+    /* SEKME GİZLENİNCE AKIŞ DA DURUYOR. İzle sekmesindeki kutu, tarayıcı
+     * sekmesi arkada kalınca hiç kimseye görünmüyor ama Pi kare üretmeye
+     * devam ediyordu — dizüstü kapatılıp gidildiğinde saatlerce. Geri
+     * dönünce akış yeniden isteniyor. */
+    if (S.sekme !== "izle") return;
+    if (document.hidden) izleSekmesi(false);
+    else izleSekmesi(true);
+  });
   window.addEventListener("blur", jogDurdur);
   window.addEventListener("pagehide", jogDurdur);
 

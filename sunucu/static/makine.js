@@ -618,19 +618,29 @@
      */
     /* NEM PROBU — YL-69 tipi çatal sensör.
      *
-     * Tek bir paslanmaz çubuktu ve gerçekteki parçaya hiç benzemiyordu.
-     * Gerçeği: siyah bir başlık, altında YAN YANA İKİ YASSI BIÇAK ve
-     * yukarı giden turuncu kablolar. Ayırt edici olan çatal biçimi;
-     * sahnede probu tohum ucundan ayıran tek şey o.
+     * Gerçeği: siyah bir konnektör başlığı, altında altın kaplı baskı
+     * devre ve ondan aşağı inen YAN YANA İKİ YASSI BIÇAK. Ayırt edici
+     * olan çatal biçimi; sahnede probu tohum ucundan ayıran tek şey o.
+     *
+     * "GÖRÜNMÜYOR" ÖLÇÜLDÜ, TAHMİN EDİLMEDİ. Parça kuruluyordu ve yeri de
+     * doğruydu (`suDurumu().probVar` doğru, `probX` 0) — ama ölçüsü
+     * yüzünden hiçbir açıdan seçilmiyordu:
+     *
+     *   - Taşıyıcı plakanın TAM ALTINDA, makine merkezinde duruyordu ve
+     *     plakadan yalnız 79 mm sarkıyordu. Plakanın kendi kenarı 76 mm;
+     *     yani ucun plakanın altından çıkabilmesi için sahneye 44
+     *     dereceden daha yatık bakmak gerekiyordu. Üstten bakışta plaka
+     *     probu tam olarak örtüyordu.
+     *   - Bıçaklar 4,8 mm enindeydi. Yataktan bakınca birkaç piksel;
+     *     tezgâhın ayağı denk geldiğinde tamamen kayboluyordu.
+     *
+     * Üç şey değişti: prob AŞAĞI indirildi (plakadan 150 mm sarkıyor,
+     * her açıdan plakanın dışına çıkıyor), bıçaklar GERÇEK ORANINA
+     * yakın genişletildi (10 mm en), ve konumu artık makine merkezine
+     * değil ÖTEKİ İKİ BAŞIN ORTASINA göre — kullanıcının gördüğü düzen
+     * "solda sulama, ortada prob, sağda tohum ucu".
      */
     const nemProbu = new THREE.Group();
-    /* ÖLÇÜLER BÜYÜTÜLDÜ. İlk hâli gerçek orana sadıktı ama sahnede
-     * seçilmiyordu: parça zaten küçük, rengi de koyu zemine yakın.
-     * Buradaki iş ölçek doğruluğu değil, hangi başın hangisi olduğunu
-     * bir bakışta söyleyebilmek. */
-    // Üstteki siyah konnektör başlığı.
-    nemProbu.add(kutu(THREE, [P * 0.6, P * 0.5, P * 0.32], [0, -P * 0.12, 0],
-                      { color: "#15181a", metalness: 0.1, roughness: 0.72 }));
     /* KENDİ IŞIĞI OLAN ALTIN SARISI.
      *
      * Düz bir renkti ve kafanın koyu gövdesinin önünde kayboluyordu:
@@ -639,24 +649,46 @@
      * gerçeğe sadakat değil, görülebilirlik kararı.
      */
     const probMal = { color: "#f0c93a", metalness: 0.3, roughness: 0.35,
-                      emissive: "#6b5410", emissiveIntensity: 0.55 };
-    // Bıçakları taşıyan kart — gerçeğinde de baskı devre.
-    nemProbu.add(kutu(THREE, [P * 0.62, P * 0.5, P * 0.12],
-                      [0, -P * 0.52, 0], probMal));
-    /* İKİ BIÇAK — UZUN. Gerçek sensörde de en uzun parça bu; kısa
-     * çizilince tohum ucunun konisiyle aynı boyda kalıyor ve ikisi
+                      emissive: "#7d6112", emissiveIntensity: 0.7 };
+    /* PROB PLAKANIN ALTINDAN BAŞLIYOR. Grubun kendi sıfırı kafanın
+     * merkezinde; parçalar buradan aşağı diziliyor. `probUst` plakanın
+     * alt yüzünün hemen altı — parçanın plakaya gömülü görünmemesi için. */
+    const probUst = -P * 0.45;
+    // Üstteki siyah konnektör başlığı — kabloların girdiği blok.
+    nemProbu.add(kutu(THREE, [P * 1.0, P * 0.8, P * 0.5],
+                      [0, probUst - P * 0.4, 0],
+                      { color: "#15181a", metalness: 0.1, roughness: 0.72 }));
+    // Konnektörün altındaki ince boyun.
+    nemProbu.add(kutu(THREE, [P * 0.5, P * 0.3, P * 0.3],
+                      [0, probUst - P * 0.95, 0],
+                      { color: "#2a2e31", metalness: 0.2, roughness: 0.6 }));
+    // Bıçakları taşıyan kart — gerçeğinde de altın kaplı baskı devre.
+    nemProbu.add(kutu(THREE, [P * 0.9, P * 1.1, P * 0.16],
+                      [0, probUst - P * 1.65, 0], probMal));
+    /* İKİ BIÇAK. Gerçek sensörde de en uzun parça bu; kısa ve ince
+     * çizilince tohum ucunun konisiyle aynı boyda kalıyor, ikisi
      * uzaktan ayrışmıyordu. */
     [-1, 1].forEach((yon) => {
-      nemProbu.add(kutu(THREE, [P * 0.24, P * 3.2, P * 0.1],
-                        [yon * P * 0.2, -P * 2.4, 0], probMal));
+      nemProbu.add(kutu(THREE, [P * 0.5, P * 4.2, P * 0.18],
+                        [yon * P * 0.3, probUst - P * 4.3, 0], probMal));
     });
-    // Turuncu kablolar: yukarı çıkıp gözden kayboluyorlar.
+    // Bıçakların sivri uçları — toprağa giren kısım.
+    [-1, 1].forEach((yon) => {
+      const sivri = new THREE.Mesh(
+        new THREE.ConeGeometry(P * 0.25, P * 0.55, 4),
+        mal(THREE, probMal));
+      sivri.position.set(yon * P * 0.3, probUst - P * 6.65, 0);
+      sivri.rotation.y = Math.PI / 4;
+      sivri.rotation.x = Math.PI;
+      nemProbu.add(sivri);
+    });
+    // Turuncu kablolar: yukarı çıkıp kafanın gövdesinde gözden kayboluyorlar.
     [-1, 1].forEach((yon) => {
       const tel = new THREE.Mesh(
-        new THREE.CylinderGeometry(P * 0.05, P * 0.05, P * 1.5, 6),
+        new THREE.CylinderGeometry(P * 0.06, P * 0.06, P * 1.6, 6),
         mal(THREE, { color: yon < 0 ? "#f0932b" : "#e6e0d2",
                      metalness: 0.05, roughness: 0.7 }));
-      tel.position.set(yon * P * 0.14, P * 0.65, P * 0.07);
+      tel.position.set(yon * P * 0.18, probUst + P * 0.75, P * 0.1);
       nemProbu.add(tel);
     });
     ucKafa.add(nemProbu);
@@ -680,17 +712,27 @@
     // Kaymaları uygula. `mmP` bir milimetrenin sahnedeki karşılığı.
     const bslr = opt.baslar || {};
     const mmP = opt.mmP || 1;
-    const yerlestir = (grup, kimlik, yedekX) => {
+    /* İŞARET TERS: `dx` "makine bu kadar kayarak gider" demek, yani baş
+     * merkezin TERS yönünde duruyor. Sahnede kaymayı olduğu gibi
+     * uygulasaydık başlar gerçekte oldukları yerin aynasında görünürdü. */
+    const basYeri = (kimlik) => {
       const b = bslr[kimlik];
-      const varMi = b && (Number(b.dx) || Number(b.dy));
-      grup.position.x = varMi ? -Number(b.dx || 0) * mmP : yedekX;
-      grup.position.z = varMi ? -Number(b.dy || 0) * mmP : 0;
+      if (!b || !(Number(b.dx) || Number(b.dy))) return null;   // ayar girilmemiş
+      return { x: -Number(b.dx || 0) * mmP, z: -Number(b.dy || 0) * mmP };
     };
-    // İŞARET TERS: `dx` "makine bu kadar kayarak gider" demek, yani baş
-    // merkezin TERS yönünde duruyor. Sahnede kaymayı olduğu gibi
-    // uygulasaydık başlar gerçekte oldukları yerin aynasında görünürdü.
-    yerlestir(nemProbu, "nem", 0);
-    yerlestir(tohumUcu, "tohum", P * 2.4);
+    /* AYAR GİRİLMEMİŞSE YEDEK DÜZEN — ve o düzen de GERÇEK SIRAYI
+     * göstermeli: solda sulama, ortada prob, sağda tohum ucu. Eskiden
+     * yedek değerler sulamayı +0,6P'ye, probu 0'a koyuyordu; yani ayar
+     * girilmemiş bir makinede sulama başlığı PROBUN SAĞINDA çiziliyor,
+     * dizilim gerçeğin tersi oluyordu. */
+    const YEDEK = { sulama: -P * 2.4, nem: 0, tohum: P * 2.4 };
+    const yerlestir = (grup, kimlik) => {
+      const y = basYeri(kimlik);
+      grup.position.x = y ? y.x : YEDEK[kimlik];
+      grup.position.z = y ? y.z : 0;
+      return grup.position;
+    };
+    yerlestir(tohumUcu, "tohum");
     // Merkez işareti: Z ekseninin gerçek merkezi. Üç baş da bunun
     // etrafında duruyor ve hiçbiri tam ortada değil — bunu göstermek
     // kaymaların neden var olduğunu anlatan tek şey.
@@ -729,12 +771,10 @@
      * sabit yer kullanılıyor. */
     const basY = -P * 0.62;
     const baslik = new THREE.Group();
-    const sb = (opt.baslar || {}).sulama;
-    const sbVar = sb && (Number(sb.dx) || Number(sb.dy));
-    baslik.position.set(
-      sbVar ? -Number(sb.dx || 0) * (opt.mmP || 1) : P * 0.6,
-      basY,
-      sbVar ? -Number(sb.dy || 0) * (opt.mmP || 1) : 0);
+    // Yeri öteki iki başla AYNI kaynaktan (`yerlestir`); ayrı bir hesap
+    // yazmak, üç başın birbirine göre yerini iki yerden almak demekti.
+    yerlestir(baslik, "sulama");
+    baslik.position.y = basY;
     /* Başlık gövdesi — KISA ve GENİŞ silindir, altı delikli.
      *
      * Önce ince bir silindirdi ve sahnede uç kafasının gölgesinde
@@ -781,6 +821,22 @@
      * takılı görünmesinin sebebi oydu. Başlık artık kafanın kendi
      * plakasına asılı, ayrı bir bağlantı parçası gerekmiyor. */
     ucKafa.add(baslik);
+
+    /* NEM PROBU İKİ BAŞIN ORTASINDA. Kendi `dx/dy` ayarı girilmişse o
+     * geçerli — ölçülen sayı her zaman kazanır. Girilmemişse makine
+     * merkezine değil, SULAMA BAŞLIĞI İLE TOHUM UCUNUN TAM ORTASINA
+     * konuyor: makinede de üçü yan yana ve prob ortadaki.
+     *
+     * Merkeze koymak sessizce yanlıştı: sulama başlığı 60 mm solda,
+     * tohum ucu sağda; merkez ikisinin ortası DEĞİL ve prob, üç başın
+     * dizilimine bakan biri için yanlış yerde duruyordu. Üstüne, makine
+     * merkezi tam da Z kılavuzunun ve merkez işaretinin bulunduğu yer. */
+    if (!basYeri("nem")) {
+      nemProbu.position.x = (baslik.position.x + tohumUcu.position.x) / 2;
+      nemProbu.position.z = (baslik.position.z + tohumUcu.position.z) / 2;
+    } else {
+      yerlestir(nemProbu, "nem");
+    }
 
     /* --- TAŞIYICI PLAKA ----------------------------------------------------
      * Üç başı da taşıyan alt plaka. ÖLÇÜSÜ VE YERİ BAŞLARDAN ÇIKIYOR.

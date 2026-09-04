@@ -187,6 +187,17 @@ açılıyor. Kutuyu gizledikten sonra geri açan tek yer Kamera sekmesindeki
 **Sahnede** düğmesi. Bir kamera kapalıyken ya da arızalıyken öteki çalışmaya
 devam ediyor — her kameranın kendi iş parçacığı ve kendi hata sayacı var.
 
+**İzle sekmesi de akış istiyor — saniyede 1 kare.** Yüzen kutu eskiden
+yalnızca yeni bir kare geldiğinde görünür oluyordu. Uç kamerasında bu
+farkedilmiyordu; sabit üst kameranın akışı ise Kamera sekmesinden çıkınca
+duruyor, İzle'de hiç kare gelmiyor ve kutu hiç açılmıyordu — "Sahnede"
+düğmesine basmak bile boş bir kutu açıyordu, çünkü beklenen kare hiç
+gelmeyecekti. Artık İzle sekmesi açıkken kutusu görünen her kameranın akışı
+sürüyor. Kamera sekmesindeki 5 kare/sn oraya bakan biri için; köşedeki
+gözcü kutuya 1 yetiyor ve Pi'nin işlemcisi beşte biri kadar yükleniyor.
+Kutu gizlenince o kameranın akışı duruyor, tarayıcı sekmesi arkaya
+düşünce hepsi duruyor, ajan yeniden başlarsa istek yineleniyor.
+
 Canlı akış yapamayan bir yolda (`fswebcam` gibi) "Canlı" düğmesi kapalı
 geliyor ve sebebini söylüyor; basıp hata almak dürüst değil. Akış
 yapabilenlerde kamera MJPEG üretiyorsa Pi'de yeniden kodlama yapılmıyor,
@@ -534,6 +545,21 @@ kaybolmuyor.
 Hesap tek yerde (`sunucu/baslar.py`) ve sulama, nem ölçümü, ekim üçü de
 oradan geçiyor. Her akış kendi hesabını yapsaydı üçü birbirinden
 ayrışırdı.
+
+**3B sahnede de üçü yan yana.** Nem probu bir süre "görünmüyor" diye
+kaldı ve sebebi ölçülünce çıktı: parça kuruluyordu, yeri de doğruydu
+(`Tarla.katmanTanimi("robot").suDurumu()` → `probVar` doğru, `probX` 0)
+— ama taşıyıcı plakanın tam altında duruyor ve plakadan yalnız 79 mm
+sarkıyordu; plakanın kendi kenarı 76 mm. Yani ucun plakanın altından
+görünebilmesi için sahneye 44 dereceden daha yatık bakmak gerekiyordu,
+üstten bakışta plaka probu tamamen örtüyordu. Bıçaklar da 4,8 mm
+enindeydi — tezgâh ayağı denk geldiğinde birkaç piksel kalıp
+kayboluyordu. Prob artık plakadan 146 mm sarkıyor (28 derecede
+görünüyor), bıçaklar gerçek oranına yakın (10 mm en) ve kendi `dx/dy`
+ayarı girilmemişse makine merkezine değil **sulama başlığı ile tohum
+ucunun tam ortasına** konuyor. Ayar girilmemiş makinede yedek dizilim de
+gerçek sırayı gösteriyor: solda sulama, ortada prob, sağda tohum ucu —
+eskiden yedek değerler sulamayı probun sağına koyuyordu.
 
 **Erişilebilir alan da başa göre.** Makine `hedef + kayma`ya gittiği ve
 kendisi yumuşak sınırların dışına çıkamadığı için pozitif kaymalı bir

@@ -137,12 +137,32 @@ Tarla.katman({
      * bir yerde durmak. İkisini ekran görüntüsünden ayırmak mümkün
      * değildi; sayı olarak yazınca ayrılıyor. */
     const np = p.ucKafa && p.ucKafa.userData && p.ucKafa.userData.nemProbu;
+    /* SARKMA DA GEREKİYOR. "Kuruldu ve yeri doğru" ölçülebiliyordu ama
+     * prob yine görünmüyordu: taşıyıcı plakanın tam altında duruyor ve
+     * plakadan yeterince sarkmazsa üstten bakışta plaka onu tamamen
+     * örtüyor. Ölçülen sayı buydu — 79 mm sarkma, 76 mm plaka kenarı,
+     * yani ancak 44 dereceden yatık bakışta görünüyordu. Sarkmayı da
+     * yazıyoruz ki bir daha "kurulu ama görünmüyor" ekran görüntüsünden
+     * değil sayıdan anlaşılsın. */
+    let probAltMm = null;
+    if (np && np.children.length) {
+      let alt = Infinity;
+      np.children.forEach((c) => {
+        const g = c.geometry && c.geometry.parameters;
+        const boy = g ? (g.height != null ? g.height : 0) : 0;
+        alt = Math.min(alt, c.position.y - boy / 2);
+      });
+      probAltMm = Number.isFinite(alt) ? +(alt * 1000).toFixed(1) : null;
+    }
     return {
       kuruldu: true,
       probVar: !!np,
       probParca: np ? np.children.length : 0,
       probX: np ? +np.position.x.toFixed(4) : null,
       probZ: np ? +np.position.z.toFixed(4) : null,
+      // Probun kafa merkezine göre en alt noktası (mm). Plakanın altı
+      // yaklaşık -1 mm; aradaki fark probun plakadan sarkması.
+      probAltMm: probAltMm,
       baslikVar: !!b,
       baslikX: b ? +b.position.x.toFixed(4) : null,
       baslikParca: b ? b.children.length : 0,
