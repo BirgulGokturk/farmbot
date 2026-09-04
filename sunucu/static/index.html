@@ -7,7 +7,10 @@
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌱</text></svg>">
 <link rel="stylesheet" href="/statik/stil.css">
 <link rel="stylesheet" href="/statik/bahce.css">
+<link rel="stylesheet" href="/statik/bahce-sahne.css">
 <link rel="stylesheet" href="/statik/etiket.css">
+<link rel="stylesheet" href="/statik/bitki.css">
+<link rel="stylesheet" href="/statik/zamanli.css">
 <!-- Kütüphaneler proje içinde duruyor (CDN değil): panel internetsiz bir yerel
      ağda da açılsın ve dış bir servisin kesintisi paneli düşürmesin. -->
 <script src="/statik/chart.umd.js"></script>
@@ -68,6 +71,9 @@
         <button data-sayfa="izle" class="etkin">İzle</button>
         <button data-sayfa="sur">Sür</button>
         <button data-sayfa="tarla">Tarla</button>
+        <!-- BITKILER: her bitki icin tek kart. Tarla'nin yanina
+             geliyor, cunku ayni bitkilere BAKMANIN oteki yolu. -->
+        <button data-sayfa="bitkiler">Bitkiler</button>
         <button data-sayfa="kamera">Kamera</button>
         <button data-sayfa="otomasyon">Kurulum</button>
         <button data-sayfa="ayarlar">Ayarlar</button>
@@ -212,6 +218,66 @@
          Bütün işaretleme `data-rol` ile: bitki, kart ve film karesi
          şablondan çoğaltılıyor ve id tekrarlanamaz. -->
     <section class="sayfa" id="sayfa-bahce">
+
+      <!-- YENİ BAHÇE SAHNESİ — kullanıcının göreceği tek yüz.
+           Teknik sekmeler (İzle/Sür/Tarla/Kamera) olduğu gibi duruyor.
+           Eski bahçe ekranı aşağıda `#bh-klasik` kabında ve yalnız
+           "Klasik görünüm" düğmesiyle açılıyor: yeni sahne bir şeyi
+           kaçırıyorsa geri dönülecek bir yer olsun. -->
+      <div class="bs" id="bs">
+
+        <div class="bs-ust">
+          <!-- Bağlantı rozeti ŞERİDİN BAŞINDA: kopuk bir makinede
+               düğmeye basmadan önce okunması gereken tek şey bu. -->
+          <span class="bs-bagli" id="bs-bagli"><i></i><b>Makine</b></span>
+          <span class="esnek"></span>
+          <button class="bs-ikon" id="bs-kamera" type="button" aria-pressed="false"
+                  title="Üst kameranın son karesini toprağın üstüne bindirir">Kamera katı</button>
+          <button class="bs-ikon" id="bs-egik" type="button" aria-pressed="true"
+                  title="Bahçeye eğik ya da tam tepeden bak">Eğik bak</button>
+          <button class="bs-ikon" id="bs-sakin" type="button" aria-pressed="false"
+                  title="Bütün hareketi durdurur — küçük bilgisayarda işlemciyi rahatlatır">Sakin mod</button>
+          <button class="bs-ikon" id="bs-klasik" type="button" aria-pressed="false"
+                  title="Eski bahçe ekranına dön">Klasik görünüm</button>
+        </div>
+
+        <!-- Uyarı satırı: kalibrasyon yok, kamera yok, ajan kopuk gibi
+             hâller. Sahne BUNLARA RAĞMEN çalışıyor, satır sebebini
+             söylüyor. -->
+        <div class="bs-uyari" id="bs-uyari" hidden></div>
+
+        <div class="bs-sahne-sar">
+          <div class="bs-sahne" id="bs-sahne">
+            <!-- Yakınlaştırma ve eğim AYRI katmanlarda olmak zorunda:
+                 ikisi tek `transform` zincirinde olunca yakınlaştırma
+                 perspektif izdüşümünden ÖNCE uygulanıyor ve parmağın
+                 altındaki nokta kayıyor. -->
+            <div class="bs-zum" id="bs-zum">
+              <div class="bs-duzlem" id="bs-duzlem">
+                <div class="bs-zemin"></div>
+                <img class="bs-kamera-kat" id="bs-kamera-kat" alt="" hidden>
+                <svg class="bs-cizim" id="bs-cizim" viewBox="0 0 1000 1000"
+                     preserveAspectRatio="none" aria-hidden="true"></svg>
+                <div class="bs-gozler" id="bs-gozler"></div>
+                <div class="bs-bitkiler" id="bs-bitkiler"></div>
+                <!-- Dört köşe ölçü noktası: ekran koordinatını yatak
+                     milimetresine çeviren dönüşüm bunlardan ÖLÇÜLEREK
+                     çıkarılıyor, elle hesaplanmıyor. Görünmezler ama
+                     kaldırılamazlar. -->
+                <span class="bs-olcu" data-kose="0"></span>
+                <span class="bs-olcu" data-kose="1"></span>
+                <span class="bs-olcu" data-kose="2"></span>
+                <span class="bs-olcu" data-kose="3"></span>
+              </div>
+            </div>
+            <p class="bs-bos" id="bs-bos" hidden></p>
+            <span class="bs-rozet-zum" id="bs-zum-rozet" hidden></span>
+          </div>
+        </div>
+      </div>
+
+      <!-- ESKİ BAHÇE EKRANI. Kabı kapalıyken `bahce.js` haber almıyor. -->
+      <div class="bh-klasik" id="bh-klasik" hidden>
 
       <!-- Giriş şeridi: bugün ne gerekiyor + seri sayacı. -->
       <div class="bh-ust">
@@ -381,6 +447,7 @@
           </div>
         </article>
       </template>
+      </div>
     </section>
 
     <!-- Bitkiye dokununca açılan halka menü ve büyüme filmi: sayfanın
@@ -1118,6 +1185,11 @@
          AYARLAR BURADA TOPLANDI. Çözünürlük, cihaz seçimi, aç/kapa, kare
          aralığı ve kalibrasyon Ayarlar'dan buraya taşındı; her kameranın
          ayarı KENDİ yarısının altında. Kopya bırakılmadı. -->
+    <!-- ============================== BITKI KARTLARI ==============
+         Bos kap: bolumu `bitki.js` kendi kuruyor (bkz. o dosyanin
+         basi). Boylece bu dosyada tek satirlik bir iz birakiyor. -->
+    <section class="sayfa" id="sayfa-bitkiler"></section>
+
     <section class="sayfa" id="sayfa-kamera">
       <div class="kam-tahta" id="kam-tahta"></div>
 
@@ -1310,6 +1382,11 @@
     </template>
 
     <section class="sayfa" id="sayfa-otomasyon">
+
+      <!-- ZAMANLANMIS GOREVLER — programlarin USTUNDE duruyor:
+           program "ne yapilacak", bu "ne zaman yapilacak" ve
+           kurulum sirasi da bu. Bolumu `zamanli.js` kendi kuruyor. -->
+      <div id="zamanli-bolum"></div>
 
       <section class="bolum" id="bolum-program">
         <div class="bolum-ust">
@@ -2198,9 +2275,12 @@
 <!-- Profil görüntüleyici: haritanın verisini okuyup Z kesiti çiziyor -->
 <script src="/statik/profil.js"></script>
 <script src="/statik/bahce.js"></script>
+<script src="/statik/bahce-sahne.js"></script>
 <script src="/statik/app.js"></script>
 <script src="/statik/etiket.js"></script>
 <script src="/statik/filiz.js"></script>
 <script src="/statik/nem.js"></script>
+<script src="/statik/bitki.js"></script>
+<script src="/statik/zamanli.js"></script>
 </body>
 </html>
