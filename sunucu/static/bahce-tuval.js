@@ -98,6 +98,7 @@ window.BahceTuval = (function () {
     fotoAn: 0,             // 0..1 fotoğrafın görünürlüğü
     toprakAcik: false,     // "Gerçek toprak" düğmesi
     zamanDizin: null,      // null = şimdi
+    tahmin: {},            // ad -> kuruma tahmini (ölçüm DEĞİL)
     isAn: {},              // ad -> 0..1 yumuşatılmış görev işareti
     kartAd: "",
     ek: null,              // /api/bitki — kuruma geçmişi, sulama süresi
@@ -1140,6 +1141,8 @@ window.BahceTuval = (function () {
       ct.stroke();
       ct.restore();
     }
+
+    tahminHalkasi(ct, b, t);
 
     // GÖREV İŞARETİ: şerittteki karta gelince o kartın bitkilerinin
     // çevresinde dönen bir halka. "Hangileri" sorusunun cevabı yazıyla
@@ -2846,6 +2849,149 @@ window.BahceTuval = (function () {
   }
 
   /* ==================================================================== *
+   * Kuruma tahmini — yarını göster
+   *
+   * VERİ GERÇEK, KARAR TAHMİN. `/api/bitki` her bitki için ölçülmüş nem
+   * geçmişini veriyor; buradaki tek iş o noktalara bir doğru uydurup
+   * eşiği ne zaman keseceğini söylemek. Sonuç bir ÖLÇÜM DEĞİL ve ekran
+   * bunu her yerde söylüyor: kart "tahmin" işaretli, gerekçe kaç ölçüme
+   * ve kaç saatte kaç puanlık düşüşe dayandığını yazıyor.
+   *
+   * TAHMİN YAPILMAYAN HÂLLER — sessizce atlanıyor, uydurulmuyor:
+   *   · eşik kapalı (%100) → kesilecek bir çizgi yok
+   *   · üçten az ölçüm ya da iki saatten dar bir pencere → eğim yok
+   *   · eğim düz ya da yukarı → toprak kurumuyor
+   *   · zaten eşiğin altında → tahmine gerek yok, susama kartı var
+   *
+   * ÖNERİLEN İŞ SULAMA DEĞİL ÖLÇÜM. Bir tahmine bakıp su dökmek,
+   * tahmini ölçüm yerine koymak olurdu; prob gidip bakarsa tahmin
+   * ölçüye dönüşüyor ve sulama kararını susama kartı veriyor.
+   * ==================================================================== */
+  const TAHMIN_UFUK_SN = 72 * 3600;     // bundan uzağı gösterilmiyor
+  const TAHMIN_EN_AZ_EGIM = 0.05;       // %/saat — altı "kurumuyor"
+
+  function kurumaTahmini(b) {
+    const o = b.su_olcum || {};
+    if (!o.esik_acik) return null;
+    const e = ((S.ek && S.ek.ek) || {})[b.ad] || {};
+    const g = ((e.gecmis) || []).filter(
+      (p) => Number.isFinite(Number(p && p.yuzde)) && Number.isFinite(Number(p && p.ts)));
+    if (g.length < 3) return null;
+    const pencere = sayi(g[g.length - 1].ts) - sayi(g[0].ts);
+    if (pencere < 2 * 3600) return null;
+
+    // Son on iki nokta yeter: bir haftalık kuyruk bugünkü eğimi
+    // bulanıklaştırıyor.
+    const son = g.slice(-12);
+    const t0 = sayi(son[0].ts);
+    let sx = 0, sy = 0, sxx = 0, sxy = 0;
+    son.forEach((p) => {
+      const x = (sayi(p.ts) - t0) / 3600;          // saat
+      const y = sayi(p.yuzde);
+      sx += x; sy += y; sxx += x * x; sxy += x * y;
+    });
+    const n = son.length;
+    const payda = n * sxx - sx * sx;
+    if (Math.abs(payda) < 1e-9) return null;
+    const egim = (n * sxy - sx * sy) / payda;      // %/saat
+    if (egim > -TAHMIN_EN_AZ_EGIM) return null;    // kurumuyor
+
+    const sonNokta = son[son.length - 1];
+    const sonYuzde = sayi(sonNokta.yuzde);
+    const esik = sayi(o.esik);
+    if (sonYuzde <= esik) return null;             // zaten altında
+    const saat = (sonYuzde - esik) / -egim;        // egim negatif
+    const kalanSn = saat * 3600 - (Date.now() / 1000 - sayi(sonNokta.ts));
+    if (!Number.isFinite(kalanSn) || kalanSn > TAHMIN_UFUK_SN) return null;
+    return {
+      kalanSn: Math.max(0, kalanSn),
+      egim, adet: son.length, pencere,
+      dususu: (sayi(son[0].yuzde) - sonYuzde),
+      sonYuzde, esik,
+      gerekce: `son ${son.length} ölçüm · ${sureKisa(pencere).replace(" önce", "")}`
+        + ` içinde %${Math.abs(sayi(son[0].yuzde) - sonYuzde).toFixed(0)} düşüş`
+        + ` · saatte %${Math.abs(egim).toFixed(1)}`,
+    };
+  }
+
+  /** Bütün bitkilerin tahmini — en yakın önce. */
+  function tahminleriTazele() {
+    const v = S.veri || {};
+    S.tahmin = {};
+    (v.bitkiler || []).forEach((b) => {
+      const t = kurumaTahmini(b);
+      if (t) S.tahmin[b.ad] = t;
+    });
+  }
+
+  function tahminSaati(kalanSn) {
+    const d = new Date(Date.now() + kalanSn * 1000);
+    const gun = Math.floor((d - new Date(new Date().toDateString())) / 86400000);
+    const saat = d.toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" });
+    return (gun <= 0 ? "bugün " : gun === 1 ? "yarın " : `${gun} gün sonra `) + saat;
+  }
+
+  /** Görev şeridine giren tahmin kartı — sunucunun kartlarıyla aynı
+   *  biçimde, ama `tahmin` işaretli ve önerdiği iş ÖLÇÜM. */
+  function tahminKarti() {
+    const adlar = Object.keys(S.tahmin || {});
+    if (!adlar.length) return null;
+    adlar.sort((a, b) => S.tahmin[a].kalanSn - S.tahmin[b].kalanSn);
+    const v = S.veri || {};
+    const ad = (a) => {
+      const b = (v.bitkiler || []).find((x) => x.ad === a);
+      return b ? (b.tur_ad || b.tur) : a;
+    };
+    const ilk = S.tahmin[adlar[0]];
+    return {
+      kimlik: "tahmin-kuruma",
+      tip: "nem",
+      simge: "⏳",
+      baslik: adlar.length > 1
+        ? `${adlar.length} bitki ${sureKisa(ilk.kalanSn).replace(" önce", "")} içinde eşiğin altına düşecek`
+        : `${ad(adlar[0])} ${tahminSaati(ilk.kalanSn)} eşiğin altına düşecek`,
+      aciklama: adlar.slice(0, 4).map(ad).join(", ")
+        + (adlar.length > 4 ? ` ve ${adlar.length - 4} tane daha` : "")
+        + ` — en yakını ${tahminSaati(ilk.kalanSn)}. Prob gidip ölçerse `
+        + "tahmin ölçüye döner.",
+      gerekce: adlar.slice(0, 6).map((a) =>
+        `${a}: ${S.tahmin[a].gerekce} → eşik %${sayi(S.tahmin[a].esik).toFixed(0)}`
+        + ` ${sureKisa(S.tahmin[a].kalanSn).replace(" önce", "")} sonra`),
+      kanit: "ölçülen nem geçmişinin eğimi — bu bir TAHMİN, ölçüm değil",
+      tahmin: true,
+      evet: "Nemini ölç",
+      noktalar: adlar.slice(0, 40),
+    };
+  }
+
+  /** Geri sayım halkası: bitkinin çevresinde, eşiğe kalan sürenin
+   *  ufka oranı kadar bir yay. Tam daire = 72 saat, kapanması = eşik.
+   *  Kesikli, çünkü ölçülmüş bir şeyi değil bir tahmini çiziyor. */
+  function tahminHalkasi(ct, b, t) {
+    const tah = (S.tahmin || {})[b.ad];
+    if (!tah) return;
+    const R = b.cizimPx / 2;
+    const oran = 1 - kis(tah.kalanSn / TAHMIN_UFUK_SN, 0, 1);
+    const r = R * 1.42;
+    ct.save();
+    ct.setLineDash([4, 5]);
+    ct.lineDashOffset = -t * 10;
+    ct.strokeStyle = "rgba(217,165,32,0.30)";
+    ct.lineWidth = 2;
+    ct.beginPath();
+    ct.ellipse(b.x, b.y, r, r * 0.66, 0, 0, Math.PI * 2);
+    ct.stroke();
+    ct.setLineDash([]);
+    ct.strokeStyle = `rgba(217,165,32,${(0.55 + 0.25 * Math.sin(t * 2)).toFixed(3)})`;
+    ct.lineWidth = 3;
+    ct.beginPath();
+    ct.ellipse(b.x, b.y, r, r * 0.66, 0, -Math.PI / 2,
+               -Math.PI / 2 + Math.PI * 2 * oran);
+    ct.stroke();
+    ct.restore();
+  }
+
+  /* ==================================================================== *
    * Görev şeridi — "bugün ne yapmalıyım"
    *
    * KARTLARI SUNUCU ÜRETİYOR (`bahce.kartlar`). Ölçüt yoksa kart yok;
@@ -2867,7 +3013,8 @@ window.BahceTuval = (function () {
     const kap = $("#bt-isler");
     if (!kap) return;
     const v = S.veri || {};
-    const kartlar = v.kartlar || [];
+    const tk = tahminKarti();
+    const kartlar = (v.kartlar || []).concat(tk ? [tk] : []);
     const imza = JSON.stringify(kartlar.map((k) => [k.kimlik, k.baslik,
       (k.noktalar || []).length, k.ertelendi || 0, S.secilenTur]));
     if (kap.dataset.imza === imza) return;
@@ -3229,6 +3376,10 @@ window.BahceTuval = (function () {
       geometriKur();
       bitkileriHazirla();
       S.statikImza = "";
+      // Kuruma tahmini ölçüm geçmişine dayanıyor ve o geçmiş ayrı bir
+      // uçtan geliyor; başarısız olursa tahmin yok, sahne susuyor.
+      await ekYukle();
+      tahminleriTazele();
       durumYaz();
       rafYaz();
       islerYaz();
@@ -3596,6 +3747,7 @@ window.BahceTuval = (function () {
       yatakPx: Math.round(G.enPx), duvarPx: Math.round(G.duvarPx),
       kam: [Math.round(S.kam.o * 100) / 100, Math.round(S.kam.x),
             Math.round(S.kam.y)],
+      tahmin: Object.keys(S.tahmin || {}).length,
       kare_arsiv: (S.kareler || []).length, zaman: S.zamanDizin,
       toprak: S.toprakAcik, fotoAn: Math.round(S.fotoAn * 100) / 100,
       dolgu: S.en ? Math.round(G.enPx / S.en * 100) : 0,   // yatak ekranın yüzde kaçı
