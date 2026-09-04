@@ -20,8 +20,19 @@ Tarla.katman({
     // başların yeri artık ayardan geliyor ve eski geometri yanlış yerde
     // kalırdı.
     const bsl = (o.veri.durum.uc && o.veri.durum.uc.baslar) || {};
+    /* DİKİM ALANLARI DA İMZADA — ve makineye GEÇİYOR.
+     *
+     * Uç kümesinin arabanın önüne alınma YÖNÜ, toprağın sahne z'sindeki
+     * yerinden çıkıyor (bkz. makine.js → "ÜÇ BAŞ ARABANIN ÖNÜNDE"). Sabit
+     * bir işaret yazmak yatak taşınınca yine bozulurdu. Alanlar burada
+     * `05-yatak.js` ile AYNI kaynaktan (`o.dikimSahne`) geliyor; iki
+     * katman farklı yatak görseydi baş kümesi toprağın olmadığı yana
+     * asılırdı. */
+    const alanlar = o.dikimSahne || [];
     const imza = `${w}|${d}|${rayY}|` + ["sulama", "nem", "tohum"]
-      .map((k) => `${(bsl[k] || {}).dx},${(bsl[k] || {}).dy}`).join("|");
+      .map((k) => `${(bsl[k] || {}).dx},${(bsl[k] || {}).dy}`).join("|")
+      + "|" + alanlar.map((a) => `${a.mz.toFixed(4)},${a.en.toFixed(4)},`
+                                 + `${a.boy.toFixed(4)}`).join(";");
 
     // Katman kapatılınca çekirdek grubu boşaltıp geometriyi atıyor; grup
     // boşsa imza aynı olsa da yeniden kurmak gerekiyor.
@@ -36,6 +47,8 @@ Tarla.katman({
         // ÜÇ BAŞ GERÇEK KAYMALARIYLA. Sahnedeki aralık makinedeki
         // aralık; ayarı değiştirince sahnede de kayıyorlar.
         baslar: bsl, mmP: MM,
+        // Yatağın yeri: baş kümesinin hangi yana asılacağı buradan çıkıyor.
+        alanlar: alanlar,
       });
       this._p = makine;
       // Makineye tıklamak bitki seçmek/taşımak değil — ışın testinden çıksın.
@@ -163,6 +176,16 @@ Tarla.katman({
       // Probun kafa merkezine göre en alt noktası (mm). Plakanın altı
       // yaklaşık -1 mm; aradaki fark probun plakadan sarkması.
       probAltMm: probAltMm,
+      /* KÜMENİN ÖNE ALINMASI (mm, sahne z). Başlar kızağın önünde mi
+       * arkasında mı — ekran görüntüsünden ayırt edilemiyordu, üstelik
+       * yön yatağın yerine göre değişiyor. İşaret yatağın kirişe göre
+       * hangi yanda olduğunu, büyüklük de kümenin Z sütununu ne kadar
+       * açıkla geçtiğini söylüyor. */
+      oneAlmaMm: (p.ucKafa && p.ucKafa.userData
+                  && p.ucKafa.userData.oneAlma != null)
+        ? +(p.ucKafa.userData.oneAlma * 1000).toFixed(1) : null,
+      basZMm: [np, p.ucKafa && p.ucKafa.userData && p.ucKafa.userData.tohumUcu]
+        .filter(Boolean).map((g) => +(g.position.z * 1000).toFixed(1)),
       baslikVar: !!b,
       baslikX: b ? +b.position.x.toFixed(4) : null,
       baslikParca: b ? b.children.length : 0,

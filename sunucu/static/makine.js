@@ -224,6 +224,25 @@
     const w = opt.w, d = opt.d, rayY = opt.rayY;
     const parca = opt.parca || "hepsi";
     const sabitIster = parca === "hepsi" || parca === "sabit";
+
+    /* --- DİKİM ALANLARI — İKİ DALIN DA GÖRDÜĞÜ YER ------------------------
+     * Sabit gövde kapları buradan kuruyor; HAREKETLİ dal da bunu okuyor,
+     * çünkü uç kümesinin arabanın hangi yanına asılacağı toprağın sahne
+     * z'sindeki yerinden çıkıyor (bkz. "ÜÇ BAŞ ARABANIN ÖNÜNDE"). Daha
+     * önce yalnız sabit dalın içinde tanımlıydı ve hareketli dal yatağın
+     * nerede olduğunu bilmiyordu.
+     *
+     * `opt.alanlar` verilmemişse eski davranış aynen sürüyor: yatağın
+     * tamamı tek bir alan. Mevcut kurulumlar bozulmasın diye bu kaçış
+     * bilerek duruyor — alan tanımlamamış bir kullanıcı güncelleme
+     * sonrasında sahnesini boş bulmuyor.
+     *
+     * Ölçüler burada METRE ve sahne merkezine göre; makine milimetresinden
+     * çeviriyi çağıran yapıyor (tarla.js'in sx/sz'si), çünkü dönüşüm yatak
+     * sınırlarına bağlı ve makine.js sınırları bilmiyor. */
+    const alanlar = (opt.alanlar && opt.alanlar.length) ? opt.alanlar : [
+      { ad: "", mx: 0, mz: 0, en: w, boy: d, yuzeyY: 0 },
+    ];
     const hareketliIster = parca === "hepsi" || parca === "hareketli";
     const sabit = new THREE.Group();
 
@@ -304,9 +323,6 @@
      * Ölçüler burada METRE ve sahne merkezine göre; makine milimetresinden
      * çeviriyi çağıran yapıyor (tarla.js'in sx/sz'si), çünkü dönüşüm yatak
      * sınırlarına bağlı ve makine.js sınırları bilmiyor. */
-    const alanlar = (opt.alanlar && opt.alanlar.length) ? opt.alanlar : [
-      { ad: "", mx: 0, mz: 0, en: w, boy: d, yuzeyY: 0 },
-    ];
 
     /* --- toprak ------------------------------------------------------------
      * İki parça: yandan görünen gövde (kutu) ve ÜST YÜZEY (kabartmalı ağ).
@@ -744,6 +760,10 @@
     merkezIsaret.position.set(0, -P * 0.2, 0);
     ucKafa.add(merkezIsaret);
     ucKafa.userData.nemProbu = nemProbu;
+    // Öne alma miktarı taniya yazılıyor (bkz. 90-robot.js `suDurumu`):
+    // "küme arkada kaldı" sorusu ekran görüntüsünden değil sayıdan
+    // cevaplansın.
+    ucKafa.userData.oneAlma = 0;
     ucKafa.userData.tohumUcu = tohumUcu;
     ucKafa.userData.tohumUcuY = tohumUcu.position.y;
 
@@ -853,33 +873,79 @@
      * pay bırakarak. Gerçekte de öyle: tek bir alüminyum plaka, üstüne
      * üç baş vidalı.
      */
-    /* ÜÇ BAŞ DA SÜTUNUN ÖNÜNDE.
+    /* ÜÇ BAŞ ARABANIN ÖNÜNDE — YÖN ÖLÇÜLÜYOR, SEÇİLMİYOR.
      *
-     * Kaymalar makinenin REFERANS NOKTASINA göre tanımlı (o da nem
-     * probu), sütuna göre değil. Sahnede olduğu gibi uygulanınca küme
-     * sütunun üstüne biniyor: başlar sütunun arkasında ve içinde
-     * kalıyor, ikisi birbirini kesiyor.
+     * SORUN. Kaymalar (`uclar.json` → `dx/dy`) makinenin REFERANS
+     * NOKTASINA göre tanımlı, arabaya ya da Z sütununa göre değil.
+     * Sahnede olduğu gibi uygulanınca küme sütunun üstüne biniyor:
+     * sütun kızak yerelinde x = +1.7P, z = 0'da duruyor ve başların x
+     * yayılımı (−3P … +2.4P) tam onun üstünden geçiyor. İkisi aynı
+     * z düzleminde olduğu için sütun başları örtüyor.
      *
-     * Gerçekte üçü de kızağın önünde, dışarı taşan bir plakaya asılı —
-     * kızağın kendi motor bloğu da aynı yönde duruyor (+X). Bütün kümeye
-     * ortak bir öne alma uyguluyoruz: bu KATI bir öteleme, başların
-     * birbirine göre yerleri hiç değişmiyor. Ölçüme giren de zaten o
-     * göreli mesafe.
-     */
-    /* ÖNE ALMA ŞİMDİLİK KAPALI — DOĞRU YÖN BULUNAMADI.
+     * NEDEN X'TE ÇÖZÜLMÜYOR. Önce iki yönde de X ekseninde denendi ve
+     * ikisinde de küme arkada kaldı — kalması da gerekiyordu: sütun
+     * BELİRLİ bir x'te duruyor ve kümeyi aynı doğru üzerinde ileri geri
+     * kaydırmak onu sütunun düzleminden çıkarmıyor. Kurtulmanın tek
+     * yolu o düzlemi terk etmek, yani sahne z'sinde kaymak. Dosya
+     * başındaki eksen notu bunu zaten söylüyor: kızak kirişte makine
+     * X'inde (sahne x) kayıyor, kirişe dik yön sahne z.
      *
-     * Sorun gerçek: üç baş sütunun arkasında kalıyor, gerçekte ise
-     * kızağın önünde, yatağa bakan tarafta duruyorlar. İki yön de
-     * denendi (+X ve -X); ikisinde de küme arkada kaldı, yani kayma
-     * ekseni X değil. Kızak kirişte makine Y'sinde (sahne z) kayıyor;
-     * doğru yön büyük olasılıkla orada ve işareti yatağın kirişe göre
-     * hangi yanda olduğuna bağlı.
+     * YÖN NEREDEN GELİYOR. Sabit bir işaret yazmak, yatak değişince yine
+     * bozulurdu. İşareti TOPRAĞIN KENDİ YERİNDEN alıyoruz: köprü sahne
+     * z'sinde yürüyor ve nötr konumu z = 0, yani "yatak kirişin hangi
+     * yanında" sorusunun cevabı doğrudan dikim alanlarının ağırlık
+     * merkezinin işareti. Alanlar taşınırsa küme de onlarla birlikte
+     * doğru yana geçiyor.
      *
-     * Sıfırda bırakıyoruz: yanlış bir kaydırma, kaydırma olmamasından
-     * kötü — başların yeri hiç değilse kaymalardan geldiği gibi
-     * duruyor ve kimse onu doğru sanmıyor. */
-    const ONDE = 0;
-    [nemProbu, tohumUcu, baslik].forEach((g) => { g.position.x += ONDE; });
+     * NE KADAR. Kümenin arabanın z gölgesinden TAMAMEN çıkması gerekiyor:
+     * arabanın yarı derinliği + plakanın kendi payı + küçük bir açıklık.
+     * Üçü de zaten tanımlı sayılar, elle seçilmiş bir mesafe yok.
+     *
+     * KATI ÖTELEME. Üç başa da aynı vektör ekleniyor; birbirlerine göre
+     * yerleri hiç değişmiyor ve ölçüme giren de zaten o göreli mesafe. */
+    /* Plakanın kenar payı. Öne alma mesafesi de bunu kullanıyor (küme
+     * plakasıyla birlikte arabanın gölgesinden çıkmalı), o yüzden ikisinden
+     * ÖNCE tanımlı. */
+    const payX = P * 0.9, payZ = P * 0.8;
+    const oneAlma = (function () {
+      /* YÖN: yatak kirişin hangi yanında.
+       *
+       * Köprü sahne z'sinde yürüyor ve nötr konumu z = 0; dolayısıyla
+       * dikim alanlarının z merkezinin İŞARETİ doğrudan bu sorunun
+       * cevabı. Alanlar ALANLA AĞIRLIKLANDIRILIYOR: küçük bir tohum
+       * tepsisi, büyük toprak kabını kendi yanına çekmemeli. */
+      let agirlik = 0, toplam = 0;
+      alanlar.forEach((a) => {
+        const yuzey = Math.abs(Number(a.en) || 0) * Math.abs(Number(a.boy) || 0);
+        agirlik += yuzey * (Number(a.mz) || 0);
+        toplam += yuzey;
+      });
+      const merkez = toplam > 0 ? agirlik / toplam : 0;
+      /* YATAK SİMETRİKSE İŞARET ÇIKMIYOR ve bu ölçülebilir bir durum,
+       * gizlenecek bir şey değil. Beraberlik bozucu +z: sahnenin
+       * varsayılan bakış yönü orası (tarla.js'teki kamera açıları) ve
+       * küme o yana asılınca sütun onu örtmüyor. Fiziksel bir iddia
+       * değil, yalnız beraberlik bozucu — yatak asimetrikse hiç
+       * kullanılmıyor. */
+      const yon = Math.abs(merkez) > 1e-4 ? Math.sign(merkez) : 1;
+
+      /* MESAFE: kümenin KENDİ z yayılımından. Sabit bir sayı yetmiyor ve
+       * bu ölçüldü — başların z'si eşit değil, çünkü her birinin kendi
+       * `dy` kayması var (sulama başlığı 60 mm geride). Arabanın yarı
+       * derinliği kadar ötelemek yalnız EN ÖNDEKİ başı kurtarıyor,
+       * sulama başlığı sütunun içinde kalmaya devam ediyordu.
+       *
+       * Doğru ölçüt: kümenin ARKADA KALAN ucu engelin ötesine geçsin.
+       * Engel, başların yüksekliğinde duran tek şey — Z kılavuz sütunu
+       * (kesiti P) — artı plakanın kendi payı ve küçük bir açıklık.
+       * Araba çok daha yukarıda, bu yükseklikte yolu kapatmıyor. */
+      const engel = P / 2 + payZ + P * 0.3;
+      const zler = [nemProbu.position.z, tohumUcu.position.z, baslik.position.z];
+      const arkaUc = yon > 0 ? Math.min(...zler) : Math.max(...zler);
+      return yon * Math.max(0, engel - yon * arkaUc);
+    }());
+    [nemProbu, tohumUcu, baslik].forEach((g) => { g.position.z += oneAlma; });
+    ucKafa.userData.oneAlma = oneAlma;
 
     /* MAKİNE MERKEZİ DE PLAKANIN İÇİNDE.
      *
@@ -896,7 +962,6 @@
     const sifir = new THREE.Vector3(0, 0, 0);
     const basYerleri = [nemProbu.position, tohumUcu.position,
                         baslik.position, sifir];
-    const payX = P * 0.9, payZ = P * 0.8;
     const enKucukX = Math.min(...basYerleri.map((v) => v.x)) - payX;
     const enBuyukX = Math.max(...basYerleri.map((v) => v.x)) + payX;
     const enKucukZ = Math.min(...basYerleri.map((v) => v.z)) - payZ;

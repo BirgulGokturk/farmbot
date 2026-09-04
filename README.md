@@ -546,6 +546,40 @@ Hesap tek yerde (`sunucu/baslar.py`) ve sulama, nem ölçümü, ekim üçü de
 oradan geçiyor. Her akış kendi hesabını yapsaydı üçü birbirinden
 ayrışırdı.
 
+**Üç baş arabanın ÖNÜNDE.** Kaymalar (`uclar.json` → `dx/dy`) makinenin
+referans noktasına göre tanımlı, arabaya ya da Z sütununa göre değil.
+Sahnede olduğu gibi uygulanınca küme sütunun üstüne biniyordu: sütun
+kızak yerelinde x = +1,7 profil, z = 0'da duruyor ve başların x yayılımı
+tam onun üstünden geçiyor; ikisi aynı z düzleminde olduğu için sütun
+başları örtüyordu.
+
+X ekseninde iki yön de denendi, ikisi de işe yaramadı — yaramaması da
+gerekiyordu: sütun belirli bir x'te duruyor ve kümeyi aynı doğru üzerinde
+kaydırmak onu sütunun düzleminden çıkarmıyor. Kurtulmanın tek yolu o
+düzlemi terk etmek, yani **sahne z'sinde** kaymak (kızak kirişte sahne
+x'inde kayıyor, kirişe dik yön z).
+
+Yön sabit yazılmıyor, **ölçülüyor**: köprü sahne z'sinde yürüyor ve nötr
+konumu z = 0, dolayısıyla dikim alanlarının alanla ağırlıklandırılmış z
+merkezinin işareti doğrudan "yatak kirişin hangi yanında" sorusunun
+cevabı. Yatak taşınırsa küme de onunla birlikte doğru yana geçiyor.
+Yatak simetrikse işaret çıkmıyor; o durumda beraberliği sahnenin
+varsayılan bakış yönü (+z) bozuyor — fiziksel bir iddia değil, yalnız
+beraberlik bozucu.
+
+Mesafe de sabit değil, kümenin kendi z yayılımından: **arkada kalan baş**
+engelin ötesine geçecek kadar. Sabit bir mesafe yetmiyor ve bu ölçüldü —
+başların z'si eşit değil, sulama başlığının kendi `dy`si 60 mm. Arabanın
+yarı derinliği kadar ötelemek yalnız en öndeki başı kurtarıyor, sulama
+başlığı sütunun içinde kalmaya devam ediyordu. Engel, başların
+yüksekliğinde duran tek şey: Z kılavuz sütunu, artı plakanın payı ve
+küçük bir açıklık. Uygulanan şey **katı bir öteleme** — üç başa da aynı
+vektör ekleniyor, birbirlerine göre yerleri hiç değişmiyor.
+
+Taşıyıcı plaka sıfır noktasını da kapsamaya devam ediyor, yani küme
+ötelenirken plaka arabaya değmeyi sürdürüyor ve dışarı taşan bir konsol
+gibi duruyor — gerçekte de öyle.
+
 **3B sahnede de üçü yan yana.** Nem probu bir süre "görünmüyor" diye
 kaldı ve sebebi ölçülünce çıktı: parça kuruluyordu, yeri de doğruydu
 (`Tarla.katmanTanimi("robot").suDurumu()` → `probVar` doğru, `probX` 0)
