@@ -4481,7 +4481,22 @@ def _zamanli_adlar_coz(kapsam: str, secili: list[str] | None) -> list[str]:
 
 async def _zamanli_adlar(kapsam: str, secili: list[str] | None) -> list[str]:
     # Dort ayri depoyu okuyor; olay dongusunu tikamasin.
-    return await asyncio.to_thread(_zamanli_adlar_coz, kapsam, secili)
+    adlar = await asyncio.to_thread(_zamanli_adlar_coz, kapsam, secili)
+    # SILINMIS BITKI SESSIZCE DUSMUYOR. "Secili bitkiler" kapsami adlari
+    # tutuyor; bitki silinince o ad hicbir noktaya denk gelmiyor ve
+    # cozumleme onu atiyordu. Gorev calisiyor gibi gorunup her turda bir
+    # bitki eksik yapiyordu ve bunun hicbir izi yoktu. Panelde gorevin
+    # kutucugu da "artik yok" diye isaretli (bkz. static/zamanli.js).
+    if kapsam == "secili":
+        var = {str(a) for a in adlar}
+        eksik = [str(a) for a in (secili or []) if str(a) not in var]
+        if eksik:
+            await merkez.yayinla({
+                "tip": "gunluk", "seviye": "uyari",
+                "metin": ("Zamanlanmış görev: kapsamdaki şu bitkiler artık yok, "
+                          "atlandı — " + ", ".join(sorted(eksik)[:8])
+                          + (f" (+{len(eksik) - 8})" if len(eksik) > 8 else ""))})
+    return adlar
 
 
 async def _zamanli_is_ekle(tip: str, etiket: str, adlar: list[str]) -> None:

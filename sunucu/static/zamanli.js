@@ -31,6 +31,13 @@
   let zamanlayici = null;
   let geriSayim = null;
   let duzenlenen = "";          // düzenlenen görevin kimliği ("" = yeni)
+  // SEÇİLİ BİTKİLER BURADA, DOM'da değil. Kutucukları her seferinde bu
+  // listeden çiziyoruz; sekme değişince bölüm yeniden çizilse de seçim
+  // kayboluyor olmasın — kullanıcı Tarla'ya gidip seçim yapıp geri
+  // dönüyor, o gidiş gelişte listenin durması gerekiyor.
+  let secili = [];
+  // Sunucunun tek görevde tuttuğu en fazla nokta (`zamanli._temiz`).
+  const AZAMI_NOKTA = 40;
 
   const $ = (s) => document.querySelector(s);
   const P = () => window.Panel || null;
@@ -111,13 +118,19 @@
             </div>
           </div>
           <p class="zm-is-uyari gizli" id="zm-is-uyari"></p>
-          <div class="satir-8 alt-hizali" id="zm-secili-satir" hidden>
-            <div class="alan esnek-alan">
-              <label for="zm-noktalar">Bitkiler (virgülle)</label>
-              <input type="text" id="zm-noktalar" placeholder="m1, m2">
+          <div id="zm-secim-bolum" hidden>
+            <div class="satir-8 alt-hizali">
+              <button class="dugme" id="d-zm-secim" type="button"
+                      title="Tarla sekmesinde seçtiğiniz bitkileri bu listeye ekler"
+                >Tarla'daki seçimi ekle</button>
+              <button class="dugme" id="d-zm-secim-bosalt" type="button">Hepsini kaldır</button>
+              <span class="alt-not" id="zm-secim-sayi"></span>
             </div>
-            <button class="dugme" id="d-zm-secim" type="button"
-                    title="Tarla sekmesinde seçili bitkileri buraya yazar">Seçimi al</button>
+            <p class="alt-not">Bitkileri <b>Tarla</b> sekmesindeki sahneden
+              seçin — kutu çizerek ya da tek tek dokunarak. Sonra buraya dönüp
+              yukarıdaki düğmeye basın; sekme değiştirmek ne oradaki seçimi
+              ne de buradaki listeyi siliyor.</p>
+            <div class="zm-kutucuklar" id="zm-kutucuklar"></div>
           </div>
           <div class="satir-8 alt-hizali">
             <button class="dugme birincil" id="d-zm-kaydet" type="button">Kaydet</button>
@@ -133,17 +146,98 @@
     $("#zm-is").onchange = isBak;
     $("#d-zm-kaydet").onclick = kaydet;
     $("#d-zm-vazgec").onclick = () => { formTemizle(); ciz(); };
-    $("#d-zm-secim").onclick = () => {
+    $("#d-zm-secim").onclick = sahnedenAl;
+    $("#d-zm-secim-bosalt").onclick = () => { secili = []; secimYaz(); };
+    secimYaz();
+  }
+
+  /* --------------------------------------------------------------- seçim
+   * Adları elle yazmak, Türkçe karakterli bir adda ("fesleğen-4") yazım
+   * hatasını kaçınılmaz yapıyordu ve yazdıktan sonra hangi bitkilerin
+   * seçildiği ancak metni okuyarak anlaşılıyordu. Seçim artık sahnede
+   * yapılıyor, burada yalnız görünüyor ve tek tek kaldırılabiliyor. */
+
+  /** Panelin bildiği bitki adları — türü yazılı noktalar.
+   *  Ayrı bir istek atmıyoruz: `app.js` nokta deposunu zaten tutuyor. */
+  function bitkiAdlari() {
+    const p = P();
+    const hepsi = (p && p.S && p.S.noktalar) || [];
+    return new Set(hepsi.filter((n) => n && n.tur).map((n) => String(n.ad)));
+  }
+
+  function sahnedenAl() {
+    const t = window.Tarla;
+    const adlar = (t && t.secimDurumu) ? t.secimDurumu() : [];
+    if (!adlar.length) {
+      hataYaz("Tarla sekmesinde seçili bitki yok — önce sahnede seçin.");
+      return;
+    }
+    // YALNIZ BİTKİLER. Kutu seçimi türsüz noktaları da alıyor; onlara
+    // nem ölçülmüyor, su verilmiyor. Sessizce eklemek, görevi hiç
+    // yapılmayacak satırlarla doldurmak olurdu.
+    const bitkiler = bitkiAdlari();
+    const alinan = adlar.filter((a) => bitkiler.has(String(a)));
+    const elenen = adlar.length - alinan.length;
+    const oncesi = secili.length;
+    for (const a of alinan) {
+      if (secili.length >= AZAMI_NOKTA) break;
+      if (!secili.includes(String(a))) secili.push(String(a));
+    }
+    secimYaz();
+    const eklenen = secili.length - oncesi;
+    const parca = [`${eklenen} bitki eklendi`];
+    if (elenen) parca.push(`${elenen} türsüz nokta alınmadı`);
+    if (secili.length >= AZAMI_NOKTA) parca.push(`liste ${AZAMI_NOKTA} ile sınırlı`);
+    hataYaz("");
+    notYaz(parca.join(" · "));
+  }
+
+  function secimYaz() {
+    const bolum = $("#zm-secim-bolum");
+    const kutu = $("#zm-kutucuklar");
+    const sayac = $("#zm-secim-sayi");
+    if (!kutu || !bolum) return;
+    const bitkiler = bitkiAdlari();
+    // Depo henüz yüklenmediyse "yok" damgası basmıyoruz: bilmediğimiz bir
+    // şeyi yok saymak, duran bir bitkiyi silinmiş göstermek olurdu.
+    const biliniyor = bitkiler.size > 0;
+    const yok = biliniyor ? secili.filter((a) => !bitkiler.has(a)) : [];
+
+    kutu.innerHTML = secili.length
+      ? secili.map((a) => {
+        const eksik = biliniyor && !bitkiler.has(a);
+        return `<span class="zm-kutucuk${eksik ? " zm-yok" : ""}" data-ad="${kacisli(a)}">
+          <b>${kacisli(a)}</b>${eksik ? '<i title="Bu bitki artık nokta deposunda yok">artık yok</i>' : ""}
+          <button type="button" class="zm-kutucuk-x" data-cikar="${kacisli(a)}"
+                  aria-label="${kacisli(a)} bitkisini listeden çıkar" title="Listeden çıkar">×</button>
+        </span>`;
+      }).join("")
+      : '<span class="zm-bos">Henüz bitki seçilmedi.</span>';
+
+    kutu.querySelectorAll("[data-cikar]").forEach((d) => {
+      d.onclick = () => {
+        secili = secili.filter((a) => a !== d.dataset.cikar);
+        secimYaz();
+      };
+    });
+
+    if (sayac) {
+      const p = [`${secili.length} bitki seçili`];
+      if (yok.length) p.push(`${yok.length} tanesi artık yok`);
+      sayac.textContent = p.join(" · ");
+      sayac.classList.toggle("zm-atlama", yok.length > 0);
+    }
+    // Sahnede kaç bitki seçili — düğmeye basmadan önce görünsün.
+    const d = $("#d-zm-secim");
+    if (d) {
       const t = window.Tarla;
-      const adlar = (t && t.secimDurumu) ? t.secimDurumu() : [];
-      if (!adlar.length) { hataYaz("Tarla sekmesinde seçili bitki yok."); return; }
-      hataYaz("");
-      $("#zm-noktalar").value = adlar.join(", ");
-    };
+      const n = (t && t.secimDurumu) ? t.secimDurumu().length : 0;
+      d.textContent = n ? `Tarla'daki seçimi ekle (${n})` : "Tarla'daki seçimi ekle";
+    }
   }
 
   function kapsamBak() {
-    const s = $("#zm-secili-satir");
+    const s = $("#zm-secim-bolum");
     if (s) s.hidden = $("#zm-kapsam").value !== "secili";
   }
 
@@ -162,7 +256,8 @@
   function formTemizle() {
     duzenlenen = "";
     $("#zm-ad").value = "";
-    $("#zm-noktalar").value = "";
+    secili = [];
+    secimYaz();
     $("#d-zm-kaydet").textContent = "Kaydet";
     $("#d-zm-vazgec").classList.add("gizli");
     kapsamBak();
@@ -174,7 +269,10 @@
     $("#zm-ad").value = g.ad || "";
     $("#zm-is").value = g.is;
     $("#zm-kapsam").value = g.kapsam;
-    $("#zm-noktalar").value = (g.noktalar || []).join(", ");
+    // KAYITLI GÖREVİN BİTKİLERİ DE KUTUCUK OLARAK GELİYOR: silinmiş bir
+    // bitki varsa düzenlerken hemen görünüyor.
+    secili = (g.noktalar || []).map(String);
+    secimYaz();
     const sn = sayi(g.aralik_sn, 900);
     if (sn >= 3600 && sn % 3600 === 0) {
       $("#zm-birim").value = "3600"; $("#zm-aralik").value = Math.round(sn / 3600);
@@ -227,8 +325,7 @@
       is: $("#zm-is").value,
       kapsam: $("#zm-kapsam").value,
       aralik_sn: aralik,
-      noktalar: $("#zm-noktalar").value.split(",")
-        .map((s) => s.trim()).filter(Boolean),
+      noktalar: secili.slice(),
     };
     if (duzenlenen) govde.kimlik = duzenlenen;
     try {
@@ -300,10 +397,8 @@
             : "bu açılıştan beri hiç"}</b></span>
           <span><i>Sayaç:</i> <b>${sayi(g.calisma_adet, 0)} çalıştı ·
             ${sayi(g.atlama_adet, 0)} atlandı</b></span>
-          ${g.kapsam === "secili"
-            ? `<span><i>Bitkiler:</i> <b>${kacisli((g.noktalar || []).join(", "))}</b></span>`
-            : ""}
         </div>
+        ${g.kapsam === "secili" ? kutucukSerit(g.noktalar || []) : ""}
         ${(veri.is_uyarilar || {})[g.is]
           ? `<div class="zm-is-uyari">${kacisli(veri.is_uyarilar[g.is])}</div>`
           : ""}
@@ -320,6 +415,9 @@
         </div>
       </div>`).join("");
 
+    // Nokta deposu formdan SONRA yüklenmiş olabilir: "artık yok" damgaları
+    // ve sahnedeki seçim sayısı her çizimde tazeleniyor.
+    secimYaz();
     liste.querySelectorAll(".zm-gorev").forEach((el) => {
       const g = gorevler.find((x) => x.kimlik === el.dataset.kimlik);
       if (!g) return;
@@ -342,6 +440,26 @@
       });
     });
     kalanYaz();
+  }
+
+  /** Kayıtlı görevin bitkileri — salt okunur kutucuklar.
+   *
+   * Eskiden virgülle ayrılmış tek bir metindi ve görevin hangi bitkileri
+   * kapsadığını anlamak için o metni okumak gerekiyordu. Silinmiş bitki
+   * burada da işaretli: görev onu sessizce atlıyor ve listede duran bir
+   * adın gerçekte var olmadığını kullanıcının görmesi gerekiyor. */
+  function kutucukSerit(adlar) {
+    const bitkiler = bitkiAdlari();
+    const biliniyor = bitkiler.size > 0;
+    const yok = biliniyor ? adlar.filter((a) => !bitkiler.has(String(a))) : [];
+    const etiket = `<i>Bitkiler:</i> <b>${adlar.length}</b>`
+      + (yok.length ? ` <b class="zm-atlama">(${yok.length} tanesi artık yok)</b>` : "");
+    return `<div class="zm-satirlar"><span>${etiket}</span></div>
+      <div class="zm-kutucuklar zm-salt">${adlar.map((a) => {
+        const eksik = biliniyor && !bitkiler.has(String(a));
+        return `<span class="zm-kutucuk${eksik ? " zm-yok" : ""}"><b>${kacisli(a)}</b>${
+          eksik ? '<i>artık yok</i>' : ""}</span>`;
+      }).join("")}</div>`;
   }
 
   /** Geri sayım: sunucunun verdiği "kalan"dan, ALINDIĞI andan beri geçen

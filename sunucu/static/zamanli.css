@@ -48,3 +48,43 @@
   background: rgba(217, 165, 32, .10);
   color: var(--uyari, #d9a520); font-size: var(--yazi-kucuk, 12px);
 }
+
+/* ------------------------------------------------------- bitki kutucuklari
+ * Secim artik metin degil: her bitki bir kutucuk, yaninda kaldirma carpisi.
+ * Elle yazilan bir listede "feslegen-4" gibi bir adda yazim hatasi
+ * kacinilmazdi ve yazdiktan sonra hangi bitkilerin secildigi ancak metni
+ * okuyarak anlasiliyordu. */
+.zm-kutucuklar {
+  display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0;
+}
+.zm-kutucuk {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: var(--yuzey, #191a18);
+  border: 1px solid var(--cizgi-2, #3f423c); border-radius: 999px;
+  padding: 3px 6px 3px 10px; font-size: var(--yazi-kucuk, 12px);
+  color: var(--metin, #f2f2ee);
+}
+.zm-kutucuk b { font-weight: 600; overflow-wrap: anywhere; }
+/* Silinmis bitki: kutucuk kaybolmuyor, ISARETLENIYOR. Sessizce dusurmek
+ * kullanicinin listede duran bir adin gercekte olmadigini gormemesi
+ * demekti. */
+.zm-kutucuk.zm-yok {
+  border-color: var(--uyari, #d9a520); border-style: dashed;
+  color: var(--uyari, #d9a520);
+}
+.zm-kutucuk.zm-yok b { text-decoration: line-through; }
+.zm-kutucuk i {
+  font-style: normal; font-size: 11px; opacity: .85; white-space: nowrap;
+}
+.zm-kutucuk-x {
+  background: none; border: 0; cursor: pointer; line-height: 1;
+  color: var(--metin-3, #82847a); font-size: 15px; padding: 0 4px;
+  border-radius: 50%;
+}
+.zm-kutucuk-x:hover { color: var(--kritik, #e05252); }
+/* Kayitli gorevin listesinde kutucuklar salt okunur: carpi yok, daha soluk. */
+.zm-kutucuklar.zm-salt .zm-kutucuk {
+  background: transparent; padding: 3px 10px;
+  color: var(--metin-2, #b9bab0);
+}
+.zm-bos { color: var(--metin-3, #82847a); font-size: var(--yazi-kucuk, 12px); }
