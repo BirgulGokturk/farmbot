@@ -92,6 +92,12 @@ window.BahceTuval = (function () {
     surukle: null,
     suruklendi: false,
     onizleme: null,        // bırakılırsa ne olacağı
+    // KAMERA. İzdüşüm (homografi) sabit kalıyor, kamera onun ÜSTÜNE
+    // bir ölçek/kaydırma olarak biniyor: yakınlaşınca arka plan yeniden
+    // çizilmiyor, önbellekli tuval olduğu gibi büyüyor.
+    kam: { o: 1.25, x: 0, y: 0, ho: 1.25, hx: 0, hy: 0 },
+    kamElle: false,        // kullanıcı kamerayı elle oynattı mı
+    gezinme: null,
     kutlama: [],           // biten işin küçük kutlaması
     sonIs: null,           // en son çalışan iş — bitişini yakalamak için
     t0: performance.now(),
@@ -1086,11 +1092,13 @@ window.BahceTuval = (function () {
     const en = Math.round(Math.max(enAd, enNem) + 16 + (b.susadi ? 13 : 0));
     const boy = 28;
 
-    const R = b.cizimPx / 2;
-    const yuk = yukseklikPx(16, b.v);
-    // Tepe noktası: kutunun tutunduğu yer.
-    const tx = b.x + R * 0.62;
-    const ty = b.y - yuk - R * 0.52;
+    // Kutu KAMERASIZ uzayda: bitkinin dünya noktası ekrana çevriliyor,
+    // yarıçap da kamera ölçeğiyle çarpılıyor. Yazı yakınlaşınca
+    // büyümüyor, baloncuk bitkinin tepesinde kalıyor.
+    const R = (b.cizimPx / 2) * S.kam.o;
+    const tepe = ekranNok(b.x, b.y - yukseklikPx(16, b.v));
+    const tx = tepe.x + R * 0.62;
+    const ty = tepe.y - R * 0.52;
     let x = Math.round(tx + 10);
     let yy = Math.round(ty - boy - 6);
     // Tuvalin dışına taşmasın.
@@ -1112,6 +1120,7 @@ window.BahceTuval = (function () {
     ct.beginPath();
     ct.arc(tx, ty, 2, 0, Math.PI * 2);
     ct.fill();
+    void tepe;
 
     ct.fillStyle = "rgba(16,18,15,0.88)";
     yuvarlakKutu(ct, x, yy, en, boy, 8);
@@ -1396,8 +1405,9 @@ window.BahceTuval = (function () {
     const calisan = kuy.calisan;
     const bas = aktifBas();
     const uv = mmUV(R.hx, R.hy);
-    const yer = yansit(kis(uv.u, 0, 1), kis(uv.v, 0, 1));
-    const kopruY = yukseklikPx(KOPRU_MM, uv.v);
+    const d = yansit(kis(uv.u, 0, 1), kis(uv.v, 0, 1));
+    const yer = ekranNok(d.x, d.y);
+    const kopruY = yukseklikPx(KOPRU_MM, uv.v) * S.kam.o;
 
     const bas1 = calisan ? calisan.etiket : (v.mesgul ? "Hareket ediyor" : "Bekliyor");
     // Hedef nokta ADI değil, TÜRÜ yazılıyor: "marul-3" kullanıcının
@@ -2057,7 +2067,19 @@ window.BahceTuval = (function () {
              { genislik: 0.24, dalga: true });
     ct.restore();
 
-    // Künye: ne, nereye, olgun çapı — ve olmuyorsa sebebi.
+  }
+
+  /** Önizlemenin künyesi — KAMERASIZ uzayda, sahnenin ölçeğinden
+   *  bağımsız okunsun diye. */
+  function onizlemeEtiketi(ct) {
+    const o = S.onizleme;
+    if (!o) return;
+    const tur = turBul(S.secilenTur);
+    if (!tur) return;
+    const uv = mmUV(o.x, o.y);
+    const d = yansit(uv.u, uv.v);
+    const p = ekranNok(d.x, d.y);
+    const r = Math.max(14, (sayi(tur.yayilim_mm) / 2) * mmPx(uv.v)) * S.kam.o;
     const bas1 = `${tur.ad} · ${Math.round(o.x)} / ${Math.round(o.y)} mm`;
     const alt = o.ok ? `olgun çapı ${Math.round(sayi(tur.yayilim_mm))} mm · bırakınca sorulacak`
                      : o.sebep;
@@ -2090,7 +2112,8 @@ window.BahceTuval = (function () {
   /** Ekrandaki noktadan yatak milimetresine; gözlere yakınsa GÖZE
    *  oturuyor — parmak birkaç milimetre şaşabilir, göz şaşmaz. */
   function birakmaYeri(ex, ey) {
-    const uv = ekranUV(ex, ey);
+    const w = dunya(ex, ey);
+    const uv = ekranUV(w.x, w.y);
     if (!uv) return null;
     const ham = uvMM(uv.u, uv.v);
     const g = S.gozler;
@@ -2216,6 +2239,70 @@ window.BahceTuval = (function () {
   }
 
   /* ==================================================================== *
+   * Kamera
+   *
+   * Yatak ekranın kahramanı ama uzaktan bakınca bitkiler nokta kalıyor.
+   * Varsayılan biraz yakın; tekerlek parmağın altındaki noktayı sabit
+   * tutarak yakınlaştırıyor, boş toprağı sürüklemek geziniyor, bir
+   * bitkiye çift dokunmak ona yumuşak bir geçişle yaklaşıyor.
+   *
+   * HEDEF VE ŞİMDİ AYRI. Kamera hedefe üstel yaklaşıyor (140 ms) —
+   * doğrusal geçiş cansız görünüyor, ani geçiş yerini kaybettiriyor.
+   * ==================================================================== */
+  const KAM_EN_AZ = 0.8, KAM_EN_COK = 4;
+
+  function kamYurut(dt) {
+    const k = S.kam;
+    const c = 1 - Math.exp(-dt / 0.14);
+    k.o += (k.ho - k.o) * c;
+    k.x += (k.hx - k.x) * c;
+    k.y += (k.hy - k.y) * c;
+    if (Math.abs(k.o - k.ho) < 0.0005) k.o = k.ho;
+    if (Math.abs(k.x - k.hx) < 0.2) k.x = k.hx;
+    if (Math.abs(k.y - k.hy) < 0.2) k.y = k.hy;
+  }
+
+  /** Kameranın durduğu yer sınırlanıyor: yatak ekrandan tamamen
+   *  kaçamasın. Yarısı dışarı çıkabilir, fazlası kaybolmak demek. */
+  function kamSinirla() {
+    const k = S.kam;
+    const pay = 0.5;
+    const enCok = { x: S.en * (k.ho - 1) / 2 + S.en * pay,
+                    y: S.boy * (k.ho - 1) / 2 + S.boy * pay };
+    k.hx = kis(k.hx, -enCok.x, enCok.x);
+    k.hy = kis(k.hy, -enCok.y, enCok.y);
+  }
+
+  /** Ekran pikselinden DÜNYA (izdüşüm) pikseline. */
+  function dunya(ex, ey) {
+    const k = S.kam;
+    return { x: (ex - k.x) / k.o, y: (ey - k.y) / k.o };
+  }
+
+  /** Dünya pikselinden ekran pikseline — etiketler bu uzayda çiziliyor
+   *  ki yakınlaşınca yazı da büyümesin. */
+  function ekranNok(wx, wy) {
+    const k = S.kam;
+    return { x: wx * k.o + k.x, y: wy * k.o + k.y };
+  }
+
+  /** Bir dünya noktasını ekranın istenen yerine getirir. */
+  function kamOdak(wx, wy, oran, ekranX, ekranY) {
+    const k = S.kam;
+    k.ho = kis(oran, KAM_EN_AZ, KAM_EN_COK);
+    k.hx = (ekranX == null ? S.en / 2 : ekranX) - wx * k.ho;
+    k.hy = (ekranY == null ? S.boy / 2 : ekranY) - wy * k.ho;
+    kamSinirla();
+    surdur();
+  }
+
+  /** Parmağın altındaki noktayı sabit tutarak yakınlaştırır. */
+  function kamZum(oran, ekranX, ekranY) {
+    const w = dunya(ekranX, ekranY);
+    kamOdak(w.x, w.y, oran, ekranX, ekranY);
+  }
+
+  /* ==================================================================== *
    * Kutlama
    *
    * İŞİN BİTTİĞİ HABERİ KUYRUKTAN GELİYOR, tahminden değil: sunucu işi
@@ -2312,12 +2399,16 @@ window.BahceTuval = (function () {
     robotYurut(dt);
     const I = isik();
 
+    kamYurut(dt);
     statikCiz();
     ct.setTransform(S.dpr, 0, 0, S.dpr, 0, 0);
     ct.clearRect(0, 0, S.en, S.boy);
-    if (S.statik) ct.drawImage(S.statik, 0, 0, S.en, S.boy);
-
     if (!G.ileri) return;
+
+    // Sahne kameranın altında çiziliyor; etiketler sonra, kamerasız.
+    const k = S.kam;
+    ct.setTransform(S.dpr * k.o, 0, 0, S.dpr * k.o, S.dpr * k.x, S.dpr * k.y);
+    if (S.statik) ct.drawImage(S.statik, 0, 0, S.en, S.boy);
     // Gözler zeminin ÜSTÜNDE, bitkilerin ALTINDA: göz bir toprak
     // işareti, bitki onun üstünde duruyor.
     gozleriCiz(ct, S.sakin ? 0 : t);
@@ -2352,7 +2443,12 @@ window.BahceTuval = (function () {
       secilen.unshift(vurgulu);
     }
     kutlamaCiz(ct, t);
+
+    // ETİKETLER KAMERASIZ: yakınlaştırınca yazı büyümesin, baloncuk
+    // sahnenin ölçeğinden bağımsız okunur kalsın.
+    ct.setTransform(S.dpr, 0, 0, S.dpr, 0, 0);
     const kutular = [];
+    onizlemeEtiketi(ct);
     makineEtiketi(ct);
     secilen.forEach((b) => etiketCiz(ct, b, kutular, I));
 
@@ -2379,6 +2475,15 @@ window.BahceTuval = (function () {
     geometriKur();
     bitkileriHazirla();
     S.statikImza = "";
+    if (!S.kamElle) {
+      // Varsayılan biraz yakın ve yatağa ortalı: uzaktan bakınca
+      // bitkiler nokta kalıyordu.
+      S.kam.ho = 1.25;
+      kamOdak(S.en / 2, S.boy / 2, 1.25);
+      S.kam.o = S.kam.ho; S.kam.x = S.kam.hx; S.kam.y = S.kam.hy;
+    } else {
+      kamSinirla();
+    }
     return true;
   }
 
@@ -2566,9 +2671,48 @@ window.BahceTuval = (function () {
     };
     // Fare: üzerine gelme. Dokunmatikte "üzerine gelme" diye bir şey
     // yok — orada dokunuş doğrudan kartı açıyor.
-    tv.addEventListener("pointermove", (o) => {
-      if (S.surukle) return;               // sürükleme belge düzeyinde
+    // TEKERLEK: parmağın altındaki nokta sabit kalıyor.
+    tv.addEventListener("wheel", (o) => {
+      o.preventDefault();
       const p = yerel(o);
+      S.kamElle = true;
+      kamZum(S.kam.ho * (o.deltaY < 0 ? 1.16 : 1 / 1.16), p.x, p.y);
+    }, { passive: false });
+
+    // BOŞ TOPRAĞI SÜRÜKLEMEK GEZİNİYOR. Bitkinin üstünden başlayan
+    // sürükleme gezinme sayılmıyor: orası dokunma hedefi.
+    tv.addEventListener("pointerdown", (o) => {
+      if (S.secilenTur) return;
+      const p = yerel(o);
+      const w = dunya(p.x, p.y);
+      if (bitkiBul(w.x, w.y)) return;
+      tv.setPointerCapture(o.pointerId);
+      S.gezinme = { id: o.pointerId, x: o.clientX, y: o.clientY,
+                    kx: S.kam.hx, ky: S.kam.hy, tasindi: false };
+    });
+
+    tv.addEventListener("pointermove", (o) => {
+      if (S.surukle) return;               // tohum sürükleme belge düzeyinde
+      // Gezinme birebir: kamera hedefi de o anki değeri de aynı anda
+      // gidiyor, yoksa parmağın altındaki toprak geriden geliyor.
+      if (S.gezinme && S.gezinme.id === o.pointerId) {
+        const dx = o.clientX - S.gezinme.x, dy = o.clientY - S.gezinme.y;
+        if (!S.gezinme.tasindi && Math.hypot(dx, dy) > 5) {
+          S.gezinme.tasindi = true;
+          S.kamElle = true;
+          tv.style.cursor = "grabbing";
+        }
+        if (S.gezinme.tasindi) {
+          S.kam.hx = S.gezinme.kx + dx;
+          S.kam.hy = S.gezinme.ky + dy;
+          kamSinirla();
+          S.kam.x = S.kam.hx; S.kam.y = S.kam.hy;
+          surdur();
+        }
+        return;
+      }
+      const p = yerel(o);
+      const w = dunya(p.x, p.y);
       // Elde tohum varsa toprak bir bırakma yeri: önizleme onu izliyor.
       if (S.secilenTur && o.pointerType !== "touch") {
         onizlemeTazele(p.x, p.y);
@@ -2576,10 +2720,32 @@ window.BahceTuval = (function () {
         return;
       }
       if (o.pointerType === "touch") return;
-      const b = bitkiBul(p.x, p.y);
+      const b = bitkiBul(w.x, w.y);
       const ad = b ? b.ad : "";
       tv.style.cursor = b ? "pointer" : "default";
       if (ad !== S.uzerinde) { S.uzerinde = ad; surdur(); }
+    });
+
+    const gezinmeBitir = (o) => {
+      if (!S.gezinme || S.gezinme.id !== o.pointerId) return;
+      const tasindi = S.gezinme.tasindi;
+      S.gezinme = null;
+      tv.style.cursor = "default";
+      if (tasindi) S.suruklendi = true;     // bunu tıklama sayma
+    };
+    tv.addEventListener("pointerup", gezinmeBitir);
+    tv.addEventListener("pointercancel", gezinmeBitir);
+
+    // ÇİFT DOKUNUŞ: bitkiye yumuşak geçişle yaklaş, boşluğa basınca
+    // varsayılan uzaklığa dön.
+    tv.addEventListener("dblclick", (o) => {
+      const p = yerel(o);
+      const w = dunya(p.x, p.y);
+      const b = bitkiBul(w.x, w.y);
+      S.kamElle = true;
+      if (b) kamOdak(b.x, b.y - yukseklikPx(16, b.v), 2.4);
+      else if (S.kam.ho > 1.4) kamOdak(S.en / 2, S.boy / 2, 1.25);
+      else kamZum(2.2, p.x, p.y);
     });
     tv.addEventListener("pointerleave", () => {
       if (S.uzerinde) { S.uzerinde = ""; surdur(); }
@@ -2588,6 +2754,7 @@ window.BahceTuval = (function () {
     tv.addEventListener("click", (o) => {
       if (S.suruklendi) { S.suruklendi = false; return; }
       const p = yerel(o);
+      const w = dunya(p.x, p.y);
       // TOHUM ELDEYKEN TOPRAĞA DOKUNMAK DA EKİYOR: dokunmatikte
       // sürüklemeyi kendiliğinden bulamayan biri gözde kalmasın.
       if (S.secilenTur) {
@@ -2603,7 +2770,7 @@ window.BahceTuval = (function () {
         }
         return;
       }
-      const b = bitkiBul(p.x, p.y);
+      const b = bitkiBul(w.x, w.y);
       if (b) kartAc(b.ad);
     });
 
@@ -2621,7 +2788,10 @@ window.BahceTuval = (function () {
     addEventListener("keydown", (o) => {
       if (o.key !== "Escape") return;
       if (S.kartAd) { kartKapat(); return; }
-      if (S.secilenTur) tohumSec("");
+      if (S.secilenTur) { tohumSec(""); return; }
+      // Elde bir şey yoksa Escape kamerayı varsayılana döndürüyor.
+      S.kamElle = false;
+      kamOdak(S.en / 2, S.boy / 2, 1.25);
     });
 
     ikonBagla("#bt-sakin", "farmbot_bt_sakin", (a) => {
@@ -2655,6 +2825,8 @@ window.BahceTuval = (function () {
       en: S.en, boy: S.boy, dpr: S.dpr,
       bitki: S.bitki.length, kare: S.kare,
       yatakPx: Math.round(G.enPx), duvarPx: Math.round(G.duvarPx),
+      kam: [Math.round(S.kam.o * 100) / 100, Math.round(S.kam.x),
+            Math.round(S.kam.y)],
       dolgu: S.en ? Math.round(G.enPx / S.en * 100) : 0,   // yatak ekranın yüzde kaçı
       bagli: !!(S.veri || {}).bagli, hata: S.hata,
       robot: S.robot.gecerli
