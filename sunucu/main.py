@@ -3506,9 +3506,19 @@ def _bahce_veri() -> dict[str, Any]:
                        for k, v in sorted(ertelenmis.items(), key=lambda p: p[1])],
         "seri": bahce.seri(gunler, simdi),
         "kuyruk": kuyruk.goruntu(),
+        # ÇAPIN NEREDEN GELDİĞİ DE GİDİYOR. Katalogda marul 250 mm, havuç
+        # 100 mm yazıyor; makinede bütün türler aynı küçük çapla
+        # görünüyorsa sebep tür EZMESİ, katalog değil. `ezili[alan]`
+        # ezilen alanın KATALOGDAKİ hâlini tutuyor: anahtar varsa değer
+        # elle konmuş demek. Panel bunu yazabilsin ve tek dokunuşla geri
+        # alabilsin diye ikisi de dönüyor — sayının nereden geldiğini
+        # göstermeden "yanlış" demek, kullanıcıya sebebini söylemeden iş
+        # yaptırmak olurdu.
         "turler": [{"slug": t.get("slug"), "ad": t.get("name_tr"),
                     "simge": t.get("icon"), "renk": t.get("color"),
                     "yayilim_mm": t.get("spread_mm"),
+                    "yayilim_ezili": "spread_mm" in (t.get("ezili") or {}),
+                    "yayilim_katalog": (t.get("ezili") or {}).get("spread_mm"),
                     "olgun_gun": t.get("days_to_harvest")}
                    for t in turler.hepsi()],
         "kamera": {

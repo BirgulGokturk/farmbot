@@ -1841,19 +1841,50 @@ window.BahceTuval = (function () {
     const bahcede = new Set((v.bitkiler || []).map((b) => b.tur));
     const sirali = [...turler].sort((a, b) =>
       (bahcede.has(b.slug) ? 1 : 0) - (bahcede.has(a.slug) ? 1 : 0));
-    raf.innerHTML = sirali.map((t) => `
+    raf.innerHTML = sirali.map((t) => {
+      // ÇAPIN KAYNAĞI YAZIYOR. Katalogda marul 250 mm; makinede bütün
+      // türler aynı küçük çapla görünüyorsa sebep bir tür EZMESİ ve
+      // kullanıcı bunu ancak yazarsak görebilir. Ezme varsa katalog
+      // değeri de yazıyor ve yanında geri alma düğmesi duruyor.
+      const cap = Math.round(sayi(t.yayilim_mm));
+      const kat = t.yayilim_katalog == null ? null : Math.round(sayi(t.yayilim_katalog));
+      const ezili = !!t.yayilim_ezili && kat != null && kat !== cap;
+      const alt = !hazne.has(t.slug)
+        ? '<span class="haznesiz">haznede tohumu yok</span>'
+        : (ezili
+            ? `<span class="ezili">olgun çapı ${cap} mm — elle konmuş`
+              + ` (katalog ${kat} mm)</span>`
+            : `olgun çapı ${cap} mm`);
+      return `
       <button class="bt-tohum" type="button" data-tur="${kacisli(t.slug)}"
               data-makine="1" aria-pressed="false"
               aria-label="${kacisli(t.ad)} — toprağa sürükleyin ya da dokunup bir göz seçin">
         <span class="im">${kacisli(t.simge || "🌱")}</span>
-        <span>${kacisli(t.ad)}<small>${
-          hazne.has(t.slug)
-            ? `olgun çapı ${Math.round(sayi(t.yayilim_mm))} mm`
-            : '<span class="haznesiz">haznede tohumu yok</span>'}</small></span>
-      </button>`).join("");
+        <span>${kacisli(t.ad)}<small>${alt}</small></span>
+        ${ezili ? `<i class="bt-geri" role="button" tabindex="0"
+             data-geri="${kacisli(t.slug)}"
+             title="Çapı katalogdaki ${kat} mm değerine döndür">↺</i>` : ""}
+      </button>`;
+    }).join("");
+    raf.querySelectorAll("[data-geri]").forEach((d) => {
+      d.addEventListener("pointerdown", (o) => o.stopPropagation());
+      d.addEventListener("click", async (o) => {
+        o.preventDefault();
+        o.stopPropagation();
+        try {
+          await api(`/api/turler?slug=${encodeURIComponent(d.dataset.geri)}`
+                    + "&alan=spread_mm", { method: "DELETE" });
+          gunluk("✓ Çap katalog değerine döndü", "ok");
+          raf.dataset.imza = "";
+          await yukle();
+          if (S.secilenTur) tohumSec(S.secilenTur);
+        } catch (hata) { gunluk(`✕ ${hata.message}`, "hata"); }
+      });
+    });
     raf.querySelectorAll(".bt-tohum").forEach((d) => {
       d.addEventListener("pointerdown", surukleBasla);
       d.addEventListener("click", (o) => {
+        if (o.target.closest("[data-geri]")) return;
         // Sürükleme olduysa tıklamayı yutuyoruz: parmağını kaldırınca
         // tohum hem bırakılıp hem seçilmiş olmasın.
         if (S.suruklendi) { S.suruklendi = false; return; }

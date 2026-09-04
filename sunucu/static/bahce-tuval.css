@@ -282,3 +282,21 @@ body.bahce-tuval .bt { flex: 1 1 auto; }
   filter: drop-shadow(0 4px 6px rgba(0, 0, 0, .55));
 }
 .bt-hayalet[hidden] { display: none; }
+
+/* Çapı elle konmuş tür: sayı yazıyor, katalog değeri parantezde ve
+   yanında geri alma düğmesi. Yanlış bir sayıyı sessizce düzeltmek
+   yerine nereden geldiğini söylemek, kullanıcıya kararı bırakıyor. */
+.bt-tohum .ezili { color: var(--uyari); }
+.bt-geri {
+  font-style: normal;
+  line-height: 1;
+  color: var(--metin-3);
+  background: var(--yuzey);
+  border-radius: 999px;
+  width: 22px; height: 22px;
+  display: inline-grid;
+  place-items: center;
+  cursor: pointer;
+  flex: none;
+}
+.bt-geri:hover { color: var(--metin); }
