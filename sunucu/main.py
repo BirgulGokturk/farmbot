@@ -3538,6 +3538,12 @@ def _bahce_veri() -> dict[str, Any]:
         "hazne_turleri": _bahce_hazne_turleri(),
         "bolgeler": durum.get("bolgeler") or [],
         "konum": durum.get("konum") or {},
+        # Z REFERANSLARI. Bahçe sahnesi ucun toprağa inişini çiziyor ve
+        # bunu ÖLÇÜLEN z ile yapıyor: yerden yükseklik = z - toprak_z.
+        # İkisi olmadan iniş bir canlandırma olurdu; sahne o zaman ucu
+        # sabit bir yükseklikte çiziyor ve sayı yazmıyor.
+        "toprak_z": durum.get("toprak_z"),
+        "guvenli_z": durum.get("guvenli_z"),
         "ekim": _bahce_ekim_ozet(),
         "mesgul": _bahce_mesgul(),
         "bagli": bool(durum.get("bagli")),

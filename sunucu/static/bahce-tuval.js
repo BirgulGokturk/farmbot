@@ -81,6 +81,8 @@ window.BahceTuval = (function () {
     kare: 0,
     dongu: 0,
     bitki: [],             // çizime hazır bitkiler (derinliğe göre sıralı)
+    robot: { hx: 0, hy: 0, hz: null, gecerli: false },
+    sonKare: 0,
     t0: performance.now(),
   };
 
@@ -1128,6 +1130,304 @@ window.BahceTuval = (function () {
   }
 
   /* ==================================================================== *
+   * Makine
+   *
+   * Üstten bakışta makine bir nokta değil: köprü uzun kenar boyunca
+   * (makine Y'sinde) yürüyor ve X boyunca uzanıyor, kızak köprünün
+   * üstünde X'te kayıyor. `makine.js` içindeki 3B sahne de böyle
+   * kuruyor; iki ekranın aynı makineyi anlatması gerekiyor.
+   *
+   * KONUM BİLDİRİLMİYORSA ÇİZİLMİYOR. Robotu "herhâlde şuradadır" diye
+   * bir yere koymak, bu ekranın söyleyebileceği en kötü yalan olurdu.
+   *
+   * HAREKET YUMUŞATILIYOR, UYDURULMUYOR. Durum paketi yarım saniyede bir
+   * geliyor; çizim onu doğrudan izlerse makine kare kare zıplıyor.
+   * Çizilen nokta bildirilen noktaya üstel olarak yaklaşıyor — yani her
+   * zaman ölçülen konuma DOĞRU gidiyor, onu geçmiyor ve varmadığı bir
+   * yere gitmiyor. Gecikme sabiti 90 ms; paketler arasında akıcı, paket
+   * gelince bir kare içinde yakalıyor.
+   * ==================================================================== */
+
+  /* Köprünün toprağın üstündeki görsel yüksekliği (mm). Ölçülen bir
+     değer DEĞİL — z ekseninin toplam boyu paketten gelmiyor. Sayı
+     yazmıyoruz, yalnız köprüyü toprağın üstünde bir yere koyuyoruz. */
+  const KOPRU_MM = 330;
+
+  function robotHedef() {
+    const k = (S.veri && S.veri.konum) || {};
+    if (k.x == null || k.y == null || !(S.veri || {}).bagli) return null;
+    return { x: sayi(k.x), y: sayi(k.y), z: k.z == null ? null : sayi(k.z) };
+  }
+
+  /** Çizilen konumu ölçülen konuma yaklaştırır. */
+  function robotYurut(dt) {
+    const h = robotHedef();
+    const R = S.robot;
+    if (!h) { R.gecerli = false; return; }
+    if (!R.gecerli) {
+      R.hx = h.x; R.hy = h.y; R.hz = h.z;
+      R.gecerli = true;
+      return;
+    }
+    const k = 1 - Math.exp(-dt / 0.09);
+    R.hx += (h.x - R.hx) * k;
+    R.hy += (h.y - R.hy) * k;
+    if (h.z != null) R.hz = R.hz == null ? h.z : R.hz + (h.z - R.hz) * k;
+  }
+
+  /** Çalışan iş hangi başı kullanıyor? İş yoksa boş — hiçbir baş aktif
+   *  değil demek, "herhâlde sulama başlığıdır" demek değil. */
+  function aktifBasKimlik() {
+    const v = S.veri || {};
+    const calisan = (v.kuyruk || {}).calisan;
+    if (!calisan) return "";
+    return String((v.is_basi || {})[calisan.tip] || "");
+  }
+
+  function aktifBas() {
+    const kimlik = aktifBasKimlik();
+    if (!kimlik) return null;
+    const b = ((S.veri || {}).baslar || {})[kimlik];
+    return b ? Object.assign({ kimlik }, b) : null;
+  }
+
+  /** Bir başın İŞ NOKTASI: makine hedefe kaymayı EKLEYEREK gidiyor,
+   *  yani işin olduğu yer makinenin yeri EKSİ kayma (`baslar.geri_al`).
+   *  İkisini aynı yere çizmek, ekimin yanlış yere düştüğü hatayı
+   *  ekranda tekrarlamak olurdu. */
+  function basNoktasi(x, y, bas) {
+    return { x: sayi(x) - sayi(bas.dx), y: sayi(y) - sayi(bas.dy) };
+  }
+
+  /** Ucun toprağın ÜSTÜNDEKİ yüksekliği (mm) — ÖLÇÜLEN z'den.
+   *  z ya da toprak_z yoksa null: iniş çizilmiyor, uç köprüde duruyor. */
+  function ucYuksekligi() {
+    const v = S.veri || {};
+    const z = S.robot.hz;
+    const toprak = v.toprak_z;
+    if (z == null || toprak == null) return null;
+    return Math.max(0, sayi(z) - sayi(toprak));
+  }
+
+  function makineCiz(ct, t, I) {
+    const R = S.robot;
+    if (!R.gecerli || !G.ileri) return;
+    const uv = mmUV(R.hx, R.hy);
+    if (uv.v < -0.5 || uv.v > 1.5) return;      // yatağın çok dışında
+
+    const o = mmPx(kis(uv.v, 0, 1));
+    const kopruY = yukseklikPx(KOPRU_MM, uv.v);
+    const solA = yansit(-0.06, uv.v);
+    const sagA = yansit(1.06, uv.v);
+    const kizakA = yansit(kis(uv.u, -0.06, 1.06), uv.v);
+
+    // Köprünün toprağa düşen gölgesi — makinenin bahçenin ÜSTÜNDEN
+    // geçtiği buradan anlaşılıyor.
+    ct.save();
+    ct.globalAlpha = 0.20 + I.gunduz * 0.18;
+    ct.strokeStyle = "#000";
+    ct.lineWidth = Math.max(4, 26 * o);
+    ct.beginPath();
+    ct.moveTo(solA.x + I.gx * kopruY * 0.35, solA.y + 6 * o);
+    ct.lineTo(sagA.x + I.gx * kopruY * 0.35, sagA.y + 6 * o);
+    ct.stroke();
+    ct.restore();
+
+    const sol = { x: solA.x, y: solA.y - kopruY };
+    const sag = { x: sagA.x, y: sagA.y - kopruY };
+    const kizak = { x: kizakA.x, y: kizakA.y - kopruY };
+
+    // Ayaklar: köprünün iki ucundan raya iniyor.
+    ct.strokeStyle = "#5b6169";
+    ct.lineWidth = Math.max(3, 22 * o);
+    ct.lineCap = "butt";
+    [[sol, solA], [sag, sagA]].forEach(([a, b]) => {
+      ct.beginPath(); ct.moveTo(a.x, a.y); ct.lineTo(b.x, b.y); ct.stroke();
+    });
+
+    // Kiriş
+    const kalin = Math.max(5, 34 * o);
+    const g = ct.createLinearGradient(0, sol.y - kalin / 2, 0, sol.y + kalin / 2);
+    g.addColorStop(0, "#c3cad2");
+    g.addColorStop(0.45, "#8b939c");
+    g.addColorStop(1, "#4d545b");
+    ct.strokeStyle = g;
+    ct.lineWidth = kalin;
+    ct.lineCap = "round";
+    ct.beginPath(); ct.moveTo(sol.x, sol.y); ct.lineTo(sag.x, sag.y); ct.stroke();
+
+    // Kızak
+    const kw = Math.max(14, 78 * o), kh = Math.max(11, 60 * o);
+    ct.fillStyle = "#2f353b";
+    yuvarlakKutu(ct, kizak.x - kw / 2, kizak.y - kh / 2, kw, kh, Math.max(2, 6 * o));
+    ct.fill();
+    const g2 = ct.createLinearGradient(0, kizak.y - kh / 2, 0, kizak.y + kh / 2);
+    g2.addColorStop(0, "#dfe5ea");
+    g2.addColorStop(1, "#79818a");
+    ct.fillStyle = g2;
+    yuvarlakKutu(ct, kizak.x - kw / 2 + 2, kizak.y - kh / 2 + 2, kw - 4, kh * 0.55,
+                 Math.max(2, 4 * o));
+    ct.fill();
+
+    // Aktif baş ve o an yapılan iş.
+    const bas = aktifBas();
+    const tip = ((S.veri.kuyruk || {}).calisan || {}).tip || "";
+    if (bas) {
+      const np = basNoktasi(R.hx, R.hy, bas);
+      const nuv = mmUV(np.x, np.y);
+      const yer = yansit(nuv.u, nuv.v);
+      // İnİŞ ÖLÇÜLEN z'DEN. z yoksa uç köprüde duruyor ve inmiyor —
+      // inişi canlandırmak, olmayan bir ölçümü çizmek olurdu.
+      const yuk = ucYuksekligi();
+      const ucY = yuk == null ? yer.y - kopruY
+                              : yer.y - yukseklikPx(yuk, nuv.v);
+      // Kolon: kızaktan uca.
+      ct.strokeStyle = "#9aa2aa";
+      ct.lineWidth = Math.max(2, 12 * o);
+      ct.beginPath();
+      ct.moveTo(kizak.x, kizak.y);
+      ct.lineTo(yer.x, ucY);
+      ct.stroke();
+
+      if (tip === "sula") suCiz(ct, yer, ucY, o, t);
+      else if (tip === "nem") probCiz(ct, yer, ucY, o);
+      else if (tip === "ek") tohumCiz(ct, yer, ucY, o, t);
+
+      // Uç işareti
+      ct.fillStyle = tip === "sula" ? "#4fb8e8"
+                   : tip === "nem" ? "#d9a520"
+                   : tip === "ek" ? "#8fd27a" : "#cfd6dd";
+      ct.beginPath();
+      ct.arc(yer.x, ucY, Math.max(3, 11 * o), 0, Math.PI * 2);
+      ct.fill();
+    }
+  }
+
+  /** SU — sulama İŞİ çalışırken. Röle durumu `olcum` paketinde ve beş
+   *  saniyede bir geliyor; üç saniyelik bir sulamayı kaçırırdı.
+   *  "Sulama işi çalışıyor" ölçülen bir gerçek ve ekranın dediği bu. */
+  function suCiz(ct, yer, ucY, o, t) {
+    const boy = yer.y - ucY;
+    if (boy <= 2) return;
+    for (let i = 0; i < 5; i++) {
+      const f = ((t * 1.5 + i * 0.2) % 1);
+      const y = ucY + boy * f;
+      ct.globalAlpha = 1 - f * 0.7;
+      ct.fillStyle = "#4fb8e8";
+      ct.beginPath();
+      ct.ellipse(yer.x + (i - 2) * 1.6 * o, y, Math.max(1.2, 4 * o),
+                 Math.max(2, 8 * o), 0, 0, Math.PI * 2);
+      ct.fill();
+    }
+    ct.globalAlpha = 1;
+    // Islanan toprak: sulama sürdükçe büyüyen koyu leke.
+    const r = Math.max(6, (26 + Math.sin(t * 3) * 3) * o * 2);
+    const g = ct.createRadialGradient(yer.x, yer.y, 1, yer.x, yer.y, r);
+    g.addColorStop(0, "rgba(20,40,60,0.55)");
+    g.addColorStop(1, "rgba(20,40,60,0)");
+    ct.fillStyle = g;
+    ct.beginPath();
+    ct.ellipse(yer.x, yer.y, r, r * 0.62, 0, 0, Math.PI * 2);
+    ct.fill();
+  }
+
+  function probCiz(ct, yer, ucY, o) {
+    ct.strokeStyle = "#e2e8ee";
+    ct.lineWidth = Math.max(1.5, 7 * o);
+    ct.lineCap = "round";
+    ct.beginPath();
+    ct.moveTo(yer.x, ucY);
+    ct.lineTo(yer.x, yer.y + Math.max(2, 10 * o));   // toprağın içine
+    ct.stroke();
+    ct.fillStyle = "rgba(217,165,32,0.30)";
+    ct.beginPath();
+    ct.ellipse(yer.x, yer.y, Math.max(4, 16 * o), Math.max(2, 9 * o), 0, 0, Math.PI * 2);
+    ct.fill();
+  }
+
+  function tohumCiz(ct, yer, ucY, o, t) {
+    const boy = yer.y - ucY;
+    const f = (t * 0.9) % 1;
+    ct.fillStyle = "#d9c08a";
+    ct.beginPath();
+    ct.ellipse(yer.x, ucY + boy * f, Math.max(1.5, 5 * o), Math.max(2, 6 * o),
+               0, 0, Math.PI * 2);
+    ct.fill();
+    // Açılan çukur
+    ct.fillStyle = "rgba(0,0,0,0.35)";
+    ct.beginPath();
+    ct.ellipse(yer.x, yer.y, Math.max(4, 14 * o), Math.max(2, 8 * o), 0, 0, Math.PI * 2);
+    ct.fill();
+  }
+
+  /** Makinenin künyesi: ne yaptığı, nereye gittiği, hangi başın çalıştığı
+   *  ve ölçülen konumu. Kopukken hiç çizilmiyor — kopuk bir makinenin
+   *  "ne yaptığı" yok. */
+  function makineEtiketi(ct) {
+    const R = S.robot;
+    if (!R.gecerli) return;
+    const v = S.veri || {};
+    const kuy = v.kuyruk || {};
+    const calisan = kuy.calisan;
+    const bas = aktifBas();
+    const uv = mmUV(R.hx, R.hy);
+    const yer = yansit(kis(uv.u, 0, 1), kis(uv.v, 0, 1));
+    const kopruY = yukseklikPx(KOPRU_MM, uv.v);
+
+    const bas1 = calisan ? calisan.etiket : (v.mesgul ? "Hareket ediyor" : "Bekliyor");
+    // Hedef nokta ADI değil, TÜRÜ yazılıyor: "marul-3" kullanıcının
+    // koyduğu bir ad değil, sunucunun ürettiği bir anahtar.
+    const adlar = (calisan && calisan.noktalar) || [];
+    const turAd = (ad) => {
+      const b = (v.bitkiler || []).find((x) => x.ad === ad);
+      return b ? (b.tur_ad || b.tur) : ad;
+    };
+    const hedef = adlar.length
+      ? adlar.slice(0, 2).map(turAd).join(", ")
+        + (adlar.length > 2 ? ` +${adlar.length - 2}` : "")
+      : "";
+    const alt = [
+      `X ${R.hx.toFixed(0)} · Y ${R.hy.toFixed(0)} mm`,
+      bas ? (bas.ad || bas.kimlik) : "",
+      hedef ? `→ ${hedef}` : "",
+    ].filter(Boolean).join("  ·  ");
+
+    ct.font = yazTipi(11, true);
+    const en = Math.round(Math.max(ct.measureText(bas1).width,
+                                   (ct.font = yazTipi(10, false),
+                                    ct.measureText(alt).width)) + 18);
+    const boy = 30;
+    let x = Math.round(yer.x + 16);
+    const yy = Math.round(yer.y - kopruY - boy - 14);
+    if (x + en > S.en - 6) x = Math.round(yer.x - 16 - en);
+
+    ct.strokeStyle = "rgba(255,255,255,0.30)";
+    ct.lineWidth = 1;
+    ct.beginPath();
+    ct.moveTo(yer.x, yer.y - kopruY);
+    ct.lineTo(x < yer.x ? x + en : x, yy + boy - 4);
+    ct.stroke();
+
+    ct.fillStyle = "rgba(16,18,15,0.90)";
+    yuvarlakKutu(ct, x, yy, en, boy, 8);
+    ct.fill();
+    ct.save();
+    yuvarlakKutu(ct, x, yy, en, boy, 8);
+    ct.clip();
+    ct.fillStyle = v.mesgul ? "#4a90e2" : "#7c8089";
+    ct.fillRect(x, yy, 3, boy);
+    ct.restore();
+
+    ct.textBaseline = "top";
+    ct.fillStyle = "#f2f2ee";
+    ct.font = yazTipi(11, true);
+    ct.fillText(bas1, x + 9, yy + 4);
+    ct.font = yazTipi(10, false);
+    ct.fillStyle = "#b9bab0";
+    ct.fillText(alt, x + 9, yy + 17);
+  }
+
+  /* ==================================================================== *
    * Veriden çizime
    * ==================================================================== */
   function bitkileriHazirla() {
@@ -1162,7 +1462,13 @@ window.BahceTuval = (function () {
   function ciz() {
     const ct = S.ct;
     if (!ct || !S.en || !S.boy) return;
-    const t = (performance.now() - S.t0) / 1000;
+    const simdi = performance.now();
+    const t = (simdi - S.t0) / 1000;
+    // Kareler arası gerçek süre: hareketin yumuşatması kare hızına
+    // değil ZAMANA bağlı olsun, yavaş bir cihazda da aynı hızda vardır.
+    const dt = kis((simdi - (S.sonKare || simdi)) / 1000, 0, 0.25);
+    S.sonKare = simdi;
+    robotYurut(dt);
     const I = isik();
 
     statikCiz();
@@ -1172,6 +1478,7 @@ window.BahceTuval = (function () {
 
     if (!G.ileri) return;
     S.bitki.forEach((b) => bitkiCiz(ct, b, S.sakin ? 0 : t, I));
+    makineCiz(ct, S.sakin ? 0 : t, I);
 
     // Etiketler en üstte: bitkiler birbirinin üstüne binse de yazı
     // okunur kalıyor.
@@ -1184,6 +1491,7 @@ window.BahceTuval = (function () {
     const secilen = [...S.bitki].sort((a2, b2) =>
       oncelik(a2) - oncelik(b2) || b2.v - a2.v).slice(0, 5);
     const kutular = [];
+    makineEtiketi(ct);
     secilen.forEach((b) => etiketCiz(ct, b, kutular, I));
 
     S.kare += 1;
@@ -1299,6 +1607,9 @@ window.BahceTuval = (function () {
   function durumDegisti(d) {
     if (!S.acik || !S.veri) return;
     S.veri.konum = d.konum || {};
+    // Z referansları: ucun toprağa inişi ÖLÇÜLEN z ile çiziliyor.
+    if (d.toprak_z != null) S.veri.toprak_z = d.toprak_z;
+    if (d.guvenli_z != null) S.veri.guvenli_z = d.guvenli_z;
     const bagli = !!d.bagli;
     const mesgul = !!(d.hareket || (d.dizi && d.dizi.calisiyor));
     if (bagli !== S.veri.bagli || mesgul !== S.veri.mesgul) {
@@ -1306,6 +1617,8 @@ window.BahceTuval = (function () {
       S.veri.mesgul = mesgul;
       durumYaz();
     }
+    // Sakin modda döngü durmuş olabilir: konum değiştiyse tek kare çiz.
+    if (S.sakin) surdur();
   }
 
   function ekimDegisti() { /* Ekim akışı bir sonraki adımda bağlanıyor. */ }
@@ -1392,6 +1705,9 @@ window.BahceTuval = (function () {
       yatakPx: Math.round(G.enPx), duvarPx: Math.round(G.duvarPx),
       dolgu: S.en ? Math.round(G.enPx / S.en * 100) : 0,   // yatak ekranın yüzde kaçı
       bagli: !!(S.veri || {}).bagli, hata: S.hata,
+      robot: S.robot.gecerli
+        ? [Math.round(S.robot.hx), Math.round(S.robot.hy)] : null,
+      bas: aktifBasKimlik(), ucYuksekligi: ucYuksekligi(),
       tipler: S.bitki.map((b) => `${b.tur}:${b.tip}`),
       ters: !!G.ters,
     };
