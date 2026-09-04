@@ -866,10 +866,19 @@
      * birbirine göre yerleri hiç değişmiyor. Ölçüme giren de zaten o
      * göreli mesafe.
      */
-    /* İŞARET SAHADA BULUNDU. +X denendi ve küme arkaya gitti; ön yön
-     * -X. Kızağın motor bloğu +X'te diye o yönü seçmiştim, o blok
-     * makinenin ARKA tarafındaymış. */
-    const ONDE = -P * 2.2;
+    /* ÖNE ALMA ŞİMDİLİK KAPALI — DOĞRU YÖN BULUNAMADI.
+     *
+     * Sorun gerçek: üç baş sütunun arkasında kalıyor, gerçekte ise
+     * kızağın önünde, yatağa bakan tarafta duruyorlar. İki yön de
+     * denendi (+X ve -X); ikisinde de küme arkada kaldı, yani kayma
+     * ekseni X değil. Kızak kirişte makine Y'sinde (sahne z) kayıyor;
+     * doğru yön büyük olasılıkla orada ve işareti yatağın kirişe göre
+     * hangi yanda olduğuna bağlı.
+     *
+     * Sıfırda bırakıyoruz: yanlış bir kaydırma, kaydırma olmamasından
+     * kötü — başların yeri hiç değilse kaymalardan geldiği gibi
+     * duruyor ve kimse onu doğru sanmıyor. */
+    const ONDE = 0;
     [nemProbu, tohumUcu, baslik].forEach((g) => { g.position.x += ONDE; });
 
     /* MAKİNE MERKEZİ DE PLAKANIN İÇİNDE.
