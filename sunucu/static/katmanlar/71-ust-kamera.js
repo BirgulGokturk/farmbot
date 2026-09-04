@@ -114,6 +114,47 @@ Tarla.katman({
     });
   },
 
+  /** Kalibrasyon MANTIKLI mı — değilse sebebi, mantıklıysa "".
+   *
+   * "Kalibrasyon varsa çiz" yetmiyor. Üst kamerada eski bir denemeden
+   * kalan bir `mm_px` vardı ve katman onu sorgusuz kullanıp yatağın
+   * kat kat büyüğünde, yatağın yanına düşen dev bir fotoğraf serdi.
+   * Sayı vardı ama anlamsızdı; VARLIĞI doğruluğu göstermiyor.
+   *
+   * İki basit denetim yetiyor ve ikisi de yatağın kendi ölçüsünden
+   * çıkıyor, sabit bir eşikten değil:
+   *   - kare yatağın üç katından büyükse ölçek yanlış,
+   *   - merkezi yataktan bir yatak boyu uzaktaysa konum yanlış.
+   * Bu ikisini geçen bir kalibrasyon hâlâ yanlış olabilir, ama böyle
+   * göze batan bir yanlış olamaz.
+   */
+  saglamMi(o, k4) {
+    const enB = Number((o.sinir.x || {}).max) || 535;
+    const boyB = Number((o.sinir.y || {}).max) || 630;
+    const kosegen = Math.hypot(enB, boyB);
+
+    const xs = k4.map((c) => c.x), ys = k4.map((c) => c.y);
+    const en = Math.max(...xs) - Math.min(...xs);
+    const boy = Math.max(...ys) - Math.min(...ys);
+    if (!Number.isFinite(en) || !Number.isFinite(boy) || en < 1 || boy < 1) {
+      return "kalibrasyondaki ölçek sayısı geçersiz.";
+    }
+    if (en > enB * 3 || boy > boyB * 3) {
+      return `kalibrasyon gerçekçi değil — kare ${Math.round(en)}×`
+        + `${Math.round(boy)} mm çıkıyor, yatak ${Math.round(enB)}×`
+        + `${Math.round(boyB)} mm. Üst kameranın mm/px değeri eski bir `
+        + "denemeden kalmış olabilir; AprilTag ile yeniden kalibre edin.";
+    }
+    const mx = (Math.max(...xs) + Math.min(...xs)) / 2;
+    const my = (Math.max(...ys) + Math.min(...ys)) / 2;
+    if (mx < -kosegen || mx > enB + kosegen || my < -kosegen || my > boyB + kosegen) {
+      return `kalibrasyon gerçekçi değil — karenin merkezi (${Math.round(mx)}, `
+        + `${Math.round(my)}) yatağın çok dışında. AprilTag ile yeniden `
+        + "kalibre edin.";
+    }
+    return "";
+  },
+
   /* --------------------------------------------------------- 3B */
 
   /** Neden çizilemediğini BİR KEZ söylüyor.
@@ -145,6 +186,8 @@ Tarla.katman({
         + "biliniyor.");
       return;
     }
+    const kotu = this.saglamMi(o, k4);
+    if (kotu) { this.sebepYaz(o, kotu); return; }
     const im = this.gorsel(o);
     if (!im) {
       this.sebepYaz(o, "üst kameradan kare alınamadı (kamera açık mı?)");
@@ -193,7 +236,7 @@ Tarla.katman({
   ciz2b(o, c) {
     this.veriAl(o);
     const k4 = this.koseler();
-    if (!k4) return;
+    if (!k4 || this.saglamMi(o, k4)) return;
     const im = this.gorsel(o);
     const n = k4.map((p) => o.mm2b(p.x, p.y));
 
