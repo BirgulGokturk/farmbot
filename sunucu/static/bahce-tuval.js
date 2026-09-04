@@ -2031,6 +2031,7 @@ window.BahceTuval = (function () {
       const y = await api(`/api/bahce/bos-yer?tur=${encodeURIComponent(slug)}&azami=96`);
       if (S.secilenTur !== slug) return;      // kullanıcı arada fikir değiştirdi
       S.gozler = y;
+      S.gozT0 = (performance.now() - S.t0) / 1000;
       notYaz("goz", y.adet ? "" :
         `${y.ad} için boş yer kalmamış — mevcut bitkilerin yayılım `
         + "çemberleri yatağı doldurmuş.");
@@ -2082,12 +2083,27 @@ window.BahceTuval = (function () {
   /* --------------------------------------------------------- çizim */
   /** Ekim gözleri. Elde tohum varken yatağın GERİ KALANI karartılıyor:
    *  sığmayan yer sönük kalsın, sığan yer kendiliğinden öne çıksın. */
+  /** Yumuşama eğrileri.
+   *
+   * Doğrusal geçiş cansız görünüyor: bir şey ne hızlanıyor ne de
+   * yavaşlıyor, sabit hızla kayıyor. `yumusak` çıkışta yavaşlıyor;
+   * `asma` sonunda hedefi bir parça geçip geri oturuyor — bırakılan bir
+   * şeyin yerine oturma hissi buradan geliyor. */
+  function yumusak(t) { return 1 - Math.pow(1 - kis(t, 0, 1), 3); }
+  function asma(t) {
+    const x = kis(t, 0, 1) - 1;
+    return 1 + x * x * (2.70158 * x + 1.70158);
+  }
+
   function gozleriCiz(ct, t) {
     const g = S.gozler;
     if (!g || !g.yerler || !g.yerler.length) return;
     const q = [yansit(0, 0), yansit(1, 0), yansit(1, 1), yansit(0, 1)];
     const cap = Math.max(16, sayi(g.yayilim_mm));
     const nabiz = 0.5 + 0.5 * Math.sin(t * 2.2);
+    // Beliriş: gözler sırayla, hedefi bir parça aşıp yerine oturarak
+    // geliyor. Hepsinin aynı anda belirmesi bir liste gibi duruyordu.
+    const yas = t - (S.gozT0 || t);
 
     // Karartma: yatak eksi gözler (even-odd).
     ct.save();
@@ -2105,21 +2121,40 @@ window.BahceTuval = (function () {
     ct.fill("evenodd");
     ct.restore();
 
-    // Gözün kendisi: toprakta hafif bir çukur ve nabız gibi bir halka.
+    // Gözün kendisi: toprakta hafif bir çukur, nefes alan bir halka ve
+    // parmağın altındakinde belirginleşen bir ışık.
+    const secili = S.onizleme && S.onizleme.goz ? S.onizleme : null;
     g.yerler.forEach((yer, i) => {
       const uv = mmUV(yer.x, yer.y);
       const p = yansit(uv.u, uv.v);
-      const r = (cap / 2) * mmPx(uv.v);
+      const gel = yumusakGel(yas, i);
+      if (gel <= 0) return;
+      // NEFES: her göz kendi fazında, çok hafif. Hepsi aynı anda
+      // büyüyüp küçülseydi yatak yanıp sönerdi.
+      const nefes = 1 + 0.035 * Math.sin(t * 1.5 + i * 0.7);
+      const yakin = secili && Math.abs(secili.x - yer.x) < 0.5
+                    && Math.abs(secili.y - yer.y) < 0.5;
+      const r = (cap / 2) * mmPx(uv.v) * gel * nefes * (yakin ? 1.06 : 1);
       const ic = ct.createRadialGradient(p.x, p.y - r * 0.1, r * 0.05, p.x, p.y, r);
-      ic.addColorStop(0, "rgba(0,0,0,0.30)");
+      ic.addColorStop(0, `rgba(0,0,0,${yakin ? 0.16 : 0.30})`);
       ic.addColorStop(0.75, "rgba(0,0,0,0.05)");
-      ic.addColorStop(1, "rgba(255,240,200,0.10)");
+      ic.addColorStop(1, `rgba(255,240,200,${yakin ? 0.26 : 0.10})`);
       ct.fillStyle = ic;
       ct.beginPath();
       ct.ellipse(p.x, p.y, r, r * 0.66, 0, 0, Math.PI * 2);
       ct.fill();
-      ct.strokeStyle = `rgba(150,220,130,${(0.28 + nabiz * 0.30).toFixed(3)})`;
-      ct.lineWidth = 1.6;
+      if (yakin) {
+        const h = ct.createRadialGradient(p.x, p.y, r * 0.2, p.x, p.y, r * 1.5);
+        h.addColorStop(0, "rgba(170,240,150,0.22)");
+        h.addColorStop(1, "rgba(170,240,150,0)");
+        ct.fillStyle = h;
+        ct.beginPath();
+        ct.ellipse(p.x, p.y, r * 1.5, r * 1.0, 0, 0, Math.PI * 2);
+        ct.fill();
+      }
+      const parlak = (yakin ? 0.70 : 0.24) + nabiz * (yakin ? 0.25 : 0.26);
+      ct.strokeStyle = `rgba(150,220,130,${parlak.toFixed(3)})`;
+      ct.lineWidth = yakin ? 2.4 : 1.6;
       ct.setLineDash([6, 6]);
       ct.lineDashOffset = -t * 14 + i;
       ct.beginPath();
@@ -2127,6 +2162,14 @@ window.BahceTuval = (function () {
       ct.stroke();
       ct.setLineDash([]);
     });
+  }
+
+  /** Sıralı beliriş: her göz kendi sırasında, aşıp oturarak. */
+  function yumusakGel(yas, i) {
+    const gecikme = i * 0.022;
+    const sure = 0.34;
+    if (yas < gecikme) return 0;
+    return asma(kis((yas - gecikme) / sure, 0, 1));
   }
 
   /** Hayalet önizleme: bırakılırsa ne olacağı.
@@ -2361,6 +2404,29 @@ window.BahceTuval = (function () {
     });
   }
 
+  /* GEÇEN BULUT — arada geçen küçük bir detay.
+   *
+   * Yatağın üstünden çok yavaş, çok soluk bir gölge geçiyor. Amaç
+   * dikkat çekmek değil, ekranın nefes alması: sabit bir resme
+   * bakıldığında göz birkaç saniyede sahneyi ölü sayıyor. Hiçbir
+   * ölçüme karşılık gelmiyor ve gündüzden başka bir şeye bağlı değil —
+   * gece görünmüyor, çünkü gece bulut gölgesi olmaz.
+   */
+  function bulutCiz(ct, t) {
+    const I = isik();
+    if (I.gunduz < 0.15) return;
+    const donem = 44;                       // saniye
+    const f = ((t % donem) / donem);
+    const x = -S.en * 0.5 + f * S.en * 2;
+    const g = ct.createRadialGradient(x, S.boy * 0.35, 10,
+                                      x, S.boy * 0.35, S.en * 0.42);
+    const a2 = 0.055 * I.gunduz;
+    g.addColorStop(0, `rgba(0,0,0,${a2.toFixed(3)})`);
+    g.addColorStop(1, "rgba(0,0,0,0)");
+    ct.fillStyle = g;
+    ct.fillRect(0, 0, S.en, S.boy);
+  }
+
   /* ==================================================================== *
    * Kamera
    *
@@ -2565,6 +2631,7 @@ window.BahceTuval = (function () {
       if (i >= 0) secilen.splice(i, 1);
       secilen.unshift(vurgulu);
     }
+    bulutCiz(ct, t);
     kutlamaCiz(ct, t);
 
     // ETİKETLER KAMERASIZ: yakınlaştırınca yazı büyümesin, baloncuk
@@ -2687,7 +2754,9 @@ window.BahceTuval = (function () {
         + "olduğu bilinmiyor. Tarla sekmesinden dikim alanı ekleyin.";
     } else if (!bitki) {
       el.hidden = false;
-      el.textContent = "Yatak boş.";
+      // "Burada bir şey yok" değil, "buraya bir şey ek".
+      el.textContent = "Yatak boş — aşağıdan bir tohum alın, "
+        + "nereye sığdığını toprakta göstereyim.";
     } else {
       el.hidden = true;
     }
