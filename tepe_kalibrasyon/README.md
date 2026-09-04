@@ -168,6 +168,32 @@ açıkken 0.333 px RMS, kapalıyken 0.423 px. Açık kalıyor.
 
 Süre: etiketler ilk geçişte bulunursa ~0.2 s; büyütme geçişlerine düşerse ~5 s.
 
+### Etiket bulunamazsa: tanı
+
+Beklenen kimliklerden biri bile bulunamazsa uygulama otomatik olarak bir tanı çalıştırır
+(~5 s ekler) ve ölçtüğü şeyleri yazar:
+
+* **Yanlış aile.** Kare, dokuz farklı etiket ailesinde ayrı ayrı denenir. Test edildi:
+  ArUco 4x4 basılmış bir kurulumda aileyi doğru bildiriyor.
+* **Aynalanmış baskı.** Kare yatay çevrilip tekrar denenir. Aynalanmış bir AprilTag'i
+  hiçbir dedektör okuyamaz; test edildi, yakalıyor.
+* **Kare biçimli aday sayısı ve boyutu.** "Hiç kare şekil yok" ile "kareler var ama bit
+  deseni çözülemiyor" ayrımını verir. Toprak dokusu yüzlerce sahte küçük aday ürettiği
+  için ölçüler en büyük 20 aday üzerinden verilir.
+
+Yanlış aile ve aynalama iddiaları, o ailede **beklenen kimliklerden en az ikisi**
+çözülmedikçe yazılmaz. Nedeni ölçüldü: gevşetilmiş parametrelerle toprak dokusu ara sıra
+sahte kimlik çözdürüyor — etiketleri 36h11 olan bulanık bir karede ArUco 4x4 ailesinde
+alakasız iki kimlik çıkmıştı; bu şart onu eliyor.
+
+**Bilerek koymadığım şey:** "kare bulanık" / "kontrast düşük" hükmü. Denedim, ölçtüm ve
+kaldırdım. Kare genelindeki Laplace varyansı düz toprakla seyreliyor ve 4/4 bulan çalışan
+bir kareye 24 değerini veriyor — yani her çalışan kareyi "bulanık" diye işaretliyordu.
+Aday yamalarındaki yerel keskinlik daha anlamlı ama tek başına hüküm vermiyor: 48 px
+etikette bu değer 78 iken dördü de bulunuyor, 21 px etikette 112 iken hiçbiri bulunamıyor
+— çünkü belirleyici olan bulanıklığın kendisi değil, etiket hücresi başına düşen piksel.
+Sayı raporlanıyor, hüküm verilmiyor.
+
 ---
 
 ## Dosyalar

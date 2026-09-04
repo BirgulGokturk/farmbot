@@ -139,6 +139,9 @@ class Islem(BaseHTTPRequestHandler):
         kare, kaynak = _kareyi_coz(g)
         beklenen = [int(x) for x in (g.get("beklenen") or [])]
         tespitler, rapor = kal.etiketleri_bul(kare, beklenen)
+        # Etiket eksikse nedenini olcerek raporla; tahmin uretme.
+        if rapor["eksik_kimlikler"] or (not beklenen and len(tespitler) < 4):
+            rapor["tani"] = kal.tani(kare, beklenen)
         onizleme, oran = _onizleme(kare)
         self._json(200, {
             "tamam": True,

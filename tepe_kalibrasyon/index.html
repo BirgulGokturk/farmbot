@@ -88,6 +88,7 @@
       <div style="height:9px"></div>
       <button id="tespitEt" disabled>Etiketleri bul</button>
       <div id="gunluk" style="margin-top:8px"></div>
+      <div id="tani" style="display:none;margin-top:8px"></div>
     </fieldset>
 
     <fieldset>
@@ -313,14 +314,34 @@ async function tespitEt(){
     $("#gunluk").textContent = j.rapor.gecis_gunlugu.join("\n")
        + "\nbulunan: [" + j.rapor.bulunan_kimlikler.join(", ") + "]"
        + (eksik.length ? "\nKAYIP:   [" + eksik.join(", ") + "]" : "");
+    taniCiz(j.rapor.tani);
     etiketTabloCiz(); dogrulamaCiz(); sonucCiz();
   }catch(err){
     $("#gunluk").textContent = "HATA: " + err.message;
   }finally{ d.disabled=false; d.textContent="Etiketleri bul"; }
 }
 
+function taniCiz(t){
+  const kap = $("#tani");
+  if(!t){ kap.innerHTML=""; kap.style.display="none"; return; }
+  kap.style.display="block";
+  let h = '<div class="kutu"><h3>Tanı — etiket neden bulunamadı</h3>';
+  h += (t.yorumlar||[]).map(y=>'<div class="not">'+y+'</div>').join("");
+  const say = a => (a.buyuk_aday_sayisi||0)
+      + (a.en_buyuk_20_medyan_kenar_px!==undefined
+         ? " (en büyük 20'nin medyanı "+a.en_buyuk_20_medyan_kenar_px+" px)" : "");
+  h += kv("1× çözülemeyen büyük aday", say(t.aday_dortgenler_1x));
+  h += kv("2× çözülemeyen büyük aday", say(t.aday_dortgenler_2x));
+  h += kv("parlaklık ort. / std", t.parlaklik_ortalama+" / "+t.parlaklik_std);
+  if(!(t.bulgular||[]).length)
+    h += '<div class="kucuk" style="margin-top:6px">Denenen bütün etiket ailelerinde ve aynalanmış '
+       + 'karede de hiçbir kimlik çözülemedi.</div>';
+  $("#tani").innerHTML = h + '</div>';
+}
+
 /* ---------------- tablolar ---------------- */
 function etiketTabloCiz(){
+  const girilen = koordinatlariTopla(true);   // yeniden çizerken yazılanları kaybetme
   const bek = $("#beklenen").value.split(",").map(s=>s.trim()).filter(s=>s!=="").map(Number);
   const bulunanId = durum.tespitler.map(t=>t.kimlik);
   const hepsi = Array.from(new Set(bek.concat(bulunanId))).sort((a,b)=>a-b);
@@ -331,10 +352,14 @@ function etiketTabloCiz(){
     h += '<tr><td class="sayi">'+id+'</td><td>'
        + (t ? '<span class="rozet r-var">bulundu</span>' : '<span class="rozet r-yok">kayıp</span>')
        + '</td><td class="sayi">'+(t? t.kenar_px.toFixed(1):"—")+'</td>'
-       + '<td><input type="number" step="0.1" data-id="'+id+'" data-eksen="x" '+(t?"":"disabled")+'></td>'
-       + '<td><input type="number" step="0.1" data-id="'+id+'" data-eksen="y" '+(t?"":"disabled")+'></td></tr>';
+       + '<td><input type="number" step="0.1" data-id="'+id+'" data-eksen="x" value="'+(girilen[id]?girilen[id][0]:"")+'"></td>'
+       + '<td><input type="number" step="0.1" data-id="'+id+'" data-eksen="y" value="'+(girilen[id]?girilen[id][1]:"")+'"></td></tr>';
   });
   h += '</table>';
+  const kayip = hepsi.filter(id=>!durum.tespitler.find(x=>x.kimlik===id));
+  if(kayip.length) h += '<div class="not kotu" style="margin-top:8px">Etiket '+kayip.join(", ")
+    + ' karede bulunamadı. Koordinatını girebilirsiniz ama hesaba <b>giremez</b> — bulunmayan etiketin '
+    + 'piksel karşılığı yok. Aşağıdaki tanıya bakın.</div>';
   $("#etiketTablo").innerHTML = h;
   $("#etiketTablo").querySelectorAll("input").forEach(i=>i.addEventListener("input", kontrolEt));
   kontrolEt();
@@ -365,16 +390,21 @@ $("#noktaEkle").addEventListener("click", ()=>{
 });
 $("#beklenen").addEventListener("input", etiketTabloCiz);
 
-function koordinatlariTopla(){
+function koordinatlariTopla(hamHali){
   const k = {};
   $("#etiketTablo").querySelectorAll("input").forEach(i=>{
-    if(i.disabled || i.value==="") return;
+    if(i.value==="") return;
     const id = i.dataset.id;
-    k[id] = k[id] || [null,null];
-    k[id][i.dataset.eksen==="x"?0:1] = parseFloat(i.value);
+    k[id] = k[id] || ["",""];
+    k[id][i.dataset.eksen==="x"?0:1] = hamHali ? i.value : parseFloat(i.value);
   });
+  if(hamHali) return k;
+  const bulunanId = durum.tespitler.map(x=>String(x.kimlik));
   const tam = {};
-  Object.keys(k).forEach(id=>{ if(k[id][0]!==null && k[id][1]!==null) tam[id]=k[id]; });
+  // Yalnizca hem koordinati girilmis hem de karede bulunmus etiketler hesaba girer.
+  Object.keys(k).forEach(id=>{
+    if(k[id][0]!=="" && k[id][1]!=="" && bulunanId.includes(id)) tam[id]=k[id];
+  });
   return tam;
 }
 function kontrolEt(){

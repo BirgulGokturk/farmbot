@@ -88,17 +88,178 @@ def parametre_ozeti() -> dict:
     }
 
 
-def _ham_tespit(gri: np.ndarray) -> dict[int, np.ndarray]:
+def _ham_tespit(gri: np.ndarray, sozluk_kimlik: int | None = None):
+    """
+    Dondurur: ({kimlik: 4x2 kose}, reddedilen_aday_listesi)
+
+    Reddedilen adaylar onemli: dedektor kare bir sekil gordu ama icindeki biti
+    okuyamadi demektir. Hic etiket bulunamadiginda "hic kare sekil yok" ile
+    "kareler var ama cozulemiyor" ayrimini bu sayi verir.
+    """
     a = cv2.aruco
-    sozluk = a.getPredefinedDictionary(a.DICT_APRILTAG_36h11)
+    sozluk = a.getPredefinedDictionary(a.DICT_APRILTAG_36h11 if sozluk_kimlik is None else sozluk_kimlik)
     dedektor = a.ArucoDetector(sozluk, _parametreler())
-    koseler, kimlikler, _ = dedektor.detectMarkers(gri)
+    koseler, kimlikler, reddedilen = dedektor.detectMarkers(gri)
     sonuc: dict[int, np.ndarray] = {}
-    if kimlikler is None:
-        return sonuc
-    for k, c in zip(kimlikler.flatten().tolist(), koseler):
-        sonuc[int(k)] = c.reshape(4, 2).astype(np.float64)
-    return sonuc
+    if kimlikler is not None:
+        for k, c in zip(kimlikler.flatten().tolist(), koseler):
+            sonuc[int(k)] = c.reshape(4, 2).astype(np.float64)
+    return sonuc, (list(reddedilen) if reddedilen is not None else [])
+
+
+def _aday_ozeti(adaylar: list, gri: np.ndarray | None = None, olcek: float = 1.0) -> dict:
+    """
+    Reddedilen dortgenlerin ozeti (orijinal kare pikselinde).
+
+    Toprak dokusu yuzlerce kucuk sahte aday uretiyor, bu yuzden HAM medyan
+    anlamsiz. Etiketler en buyuk adaylar arasindadir; olculer en buyuk 20 aday
+    uzerinden veriliyor. Keskinlik de yalnizca o yamalar icinde olculuyor —
+    kare genelinde Laplace varyansi duz zeminle seyreliyor ve calisan bir kareyi
+    "bulanik" diye isaretliyor (olculdu: calisan temiz karede genel varyans 24).
+    """
+    kutular = []
+    for c in adaylar:
+        p = np.asarray(c, dtype=np.float64).reshape(-1, 2) / olcek
+        if len(p) != 4:
+            continue
+        kenar = float(np.mean([np.linalg.norm(p[i] - p[(i + 1) % 4]) for i in range(4)]))
+        kutular.append((kenar, p))
+    if not kutular:
+        return {"sayi": int(len(adaylar)), "buyuk_aday_sayisi": 0}
+    kutular.sort(key=lambda z: -z[0])
+    buyuk = kutular[:20]
+    k = np.array([z[0] for z in buyuk])
+    ozet = {
+        "sayi": int(len(adaylar)),
+        "buyuk_aday_sayisi": int(sum(1 for z in kutular if z[0] >= 12.0)),
+        "en_buyuk_20_medyan_kenar_px": round(float(np.median(k)), 2),
+        "en_buyuk_kenar_px": round(float(k.max()), 2),
+    }
+    if gri is not None:
+        keskinlik = []
+        for _, p in buyuk:
+            x0, y0 = np.floor(p.min(0) * olcek).astype(int)
+            x1, y1 = np.ceil(p.max(0) * olcek).astype(int)
+            x0, y0 = max(0, x0), max(0, y0)
+            x1, y1 = min(gri.shape[1], x1), min(gri.shape[0], y1)
+            yama = gri[y0:y1, x0:x1]
+            if yama.size > 50:
+                keskinlik.append(float(cv2.Laplacian(yama, cv2.CV_64F).var()))
+        if keskinlik:
+            ozet["aday_yerel_keskinlik"] = round(float(np.median(keskinlik)), 1)
+    return ozet
+
+
+_TANI_SOZLUKLER = [
+    ("AprilTag 36h11 (beklenen)", "DICT_APRILTAG_36h11"),
+    ("AprilTag 36h10", "DICT_APRILTAG_36h10"),
+    ("AprilTag 25h9", "DICT_APRILTAG_25h9"),
+    ("AprilTag 16h5", "DICT_APRILTAG_16h5"),
+    ("ArUco 4x4", "DICT_4X4_250"),
+    ("ArUco 5x5", "DICT_5X5_250"),
+    ("ArUco 6x6", "DICT_6X6_250"),
+    ("ArUco 7x7", "DICT_7X7_250"),
+    ("ArUco orijinal", "DICT_ARUCO_ORIGINAL"),
+]
+
+
+def tani(bgr: np.ndarray, beklenen: list[int] | None = None) -> dict:
+    """
+    Hicbir etiket bulunamadiginda ne oldugunu anlamak icin olculebilir kontroller.
+    Tahmin uretmez; yalnizca ne bulundugunu ve ne bulunmadigini yazar.
+
+    'beklenen' verilirse iddialar keskinlesir: toprak dokusu gevsetilmis
+    parametrelerle ara sira sahte kimlik cozduruyor (olculdu: etiketleri 36h11 olan
+    bulanik bir karede ArUco 4x4 ailesinde alakasiz iki kimlik cikti). Bu yuzden
+    "yanlis aile" ya da "aynalanmis" denmesi icin o ailede BEKLENEN kimliklerden
+    en az ikisinin cozulmesi sart kosuluyor.
+    """
+    beklenen_kume = set(int(x) for x in (beklenen or []))
+    gri = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY) if bgr.ndim == 3 else bgr
+    H, W = gri.shape[:2]
+    bulgular = []
+
+    # 1) Baska etiket aileleri: yanlis aile basilmis olabilir
+    for ad, anahtar in _TANI_SOZLUKLER:
+        kod = getattr(cv2.aruco, anahtar, None)
+        if kod is None:
+            continue
+        try:
+            bulundu, _ = _ham_tespit(gri, kod)
+        except cv2.error:
+            continue
+        if bulundu:
+            bulgular.append({"tur": "aile", "ad": ad, "kimlikler": sorted(bulundu.keys())})
+
+    # 2) Aynalanmis baski: yansitilmis karede 36h11 cozuluyor mu
+    aynali, _ = _ham_tespit(cv2.flip(gri, 1))
+    if aynali:
+        bulgular.append({"tur": "ayna", "ad": "yatay aynalanmis 36h11", "kimlikler": sorted(aynali.keys())})
+
+    # 3) Kare sekil var mi, ne kadar buyuk, ne kadar keskin
+    _, adaylar_1x = _ham_tespit(gri)
+    aday_1x = _aday_ozeti(adaylar_1x, gri)
+    buyuk = cv2.resize(gri, (W * 2, H * 2), interpolation=cv2.INTER_CUBIC)
+    _, adaylar_2x = _ham_tespit(buyuk)
+    aday_2x = _aday_ozeti(adaylar_2x, buyuk, olcek=2.0)
+    del buyuk
+
+    yorumlar = []
+    # Aile iddiasi icin en az 2 ayri kimlik sart: toprak dokusu tek bir sahte
+    # kimlik uretebiliyor (olculdu) ve tek kimlikle "yanlis aile" demek yaniltir.
+    def _ikna_edici(b: dict) -> bool:
+        k = set(b["kimlikler"])
+        if beklenen_kume:
+            return len(k & beklenen_kume) >= 2
+        return len(k) >= 3          # beklenen liste verilmediyse daha yuksek esik
+
+    aile = [b for b in bulgular
+            if b["tur"] == "aile" and not b["ad"].startswith("AprilTag 36h11") and _ikna_edici(b)]
+    if aile:
+        yorumlar.append(
+            "Etiketler BAŞKA bir ailede çözülüyor: " +
+            "; ".join(f"{b['ad']} → kimlik {b['kimlikler']}" for b in aile) +
+            ". Beklediğiniz kimliklerin en az ikisi bu ailede çözüldüğü için bu sahte bir eşleşme değil: "
+            "kâğıda basılan etiketler 36h11 değil. Ya 36h11 basın ya da o aileyi kullanın."
+        )
+    if any(b["tur"] == "ayna" and _ikna_edici(b) for b in bulgular):
+        ay = next(b for b in bulgular if b["tur"] == "ayna")
+        yorumlar.append(
+            f"Kare yatay aynalandığında etiketler çözülüyor (kimlik {ay['kimlikler']}). Baskı ya da "
+            f"kamera görüntüsü aynalanmış; aynalanmış bir AprilTag hiçbir dedektör tarafından okunamaz."
+        )
+    en_iyi = aday_2x if aday_2x.get("buyuk_aday_sayisi", 0) >= aday_1x.get("buyuk_aday_sayisi", 0) else aday_1x
+    if en_iyi.get("buyuk_aday_sayisi", 0) == 0:
+        yorumlar.append(
+            "Karede 12 px'ten büyük kare biçimli hiçbir aday yok. Etiketler kadrajda olmayabilir, "
+            "çok küçük kalıyor olabilir ya da kontrast okunamayacak kadar düşük olabilir."
+        )
+    else:
+        yorumlar.append(
+            f"Karede 12 px'ten büyük {en_iyi['buyuk_aday_sayisi']} kare biçimli aday var; en büyük 20 "
+            f"adayın medyan kenarı {en_iyi['en_buyuk_20_medyan_kenar_px']} px, en büyüğü "
+            f"{en_iyi['en_buyuk_kenar_px']} px. Bunlar dedektörün kare olarak gördüğü ama bit desenini "
+            f"36h11 diye çözemediği şekiller (toprak dokusu da bolca sahte aday üretir). "
+            f"Bu boru hattında ölçülen alt sınır ~16 px etiket kenarıdır."
+        )
+    if "aday_yerel_keskinlik" in en_iyi:
+        yorumlar.append(
+            f"Aday yamalarındaki yerel keskinlik {en_iyi['aday_yerel_keskinlik']} "
+            f"(referans olarak ölçüldü: net sentetik karede ~1000–1500, 1.6 px bulanıklıkta ~80–110). "
+            f"Bu tek başına bir hüküm değil — bulanıklığın etiketi kaybettirip kaybettirmediği etiketin "
+            f"kaç piksel olduğuna bağlı: 48 px etikette bu değer 78 iken dördü de bulunuyordu, "
+            f"21 px etikette 112 iken hiçbiri bulunamadı."
+        )
+
+    return {
+        "kare_boyutu": [int(W), int(H)],
+        "bulgular": bulgular,
+        "aday_dortgenler_1x": aday_1x,
+        "aday_dortgenler_2x": aday_2x,
+        "parlaklik_ortalama": round(float(gri.mean()), 1),
+        "parlaklik_std": round(float(gri.std()), 1),
+        "yorumlar": yorumlar,
+    }
 
 
 def _alt_piksel_iyilestir(gri: np.ndarray, koseler: np.ndarray) -> tuple[np.ndarray, float]:
@@ -175,9 +336,10 @@ def etiketleri_bul(bgr: np.ndarray, beklenen: list[int] | None = None) -> tuple[
         )
 
     # 1. gecis
-    for k, c in _ham_tespit(gri).items():
+    ilk, ilk_adaylar = _ham_tespit(gri)
+    for k, c in ilk.items():
         kaydet(k, c, "1x")
-    gunluk.append(f"1. geçiş (1x): {len(bulunan)} etiket")
+    gunluk.append(f"1. geçiş (1x): {len(bulunan)} etiket, {len(ilk_adaylar)} çözülemeyen kare aday")
 
     def eksik_var() -> bool:
         if beklenen:
@@ -192,7 +354,8 @@ def etiketleri_bul(bgr: np.ndarray, beklenen: list[int] | None = None) -> tuple[
             break
         onceki = len(bulunan)
         buyuk = cv2.resize(gri, (W * olcek, H * olcek), interpolation=cv2.INTER_CUBIC)
-        for k, c in _ham_tespit(buyuk).items():
+        b, _ = _ham_tespit(buyuk)
+        for k, c in b.items():
             kaydet(k, c / float(olcek), f"{olcek}x")
         del buyuk
         gunluk.append(f"{olcek}x büyütme geçişi: +{len(bulunan) - onceki} etiket")
@@ -773,8 +936,17 @@ def kalibre_et(
         "hatalar": [],
     }
 
+    bulunmayan = sorted(k for k in koordinatlar if k not in {t.kimlik for t in tespitler})
+    if bulunmayan:
+        cikti["uyarilar"].append(
+            "Şu etiketler için koordinat girilmiş ama etiket karede bulunamadı, bu yüzden hesaba "
+            "girmediler: " + ", ".join(str(x) for x in bulunmayan) + "."
+        )
     if len(kullanilan) < 2:
-        cikti["hatalar"].append("En az 2 nokta gerekiyor; hiçbir model hesaplanamadı.")
+        cikti["hatalar"].append(
+            f"En az 2 nokta gerekiyor; kullanılabilir {len(kullanilan)} nokta var "
+            f"(hem karede bulunmuş hem koordinatı girilmiş). Hiçbir model hesaplanmadı."
+        )
         return cikti
     if _dogrusal_mi(px):
         cikti["hatalar"].append(
