@@ -58,9 +58,9 @@
                    placeholder="0.12">
           </div>
           <div class="alan">
-            <label for="filiz-enaz">En az piksel</label>
-            <input type="number" id="filiz-enaz" step="10" min="10" max="2000000"
-                   placeholder="kare ölçüsüne göre">
+            <label for="filiz-cap">En küçük fide (mm)</label>
+            <input type="number" id="filiz-cap" step="1" min="1" max="200"
+                   placeholder="8">
           </div>
           <div class="alan">
             <label for="filiz-birlestir">Birleştirme (mm)</label>
@@ -68,12 +68,13 @@
                    placeholder="25">
           </div>
         </div>
-        <p class="alt-not">Filizler küçükse <b>en az piksel</b>i düşürün, yeşil
-          soluksa <b>eşiği</b>. Boş bırakırsanız eşik <b>kare ölçüsüne göre</b>
-          hesaplanıyor — mutlak bir sayı, 640 pikselde ve 1920 pikselde
-          bambaşka şeyler demek olurdu. <b>Birleştirme</b>: bu mesafeden yakın
-          lekeler tek fide sayılıyor — bir filizin iki yaprağı ayrı lekelenip
-          sayımı ikiye katlamasın diye.</p>
+        <p class="alt-not">Filizler bulunamıyorsa <b>en küçük fide</b>yi
+          düşürün, yeşil soluksa <b>eşiği</b>. Boyut artık <b>milimetre</b>:
+          piksel cinsinden yazıldığında çözünürlüğü yükseltmek küçük fideyi
+          bulmuyordu — eşiğin fiziksel karşılığı her çözünürlükte aynı
+          kalıyordu. Fesleğen kotiledonu 8-10 mm. <b>Birleştirme</b>: bu
+          mesafeden yakın lekeler tek fide sayılıyor — bir filizin iki yaprağı
+          ayrı lekelenip sayımı ikiye katlamasın diye.</p>
 
         <div id="filiz-hata" class="uyari-kutu gizli"></div>
         <div id="filiz-sonuc" class="gomulu gizli"></div>
@@ -101,10 +102,10 @@
     try {
       const govde = { kamera: seciliKamera() };
       const e = Number($("#filiz-esik").value);
-      const a = Number($("#filiz-enaz").value);
+      const a = Number($("#filiz-cap").value);
       const b = $("#filiz-birlestir").value;
       if (Number.isFinite(e) && e > 0) govde.esik = e;
-      if (Number.isFinite(a) && a > 0) govde.en_az_piksel = a;
+      if (Number.isFinite(a) && a > 0) govde.en_kucuk_cap_mm = a;
       if (b !== "" && Number.isFinite(Number(b))) govde.birlestir_mm = Number(b);
 
       son = await p.apiIste("/api/kamera/filiz/bul", {
@@ -151,7 +152,11 @@
         (ham ${son.ham_leke}) · yeşil oran ${(son.yesil_oran * 100).toFixed(1)}%</span></div>
       <div class="etiket-satir"><span>Eşikler</span>
         <span>yeşil ${son.esik} · en az <b>${son.en_az_piksel}</b> piksel${
-          son.en_az_kendiliginden ? " (kare ölçüsünden)" : ""}</span></div>`;
+          son.en_az_kendiliginden
+            ? ` (≈ ${son.en_kucuk_cap_mm} mm çapında leke)` : ""}</span></div>
+      <div class="etiket-satir"><span>Elenenler</span>
+        <span><b>${son.elenen || 0}</b> küçük · <b>${son.alan_disi || 0}</b>
+          dikim alanı dışında</span></div>`;
 
     if (!fideler.length) {
       g += `<div class="etiket-satir uyari"><span>—</span>

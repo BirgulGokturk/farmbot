@@ -155,24 +155,11 @@ def kume(lekeler: list[dict[str, Any]], mesafe_mm: float) -> list[dict[str, Any]
     return cikti
 
 
-#: `goruntu.EN_AZ_PIKSEL` hangi kare ölçüsüne göre seçilmişti.
-OLCU_KARE = 640 * 480
-
-
-def en_az_varsayilan(genislik_px: float, yukseklik_px: float, taban: int) -> int:
-    """En küçük leke eşiğini kare ALANIYLA ölçekliyor.
-
-    Eşik mutlak piksel sayısı olarak duruyordu ve bu, çözünürlük
-    değişince sessizce başka bir şey demeye başlıyor: 640x480'de 150
-    piksel yatağın binde 0.5'i, 1920x1440'ta binde 0.05'i. Aynı fide bir
-    çözünürlükte eleniyor, ötekinde geçiyordu — kullanıcı da neden
-    değiştiğini göremiyordu.
-
-    Ölçekleyince eşik FİZİKSEL bir büyüklüğe karşılık geliyor: "yatağın
-    şu kadarından küçük şeyler gürültüdür".
-    """
-    alan = max(1.0, float(genislik_px) * float(yukseklik_px))
-    return max(20, int(round(taban * alan / OLCU_KARE)))
+# En küçük leke eşiği burada piksel olarak hesaplanıyordu (kare alanıyla
+# ölçekleyerek). Kaldırıldı: ölçekleme eşiğin FİZİKSEL karşılığını her
+# çözünürlükte aynı bırakıyordu, yani çözünürlüğü yükseltmek küçük fideyi
+# bulmuyordu. Kapı artık `tespit.en_az_piksel` ile milimetre cinsinden
+# konuyor — bkz. `_bul`.
 
 
 def _rgb(jpeg: bytes):
@@ -238,24 +225,53 @@ def yonlendirici_kur(parola_dogrula, canli_kare):
             raise HTTPException(status_code=422, detail=str(hata))
 
         boy, en = int(rgb.shape[0]), int(rgb.shape[1])
+        kalib = kalibrasyon.oku(kam)
         esik = g.get("esik")
         esik = goruntu.ESIK if esik in (None, "") else float(esik)
-        # Kullanıcı bir sayı verdiyse aynen o; vermediyse kare ölçüsüne
-        # göre ölçeklenmiş varsayılan.
-        en_az = (int(_sayi(g.get("en_az_piksel"), 0))
-                 or en_az_varsayilan(en, boy, goruntu.EN_AZ_PIKSEL))
         birlestir = _sayi(g.get("birlestir_mm"), 25.0)
+        cap_mm = _sayi(g.get("en_kucuk_cap_mm"), 0.0)
 
-        y = goruntu.bul(rgb, esik=esik, en_az_piksel=en_az)
-        c = cozumle(y["lekeler"], kalibrasyon.oku(kam), en, boy)
+        import tespit
+        # EN KÜÇÜK LEKE EŞİĞİ ARTIK MİLİMETREDEN GELİYOR.
+        #
+        # Piksel eşiğini kare alanıyla ölçekliyordum ve doğru görünüyordu,
+        # ama sonucu şuydu: eşiğin FİZİKSEL karşılığı her çözünürlükte
+        # aynı kalıyor (13 mm). Yani çözünürlüğü yükseltmek küçük fideyi
+        # bulmuyordu — fesleğen kotiledonu 8-10 mm ve kapı 13 mm'de.
+        # `tespit.en_az_piksel` kapıyı milimetre olarak koyuyor.
+        if int(_sayi(g.get("en_az_piksel"), 0)):
+            en_az = int(_sayi(g.get("en_az_piksel"), 0))
+        elif cap_mm > 0:
+            en_az = tespit.en_az_piksel(kalib, en, boy, cap_mm=cap_mm)
+        else:
+            en_az = tespit.en_az_piksel(kalib, en, boy)
+
+        # ALAN SÜZGECİ. Yeşil arayan indeks kadrajda ne varsa hepsine
+        # bakıyor: kabın mavi kenarı, tezgâh profili, arka plandaki
+        # çimen. Hiçbiri dikim alanının içinde değil ve alan koordinatı
+        # zaten biliniyor. Renk ölçütü bunların bir kısmını keser; alan
+        # denetimi hepsini birden keser, çünkü sorduğu soru başka:
+        # "bu şey ne renk" değil, "bu şey toprağın üstünde mi".
+        gecerli = tespit.alan_suzgeci(kalib, en, boy)
+
+        y = goruntu.bul(rgb, esik=esik, en_az_piksel=en_az, gecerli_mi=gecerli)
+        c = cozumle(y["lekeler"], kalib, en, boy)
         fideler = (kume(c["lekeler"], birlestir)
                    if c["lekeler"] and birlestir > 0 else c["lekeler"])
         return {
             "kamera": kam, "genislik_px": en, "yukseklik_px": boy,
             "esik": esik, "en_az_piksel": en_az, "birlestir_mm": birlestir,
             "en_az_kendiliginden": not int(_sayi(g.get("en_az_piksel"), 0)),
+            "en_kucuk_cap_mm": cap_mm or tespit.EN_KUCUK_CAP_MM,
             "yesil_oran": round(y["oran"], 4),
             "leke_sayisi": len(y["lekeler"]), "ham_leke": int(y["ham_leke"]),
+            # NEDEN BULAMADI sorusu artık tahminle değil sayıyla
+            # cevaplanıyor: kaç leke boy kapısına, kaç leke alan
+            # dışına takıldı.
+            "elenen": int(y.get("elenen") or 0),
+            "alan_disi": int(y.get("alan_disi") or 0),
+            "denge_kazanc": y.get("denge_kazanc"),
+            "exg_oran": y.get("exg_oran"),
             "yontem": c["yontem"], "ret": c["ret"],
             "lekeler": c["lekeler"], "fideler": fideler,
             "kare": "data:image/jpeg;base64," + base64.b64encode(jpeg).decode(),
