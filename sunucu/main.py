@@ -4179,6 +4179,77 @@ def _olc_sula_engel() -> str:
     return ""
 
 
+def _esik_kunyesi(ad: str) -> dict[str, Any]:
+    """Bir bitkinin eşiği: DEĞERİ, hangi kademeden geldiği ve panelde
+    görünen ölçüm. Karar veren iki sayıyı yan yana koyabilmek için."""
+    b = noktalar.bul(ad) or {}
+    tur = next((t for t in turler.hepsi()
+                if t.get("slug") == str(b.get("tur") or "")), {})
+    deger, kaynak = sulama.ayar_kaynagi(b, tur, "sulama_nem_esigi")
+    return {"esik": _sayi_guvenli(deger, 100.0), "kaynak": kaynak,
+            "panel_yuzde": b.get("nem_yuzde"), "nem_ham": b.get("nem_ham")}
+
+
+def _olc_sula_esik_sayimi(adlar: list[str]) -> tuple[list, list]:
+    """(gerçek eşiği olanlar, eşiği kapalı olanlar).
+
+    %100 "nem bakılmaz, her zaman sula" demek — eşik DEĞİL. "Düşükse sula"
+    seçen kullanıcı, eşiği hiç yazılmamış bir bahçede koşulsuz sulama alır
+    ve bunu ancak toprak çamur olunca fark eder.
+    """
+    turi = {t.get("slug"): t for t in turler.hepsi()}
+    acik, kapali = [], []
+    for ad in adlar:
+        b = noktalar.bul(ad) or {}
+        deger, kaynak = sulama.ayar_kaynagi(
+            b, turi.get(str(b.get("tur") or "")) or {}, "sulama_nem_esigi")
+        kayit = (ad, _sayi_guvenli(deger, 100.0), kaynak)
+        (acik if kayit[1] < 100.0 else kapali).append(kayit)
+    return acik, kapali
+
+
+def _esik_yazi(kayit: tuple) -> str:
+    ad, deger, kaynak = kayit
+    return f"{ad} %{deger:.0f} ({sulama.KAYNAK_ADI.get(kaynak, kaynak)})"
+
+
+async def _olc_sula_karar_gunlugu(ad: str, ozet: dict[str, Any]) -> None:
+    """KARARIN KULLANDIĞI İKİ SAYIYI yazar: eşik (nereden geldiğiyle) ve
+    karşılaştırmaya giren yüzde — yanında panelde görünen yüzde.
+
+    NEDEN. Gerekçe metni "toprak nemi %X ≥ eşik %Y" diyordu ve doğruydu,
+    ama iki soruyu cevaplamıyordu: bu eşik nereden geldi (bitkinin kendi
+    ayarı tür ezmesini yenmiş olabilir) ve karşılaştırılan yüzde panelde
+    gördüğüm yüzde mi (biri ham okumadan yeniden hesaplanıyor). İkisi
+    ayrışıyorsa hata orada; artık her turda görünüyor.
+    """
+    k = await asyncio.to_thread(_esik_kunyesi, ad)
+    karar = ozet.get("nem_yuzde")
+    panel = k["panel_yuzde"]
+    parca = [f"eşik %{k['esik']:.0f} "
+             f"({sulama.KAYNAK_ADI.get(k['kaynak'], k['kaynak'])})"]
+    parca.append("kararda ölçüm yok" if karar is None
+                 else f"kararda %{float(karar):.1f}")
+    parca.append("panelde ölçüm yok" if panel in (None, "")
+                 else f"panelde %{float(panel):.1f}")
+    parca.append("ham okuma yok" if k["nem_ham"] in (None, "")
+                 else f"ham {float(k['nem_ham']):.0f}")
+    await _olc_sula_gunluk(f"{ad}: " + " · ".join(parca))
+
+    # İKİ SAYI AYRIŞIYORSA ASIL HABER BU. Panelin gösterdiği yüzde nokta
+    # kaydından, kararınki ham okumadan yeniden hesaplanıyor; ikisi aynı
+    # kalibrasyondan geçtiği sürece eşit olmalı. Değilse karar, kullanıcının
+    # gördüğü sayıya göre verilmiyor demektir.
+    if karar is not None and panel not in (None, ""):
+        fark = abs(float(karar) - float(panel))
+        if fark > 1.0:
+            await _olc_sula_gunluk(
+                f"{ad}: UYUŞMAZLIK — panelde %{float(panel):.1f}, kararda "
+                f"%{float(karar):.1f} ({fark:.1f} puan). İkisi aynı ham "
+                f"okumadan çıkmıyor; kalibrasyon ya da kayıtlı ham değer "
+                f"şüpheli.", "hata")
+
+
 async def _taze_olcum_bekle(ad: str, onceki_ts: float,
                             azami_sn: float = 8.0) -> dict[str, Any] | None:
     """Ölçüm bitkinin kaydına düştü mü; düştüyse noktayı döner.
@@ -4224,6 +4295,29 @@ async def _olc_sula_calistir(is_: dict[str, Any], kosullu: bool) -> str:
             p.append(f"{len(olculemeyen)} ölçülemedi")
         return " · ".join(p)
 
+    if kosullu:
+        # EŞİK YOKSA GÖREV HİÇ BAŞLAMIYOR. Varsayılan %100 "her zaman sula"
+        # demek; "düşükse sula" seçen kullanıcı koşulsuz sulama alırdı ve
+        # bunu ancak toprak çamur olunca fark ederdi. Sessizce koşulsuza
+        # düşmektense hiç başlamamak doğru taraf.
+        acik, kapali = await asyncio.to_thread(_olc_sula_esik_sayimi, adlar)
+        if not acik:
+            raise HTTPException(status_code=409, detail=(
+                f"Başlatılmadı: kapsamdaki {len(adlar)} bitkinin hiçbirinde "
+                f"gerçek bir sulama eşiği yok — hepsi %100, yani "
+                f"\u201cnem bakılmaz\u201d. Bu görev eşiğin altındakileri "
+                f"sular; eşik yoksa yaptığı şey koşulsuz sulama olurdu. "
+                f"Tür ya da bitki eşiğini girin (Tarla \u2192 tür "
+                f"varsayılanları ya da bitkinin kartı)."))
+        if kapali:
+            # ARADAKİ HÂL TEHLİKELİ: bir kısmı eşikli, bir kısmı kapalı.
+            # Kapalı olanlar bu turda KOŞULSUZ sulanır ve kullanıcı bunu
+            # istemiş olmayabilir — hangileri olduğunu yazıyoruz.
+            await _olc_sula_gunluk(
+                f"{baslik}: {len(acik)}/{len(adlar)} bitkide gerçek eşik var. "
+                f"Eşiği kapalı (%100) olanlar bu turda koşulsuz sulanacak: "
+                + " · ".join(_esik_yazi(k) for k in kapali[:6])
+                + (f" (+{len(kapali) - 6})" if len(kapali) > 6 else ""), "uyari")
     await _olc_sula_gunluk(f"{baslik}: {len(adlar)} bitki — başlıyor")
 
     for sira, ad in enumerate(adlar, 1):
@@ -4288,6 +4382,7 @@ async def _olc_sula_calistir(is_: dict[str, Any], kosullu: bool) -> str:
                 continue
             o = (cozum["ozet"] or [{}])[0]
             gerekce = str(o.get("nem_gerekce") or "")
+            await _olc_sula_karar_gunlugu(ad, o)
             if not o.get("sulanacak", True):
                 # GEREKÇE GÜNLÜĞE. "Neden sulanmadı" sorusu her turda
                 # yeniden sorulmasın diye: "toprak nemi %38 ≥ eşik %30".

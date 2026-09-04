@@ -195,6 +195,51 @@ def ayar_coz(bitki: dict[str, Any], tur: dict[str, Any] | None) -> dict[str, Any
     return cikti
 
 
+#: `ayar_kaynagi`nın döndürdüğü kaynakların okunur adı.
+KAYNAK_ADI = {
+    "bitki": "bitkinin kendi ayarı",
+    "tur_ezme": "tür ezmesi",
+    "varsayilan": "varsayılan",
+}
+
+
+def ayar_kaynagi(bitki: dict[str, Any], tur: dict[str, Any] | None,
+                 alan: str = "sulama_nem_esigi") -> tuple[Any, str]:
+    """(değer, kaynak) — `ayar_coz` ile AYNI zincir, ama kazananı söylüyor.
+
+    NEDEN VAR. `ayar_coz` üç kademeyi (bitkinin `ozel` alanı > tür ezmesi >
+    varsayılan) sessizce çözüyor ve geriye yalnız bir sayı kalıyor. Sahada
+    tam bu yüzden zaman kaybedildi: panelde tür eşiği %50 yazıyordu, bitki
+    kendi `ozel` alanında %100 taşıyordu ve %57 ölçülen bitki sulandı.
+    Karar doğruydu, kaynağı görünmüyordu.
+
+    "Tür ezmesi" ile "varsayılan" ayrımı `turler.hepsi()`nin `ezili`
+    alanından geliyor: kullanıcı o alanı yazdıysa orada listeleniyor,
+    yazmadıysa değeri `varsayilanlari_uygula` doldurmuş demektir. Katalog
+    sulama alanlarını hiç taşımıyor, o yüzden başka bir ayrım yok.
+
+    `ayar_coz` ile aynı sonucu vermek ZORUNDA; ayrışırsa günlük yalan
+    söyler. Bozuk bir değerde ikisi de varsayılana düşüyor.
+    """
+    varsayilan = turler.VARSAYILAN.get(alan)
+    ozel = _ozel(bitki, alan)
+    if ozel not in (None, ""):
+        try:
+            return turler.alan_dogrula(alan, ozel), "bitki"
+        except turler.TurHatasi:
+            return varsayilan, "varsayilan"
+    deger = (tur or {}).get(alan)
+    if deger not in (None, ""):
+        try:
+            temiz = turler.alan_dogrula(alan, deger)
+        except turler.TurHatasi:
+            return varsayilan, "varsayilan"
+        if alan in ((tur or {}).get("ezili") or {}):
+            return temiz, "tur_ezme"
+        return temiz, "varsayilan"
+    return varsayilan, "varsayilan"
+
+
 def guncel_yaricap_mm(bitki: dict[str, Any], tur: dict[str, Any] | None,
                       gun: float, egri_listesi=None) -> tuple[float, bool]:
     """(yarıçap_mm, eğriden_mi).
