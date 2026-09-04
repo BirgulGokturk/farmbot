@@ -255,6 +255,8 @@ def hesapla(kamera: str) -> dict[str, Any]:
 # Uç noktalar
 # --------------------------------------------------------------------------- #
 def yonlendirici_kur(parola_dogrula, canli_kare, git_ve_bekle):
+    import inspect
+
     """`git_ve_bekle(x, y, z)` hareketi yapıp BİTMESİNİ bekliyor.
 
     Hareketi burada değil çağıranda tutuyoruz: makineyi süren tek yer
@@ -302,6 +304,8 @@ def yonlendirici_kur(parola_dogrula, canli_kare, git_ve_bekle):
         # ve bulanık kare, köşeleri yanlış yere oturtuyor.
         await asyncio.sleep(0.6)
         kare = canli_kare(kam)
+        if inspect.isawaitable(kare):
+            kare = await kare
         if not kare:
             raise HTTPException(
                 status_code=409,

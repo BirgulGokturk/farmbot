@@ -27,6 +27,7 @@ jog bitlerini bırakıyor.
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
 import logging
 import os
@@ -103,7 +104,11 @@ VARSAYILAN_AYAR = {
     },
     # aralik_sn kamera.py'deki varsayilanla AYNI olmali: burasi 30 yazarken
     # oradaki ve belgelerdeki "bir saat" hicbir zaman gecerli olmuyordu.
-    "kamera": {"aktif": False, "aralik_sn": 3600.0, "genislik": 640, "sahte": False},
+    # genislik/canli_genislik kamera.py'deki VARSAYILAN ile AYNI olmalı:
+    # çekim 1920 (filiz 640'ta birkaç piksel kalıp eleniyordu), ağdan
+    # geçen akış 640.
+    "kamera": {"aktif": False, "aralik_sn": 3600.0, "genislik": 1920,
+               "canli_genislik": 640, "sahte": False},
     # Hailo AI HAT — varsayılan KAPALI, HAT'i olmayan kurulum etkilenmesin.
     "hailo": {"aktif": False, "sahte": False},
     "durum_araligi_sn": 0.5,
@@ -552,6 +557,40 @@ class Ajan:
                     kam.ayar["aralik_sn"] = max(2.0, float(arg["aralik_sn"]))
                 ok, mesaj = kam.ac() if acik else kam.kapat()
                 return {"ok": ok, "mesaj": mesaj}
+
+            if ad == "kamera_kare":
+                # TAM ÇÖZÜNÜRLÜKLÜ TEK KARE — çözümleme için.
+                #
+                # Canlı akış ağı yormasın diye küçültülmüş kare gönderiyor;
+                # AprilTag taraması ve filiz bulma ise büyüğünü istiyor.
+                # 640'ta yeni çıkmış bir filiz birkaç piksel kalıp eleniyor,
+                # etiket de okunamayacak kadar küçük düşüyordu.
+                kam = self._kamera_sec(arg.get("kamera"))
+                if kam is None:
+                    return {"ok": False,
+                            "mesaj": f"'{arg.get('kamera')}' adlı kamera tanımlı değil"}
+                try:
+                    yas = float(arg.get("azami_yas_sn", 5.0))
+                except (TypeError, ValueError):
+                    yas = 5.0
+                # Kare alınamaması OLAĞAN bir hâl (kamera çıkarılmış, akış
+                # kapalı, cihaz meşgul); "Beklenmeyen hata" diye
+                # gösterilmesi kullanıcıyı yanlış yere baktırıyor.
+                try:
+                    ham = await asyncio.to_thread(kam.tam_kare, yas)
+                except Exception as hata:                  # noqa: BLE001
+                    return {"ok": False,
+                            "mesaj": f"[{kam.etiket}] kare alınamadı: {hata}"}
+                if not ham:
+                    return {"ok": False,
+                            "mesaj": (f"[{kam.etiket}] taze kare yok. Canlı akış "
+                                      "açıksa son kare eskimiş; kapalıysa kamera "
+                                      "kare veremedi.")}
+                g, y = kam._boyut()
+                return {"ok": True, "sessiz": True,
+                        "mesaj": f"[{kam.etiket}] {g}x{y} kare",
+                        "veri": {"kamera": kam.ad, "genislik": g, "yukseklik": y,
+                                 "kare": base64.b64encode(ham).decode("ascii")}}
 
             if ad == "kamera_kaydet":
                 # Kamera TANIMLARI — cihaz adı, çözünürlük, aralık. Geçici

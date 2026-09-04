@@ -1534,25 +1534,9 @@ button.dugme.tehlike:disabled {
 }
 .toplu-deger input { width: 64px; }
 
-/* ------------------------------------------------- kamera kalibrasyonu */
-.kalib-tuval-kutu {
-  position: relative;
-  margin: var(--b2) 0;
-  border: 1px solid var(--cizgi);
-  border-radius: var(--b2);
-  overflow: hidden;
-  background: var(--yuzey-2);
-  min-height: 120px;
-}
-.kalib-tuval-kutu img { display: block; width: 100%; height: auto; }
-.kalib-tuval-kutu canvas {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-}
-/* İşaret beklerken artı imleç: tıklamanın bir anlamı olduğu belli olsun. */
-.kalib-tuval-kutu canvas.bekliyor { cursor: crosshair; background: rgba(57, 135, 229, .10); }
+/* Kamera kalibrasyonunun tıklama tuvali KALDIRILDI: ölçüm artık
+   AprilTag ile yapılıyor ve tarama kendi önizlemesini kendi çiziyor
+   (etiket.css → .etiket-onizleme). */
 
 /* ====================================================================
    PROFİL GÖRÜNTÜLEYİCİ — haritanın altında Z kesiti.

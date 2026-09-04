@@ -1455,16 +1455,20 @@ function adimlariTopla() {
 
 /* ================================================== kamera kalibrasyonu
  *
- * Fotoğrafı haritaya oturtan sayılar. Hesap sunucuda (kalibrasyon.py);
- * panelin işi tıklanan pikselleri ve o anki eksen konumunu toplamak.
+ * Fotoğrafı haritaya oturtan sayılar. Hesap sunucuda (kalibrasyon.py,
+ * etiket.py); panelin işi sayıları göstermek ve taramayı başlatmak.
  *
- * İki kare yöntemi: makine bilinen bir mesafe oynuyor, aynı toprak parçası
- * iki karede işaretleniyor. Piksel farkı ile mm farkı hem ölçeği hem açıyı
- * veriyor.
+ * TIKLAMA TABANLI İKİ YÖNTEM KALDIRILDI ("iki kare" ve "ölçek"). İkisi de
+ * kullanıcının bir piksele tıklamasına dayanıyordu; tıklama 3-5 piksel
+ * şaşıyor ve o şaşma bütün kareye yayılıyor — 640 piksellik karede 4
+ * piksel, 535 mm'lik yatakta 3 mm. AprilTag'in dört köşesi matematiksel
+ * olarak tanımlı, algılayıcı onları alt piksel hassasiyetiyle buluyor ve
+ * dört etiketle perspektif de çözülüyor. Tarama arayüzü `etiket.js`
+ * içinde, kendi önizlemesiyle.
+ *
+ * Burada kalan: kayıtlı sayıları göstermek, elle girmek (ölçüleni ezmenin
+ * ve görmenin yolu) ve kamera seçimini yönetmek.
  */
-const KALIB = { kare1: null, kare2: null, bekleyen: 0,
-                // Sabit kameranın ölçek yöntemi: aynı karede iki işaret.
-                olcek1: null, olcek2: null, olcekBekleyen: 0 };
 
 /* Kalibrasyon bölümünün işlediği kamera — PANELİN SEÇİMİYLE AYNI.
  *
@@ -1496,75 +1500,61 @@ function kalibSekmeleriYaz() {
 function kamSecimDegistir(ad) {
   if (!ad || ad === S.kamSecim) return;
   S.kamSecim = ad;
-  // Ölçüm yarıda kaldıysa taşımıyoruz: bir kamerada konulmuş işaretler
-  // ötekinin karesinde başka bir yeri gösterir.
-  kalibSifirla();
-  kalibOlcekSifirla();
   kalibSekmeleriYaz();
   kalibrasyonYukle();
   goruntuDurumYukle();
-  // Seçilen kameranın son karesi kalibrasyon tuvaline gelsin: bir sonraki
-  // kareyi beklemek saatlik aralıkta bir saat demek.
-  const son = S.sonKare[ad];
-  const im = $("#kalib-kare");
-  if (im) {
-    if (son) { im.src = son.adres; im.onload = kalibIsaretCiz; }
-    else im.removeAttribute("src");
-  }
 }
 
-/* Hangi kalibrasyon yöntemi görünsün.
+/* Seçili kameranın kalibrasyon notu.
  *
- * SABİT KAMERADA İKİ KARE YÖNTEMİ ÇALIŞMAZ: makine oynadığında sabit
- * kameranın gördüğü sahne değişmiyor, iki karedeki piksel farkı sıfır
- * çıkar. Düğmeyi orada bırakmak, basıp anlamsız bir hata almak demek —
- * yöntemi gizleyip yerine çalışanı koyuyoruz. */
+ * SABİT KAMERADA AÇI VE KAYMA ARTIK ANLAMSIZ DEĞİL. Eskiden bu alanlar
+ * kilitliydi, çünkü sabit kameranın karesinin makine koordinatı yoktu.
+ * AprilTag etiketleri yatağa yapıştırılıyor ve koordinatları biliniyor;
+ * çözümden çıkan kayma doğrudan "karenin merkezi yatağın şurası"
+ * anlamına geliyor. Kilit kalktı. */
 function kalibYontemYaz() {
   const ad = kalibSecili();
   const hareketli = kamHareketli(ad);
-  const bas = $("#kalib-yontem-bas");
-  const ikiKare = $("#kalib-ikikare-araclar");
-  const olcek = $("#kalib-olcek-araclar");
   const not = $("#kalib-kamera-not");
-  const yonerge = $("#kalib-yonerge");
-  if (ikiKare) ikiKare.classList.toggle("gizli", !hareketli);
-  if (olcek) olcek.classList.toggle("gizli", hareketli);
-  if (bas) bas.textContent = hareketli ? "İki kare ile hesapla" : "Ölçek ile hesapla";
+  const k = S.kalibrasyon || {};
   if (not) {
     not.textContent = hareketli
-      ? `${kamEtiket(ad)} uçla birlikte hareket ediyor: kareleri konumlu, `
-        + "iki kare yöntemi hem ölçeği hem açıyı veriyor."
-      : `${kamEtiket(ad)} sabit: makine oynadığında gördüğü sahne değişmiyor, `
-        + "iki kare yöntemi burada hiçbir şey ölçemez. Karede uzunluğu bilinen "
-        + "bir şeyin iki ucunu işaretleyip gerçek mesafesini yazın — yalnız "
-        + "ölçek çıkar, açı ve konum çıkmaz.";
+      ? `${kamEtiket(ad)} uçla birlikte hareket ediyor: kareleri konumlu ve `
+        + "kayma, kamera merkezinin UÇTAN uzaklığı."
+      : `${kamEtiket(ad)} sabit: kayma, karenin merkezinin YATAKTAKİ yeri. `
+        + (k.harita
+           ? "Harita kayıtlı — bu kameranın her pikseli yatak koordinatı veriyor."
+           : "Dört etiketi yatağa yapıştırıp tarayın; harita çıkınca kare "
+             + "yatağa oturur ve koordinat verilmeye başlar.");
   }
-  if (yonerge && !hareketli) {
-    yonerge.textContent = "Karede uzunluğu bildiğiniz bir şeyin (cetvel, "
-      + "yatak kenarı, iki tepsi gözü arası) iki ucunu işaretleyin, gerçek "
-      + "mesafesini yazın ve Hesapla'ya basın.";
-  }
-  // Açı ve kayma alanları sabit kamerada anlamsız: o karenin makine
-  // koordinatı yok, haritaya oturtulmuyor.
-  [["#kalib-donme", hareketli], ["#kalib-ofx", hareketli],
-   ["#kalib-ofy", hareketli]].forEach(([sec, acik]) => {
+  ["#kalib-donme", "#kalib-ofx", "#kalib-ofy"].forEach((sec) => {
     const el = $(sec);
     if (!el) return;
-    el.disabled = !acik;
-    el.title = acik ? ""
-      : "Sabit kamerada açı ve kayma anlamsız: karenin makine koordinatı yok.";
+    el.disabled = false;
+    el.title = "";
   });
 }
 
+/* Başlıktaki özet.
+ *
+ * HANGİ MODELİN GEÇERLİ OLDUĞU YAZIYOR. İkisi de kayıtlı olabiliyor ve
+ * aralarında sahada 40 mm fark ölçüldü; kullanıcı hangi sayıya baktığını
+ * bilmeli. Harita varsa sapması da yazıyor — "kalibre" demek, ne kadar
+ * yanlış olduğunu bilmeden bir şey söylememeli. */
 function kalibDurumYaz(k) {
   const rozet = $("#kalib-durum");
   if (!rozet) return;
   const etiket = kamListe().length > 1 ? `${kamEtiket(kalibSecili())}: ` : "";
-  rozet.textContent = etiket + (k && Number(k.mm_px) > 0
-    ? (kamHareketli(kalibSecili())
-      ? `${Number(k.mm_px).toFixed(3)} mm/px · ${Number(k.donme).toFixed(1)}°`
-      : `${Number(k.mm_px).toFixed(3)} mm/px`)
-    : "kalibre edilmedi");
+  let metin = "kalibre edilmedi";
+  if (k && k.harita) {
+    const sapma = Number(k.harita_sapma_mm);
+    metin = `harita · ${Number(k.harita_nokta) || 0} etiket`
+      + (Number.isFinite(sapma) ? ` · ±${sapma.toFixed(1)} mm` : "");
+  } else if (k && Number(k.mm_px) > 0) {
+    metin = `${Number(k.mm_px).toFixed(3)} mm/px`
+      + (kamHareketli(kalibSecili()) ? ` · ${Number(k.donme).toFixed(1)}°` : "");
+  }
+  rozet.textContent = etiket + metin;
 }
 
 /* ------------------------------------------------ görüntü çözümleme
@@ -1840,214 +1830,7 @@ async function kalibrasyonYukle() {
   } catch (hata) { /* kalibrasyon yoksa sorun değil */ }
 }
 
-/** İşaretleri kare görüntüsünün üstüne çiziyor. */
-function kalibIsaretCiz() {
-  const im = $("#kalib-kare"), tuval = $("#kalib-tuval");
-  if (!im || !tuval || !im.clientWidth) return;
-  tuval.width = im.clientWidth;
-  tuval.height = im.clientHeight;
-  const c = tuval.getContext("2d");
-  c.clearRect(0, 0, tuval.width, tuval.height);
-  const olcek = im.clientWidth / (im.naturalWidth || 1);
-  const hareketli = kamHareketli(kalibSecili());
-  const isaretler = hareketli
-    ? [[KALIB.kare1, "1", "#3987e5"], [KALIB.kare2, "2", "#d95926"]]
-    : [[KALIB.olcek1, "1", "#3987e5"], [KALIB.olcek2, "2", "#d95926"]];
-  isaretler.forEach(([k, ad, renk]) => {
-    if (!k) return;
-    const x = k.u * olcek, y = k.v * olcek;
-    c.strokeStyle = renk; c.lineWidth = 2;
-    c.beginPath(); c.arc(x, y, 9, 0, Math.PI * 2); c.stroke();
-    c.beginPath();
-    c.moveTo(x - 14, y); c.lineTo(x + 14, y);
-    c.moveTo(x, y - 14); c.lineTo(x, y + 14);
-    c.stroke();
-    c.fillStyle = renk;
-    c.font = "bold 12px ui-sans-serif, system-ui";
-    c.fillText(ad, x + 12, y - 12);
-  });
-  // Ölçek yönteminde iki işaret arasındaki DOĞRU çiziliyor: ölçülen şeyin
-  // ne olduğu gözle görünsün — yanlış iki uç seçmek en olası hata.
-  if (!hareketli && KALIB.olcek1 && KALIB.olcek2) {
-    c.strokeStyle = "#d0a13a"; c.lineWidth = 2; c.setLineDash([6, 4]);
-    c.beginPath();
-    c.moveTo(KALIB.olcek1.u * olcek, KALIB.olcek1.v * olcek);
-    c.lineTo(KALIB.olcek2.u * olcek, KALIB.olcek2.v * olcek);
-    c.stroke();
-    c.setLineDash([]);
-  }
-}
-
-function kalibSonucCiz(metin, iyi) {
-  const kutu = $("#kalib-sonuc");
-  kutu.classList.remove("gizli");
-  kutu.innerHTML = `<div class="${iyi ? "" : "hata-yazi"}">${kacisli(metin)}</div>`;
-}
-
-async function kalibIsaretle(hangi) {
-  const im = $("#kalib-kare");
-  if (!im || !im.naturalWidth) { gunluk("Önce bir kamera karesi gelmeli", "uyari"); return; }
-  const k = S.konum || {};
-  if (k.x == null || k.y == null) { gunluk("Eksen konumu bilinmiyor", "uyari"); return; }
-  KALIB.bekleyen = hangi;
-  $("#kalib-yonerge").textContent =
-    `${hangi}. kare için görüntüde toprak parçasına tıklayın — konum X${k.x.toFixed(1)} Y${k.y.toFixed(1)}`;
-  $("#kalib-tuval").classList.add("bekliyor");
-}
-
-/** Tıklanan yerin GÖRÜNTÜ pikselindeki karşılığı. */
-function kalibPiksel(olay, im) {
-  const kutu = im.getBoundingClientRect();
-  const olcek = (im.naturalWidth || 1) / (kutu.width || 1);
-  return { u: (olay.clientX - kutu.left) * olcek,
-           v: (olay.clientY - kutu.top) * olcek };
-}
-
-async function kalibTiklandi(olay) {
-  // Sabit kamerada tuval ölçek yöntemine ait: aynı karede iki uç.
-  if (!kamHareketli(kalibSecili())) { kalibOlcekTiklandi(olay); return; }
-  if (!KALIB.bekleyen) return;
-  const im = $("#kalib-kare");
-  const kutu = im.getBoundingClientRect();
-  const olcek = (im.naturalWidth || 1) / (kutu.width || 1);
-  const kayit = {
-    x: S.konum.x, y: S.konum.y,
-    u: (olay.clientX - kutu.left) * olcek,
-    v: (olay.clientY - kutu.top) * olcek,
-  };
-  if (KALIB.bekleyen === 1) KALIB.kare1 = kayit; else KALIB.kare2 = kayit;
-  KALIB.bekleyen = 0;
-  $("#kalib-tuval").classList.remove("bekliyor");
-  kalibIsaretCiz();
-
-  if (!KALIB.kare1 || !KALIB.kare2) {
-    $("#kalib-yonerge").textContent =
-      "İkinci kare için makineyi en az 20 mm oynatın, yeni kare gelince aynı yere tıklayın.";
-    return;
-  }
-  try {
-    const y = await apiIste("/api/kamera/kalibrasyon/coz", {
-      method: "POST",
-      body: JSON.stringify({
-        kare1: KALIB.kare1, kare2: KALIB.kare2, kaydet: true,
-        kamera: kalibSecili(),
-        genislik_px: im.naturalWidth, yukseklik_px: im.naturalHeight,
-      }),
-    });
-    const s = y.sonuc;
-    kalibSonucCiz(
-      `${s.mm_mesafe.toFixed(1)} mm hareket · ${s.px_mesafe.toFixed(1)} px kayma → ` +
-      `${s.mm_px.toFixed(4)} mm/px · ${s.donme.toFixed(1)}° · kaydedildi`, true);
-    await kalibrasyonYukle();
-    if (window.Tarla && window.Tarla.kalibrasyonDegisti) window.Tarla.kalibrasyonDegisti();
-  } catch (hata) {
-    kalibSonucCiz(hata.message, false);
-  }
-}
-
-/* ÖLÇEK YÖNTEMİ — sabit kameranın tek kalibrasyon yolu.
- *
- * Karede uzunluğu BİLİNEN bir şeyin iki ucu işaretleniyor ve gerçek
- * mesafesi yazılıyor. Çıkan tek sayı mm/px. Açı ve konum çıkmıyor,
- * çünkü sabit kameranın karesinin makine koordinatı yok — ve olmayan
- * bir şeyi uydurmuyoruz. */
-function kalibOlcekIsaretle(hangi) {
-  const im = $("#kalib-kare");
-  if (!im || !im.naturalWidth) { gunluk("Önce bir kamera karesi gelmeli", "uyari"); return; }
-  KALIB.olcekBekleyen = hangi;
-  $("#kalib-yonerge").textContent =
-    `${hangi}. ucu görüntüde işaretleyin — uzunluğunu bildiğiniz şeyin ucu.`;
-  $("#kalib-tuval").classList.add("bekliyor");
-}
-
-function kalibOlcekTiklandi(olay) {
-  if (!KALIB.olcekBekleyen) return;
-  const im = $("#kalib-kare");
-  const kayit = kalibPiksel(olay, im);
-  if (KALIB.olcekBekleyen === 1) KALIB.olcek1 = kayit; else KALIB.olcek2 = kayit;
-  KALIB.olcekBekleyen = 0;
-  $("#kalib-tuval").classList.remove("bekliyor");
-  kalibIsaretCiz();
-  if (KALIB.olcek1 && KALIB.olcek2) {
-    const px = Math.hypot(KALIB.olcek2.u - KALIB.olcek1.u,
-                          KALIB.olcek2.v - KALIB.olcek1.v);
-    $("#kalib-yonerge").textContent =
-      `İki işaret arası ${px.toFixed(0)} piksel. Gerçek mesafeyi mm olarak `
-      + "yazıp Hesapla'ya basın.";
-  } else {
-    $("#kalib-yonerge").textContent = "Şimdi ikinci ucu işaretleyin.";
-  }
-}
-
-async function kalibOlcekHesapla() {
-  const im = $("#kalib-kare");
-  if (!KALIB.olcek1 || !KALIB.olcek2) {
-    kalibSonucCiz("Önce iki ucu işaretleyin.", false);
-    return;
-  }
-  const mm = Number(($("#kalib-olcek-mm") || {}).value);
-  if (!(mm > 0)) {
-    kalibSonucCiz("Gerçek mesafeyi milimetre olarak yazın.", false);
-    return;
-  }
-  try {
-    const y = await apiIste("/api/kamera/kalibrasyon/olcek", {
-      method: "POST",
-      body: JSON.stringify({
-        u1: KALIB.olcek1.u, v1: KALIB.olcek1.v,
-        u2: KALIB.olcek2.u, v2: KALIB.olcek2.v, mm,
-        kamera: kalibSecili(), kaydet: true,
-        genislik_px: im.naturalWidth, yukseklik_px: im.naturalHeight,
-      }),
-    });
-    const s = y.sonuc;
-    kalibSonucCiz(
-      `${s.mm_mesafe.toFixed(0)} mm · ${s.px_mesafe.toFixed(1)} px → `
-      + `${s.mm_px.toFixed(4)} mm/px · kaydedildi (yalnız ölçek — `
-      + "sabit kamerada açı ve konum yok)", true);
-    await kalibrasyonYukle();
-  } catch (hata) {
-    kalibSonucCiz(hata.message, false);
-  }
-}
-
-function kalibOlcekSifirla() {
-  KALIB.olcek1 = KALIB.olcek2 = null;
-  KALIB.olcekBekleyen = 0;
-  const tuval = $("#kalib-tuval");
-  if (tuval) tuval.classList.remove("bekliyor");
-  const sonuc = $("#kalib-sonuc");
-  if (sonuc) sonuc.classList.add("gizli");
-  kalibIsaretCiz();
-  kalibYontemYaz();
-}
-
-function kalibSifirla() {
-  KALIB.kare1 = KALIB.kare2 = null;
-  KALIB.bekleyen = 0;
-  $("#kalib-tuval").classList.remove("bekliyor");
-  $("#kalib-sonuc").classList.add("gizli");
-  $("#kalib-yonerge").textContent =
-    "1. Makineyi bir yere götürün, kare gelsin, aşağıda bir toprak parçasına tıklayın. " +
-    "2. Makineyi en az 20 mm oynatın, yeni kare gelsin, aynı yere tıklayın.";
-  kalibIsaretCiz();
-}
-
 function kalibBagla() {
-  const tuval = $("#kalib-tuval");
-  if (!tuval) return;
-  tuval.onclick = kalibTiklandi;
-  $("#d-kalib-kare1").onclick = () => kalibIsaretle(1);
-  $("#d-kalib-kare2").onclick = () => kalibIsaretle(2);
-  $("#d-kalib-temizle").onclick = kalibSifirla;
-  const o1 = $("#d-kalib-olcek1");
-  if (o1) o1.onclick = () => kalibOlcekIsaretle(1);
-  const o2 = $("#d-kalib-olcek2");
-  if (o2) o2.onclick = () => kalibOlcekIsaretle(2);
-  const oh = $("#d-kalib-olcek-hesapla");
-  if (oh) oh.onclick = kalibOlcekHesapla;
-  const ot = $("#d-kalib-olcek-temizle");
-  if (ot) ot.onclick = kalibOlcekSifirla;
   // Kamera tanımları bölümü.
   // Kamera ayarları artık kendi yarılarında bağlanıyor (`kamYariBagla`);
   // burada bağlanacak tek kopya yok.
@@ -2110,7 +1893,6 @@ function kalibBagla() {
       if (window.Tarla && window.Tarla.kalibrasyonDegisti) window.Tarla.kalibrasyonDegisti();
     } catch (hata) { gunluk(`✕ ${hata.message}`, "hata"); }
   };
-  window.addEventListener("resize", kalibIsaretCiz);
 }
 
 
@@ -3058,15 +2840,6 @@ function kareyiTazele(ts, canli = false, ad = "") {
     kamFpsSay(kam);
   }
 
-  // Kalibrasyon karesi de aynı görüntüyü kullanıyor: iki kare yöntemi için
-  // makine oynadıkça yeni kare gelmesi gerekiyor. Yalnız KALİBRASYON
-  // BÖLÜMÜNDE seçili kameranın karesi konuyor: başka bir kameranın
-  // karesinde işaret koymak, o ölçümü yanlış kameraya yazardı.
-  if (kam === kalibSecili()) {
-    const kalibKare = $("#kalib-kare");
-    if (kalibKare) { kalibKare.src = adres; kalibKare.onload = kalibIsaretCiz; }
-  }
-
   // Sahnedeki yüzen kutu — kameranın kendi kutusu. Aynı adres, o yüzden
   // tarayıcı iki <img> için tek istek yapıyor.
   const kutu = KAM_KUTU.get(kam);
@@ -3557,11 +3330,14 @@ function kamCozumYaz(y) {
   S.kamDondu[ad] = true;
   kameraDurumYaz(kamBilgi(ad));
   const kare = y.kare || {};
-  // SABİT KAMERA: ölçüler var, KOORDİNAT YOK. `kalibre` bayrağı burada
-  // "milimetre yazılabilir mi" demek; sabit kamerada `ret` her zaman dolu
+  // SABİT KAMERA, HARİTASIZ: ölçüler var, KOORDİNAT YOK. `kalibre` bayrağı
+  // burada "milimetre yazılabilir mi" demek; o durumda `ret` her zaman dolu
   // (konum yok) ama kalibreyse ölçüler yine milimetre. İkisini ayırıyoruz,
   // yoksa kalibre edilmiş sabit kamerada da piksel yazardık.
-  if (!kamHareketli(ad)) { kamCozumYazSabit(y, ad); return; }
+  //
+  // HARİTA VARSA SABİT KAMERA DA HAREKETLİSİ GİBİ: koordinat ve eşleştirme
+  // çıkıyor, çünkü AprilTag haritası doğrudan yatak koordinatı veriyor.
+  if (!kamHareketli(ad) && !y.mutlak_harita) { kamCozumYazSabit(y, ad); return; }
   const kalibre = !(y.ret && y.ret.length);
 
   // Leke no -> eşleşme bilgisi. `no` hem piksel hem milimetre lekesinde
@@ -3985,7 +3761,9 @@ function kamAyarTaslak() {
   S.kamAyarTaslak = kamListe().map((k) => ({
     ad: k.ad, etiket: k.etiket || k.ad, hareketli: !!k.hareketli,
     yol: k.yol || "oto", cihaz_adi: k.cihaz_adi || "", cihaz: k.cihaz || "",
-    genislik: Number(k.genislik) || 640,
+    genislik: Number(k.genislik) || 1920,
+    // Ağdan geçen akışın genişliği; 0 = küçültme yok.
+    canli_genislik: Number(k.canli_genislik ?? 640),
     aralik_sn: Number(k.aralik_sn) || 3600,
     sahte: !!k.sahte,
     // AÇILIŞTA çalışsın mı. Taslakta DURMASI şart: alan gönderilmezse
@@ -4038,9 +3816,14 @@ function kamAyarKartiCiz(k, i) {
                  title="Yalnızca ad bulunamazsa kullanılıyor"></div>
       </div>
       <div class="satir-8 alt-hizali">
-        <div class="alan"><label>Genişlik (px)</label>
-          <input type="number" data-alan="genislik" min="160" max="1920" step="16"
-                 value="${Number(k.genislik)}"></div>
+        <div class="alan"><label>Çekim genişliği (px)</label>
+          <input type="number" data-alan="genislik" min="160" max="4096" step="16"
+                 value="${Number(k.genislik)}"
+                 title="Kameranın gerçekten aldığı kare. Çözümleme bunu kullanıyor: 640'ta yeni çıkmış bir filiz birkaç piksel kalıp eleniyor."></div>
+        <div class="alan"><label>Canlı akış genişliği (px)</label>
+          <input type="number" data-alan="canli_genislik" min="0" max="4096" step="16"
+                 value="${Number(k.canli_genislik)}"
+                 title="Ağdan geçen kare bu genişliğe küçültülüyor. 0 = küçültme yok. Çözümleme yine tam çözünürlüklü kareyi alıyor."></div>
         <div class="alan"><label>Kare aralığı (sn)</label>
           <input type="number" data-alan="aralik_sn" min="2" max="86400" step="1"
                  value="${Number(k.aralik_sn)}"></div>
@@ -4056,9 +3839,14 @@ function kamAyarKartiCiz(k, i) {
       </div>
       <p class="ikincil">${k.hareketli
         ? "Kareleri konumlu: karedeki leke yatak koordinatına çevrilebiliyor."
-        : "Kareleri KONUMSUZ: sabit kamera makineyle gitmediği için karelerine "
-          + "makine konumu yazılmıyor, yatak koordinatı çıkarılmıyor. Ölçüler "
-          + "(çap, alan) kendi mm/px'inden çıkıyor."}</p>
+        : ((S.kalibrasyonlar || {})[k.ad] || {}).harita
+          ? "Kareleri konumsuz ama HARİTALI: AprilTag kalibrasyonu yatağa "
+            + "yapıştırılmış etiketlerden çıktığı için her piksel doğrudan "
+            + "yatak koordinatı veriyor."
+          : "Kareleri KONUMSUZ: sabit kamera makineyle gitmiyor. Yatak "
+            + "koordinatı ancak AprilTag haritasıyla çıkar — dört etiketi "
+            + "yatağa yapıştırıp tarayın. O zamana kadar yalnız ölçüler "
+            + "(çap, alan) kendi mm/px'inden çıkıyor."}</p>
     </div>`).join("");
 
   kap.querySelectorAll(".kam-ayar").forEach((kart) => {
@@ -4069,7 +3857,8 @@ function kamAyarKartiCiz(k, i) {
         if (!t) return;
         const alan = el.dataset.alan;
         t[alan] = el.type === "checkbox" ? el.checked
-          : (alan === "genislik" || alan === "aralik_sn") ? Number(el.value)
+          : (alan === "genislik" || alan === "canli_genislik"
+             || alan === "aralik_sn") ? Number(el.value)
           : el.value;
         // "Hareketli" işareti kartın altındaki açıklamayı değiştiriyor ama
         // odak kutudayken kartı yeniden çizmiyoruz (yazılan silinirdi);

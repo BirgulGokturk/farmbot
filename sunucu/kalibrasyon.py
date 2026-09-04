@@ -8,31 +8,25 @@ belli olmaz, çünkü sonuç yine "milimetre" diye yazılır. Bu yüzden kayıt
 kamera adına göre tutuluyor ve çözümleme, karenin GELDİĞİ kameranın sayısını
 kullanıyor.
 
-İki kalibrasyon yöntemi var ve hangisinin işe yaradığını kameranın hareketli
-olup olmaması belirliyor:
+ÖLÇÜM YOLU TEK: APRILTAG (`etiket.py`)
+--------------------------------------
+Eskiden iki tıklama yöntemi vardı — "iki kare" (hareketli kamera) ve "ölçek"
+(sabit kamera). İkisi de kullanıcının bir piksele tıklamasına dayanıyordu;
+tıklama 3-5 piksel şaşıyor ve o şaşma bütün kareye yayılıyor. AprilTag'in
+dört köşesi alt piksel hassasiyetiyle bulunuyor ve aynı iki bilgiyi
+(ölçek, ve konumu bilinen etiketler varsa yerleşim) daha iyi veriyor.
+İkisi de KALDIRILDI; elle sayı girmek duruyor, çünkü ölçüleni görmenin ve
+gerektiğinde bir değeri zorlamanın yolu o.
 
-  * **iki kare** (hareketli kamera) — makine bilinen bir mesafe oynuyor, aynı
-    toprak parçası iki karede işaretleniyor. Hem ölçeği hem açıyı veriyor.
-  * **ölçek** (sabit kamera) — makine oynayınca sabit kameranın gördüğü sahne
-    DEĞİŞMİYOR, dolayısıyla iki kare yöntemi orada çalışmıyor. Onun yerine
-    karede bilinen uzunlukta bir şeyin iki ucu işaretlenip gerçek mesafesi
-    yazılıyor. Yalnız ölçek çıkıyor; açı ve konum çıkmıyor — çünkü sabit
-    kameranın karesinin makine koordinatı zaten yok.
+İki model tutuluyor ve ikisi de aynı dosyada:
 
-Kareyi haritanın DOĞRU yerine, doğru ölçekte ve doğru
-açıyla koyabilmek için dört şey gerekiyor:
+    mm_px / donme / ofset_x / ofset_y / ayna_x / ayna_y
+        Benzerlik modeli. Kameranın yatağa DİK baktığını varsayıyor.
+        Haritayı okumayan eski yerler bunu kullanmaya devam ediyor.
 
-    mm_px    — bir piksel kaç mm (yükseklik sabitken sabit)
-    donme    — kamera ekseninin makine eksenine göre açısı (derece)
-    ofset_x  — kamera merkezinin uç ucundan kayması (mm)
-    ofset_y
-    ayna_x   — görüntü yatayda ters mi (montaj yönüne göre)
-    ayna_y
-
-Bunlar elle girilebiliyor ama asıl yol **iki kare**: makineyi bilinen bir
-mesafe kadar oynatıp aynı toprak parçasını iki karede işaretlemek. Aradaki
-piksel farkı ile mm farkı hem ölçeği hem açıyı veriyor. Hesap `coz()` içinde;
-panel yalnızca tıklanan pikselleri gönderiyor.
+    harita (3x3 homografi)
+        Perspektifi de taşıyor. Eğik bakan kamerada sahada ölçüldü:
+        benzerlik 52 mm, harita 9 mm yanılıyordu. Varsa bu kazanıyor.
 
 Neden JSON: nokta deposuyla aynı gerekçe — küçük, bütün okunup bütün yazılan
 bir veri. Gerekçenin tamamı `noktalar.py` başında.
@@ -72,7 +66,7 @@ VARSAYILAN: dict[str, Any] = {
     "genislik_px": 640,
     "yukseklik_px": 480,
     "guncelleme": 0.0,      # son kalibrasyon zamanı (unix)
-    "yontem": "",           # "elle" | "iki-kare" | "olcek" | "harita"
+    "yontem": "",           # "elle" | "etiket" (AprilTag) | "oto" (otokalib)
     # PİKSEL → MİLİMETRE HARİTASI (3x3 homografi). `mm_px`/`donme`/`ofset`
     # üçlüsü kameranın yatağa DİK baktığını varsayıyor; eğik bakan bir
     # kamerada bu varsayım sahada 52 mm hata verdi. Harita perspektifi de
@@ -86,6 +80,19 @@ VARSAYILAN: dict[str, Any] = {
     # olmadan "kalibre" demek, ne kadar yanlış olduğunu bilmemek demek.
     "harita_sapma_mm": None,
     "harita_nokta": 0,
+    # HARİTA HANGİ MAKİNE KONUMUNDA ÖLÇÜLDÜ.
+    #
+    # Harita, piksel → YATAK MİLİMETRESİ veriyor. Sabit kamerada bu mutlak:
+    # kamera hiç oynamıyor, aynı piksel hep aynı yeri gösteriyor, kaydın
+    # burası boş (None) kalıyor.
+    #
+    # Hareketli (uç) kamerada aynı harita yalnız ÖLÇÜLDÜĞÜ konumda geçerli;
+    # makine 100 mm sağa gidince bütün kare 100 mm sağı gösteriyor. O yüzden
+    # ölçüm anındaki makine konumu da yazılıyor ve okuyan taraf kareyle
+    # arasındaki farkı ekliyor. Yazılmamışsa harita hareketli kamerada
+    # KULLANILMIYOR — kaydırmayı tahmin etmektense eski modele düşmek doğru.
+    "harita_makine_x": None,
+    "harita_makine_y": None,
 }
 
 # Makul aralıklar. Panelden gelen sayıya körlemesine güvenmiyoruz: saçma bir
@@ -139,6 +146,37 @@ def harita_uygula(harita: Any, u: float, v: float) -> tuple[float, float]:
         raise KalibrasyonHatasi("Harita bu piksel için tanımsız")
     return ((H[0][0] * u + H[0][1] * v + H[0][2]) / payda,
             (H[1][0] * u + H[1][1] * v + H[1][2]) / payda)
+
+
+def harita_ters(harita: Any) -> list[list[float]]:
+    """Haritanın tersi — milimetreden piksele dönmek için.
+
+    Ekim noktasının üstündeki pencereye bakmak (çimlenme denetimi) ve
+    haritada bir yeri karede göstermek bu yönü istiyor. Homografi tersi
+    yine bir homografi; 3x3 matris tersini açık formülle alıyoruz —
+    numpy burada zorunlu bir bağımlılık olmasın diye.
+    """
+    H = _harita_dogrula(harita)
+    if H is None:
+        raise KalibrasyonHatasi("Harita tanımlı değil")
+    a, b, c = H[0]
+    d, e, f = H[1]
+    g, h, i = H[2]
+    det = (a * (e * i - f * h) - b * (d * i - f * g) + c * (d * h - e * g))
+    if abs(det) < 1e-15:
+        raise KalibrasyonHatasi(
+            "Harita tersi alınamıyor — dört nokta aynı doğru üstünde olabilir")
+    ters = [
+        [(e * i - f * h) / det, (c * h - b * i) / det, (b * f - c * e) / det],
+        [(f * g - d * i) / det, (a * i - c * g) / det, (c * d - a * f) / det],
+        [(d * h - e * g) / det, (b * g - a * h) / det, (a * e - b * d) / det],
+    ]
+    return _harita_dogrula(ters)
+
+
+def harita_geri(harita: Any, x: float, y: float) -> tuple[float, float]:
+    """Yatak milimetresini karedeki piksele çevirir."""
+    return harita_uygula(harita_ters(harita), x, y)
 
 
 def _yol() -> str:
@@ -248,6 +286,12 @@ def kaydet(ham: dict[str, Any], kamera: str = VARSAYILAN_KAMERA) -> dict[str, An
             yeni[ad] = round(float(ham[ad]), 3)
     if "harita_nokta" in ham and ham["harita_nokta"] is not None:
         yeni["harita_nokta"] = int(ham["harita_nokta"])
+    # Harita ölçüm konumu: AÇIKÇA None yazılabilmeli (sabit kamera). O
+    # yüzden `is not None` süzgeci yok — anahtar varsa değeri geçerli.
+    for ad in ("harita_makine_x", "harita_makine_y"):
+        if ad in ham:
+            yeni[ad] = (None if ham[ad] in (None, "")
+                        else round(float(ham[ad]), 3))
     if "yontem" in ham:
         yeni["yontem"] = str(ham["yontem"])[:20]
     if "guncelleme" in ham:
@@ -256,86 +300,3 @@ def kaydet(ham: dict[str, Any], kamera: str = VARSAYILAN_KAMERA) -> dict[str, An
     tumu[kam] = yeni
     _yaz(tumu)
     return {**yeni, "kamera": kam}
-
-
-def coz(kare1: dict[str, Any], kare2: dict[str, Any]) -> dict[str, float]:
-    """İki kareden ölçek ve açı çıkarır.
-
-    Her kare: {"x","y"} makine konumu (mm) ve {"u","v"} aynı toprak
-    parçasının o karedeki piksel yeri.
-
-    Makine Δ kadar hareket ettiğinde SABİT bir toprak parçası kameraya göre
-    −Δ kadar kayar. Görüntüdeki piksel kayması ΔU ise:
-
-        −Δ = s · R(θ) · ΔU
-
-    Buradan ölçek iki uzunluğun oranı, açı da iki yönün farkı.
-    """
-    dx = float(kare2["x"]) - float(kare1["x"])
-    dy = float(kare2["y"]) - float(kare1["y"])
-    du = float(kare2["u"]) - float(kare1["u"])
-    dv = float(kare2["v"]) - float(kare1["v"])
-
-    mm_uzunluk = math.hypot(dx, dy)
-    px_uzunluk = math.hypot(du, dv)
-
-    # Çok küçük hareket = büyük hata. 20 mm ve 12 px, gürültünün üstünde
-    # kalmak için makul bir alt sınır.
-    if mm_uzunluk < 20:
-        raise KalibrasyonHatasi(
-            f"İki kare arasında en az 20 mm hareket olmalı (şu an {mm_uzunluk:.1f} mm). "
-            "Makineyi biraz daha oynatıp yeniden çekin.")
-    if px_uzunluk < 12:
-        raise KalibrasyonHatasi(
-            f"İşaretlenen iki nokta arasında en az 12 piksel olmalı "
-            f"(şu an {px_uzunluk:.1f} px). Aynı toprak parçasını işaretlediğinizden emin olun.")
-
-    mm_px = mm_uzunluk / px_uzunluk
-    donme = math.degrees(math.atan2(-dy, -dx) - math.atan2(dv, du))
-    # -180..180 aralığına indir
-    donme = (donme + 180) % 360 - 180
-    return {"mm_px": mm_px, "donme": donme,
-            "mm_mesafe": mm_uzunluk, "px_mesafe": px_uzunluk}
-
-
-#: İki işaret arasında en az bu kadar piksel olsun. 40 px, 640 genişlikte
-#: karenin ~%6'sı: tıklama hatası (birkaç piksel) sonucu belirgin bozmasın.
-EN_AZ_OLCEK_PX = 40.0
-#: Ve en az bu kadar milimetre — 3 cm'lik bir cetvel parçasından ölçek
-#: çıkarmak, ölçüm hatasını olduğu gibi ölçeğe taşır.
-EN_AZ_OLCEK_MM = 50.0
-
-
-def coz_olcek(u1: float, v1: float, u2: float, v2: float,
-              gercek_mm: float) -> dict[str, float]:
-    """Tek kareden ölçek — SABİT kameranın tek kalibrasyon yolu.
-
-    Sabit kamera makineyle gitmiyor: makine oynadığında karedeki sahne
-    değişmiyor, dolayısıyla `coz()` (iki kare) yöntemi orada hiçbir şey
-    ölçemez. Onun yerine karede uzunluğu BİLİNEN bir şeyin iki ucu
-    işaretleniyor — bir cetvel, yatağın kenarı, iki tepsi gözü arası.
-
-    Yalnız `mm_px` çıkıyor. Açı ve konum ÇIKMIYOR ve uydurulmuyor: sabit
-    kameranın karesinin makine koordinatı yok, çıkarılacak bir konum da yok.
-    """
-    du = float(u2) - float(u1)
-    dv = float(v2) - float(v1)
-    px = math.hypot(du, dv)
-    mm = float(gercek_mm)
-    if not math.isfinite(px) or px < EN_AZ_OLCEK_PX:
-        raise KalibrasyonHatasi(
-            f"İki işaret arasında en az {EN_AZ_OLCEK_PX:.0f} piksel olmalı "
-            f"(şu an {px:.1f} px). Karede daha uzun bir şeyin iki ucunu seçin — "
-            "kısa mesafede tıklama hatası ölçeği bozar.")
-    if not math.isfinite(mm) or mm < EN_AZ_OLCEK_MM:
-        raise KalibrasyonHatasi(
-            f"Gerçek mesafe en az {EN_AZ_OLCEK_MM:.0f} mm olmalı "
-            f"(verilen: {gercek_mm}). Kısa bir mesafeden çıkarılan ölçek, "
-            "ölçüm hatanızı bütün karede büyütür.")
-    mm_px = mm / px
-    alt, ust = SINIR["mm_px"]
-    if not alt <= mm_px <= ust:
-        raise KalibrasyonHatasi(
-            f"Çıkan ölçek {mm_px:.3f} mm/px — {alt} ile {ust} arasında olmalı. "
-            "İşaretler ya da girilen mesafe hatalı olabilir.")
-    return {"mm_px": mm_px, "px_mesafe": px, "mm_mesafe": mm}

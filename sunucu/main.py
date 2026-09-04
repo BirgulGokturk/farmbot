@@ -94,6 +94,7 @@ IZINLI_KOMUTLAR = {
     "kamera",        # {"kamera":"uc","acik": true|false, "aralik_sn": 3600}
     "kamera_kaydet", # {"kameralar":[{ad,etiket,hareketli,cihaz_adi,genislik,…}]}
     "kamera_cihazlar",  # {} — sistemdeki /dev/video* düğümleri ve adları
+    "kamera_kare",   # {"kamera":"ust"} — TAM çözünürlüklü tek kare (çözümleme)
     "role",          # {"ad": "su_pompasi"|"hava_pompasi", "durum": true}
 }
 
@@ -2552,8 +2553,16 @@ def _goruntu_coz(damga: str, esik: float | None, en_az_piksel: int,
     # Hareketli mi: ajan söylüyorsa ondan. Ajan kopuksa karenin konumu olup
     # olmamasına bakıyoruz — sabit kameranın karesinde konum hiç olmuyor.
     hareketli = bool(bilgi.get("hareketli", kayit.get("x") is not None))
+    # SABİT KAMERA ARTIK KOORDİNAT VEREBİLİYOR. Eski ret ("karenin makine
+    # konumu yok") kalibrasyonun o bilgiyi verememesindendi; AprilTag
+    # haritası yatağa yapıştırılmış etiketlerden çıktığı için doğrudan
+    # yatak koordinatı veriyor ve karenin bir makine konumu olması
+    # gerekmiyor. Harita yoksa eski davranış aynen duruyor.
+    mutlak = tespit.mutlak_mi(kalib)
 
-    if hareketli:
+    if hareketli or mutlak:
+        # Sabit kamerada kareye konum yazmıyoruz — harita mutlak, konum
+        # alanları None kalıyor ve `tespit` onları hiç okumuyor.
         cozum = tespit.cozumle(sonuc["lekeler"], kayit, kalib,
                                genislik_px=en, yukseklik_px=boy)
     else:
@@ -2563,7 +2572,7 @@ def _goruntu_coz(damga: str, esik: float | None, en_az_piksel: int,
 
     # Eşleme yalnız milimetre VE konum varken anlamlı.
     eslesme: dict[str, Any] = {"eslesen": [], "yabani_aday": [], "gorunmeyen": []}
-    if hareketli and not cozum["ret"]:
+    if (hareketli or mutlak) and not cozum["ret"]:
         hepsi = [n for n in noktalar.hepsi() if n.get("tur")]
         icerdeki = tespit.kare_icinde(hepsi, cozum["kare_mm"])
         caplar, yasa = _yaricaplar(icerdeki)
@@ -2573,9 +2582,11 @@ def _goruntu_coz(damga: str, esik: float | None, en_az_piksel: int,
         "damga": damga, "ts": kayit.get("ts"),
         "kamera": kam, "kamera_etiket": str(bilgi.get("etiket") or kam),
         "hareketli": hareketli,
+        # Sabit kamera yatağa oturmuş mu: harita mutlak koordinat veriyor.
+        "mutlak_harita": mutlak,
         # Ölçüler var ama koordinat yok — panelin ikisini karıştırmaması için
         # ayrı bir bayrak. `ret` doluyken bile `lekeler` dolu olabiliyor.
-        "yalniz_olcu": bool(not hareketli and cozum["lekeler"]),
+        "yalniz_olcu": bool(not hareketli and not mutlak and cozum["lekeler"]),
         "kare": {"x": kayit.get("x"), "y": kayit.get("y"),
                  "en_px": en, "boy_px": boy},
         "esik": sonuc["esik"], "oran": round(sonuc["oran"], 4),
@@ -2710,9 +2721,11 @@ def _fark_sabit(damga_a: str, damga_b: str, kam: str,
     """Sabit kameranın iki karesi arasındaki değişim.
 
     Konum şartı yok — kamera oynamıyor, iki kare zaten aynı sahneyi
-    gösteriyor. Çıkan değişim kutusunun YATAK KOORDİNATI verilmiyor
-    (kameranın nereye baktığı bilinmiyor); yalnız piksel kutusu ve
-    kalibreyse ölçüsü veriliyor.
+    gösteriyor.
+
+    MUTLAK HARİTA VARSA DEĞİŞİMİN KOORDİNATI DA VERİLİYOR. Eskiden yalnız
+    piksel kutusu ve ölçüsü dönüyordu, çünkü kameranın nereye baktığı
+    bilinmiyordu; AprilTag kalibrasyonu onu artık biliyor.
     """
     goruntu, tespit, _, _ = _goruntu_yukle()
     ra, ena, boya = _kare_dizi(kareler.getir(damga_a, kam) or b"")
@@ -2720,9 +2733,12 @@ def _fark_sabit(damga_a: str, damga_b: str, kam: str,
     if (ena, boya) != (enb, boyb):
         raise HTTPException(status_code=422, detail="Kareler farklı çözünürlükte")
     f = goruntu.fark(ra, rb)
+    mutlak = tespit.mutlak_mi(kalib)
+    bos_kare = {"x": None, "y": None}
     cikti: dict[str, Any] = {
         "a": damga_a, "b": damga_b, "kamera": kam, "kayma_mm": None,
-        "hareketli": False, "not": tespit.SABIT_KAMERA,
+        "hareketli": False, "mutlak_harita": mutlak,
+        "not": "" if mutlak else tespit.SABIT_KAMERA,
         "sigma": f["sigma"], "esik": f["esik"],
         "koyulasan_oran": round(f["koyulasan_oran"], 4),
         "acilan_oran": round(f["acilan_oran"], 4),
@@ -2735,8 +2751,17 @@ def _fark_sabit(damga_a: str, damga_b: str, kam: str,
         sahte = {"no": None, "en_px": kutu["x2"] - kutu["x1"] + 1,
                  "boy_px": kutu["y2"] - kutu["y1"] + 1,
                  "alan_px": kutu["alan_px"], "dolgu": 1.0}
-        olcu = tespit.boyutlar_mm([sahte], kalib, genislik_px=enb)
-        cikti[ad] = (olcu["lekeler"][0] if olcu["lekeler"] else None)
+        if mutlak:
+            sahte.update(cx=(kutu["x1"] + kutu["x2"]) / 2.0,
+                         cy=(kutu["y1"] + kutu["y2"]) / 2.0,
+                         x1=kutu["x1"], y1=kutu["y1"],
+                         x2=kutu["x2"], y2=kutu["y2"])
+            cozum = tespit.cozumle([sahte], bos_kare, kalib,
+                                   genislik_px=enb, yukseklik_px=boyb)
+            cikti[ad] = (cozum["lekeler"][0] if cozum["lekeler"] else None)
+        else:
+            olcu = tespit.boyutlar_mm([sahte], kalib, genislik_px=enb)
+            cikti[ad] = (olcu["lekeler"][0] if olcu["lekeler"] else None)
         cikti[f"{ad}_px"] = kutu
     return cikti
 
@@ -2783,13 +2808,16 @@ def _cimlenme(damga: str, adlar: list[str], esik: float | None,
     kalib = kalibrasyon.oku(kam)
     if not tespit.kalibre_mi(kalib):
         raise HTTPException(status_code=422, detail=tespit.YOK_KALIBRASYON)
-    # Çimlenme, NOKTANIN koordinatından karede bir pencere açmaya dayanıyor;
-    # sabit kamerada o dönüşüm yok. Sessizce yanlış bir pencereye bakıp
-    # "çimlenmedi" demektense söylüyoruz.
-    if not _kamera_bilgi(kam).get("hareketli", kayit.get("x") is not None):
-        raise HTTPException(status_code=422, detail=tespit.SABIT_KAMERA)
-    if kayit.get("x") is None:
-        raise HTTPException(status_code=422, detail=tespit.YOK_KONUM)
+    # Çimlenme, NOKTANIN koordinatından karede bir pencere açmaya dayanıyor.
+    # Bu dönüşüm iki kaynaktan gelebiliyor: karenin kendi makine konumundan
+    # ya da mutlak haritadan (AprilTag ile kalibre edilmiş sabit kamera).
+    # İkisi de yoksa sessizce yanlış bir pencereye bakıp "çimlenmedi"
+    # demektense söylüyoruz.
+    if not tespit.mutlak_mi(kalib):
+        if not _kamera_bilgi(kam).get("hareketli", kayit.get("x") is not None):
+            raise HTTPException(status_code=422, detail=tespit.SABIT_KAMERA)
+        if kayit.get("x") is None:
+            raise HTTPException(status_code=422, detail=tespit.YOK_KONUM)
 
     kayitli = {n.get("ad"): n for n in noktalar.hepsi()}
     e = (goruntu.ESIK if esik is None else esik)
@@ -2921,87 +2949,80 @@ async def api_kalibrasyon_kaydet(govde: dict[str, Any], jeton: str = Query(defau
     return {"ok": True, "kalibrasyon": veri}
 
 
-@app.post("/api/kamera/kalibrasyon/coz")
-async def api_kalibrasyon_coz(govde: dict[str, Any], jeton: str = Query(default="")):
-    """İki kareden ölçek ve açıyı hesaplar; istenirse doğrudan kaydeder.
-
-    Gövde: {"kare1": {"x","y","u","v"}, "kare2": {…}, "kamera": "uc",
-            "kaydet": true}
-
-    YALNIZ HAREKETLİ KAMERADA. Sabit kamerada makine oynadığında sahne
-    değişmiyor; iki kare arasındaki piksel farkı sıfır çıkar ve yöntem
-    hiçbir şey ölçmez. Bunu hesaba sokup saçma bir sayı üretmektense
-    baştan reddediyoruz — sabit kamera için `/olcek` var.
-    """
-    _parola_dogrula(jeton)
-    kam = kalibrasyon.ad_temizle(govde.get("kamera"))
-    bilgi = _kamera_bilgi(kam)
-    if bilgi and not bilgi.get("hareketli", True):
-        raise HTTPException(
-            status_code=422,
-            detail=(f"'{bilgi.get('etiket') or kam}' sabit bir kamera; makine "
-                    "oynadığında gördüğü sahne değişmiyor, iki kare yöntemi "
-                    "orada hiçbir şey ölçemez. Bunun yerine karede uzunluğu "
-                    "bilinen bir şeyin iki ucunu işaretleyen ölçek yöntemini "
-                    "kullanın."))
-    try:
-        sonuc = await asyncio.to_thread(
-            kalibrasyon.coz, govde.get("kare1") or {}, govde.get("kare2") or {})
-    except kalibrasyon.KalibrasyonHatasi as hata:
-        raise HTTPException(status_code=400, detail=str(hata))
-    except (KeyError, TypeError, ValueError) as hata:
-        raise HTTPException(status_code=400, detail=f"Eksik ya da geçersiz kare verisi: {hata}")
-
-    veri = None
-    if govde.get("kaydet"):
-        veri = await asyncio.to_thread(kalibrasyon.kaydet, {
-            "mm_px": sonuc["mm_px"], "donme": sonuc["donme"],
-            "genislik_px": govde.get("genislik_px"),
-            "yukseklik_px": govde.get("yukseklik_px"),
-            "yontem": "iki-kare", "guncelleme": time.time(),
-        }, kam)
-    return {"ok": True, "sonuc": sonuc, "kalibrasyon": veri, "kamera": kam}
-
-
-@app.post("/api/kamera/kalibrasyon/olcek")
-async def api_kalibrasyon_olcek(govde: dict[str, Any], jeton: str = Query(default="")):
-    """Tek kareden ölçek — SABİT kameranın kalibrasyon yolu.
-
-    Gövde: {"u1","v1","u2","v2","mm", "kamera": "ust", "kaydet": true}
-
-    Karede uzunluğu bilinen bir şeyin iki ucu işaretleniyor (cetvel, yatak
-    kenarı, iki tepsi gözü arası) ve gerçek mesafesi yazılıyor. Yalnız
-    `mm_px` çıkıyor: açı ve konum çıkmıyor, çünkü sabit kameranın karesinin
-    makine koordinatı yok. Uydurmuyoruz — kalibre edilmemiş kamerada panel
-    milimetre değil piksel yazmaya devam ediyor.
-    """
-    _parola_dogrula(jeton)
-    kam = kalibrasyon.ad_temizle(govde.get("kamera"))
-    try:
-        sonuc = await asyncio.to_thread(
-            kalibrasyon.coz_olcek, float(govde.get("u1")), float(govde.get("v1")),
-            float(govde.get("u2")), float(govde.get("v2")), float(govde.get("mm")))
-    except kalibrasyon.KalibrasyonHatasi as hata:
-        raise HTTPException(status_code=400, detail=str(hata))
-    except (KeyError, TypeError, ValueError) as hata:
-        raise HTTPException(status_code=400,
-                            detail=f"Eksik ya da geçersiz işaret verisi: {hata}")
-    veri = None
-    if govde.get("kaydet"):
-        veri = await asyncio.to_thread(kalibrasyon.kaydet, {
-            "mm_px": sonuc["mm_px"],
-            "genislik_px": govde.get("genislik_px"),
-            "yukseklik_px": govde.get("yukseklik_px"),
-            "yontem": "olcek", "guncelleme": time.time(),
-        }, kam)
-    return {"ok": True, "sonuc": sonuc, "kalibrasyon": veri, "kamera": kam}
-
+# TIKLAMA TABANLI İKİ YÖNTEM KALDIRILDI.
+#
+# `/api/kamera/kalibrasyon/coz` (iki kare) ve `/api/kamera/kalibrasyon/olcek`
+# (bilinen mesafe) buradaydı. İkisi de kullanıcının bir piksele tıklamasına
+# dayanıyordu; tıklama 3-5 piksel şaşıyor ve o şaşma bütün kareye yayılıyor.
+# AprilTag aynı iki bilgiyi alt piksel hassasiyetiyle veriyor ve dört
+# etiketle üstüne perspektifi de çözüyor. Elle sayı girme (`POST
+# /api/kamera/kalibrasyon`) duruyor: ölçüleni görmenin ve gerektiğinde bir
+# değeri zorlamanın yolu o.
 
 # AprilTag ile kalibrasyon AYRI BİR DOSYADA ve kendi yönlendiricisinde
 # (`etiket.py`). Uç noktalarını buraya yazmak, `main.py` sürekli değiştiği
 # için her yamada çakışma demekti; tek satırla bağlanıyor.
-app.include_router(etiket.yonlendirici_kur(_parola_dogrula, merkez.canli_kare_taze))
-app.include_router(filiz.yonlendirici_kur(_parola_dogrula, merkez.canli_kare_taze))
+#: Çözümleme karesi ne kadar eskiye kadar kabul ediliyor. Canlı akışın son
+#: karesi bellekte duruyor; akış durunca orada kalıyor ve donmuş kareyi
+#: ölçen kalibrasyon aynı görüntüyü tekrar tekrar ölçüp "kamera çalışıyor"
+#: sanıyor. Sahada tam bu oldu.
+COZUMLEME_KARE_YAS_SN = 5.0
+
+
+async def _cozumleme_karesi(kamera: str) -> bytes:
+    """Çözümleme için TAM ÇÖZÜNÜRLÜKLÜ kare — AprilTag ve filiz bunu istiyor.
+
+    Canlı akıştan gelen kare ağ için küçültülmüş (bkz. `kamera.canli_genislik`);
+    640 piksellik bir karede yeni çıkmış bir filiz birkaç piksel kalıp en
+    küçük leke eşiğinin altına düşüyor, etiket de okunamayacak kadar
+    küçülüyor. Ajandan büyüğünü istiyoruz.
+
+    AJAN CEVAP VERMEZSE KÜÇÜK KAREYE DÜŞÜYORUZ. Küçük kareyle ölçmek,
+    hiç ölçmemekten iyi — ve hangisinin kullanıldığı çağıranın çıktısında
+    görünüyor (kare ölçüsü zaten yazılıyor).
+    """
+    try:
+        cevap = await merkez.komut_gonder(
+            "kamera_kare", {"kamera": kamera,
+                            "azami_yas_sn": COZUMLEME_KARE_YAS_SN})
+    except Exception:                                       # noqa: BLE001
+        cevap = None
+    veri = (cevap or {}).get("veri") or {}
+    if (cevap or {}).get("ok") and veri.get("kare"):
+        try:
+            ham = base64.b64decode(veri["kare"], validate=True)
+        except Exception:                                   # noqa: BLE001
+            ham = b""
+        if ham:
+            return ham
+    return merkez.canli_kare_taze(kamera, COZUMLEME_KARE_YAS_SN)
+
+
+def _makine_xy() -> tuple[float | None, float | None]:
+    """Makinenin o anki X/Y'si — PLC kopukken (None, None).
+
+    Etiket taraması bunu istiyor: hareketli kamerada çözüm MUTLAK çıkıyor
+    ve `ofset` "uçtan kayma" anlamına gelmesi için makinenin konumu
+    çıkarılmalı. Uydurma bir sıfır, kareyi yatağın köşesine yapıştırırdı.
+    """
+    konum = (merkez.son_durum.get("konum") or {})
+    x, y = konum.get("x"), konum.get("y")
+    try:
+        return (None if x is None else float(x), None if y is None else float(y))
+    except (TypeError, ValueError):
+        return (None, None)
+
+
+def _kamera_hareketli(ad: str) -> bool:
+    return bool(_kamera_bilgi(ad).get("hareketli", False))
+
+
+# KARE KAYNAĞI `_cozumleme_karesi`: ajandan TAM çözünürlüklü kare istiyor,
+# ağdan geçen küçültülmüş akış karesini değil. Etiket okuma ve filiz bulma
+# için çözünürlük doğrudan sonucu belirliyor.
+app.include_router(etiket.yonlendirici_kur(
+    _parola_dogrula, _cozumleme_karesi, _makine_xy, _kamera_hareketli))
+app.include_router(filiz.yonlendirici_kur(_parola_dogrula, _cozumleme_karesi))
 
 
 async def _git_ve_bekle(x: float, y: float, z: float | None,

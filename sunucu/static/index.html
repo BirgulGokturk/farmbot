@@ -1138,29 +1138,30 @@
         </div>
         <div class="bolum-govde">
           <p class="yardim-metin gizli" id="yardim-kalib">
-            Kamera uç kafasında; her kare çekildiği eksen konumuyla saklanıyor.
             Kareyi haritanın doğru yerine, doğru ölçekte ve açıda koyabilmek
             için bir pikselin kaç mm olduğunu ve kameranın makine eksenine
-            göre açısını bilmek gerekiyor.<br><br>
-            <b>İki kare yöntemi</b> bunları kendisi hesaplıyor: makineyi
-            bilinen bir mesafe oynatıp iki kare çekiyorsunuz, her iki karede de
-            <i>aynı</i> toprak parçasına tıklıyorsunuz. Piksel farkı ile mm
-            farkı hem ölçeği hem açıyı veriyor. En az 20 mm hareket ve 12
-            piksel fark gerekiyor — daha azı gürültüye karışıyor.<br><br>
-            <b>Kayma</b> kamera merkezinin uç ucundan ne kadar uzakta
-            olduğudur; kareyi haritada kaydırır, elle girilir.<br><br>
+            göre nasıl durduğunu bilmek gerekiyor. Ölçüm yolu tek:
+            <b>AprilTag</b> (aşağıdaki bölüm). Etiketin dört köşesi
+            matematiksel olarak tanımlı ve yazılım onları alt piksel
+            hassasiyetiyle buluyor — hiçbir yere tıklamıyorsunuz.<br><br>
+            <b>Dört etiket perspektifi de çözüyor.</b> Ölçek + açı modeli
+            kameranın yatağa dik baktığını varsayıyor; bu kurulumda kamera
+            eğik bakıyor ve sahada ölçüldü: o model 52 mm, dört etiketten
+            çıkan <b>harita</b> 9 mm yanıldı. Harita varsa çözümleme onu
+            kullanıyor, yoksa eski model aynen geçerli.<br><br>
+            <b>Sabit kameranın karesi artık yatağa oturuyor.</b> Etiketler
+            yatağa yapıştırılı ve koordinatları biliniyor, dolayısıyla
+            haritadan çıkan koordinat doğrudan yatak koordinatı — karenin
+            bir makine konumu olmasına gerek yok. Eskiden "karenin makine
+            konumu yok" diye koordinat verilmiyordu; o eksik kapandı.<br><br>
+            <b>Aşağıdaki sayılar</b> ölçümün sonucu. Elle de girilebiliyor
+            ama olağan yol taramanın kaydetmesi; elle girilen değer
+            ölçüleni ezer.<br><br>
             <b>mm/piksel her kamera için AYRIDIR.</b> Uç kamerası yatağa
             yakın, sabit kamera uzaktan tümünü görüyor; aynı sayıyı ikisine
             birden uygulamak ölçüleri kat kat yanlış yapar ve yanlış olduğu
             belli olmaz. Bu yüzden kalibrasyon kamera başına saklanıyor ve
-            çözümleme, karenin geldiği kameranın sayısını kullanıyor.<br><br>
-            <b>Sabit kamerada iki kare yöntemi çalışmaz</b>: makine
-            oynadığında sabit kameranın gördüğü sahne değişmiyor, aradaki
-            piksel farkı sıfır. Onun yerine <b>ölçek yöntemi</b> var —
-            karede uzunluğu bilinen bir şeyin (cetvel, yatak kenarı, iki
-            tepsi gözü arası) iki ucunu işaretleyip gerçek mesafesini
-            yazıyorsunuz. Yalnız ölçek çıkıyor; açı ve konum çıkmıyor,
-            çünkü o karenin makine koordinatı yok.
+            çözümleme, karenin geldiği kameranın sayısını kullanıyor.
           </p>
 
           <div class="araclar kam-sekmeler gizli" id="kalib-sekmeler"
@@ -1186,33 +1187,12 @@
             <button class="dugme birincil" id="d-kalib-kaydet">Kaydet</button>
           </div>
 
-          <h4 class="alt-baslik" id="kalib-yontem-bas">İki kare ile hesapla</h4>
-          <p class="ikincil" id="kalib-yonerge">
-            1. Makineyi bir yere götürün, kare gelsin, aşağıda bir toprak
-            parçasına tıklayın. 2. Makineyi en az 20 mm oynatın, yeni kare
-            gelsin, <i>aynı</i> yere tıklayın.
-          </p>
-          <div class="kalib-tuval-kutu">
-            <img id="kalib-kare" alt="Son kamera karesi">
-            <canvas id="kalib-tuval"></canvas>
-          </div>
-          <div class="satir-8 alt-hizali" id="kalib-ikikare-araclar">
-            <button class="dugme" id="d-kalib-kare1">1. kareyi işaretle</button>
-            <button class="dugme" id="d-kalib-kare2">2. kareyi işaretle</button>
-            <button class="dugme" id="d-kalib-temizle">Sıfırla</button>
-          </div>
-          <!-- SABİT KAMERANIN YOLU. Aynı tuval, farklı anlam: iki işaret
-               aynı karede ve aralarındaki GERÇEK mesafe elle giriliyor. -->
-          <div class="satir-8 alt-hizali gizli" id="kalib-olcek-araclar">
-            <button class="dugme" id="d-kalib-olcek1">1. ucu işaretle</button>
-            <button class="dugme" id="d-kalib-olcek2">2. ucu işaretle</button>
-            <div class="alan"><label for="kalib-olcek-mm">Gerçek mesafe (mm)</label>
-              <input type="number" id="kalib-olcek-mm" step="1" min="50"
-                     placeholder="örn. 500"></div>
-            <button class="dugme birincil" id="d-kalib-olcek-hesapla">Hesapla</button>
-            <button class="dugme" id="d-kalib-olcek-temizle">Sıfırla</button>
-          </div>
-          <div id="kalib-sonuc" class="gomulu gizli"></div>
+          <!-- TIKLAMA TABANLI İKİ YÖNTEM KALDIRILDI: "iki kare" ve
+               "ölçek". İkisi de bir piksele tıklamaya dayanıyordu ve
+               tıklama 3-5 piksel şaşıyor; o şaşma bütün kareye yayılıyor.
+               AprilTag aynı bilgiyi alt piksel hassasiyetiyle veriyor,
+               üstüne dört etiketle perspektifi de çözüyor. Tarama kendi
+               önizlemesini kendi çiziyor (etiket.js). -->
           <!-- AprilTag bolumu kendi dosyasinda kuruluyor (etiket.js);
                burada yalniz kabi duruyor ki bu dosyada catisma yuzeyi
                uc satirda kalsin. -->

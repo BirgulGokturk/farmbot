@@ -739,6 +739,21 @@ başlatmak gerekmiyor. `cihaz` alanı yalnızca ad bulunamazsa kullanılan yedek
 Bir kamera açılamazsa yalnızca o kamera kapalı kalıyor, ötekiler ve makine
 çalışmaya devam ediyor.
 
+**Çekim 1920, akış 640 — iki ayrı genişlik.** Kamera 640x480 çekerken yeni
+çıkmış bir filiz karede birkaç piksel kalıyor, en küçük leke eşiğinin
+altına düşüp eleniyordu; AprilTag de o boyutta okunamıyordu. Çekim
+genişliği (`genislik`) 1920'ye çıktı. Ağ bundan etkilenmiyor: canlı akış
+`canli_genislik`e (varsayılan 640) küçültülerek gönderiliyor — 1920x1440
+JPEG ~400 KB, saniyede 5 kare 2 MB/s eder ve kareler buluttaki sunucu
+üzerinden geçiyor; aynı akış 640'ta ~40 KB.
+
+Çözümleme (AprilTag taraması, filiz bulma) küçültülmüş kareyi **almıyor**:
+ajan tam çözünürlüklü son kareyi bellekte tutuyor ve sunucu `kamera_kare`
+komutuyla onu istiyor. Akış açıkken kamerayı ikinci kez açmak mümkün
+olmadığı için kare, küçültülmeden **önce** saklanıyor. `canli_genislik`i 0
+yapmak küçültmeyi tamamen kapatıyor. Küçültme Pillow ile yapılıyor; kurulu
+değilse akış tam çözünürlükte gidiyor ve sebebi günlüğe bir kez yazılıyor.
+
 Kare WebSocket'ten panellere yayılmıyor (40 KB base64 her panele ayrı
 giderdi): sunucu **kamera başına** son 12 kareyi `kareler/<kamera>/` altında
 diskte tutuyor, panele "yeni kare var" haberi kamera adıyla gidiyor, tarayıcı
@@ -760,6 +775,52 @@ yeniden yaratmak gerekir (`rm -rf ajan/.venv && bash pi-kur.sh`) — ya da hiç
 uğraşmayın: `rpicam-still` yolu da aynı işi görüyor, 30 saniyede bir tek kare
 için işlem açmanın maliyeti önemsiz.
 
+### Kamera kalibrasyonu — tek yol: AprilTag
+
+Kareyi haritanın doğru yerine koyabilmek için bir pikselin kaç milimetre
+olduğunu ve kameranın nasıl durduğunu bilmek gerekiyor. **Ölçüm yolu tek:
+yatağa yapıştırılan AprilTag'ler.**
+
+Önceki iki yöntem — "iki kare" (hareketli kamera) ve "ölçek" (sabit
+kamera) — kaldırıldı. İkisi de kullanıcının bir piksele tıklamasına
+dayanıyordu; tıklama 3-5 piksel şaşıyor ve o şaşma bütün kareye
+yayılıyor. Etiketin dört köşesi matematiksel olarak tanımlı ve algılayıcı
+onları alt piksel hassasiyetiyle buluyor. Elle sayı girme duruyor:
+ölçüleni görmenin ve gerektiğinde bir değeri zorlamanın yolu o.
+
+Kaç etiket, ne veriyor:
+
+| Etiket | Çıkan |
+|---|---|
+| 1 (kenar ölçüsü girilmiş) | `mm_px` |
+| 2+ (koordinatları kayıtlı) | `mm_px`, `donme`, `ofset_x/y` |
+| 3+ | üsttekiler + ölçülen sapma (`artik_mm`) |
+| 4+ | üsttekiler + **harita** (perspektifli homografi) ve sapması |
+
+**Harita neden gerekli.** Ölçek + dönme modeli kameranın yatağa DİK
+baktığını varsayıyor. Bu kurulumda kamera sert bir açıyla bakıyor ve
+sahada ölçüldü: aynı noktalarda benzerlik 51,8 mm, harita 9,3 mm
+yanılıyordu. Harita varsa `tespit.py`, `filiz.py` ve haritadaki kare
+katmanı onu kullanıyor; yoksa eski model aynen geçerli ve hiçbir kurulum
+değişmiyor. Üçlü (ölçek/dönme/ofset) harita yazılırken de kaydediliyor —
+haritayı okumayan yerler bozulmadan çalışsın diye.
+
+**Sabit kameranın karesi artık yatağa oturuyor.** Etiketler yatağa
+yapıştırılı ve koordinatları biliniyor; haritadan çıkan koordinat
+doğrudan yatak koordinatı, karenin bir makine konumu olmasına gerek yok.
+Eskiden bu yüzden "karenin makine konumu yok" denip koordinat
+verilmiyordu — üst kameranın lekesi ölçülüyor ama nerede olduğu
+söylenmiyordu. O ret kalktı: harita varsa üst kamera da koordinat veriyor,
+kayıtlı bitkilerle eşleşiyor ve karesi tarla haritasında yerine oturuyor.
+
+**Hareketli kamerada sonuç göreceliye çevriliyor.** Etiket koordinatları
+mutlak olduğu için çözüm de mutlak çıkıyor; uç kamerasında `ofset`
+"kameranın uçtan kayması" demek ve makinenin tarama anındaki konumu
+çıkarılıyor. Harita için de ölçüm anındaki konum (`harita_makine_x/y`)
+kaydediliyor ve okuyan taraf kareyle arasındaki farkı ekliyor. Kayıtlı
+değilse harita hareketli kamerada **kullanılmıyor** — kaydırmayı tahmin
+etmektense eski modele düşmek doğru.
+
 ## Bahçe modu
 
 Panelin ikinci katmanı: bahçeyle uğraşan ama robotla uğraşmak istemeyen
@@ -776,10 +837,17 @@ gerçek olsaydı hangisinin doğru olduğunu kimse bilemezdi.
 
 Tahtanın zemini **üst kameranın canlı karesi**. Çizilmiş bir yatak güzel
 durur ama yalan söyler: ekranda gördüğüne bakıp "toprağım kurumuş"
-diyemezsin. Kare tahtayı germiyor, kendi milimetre yerine oturuyor
-(merkezi `ofset_x/y`, ölçüsü `genislik_px × mm_px`, dönmesi `donme`) —
-yani fotoğraftaki toprak parçası gerçekte bulunduğu yerde görünüyor ve
+diyemezsin. Kare tahtayı germiyor, kendi milimetre yerine oturuyor — yani
+fotoğraftaki toprak parçası gerçekte bulunduğu yerde görünüyor ve
 bitkinin yayılım halkasıyla fotoğraftaki yeşil aynı yere düşüyor.
+
+Nereye oturacağını iki model söyleyebiliyor ve **varsa harita kazanıyor**:
+
+* **harita** — dört AprilTag'den çıkan 3x3 homografi. Perspektifi de
+  taşıyor. Kamera yatağa sert açıyla bakıyor ve sahada ölçüldü: ölçek +
+  dönme modeli 52 mm, harita 9 mm yanıldı.
+* **ölçek + dönme** — `ofset_x/y` merkez, `genislik_px × mm_px` ölçü,
+  `donme` açı. Harita yokken aynen geçerli; hiçbir kurulum değişmiyor.
 
 Tohumu toprağa bırakınca bırakma noktası kameranın `mm_px` ölçeğiyle
 milimetreye çevriliyor, nokta deposuna gerçek bir bitki olarak giriyor ve

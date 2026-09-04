@@ -117,7 +117,8 @@
     iz: [],           // [{x,y,ts}] — robotun geçtiği yerler
     kareler: [],      // [{damga,ts,x,y}]
     okumalar: [],     // [{ts,x,y,toprak_nem}]
-    kalibrasyon: null, // kamera kalibrasyonu — {mm_px, donme, ofset_x, ofset_y, …}
+    kalibrasyon: null, // uç kamerasının kalibrasyonu — {mm_px, donme, ofset_x, …}
+    kalibrasyonlar: {}, // ad -> kalibrasyon; her kare KENDİ kamerasınınkini kullanıyor
     egriler: [],      // [{ad,tip,birim,noktalar}] — yaşa göre değer
     /* DİKİM ALANLARI — toprağın gerçekten bulunduğu dikdörtgenler.
      * Boş liste "alan tanımlanmamış" demek ve yatağın tamamı geçerli
@@ -2042,8 +2043,14 @@
       try { VERI.kareler = (await P().apiIste("/api/kare/liste")).kareler || []; }
       catch (h) { VERI.kareler = []; }
       // Kalibrasyon olmadan kare haritaya oturmuyor; katman açıkken tazeliyoruz.
-      try { VERI.kalibrasyon = (await P().apiIste("/api/kamera/kalibrasyon")).kalibrasyon; }
-      catch (h) { VERI.kalibrasyon = null; }
+      // HEPSİ çekiliyor, yalnız uç kamerasınınki değil: sabit üst kamera
+      // AprilTag haritasıyla kalibre edilince onun karesi de haritaya
+      // oturuyor ve her karenin KENDİ kamerasının sayısı gerekiyor.
+      try {
+        const y = await P().apiIste("/api/kamera/kalibrasyon");
+        VERI.kalibrasyon = y.kalibrasyon;
+        VERI.kalibrasyonlar = y.kalibrasyonlar || {};
+      } catch (h) { VERI.kalibrasyon = null; VERI.kalibrasyonlar = {}; }
     }
     // Okumalar katman kapalıyken de çekiliyor: toprak yüzeyinin koyuluğu
     // artık nem okumasından geliyor (bkz. makine.js/nemBoya). Sensör
@@ -2203,8 +2210,11 @@
 
     /** Kalibrasyon değişince (Ayarlar sekmesi) haritayı tazeliyoruz. */
     async kalibrasyonDegisti() {
-      try { VERI.kalibrasyon = (await P().apiIste("/api/kamera/kalibrasyon")).kalibrasyon; }
-      catch (h) { VERI.kalibrasyon = null; }
+      try {
+        const y = await P().apiIste("/api/kamera/kalibrasyon");
+        VERI.kalibrasyon = y.kalibrasyon;
+        VERI.kalibrasyonlar = y.kalibrasyonlar || {};
+      } catch (h) { VERI.kalibrasyon = null; VERI.kalibrasyonlar = {}; }
       katmanlariGuncelle();
     },
 

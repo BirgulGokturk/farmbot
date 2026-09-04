@@ -58,44 +58,29 @@ def _sayi(deger: Any, varsayilan: float = 0.0) -> float:
 def cevirici(kalib: dict[str, Any] | None, genislik_px: float, yukseklik_px: float):
     """(piksel -> mm) işlevi ve kullanılan modelin adı. Yoksa (None, sebep).
 
-    Kare, kalibrasyon anındakinden farklı çözünürlükte gelebiliyor
-    (küçültülmüş kare, farklı kamera kipi). Piksel önce KALİBRASYON
-    uzayına ölçekleniyor — harita o uzayda tanımlı ve iki katı bir
-    uzaydan gelen sayı bütün koordinatları ikiye katlardı.
+    DÖNÜŞÜM HESABI BURADA DEĞİL. Hepsi `tespit.piksel_mm` içinde: harita
+    varsa harita, yoksa ölçek+dönme, küçültülmüş kare ölçeklemesi dahil.
+    İkinci bir hesap yazmak, bir gün sessizce ayrışacak iki hesap demek —
+    ve hangisinin doğru olduğunu anlamanın yolu olmaz.
+
+    Sabit kamera: karenin makine konumu diye bir şey yok. Mutlak harita
+    varsa gerekmiyor zaten; yoksa boş bir kare sözlüğü veriyoruz ve
+    karenin merkezi kalibrasyonun `ofset_x/y`sinde duruyor.
     """
+    import tespit
+
     k = kalib or {}
-    kw = _sayi(k.get("genislik_px"), 0.0) or genislik_px
-    kh = _sayi(k.get("yukseklik_px"), 0.0) or yukseklik_px
-    sx = kw / genislik_px if genislik_px else 1.0
-    sy = kh / yukseklik_px if yukseklik_px else 1.0
-
-    harita = k.get("harita")
-    if harita:
-        try:
-            kalibrasyon.harita_uygula(harita, kw / 2.0, kh / 2.0)
-        except kalibrasyon.KalibrasyonHatasi as hata:
-            return None, f"Harita kullanılamadı: {hata}"
-
-        def _harita(u: float, v: float) -> tuple[float, float]:
-            return kalibrasyon.harita_uygula(harita, u * sx, v * sy)
-
-        return _harita, "harita"
-
-    if _sayi(k.get("mm_px")) <= 0:
+    # Konum AÇIKÇA yok: harita mutlaksa (sabit kamera) zaten gerekmiyor,
+    # mutlak değilse `tespit` haritayı kullanmayı reddedip ölçek+dönme
+    # modeline düşüyor — kaymayı tahmin etmektense doğrusu bu.
+    bos = {"x": None, "y": None}
+    if not tespit.kalibre_mi(k):
         return None, YOK_KALIBRASYON
 
-    import tespit
-    # Sabit kamera: karenin makine konumu diye bir şey yok, karenin
-    # MERKEZİ kalibrasyonun `ofset_x/y`sinde duruyor. Boş bir kare
-    # sözlüğü vererek `tespit` zincirini olduğu gibi kullanıyoruz —
-    # ikinci bir dönüşüm hesabı yazmak, bir gün ayrışacak iki hesap
-    # demekti.
-    bos = {"x": 0.0, "y": 0.0}
-
-    def _benzerlik(u: float, v: float) -> tuple[float, float]:
+    def _cevir(u: float, v: float) -> tuple[float, float]:
         return tespit.piksel_mm(u, v, bos, k, genislik_px, yukseklik_px)
 
-    return _benzerlik, "benzerlik"
+    return _cevir, ("harita" if tespit.haritali_mi(bos, k) else "benzerlik")
 
 
 def cozumle(lekeler_px: list[dict[str, Any]], kalib: dict[str, Any] | None,
@@ -210,7 +195,14 @@ def _rgb(jpeg: bytes):
 # HTTP
 # --------------------------------------------------------------------------- #
 def yonlendirici_kur(parola_dogrula, canli_kare):
-    """`canli_kare(kamera) -> bytes` taze kare veriyor."""
+    """`canli_kare(kamera) -> bytes` taze kare veriyor.
+
+    Eşzamanlı da olabilir eşzamansız da: sunucu ajandan TAM çözünürlüklü
+    kare isteyen bir eşyordam veriyor (640'ta filiz birkaç piksel kalıp
+    eleniyordu), denemeler düz bir işlev veriyor.
+    """
+    import inspect
+
     from fastapi import APIRouter, HTTPException, Query
 
     yon = APIRouter()
@@ -223,6 +215,8 @@ def yonlendirici_kur(parola_dogrula, canli_kare):
 
         try:
             jpeg = canli_kare(kam)
+            if inspect.isawaitable(jpeg):
+                jpeg = await jpeg
         except Exception as hata:                       # noqa: BLE001
             raise HTTPException(status_code=409, detail=str(hata))
         if not jpeg:

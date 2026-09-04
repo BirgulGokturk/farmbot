@@ -5,36 +5,54 @@
 bilerek ayrı: kalibrasyon değişince segmentasyon etkilenmemeli.
 
 --------------------------------------------------------------------
-Dönüşüm — haritadaki kare katmanıyla AYNI matematik
+İKİ MODEL — önce harita, yoksa ölçek+dönme
 --------------------------------------------------------------------
 
-`static/katmanlar/70-kamera-kareleri.js` fotoğrafı haritaya şöyle
-oturtuyor ve burası onu birebir tekrarlıyor:
+**HARİTA (homografi).** Kalibrasyonda `harita` varsa bir pikselin yatak
+koordinatı doğrudan ondan çıkıyor:
+
+    (x, y) = harita_uygula(H, u, v)
+
+Perspektifi de taşıyor. Bu kurulumda kamera yatağa sert açıyla bakıyor
+ve sahada ölçüldü: ölçek+dönme modeli 52 mm, harita 9 mm yanıldı.
+
+**ÖLÇEK + DÖNME (benzerlik).** Harita yoksa eski zincir aynen geçerli
+ve `static/katmanlar/70-kamera-kareleri.js` ile birebir aynı:
 
     merkez  = kare konumu + (ofset_x, ofset_y)
-    ölçü    = (genislik_px, yukseklik_px) x mm_px
-    görüntü merkeze konur, `ayna_x/ayna_y` ile aynalanır,
-    `donme` derece döndürülür
-
-Bir pikselin makine koordinatı da bu zincirin aynısı:
-
     yerel   = (px - W/2, py - H/2) x mm_px
     aynala  → döndür → merkeze taşı
 
 İKİ AYRI HESAP OLMAMALI. Panelde çizilen kare ile sunucunun "bu leke
 şurada" dediği yer ayrışırsa, hangisinin doğru olduğunu anlamanın yolu
-yok. Bir gün biri değişirse diğeri de değişmeli — bu yüzden formül
-burada, o dosyaya atıfla yazılı.
+yok. O dosya da haritayı okuyor; biri değişirse diğeri de değişmeli.
+
+--------------------------------------------------------------------
+MUTLAK HARİTA — sabit kameranın karesi artık yerini biliyor
+--------------------------------------------------------------------
+
+Harita, yatağa yapıştırılmış etiketlerin MAKİNE koordinatlarından
+çıkarılıyor; yani doğrudan yatak milimetresi veriyor. Sabit kamera hiç
+oynamadığı için bu mutlak: aynı piksel hep aynı yeri gösteriyor ve
+karenin bir "makine konumu" olmasına gerek yok. Sabit kamerada koordinat
+vermeyi reddeden eski kural (`YOK_KONUM` / `SABIT_KAMERA`) tam da bu
+bilginin eksikliğindendi; harita o boşluğu doldurduğu için ret kalktı.
+
+Hareketli kamerada aynı harita yalnız ÖLÇÜLDÜĞÜ konumda geçerli. Ölçüm
+anındaki makine konumu (`harita_makine_x/y`) kayıtlıysa aradaki fark
+ekleniyor; kayıtlı değilse harita hareketli kamerada kullanılmıyor —
+kaydırmayı tahmin etmektense benzerlik modeline düşmek doğru.
 
 --------------------------------------------------------------------
 Sessizce yapılmayanlar
 --------------------------------------------------------------------
 
-* **Kalibrasyon yoksa dönüşüm YOK.** `mm_px = 0` "daha ölçülmedi"
-  demek. Uydurma bir ölçekle üretilmiş milimetre, yanlış olduğu
-  belli olmayan bir sayıdır — en kötü tür.
-* **Karenin konumu yoksa dönüşüm YOK.** PLC kopukken çekilen kare
-  saklanıyor ama nerede çekildiği bilinmiyor.
+* **Kalibrasyon yoksa dönüşüm YOK.** `mm_px = 0` ve harita yok "daha
+  ölçülmedi" demek. Uydurma bir ölçekle üretilmiş milimetre, yanlış
+  olduğu belli olmayan bir sayıdır — en kötü tür.
+* **Konum bilgisi hiçbir yerden çıkmıyorsa dönüşüm YOK.** Mutlak harita
+  da yoksa ve kare nerede çekildiğini bilmiyorsa (PLC kopukken çekilmiş)
+  koordinat üretilmiyor.
 * **Makine hareket hâlindeyken çekilen kare kullanılmaz.** Hem
   bulanık hem de konumu belirsiz.
 """
@@ -44,16 +62,20 @@ from __future__ import annotations
 import math
 from typing import Any
 
+import kalibrasyon
+
 # Kalibrasyon yokken bu sebeplerden biri dönüyor; panel bunları yazıyor.
-YOK_KALIBRASYON = ("Kamera kalibre edilmemiş (mm_px = 0). Ayarlar → Kamera "
-                   "kalibrasyonu bölümünden iki kare yöntemiyle ölçün — "
-                   "onsuz pikseli milimetreye çeviremeyiz.")
-YOK_KONUM = ("Karenin makine konumu yok (PLC kopukken çekilmiş). Nerede "
-             "çekildiği bilinmeyen bir kare haritaya konamaz.")
-SABIT_KAMERA = ("Sabit kamera — karenin makine konumu YOK ve olamaz da: kamera "
-                "makineyle hareket etmiyor, makinenin o anki konumu bu karenin "
-                "neyi gösterdiği hakkında bir şey söylemiyor. Ölçüler (en, boy, "
-                "çap) milimetre; yatak koordinatı verilmiyor.")
+YOK_KALIBRASYON = ("Kamera kalibre edilmemiş (mm_px = 0, harita yok). Kamera "
+                   "sekmesi → 'AprilTag ile kalibre et' ile ölçün — onsuz "
+                   "pikseli milimetreye çeviremeyiz.")
+YOK_KONUM = ("Karenin makine konumu yok (PLC kopukken çekilmiş) ve mutlak "
+             "harita da yok. Nerede çekildiği bilinmeyen bir kare haritaya "
+             "konamaz.")
+SABIT_KAMERA = ("Sabit kamera henüz yatağa oturmadı: mutlak harita yok. Dört "
+                "AprilTag'i yatağa yapıştırıp koordinatlarını girin ve "
+                "'AprilTag ile kalibre et' deyin — ondan sonra bu karenin "
+                "her pikseli yatak koordinatı verir. Şimdilik yalnız ölçüler "
+                "(en, boy, çap) milimetre.")
 HAREKETLI = ("Kare makine hareket hâlindeyken çekilmiş — hem bulanık hem de "
              "konumu belirsiz.")
 
@@ -67,17 +89,115 @@ def _sayi(deger: Any, varsayilan: float = 0.0) -> float:
 
 
 def mm_px(kalib: dict[str, Any] | None) -> float:
-    """Bir piksel kaç mm. 0 = kalibre edilmemiş."""
+    """Bir piksel kaç mm. 0 = kalibre edilmemiş.
+
+    HARİTA VARSA BU SAYI ORTALAMADIR. Eğik bakan kamerada bir pikselin mm
+    karşılığı karenin bir ucundan öbürüne değişiyor; `mm_px` etiketlerden
+    çıkarılmış tek bir ortalama. Ölçü hesapları haritalı kamerada
+    haritadan geçiyor (bkz. `leke_mm`), bu sayı yalnız kabaca "kare kaç
+    mm" demek için duruyor.
+    """
     return max(0.0, _sayi((kalib or {}).get("mm_px"), 0.0))
 
 
-def kalibre_mi(kalib: dict[str, Any] | None) -> bool:
-    return mm_px(kalib) > 0.0
+def harita(kalib: dict[str, Any] | None) -> Any:
+    """Kalibrasyondaki homografi — yoksa ya da bozuksa None.
+
+    Bozuk haritayı SESSİZCE atıyoruz: burada patlamak, kalibrasyonu
+    bozuk tek bir kamera yüzünden bütün çözümleme yolunu kapatırdı.
+    Doğrulama zaten `kalibrasyon.kaydet` içinde yapılıyor.
+    """
+    ham = (kalib or {}).get("harita")
+    if not ham:
+        return None
+    try:
+        kalibrasyon.harita_uygula(ham, 0.0, 0.0)
+    except kalibrasyon.KalibrasyonHatasi:
+        return None
+    return ham
 
 
-def kare_olcusu(kalib: dict[str, Any] | None) -> tuple[float, float]:
-    """Karenin mm cinsinden (en, boy) ölçüsü."""
+def _harita_kaydirma(kare: dict[str, Any] | None,
+                     kalib: dict[str, Any] | None) -> tuple[float, float] | None:
+    """Haritayı bu kareye taşımak için gereken kayma. None = harita kullanılamaz.
+
+    Sabit kamera (ölçüm konumu yazılmamış): kayma yok, harita mutlak.
+    Hareketli kamera: kare, haritanın ölçüldüğü konumdan ne kadar uzakta
+    çekildiyse o kadar. Kare konumsuzsa harita kullanılamaz — hareketli
+    kamerada nerede çekildiği bilinmeyen kare, haritayla da yerine oturmaz.
+    """
     k = kalib or {}
+    mx, my = k.get("harita_makine_x"), k.get("harita_makine_y")
+    if mx in (None, "") or my in (None, ""):
+        return (0.0, 0.0)
+    if not kare or kare.get("x") is None or kare.get("y") is None:
+        return None
+    return (_sayi(kare.get("x")) - _sayi(mx), _sayi(kare.get("y")) - _sayi(my))
+
+
+def haritali_mi(kare: dict[str, Any] | None, kalib: dict[str, Any] | None) -> bool:
+    """Bu kare bu kalibrasyonun haritasıyla çözülebiliyor mu."""
+    return harita(kalib) is not None and _harita_kaydirma(kare, kalib) is not None
+
+
+def mutlak_mi(kalib: dict[str, Any] | None) -> bool:
+    """Karenin makine konumu OLMADAN koordinat verebiliyor mu.
+
+    Sabit üst kameranın karesi bunu sağlıyor: harita yatağa yapıştırılmış
+    etiketlerden çıktığı için doğrudan yatak koordinatı veriyor.
+    """
+    return harita(kalib) is not None and _harita_kaydirma(None, kalib) is not None
+
+
+def kalibre_mi(kalib: dict[str, Any] | None) -> bool:
+    return mm_px(kalib) > 0.0 or harita(kalib) is not None
+
+
+def _kalib_piksel(kalib: dict[str, Any] | None,
+                  genislik_px: float | None,
+                  yukseklik_px: float | None) -> tuple[float, float, float, float]:
+    """(W, H, sx, sy) — işlenen kare ölçüsü ve kalibrasyon uzayına ölçek.
+
+    Kare, kalibrasyon anındakinden başka bir çözünürlükte gelebiliyor
+    (küçültülmüş kare, farklı kamera kipi). Piksel önce KALİBRASYON
+    uzayına taşınıyor: harita orada tanımlı ve iki katı bir uzaydan
+    gelen sayı bütün koordinatları ikiye katlardı.
+    """
+    k = kalib or {}
+    W = _sayi(genislik_px, 0.0) or _sayi(k.get("genislik_px"), 640.0)
+    H = _sayi(yukseklik_px, 0.0) or _sayi(k.get("yukseklik_px"), 480.0)
+    kw = _sayi(k.get("genislik_px"), 640.0)
+    kh = _sayi(k.get("yukseklik_px"), 480.0)
+    return W, H, (kw / W if W else 1.0), (kh / H if H else 1.0)
+
+
+def kare_koseler(kare: dict[str, Any], kalib: dict[str, Any] | None,
+                 genislik_px: float | None = None,
+                 yukseklik_px: float | None = None
+                 ) -> list[tuple[float, float]]:
+    """Karenin dört köşesinin makine koordinatı (sol üstten saat yönünde).
+
+    Haritalı kamerada kare haritada DİKDÖRTGEN DEĞİL: eğik bakış onu
+    yamuğa çeviriyor. Dört köşe, "kare nereye düşüyor" sorusunun eksiksiz
+    cevabı; en/boy ondan türetiliyor.
+    """
+    W, H, _, _ = _kalib_piksel(kalib, genislik_px, yukseklik_px)
+    return [piksel_mm(u, v, kare, kalib, genislik_px, yukseklik_px)
+            for u, v in ((0.0, 0.0), (W, 0.0), (W, H), (0.0, H))]
+
+
+def kare_olcusu(kalib: dict[str, Any] | None,
+                kare: dict[str, Any] | None = None) -> tuple[float, float]:
+    """Karenin mm cinsinden (en, boy) ölçüsü.
+
+    Haritalı kamerada köşelerin sınırlarından; yoksa piksel x mm_px.
+    """
+    k = kalib or {}
+    if harita(k) is not None and _harita_kaydirma(kare or {"x": 0, "y": 0}, k):
+        koseler = kare_koseler(kare or {"x": 0.0, "y": 0.0}, k)
+        xs = [p[0] for p in koseler]
+        ys = [p[1] for p in koseler]
+        return (max(xs) - min(xs), max(ys) - min(ys))
     m = mm_px(k)
     return (_sayi(k.get("genislik_px"), 640.0) * m,
             _sayi(k.get("yukseklik_px"), 480.0) * m)
@@ -86,9 +206,17 @@ def kare_olcusu(kalib: dict[str, Any] | None) -> tuple[float, float]:
 def merkez(kare: dict[str, Any], kalib: dict[str, Any] | None) -> tuple[float, float]:
     """Karenin makine koordinatındaki merkezi.
 
-    Kamera ucun ekseninden kaymış olabiliyor; `ofset_x/y` o kayma.
+    Haritalı kamerada orta pikselin gittiği yer; yoksa kare konumu +
+    kameranın uç ucundan kayması (`ofset_x/y`).
     """
     k = kalib or {}
+    # Koşul `haritali_mi`: harita varken ama bu kareye uygulanamazken
+    # buraya girmek, `piksel_mm`in benzerlik koluna düşüp tekrar buraya
+    # dönmesi demek olurdu.
+    if haritali_mi(kare, k):
+        W = _sayi(k.get("genislik_px"), 640.0)
+        H = _sayi(k.get("yukseklik_px"), 480.0)
+        return piksel_mm(W / 2.0, H / 2.0, kare, k)
     return (_sayi(kare.get("x")) + _sayi(k.get("ofset_x")),
             _sayi(kare.get("y")) + _sayi(k.get("ofset_y")))
 
@@ -102,15 +230,29 @@ def piksel_mm(px: float, py: float, kare: dict[str, Any],
     `genislik_px/yukseklik_px` verilmezse kalibrasyondaki değerler
     kullanılıyor. Vermek şu durumda gerekiyor: kare küçültülerek
     işlendiyse piksel uzayı kalibrasyondakinden farklı.
+
+    HARİTA VARSA ONDAN GEÇİYOR — perspektif de düzeliyor.
     """
     k = kalib or {}
+    W, H, sx, sy = _kalib_piksel(k, genislik_px, yukseklik_px)
+
+    H_harita = harita(k)
+    if H_harita is not None:
+        kayma = _harita_kaydirma(kare, k)
+        if kayma is not None:
+            try:
+                x, y = kalibrasyon.harita_uygula(H_harita, _sayi(px) * sx,
+                                                 _sayi(py) * sy)
+            except kalibrasyon.KalibrasyonHatasi:
+                pass          # payda sıfır: bu piksel ufuk çizgisinde
+            else:
+                return (x + kayma[0], y + kayma[1])
+
     olcek = mm_px(k)
-    W = _sayi(genislik_px, 0.0) or _sayi(k.get("genislik_px"), 640.0)
-    H = _sayi(yukseklik_px, 0.0) or _sayi(k.get("yukseklik_px"), 480.0)
     # Küçültülmüş kare: aynı görüş alanı daha az piksele düştüğü için
     # bir pikselin mm karşılığı büyüyor.
-    olcek_x = olcek * (_sayi(k.get("genislik_px"), 640.0) / W)
-    olcek_y = olcek * (_sayi(k.get("yukseklik_px"), 480.0) / H)
+    olcek_x = olcek * sx
+    olcek_y = olcek * sy
 
     yerel_x = (_sayi(px) - W / 2.0) * olcek_x
     yerel_y = (_sayi(py) - H / 2.0) * olcek_y
@@ -136,9 +278,8 @@ def leke_mm(leke: dict[str, Any], kare: dict[str, Any], kalib: dict[str, Any] | 
     bize bitkinin gerçek genişliği lazım, ekrandaki kutunun değil.
     """
     k = kalib or {}
-    olcek = mm_px(k)
-    W = _sayi(genislik_px, 0.0) or _sayi(k.get("genislik_px"), 640.0)
-    olcek_x = olcek * (_sayi(k.get("genislik_px"), 640.0) / W)
+    _, _, sx, _ = _kalib_piksel(k, genislik_px, yukseklik_px)
+    olcek_x = mm_px(k) * sx
 
     cx, cy = piksel_mm(leke["cx"], leke["cy"], kare, k, genislik_px, yukseklik_px)
     # Dört köşe: dönme varsa kutu haritada eğik duruyor.
@@ -147,23 +288,43 @@ def leke_mm(leke: dict[str, Any], kare: dict[str, Any], kalib: dict[str, Any] | 
                             (leke["x2"], leke["y2"]), (leke["x1"], leke["y2"]))]
     xs = [p[0] for p in koseler]
     ys = [p[1] for p in koseler]
+
+    # ÖLÇÜ DE HARİTADAN GEÇİYOR. Eğik bakan kamerada bir pikselin mm
+    # karşılığı karenin bir ucundan öbürüne değişiyor; tek bir ortalama
+    # mm/px ile çarpmak, uzaktaki bitkiyi olduğundan küçük gösterir.
+    # Lekenin KENDİ yerinde ölçüyoruz: orta yatay ve orta dikey kesit.
+    if haritali_mi(kare, k):
+        sol = piksel_mm(leke["x1"], leke["cy"], kare, k, genislik_px, yukseklik_px)
+        sag = piksel_mm(leke["x2"], leke["cy"], kare, k, genislik_px, yukseklik_px)
+        ust = piksel_mm(leke["cx"], leke["y1"], kare, k, genislik_px, yukseklik_px)
+        alt = piksel_mm(leke["cx"], leke["y2"], kare, k, genislik_px, yukseklik_px)
+        en_mm = math.dist(sol, sag)
+        boy_mm = math.dist(ust, alt)
+        # Piksel başına mm, tam bu lekenin durduğu yerde.
+        yerel_olcek = (en_mm / max(1e-6, _sayi(leke.get("en_px")))
+                       if _sayi(leke.get("en_px")) > 0 else olcek_x)
+    else:
+        en_mm = _sayi(leke.get("en_px")) * olcek_x
+        boy_mm = _sayi(leke.get("boy_px")) * olcek_x
+        yerel_olcek = olcek_x
+
+    alan_px = max(_sayi(leke.get("alan_px")), 0.0)
     return {
         "no": leke.get("no"),
         "x": round(cx, 1), "y": round(cy, 1),
         "x1": round(min(xs), 1), "y1": round(min(ys), 1),
         "x2": round(max(xs), 1), "y2": round(max(ys), 1),
-        "en_mm": round(_sayi(leke.get("en_px")) * olcek_x, 1),
-        "boy_mm": round(_sayi(leke.get("boy_px")) * olcek_x, 1),
+        "en_mm": round(en_mm, 1),
+        "boy_mm": round(boy_mm, 1),
         # Alan mm²: piksel alanı x (mm/piksel)². Yaprağın gerçek yüzeyi
         # değil, üstten görünen izdüşümü — büyüme takibi için yeterli.
-        "alan_mm2": round(_sayi(leke.get("alan_px")) * olcek_x * olcek_x, 1),
+        "alan_mm2": round(alan_px * yerel_olcek * yerel_olcek, 1),
         "alan_px": leke.get("alan_px"),
         "dolgu": leke.get("dolgu"),
         # Dairesel eşdeğer çap: alanı aynı olan dairenin çapı. Yayılım
         # ölçüsü olarak kutu genişliğinden sağlam — tek bir uzun yaprak
         # kutuyu şişiriyor ama alanı şişirmiyor.
-        "cap_mm": round(2.0 * math.sqrt(max(_sayi(leke.get("alan_px")), 0.0) / math.pi)
-                        * olcek_x, 1),
+        "cap_mm": round(2.0 * math.sqrt(alan_px / math.pi) * yerel_olcek, 1),
     }
 
 
@@ -177,9 +338,8 @@ def leke_boyut_mm(leke: dict[str, Any], kalib: dict[str, Any] | None,
     onu uydurmuyoruz, hiç yazmıyoruz.
     """
     k = kalib or {}
-    olcek = mm_px(k)
-    W = _sayi(genislik_px, 0.0) or _sayi(k.get("genislik_px"), 640.0)
-    olcek_x = olcek * (_sayi(k.get("genislik_px"), 640.0) / W)
+    _, _, sx, _ = _kalib_piksel(k, genislik_px, None)
+    olcek_x = mm_px(k) * sx
     alan_px = max(_sayi(leke.get("alan_px")), 0.0)
     return {
         "no": leke.get("no"),
@@ -218,23 +378,41 @@ def cozumle(lekeler_px: list[dict[str, Any]], kare: dict[str, Any],
     ret: list[str] = []
     if not kalibre_mi(kalib):
         ret.append(YOK_KALIBRASYON)
-    if kare.get("x") is None or kare.get("y") is None:
+    # KONUM İKİ KAYNAKTAN GELEBİLİYOR: karenin kendi makine konumundan ya da
+    # mutlak haritadan. İkisi de yoksa koordinat üretilmiyor.
+    elif not haritali_mi(kare, kalib) and (kare.get("x") is None
+                                           or kare.get("y") is None):
         ret.append(YOK_KONUM)
     if hareket:
         ret.append(HAREKETLI)
     if ret:
         return {"lekeler": [], "ret": ret, "kare_mm": None}
 
-    en, boy = kare_olcusu(kalib)
+    en, boy = kare_olcusu(kalib, kare)
     cx, cy = merkez(kare, kalib)
+    haritali = haritali_mi(kare, kalib)
+    kare_mm: dict[str, Any] = {
+        "x": round(cx, 1), "y": round(cy, 1),
+        "en": round(en, 1), "boy": round(boy, 1),
+        # Haritalı karede tek bir "dönme" yok — kare haritada yamuk
+        # duruyor. Sınır denetimi (`kare_icinde`) dönmeyi sıfır alıp
+        # köşelerin sınırlarına bakıyor, doğrusu da bu.
+        "donme": 0.0 if haritali else _sayi((kalib or {}).get("donme")),
+        "mm_px": round(mm_px(kalib), 4),
+        "harita": haritali,
+    }
+    if haritali:
+        # Dört köşe: paneldeki kare katmanı fotoğrafı bu dörtgene
+        # oturtuyor — dikdörtgen çizmek eğik bakışta kareyi yatağın
+        # yanlış yerine koyardı.
+        kare_mm["kose"] = [[round(x, 1), round(y, 1)]
+                           for x, y in kare_koseler(kare, kalib,
+                                                    genislik_px, yukseklik_px)]
     return {
         "lekeler": [leke_mm(b, kare, kalib, genislik_px, yukseklik_px)
                     for b in lekeler_px],
         "ret": [],
-        "kare_mm": {"x": round(cx, 1), "y": round(cy, 1),
-                    "en": round(en, 1), "boy": round(boy, 1),
-                    "donme": _sayi((kalib or {}).get("donme")),
-                    "mm_px": round(mm_px(kalib), 4)},
+        "kare_mm": kare_mm,
     }
 
 
@@ -249,7 +427,9 @@ def oranli_kutu_mm(kutu: dict[str, Any], kare: dict[str, Any],
     önce piksele açılması — böylece sinir ağı çıktısı ile klasik
     segmentasyon çıktısı haritada aynı uzayda buluşuyor.
     """
-    if not kalibre_mi(kalib) or kare.get("x") is None:
+    if not kalibre_mi(kalib):
+        return None
+    if kare.get("x") is None and not haritali_mi(kare, kalib):
         return None
     k = kalib or {}
     W = _sayi(k.get("genislik_px"), 640.0)
@@ -439,30 +619,51 @@ def pencere_px(x_mm: float, y_mm: float, kare: dict[str, Any],
 
     Kare o noktayı içermiyorsa None.
     """
-    if not kalibre_mi(kalib) or kare.get("x") is None:
-        return None
     k = kalib or {}
-    W = int(_sayi(genislik_px, 0.0) or _sayi(k.get("genislik_px"), 640.0))
-    H = int(_sayi(yukseklik_px, 0.0) or _sayi(k.get("yukseklik_px"), 480.0))
-    olcek = mm_px(k) * (_sayi(k.get("genislik_px"), 640.0) / W)
-    if olcek <= 0:
+    if not kalibre_mi(k):
         return None
+    haritali = haritali_mi(kare, k)
+    if not haritali and kare.get("x") is None:
+        return None
+    Wf, Hf, sx, sy = _kalib_piksel(k, genislik_px, yukseklik_px)
+    W, H = int(Wf), int(Hf)
 
-    # Ters dönüşüm: merkeze göre kaydır, geri döndür, aynala, piksele böl.
-    cx, cy = merkez(kare, k)
-    dx, dy = _sayi(x_mm) - cx, _sayi(y_mm) - cy
-    aci = -math.radians(_sayi(k.get("donme")))
-    c, s = math.cos(aci), math.sin(aci)
-    yerel_x = dx * c - dy * s
-    yerel_y = dx * s + dy * c
-    if k.get("ayna_x"):
-        yerel_x = -yerel_x
-    if k.get("ayna_y"):
-        yerel_y = -yerel_y
-
-    px = yerel_x / olcek + W / 2.0
-    py = yerel_y / olcek + H / 2.0
-    r = max(1.0, yaricap_mm / olcek)
+    if haritali:
+        # HARİTANIN TERSİ. Noktanın kendisini ve 'yarıçap kadar sağını'
+        # ayrı ayrı çevirip aradaki PİKSEL mesafesini ölçüyoruz: eğik
+        # bakan kamerada yarıçap karenin her yerinde aynı piksel sayısı
+        # değil, uzak kenarda daha az.
+        H_harita = harita(k)
+        kayma = _harita_kaydirma(kare, k)
+        try:
+            u0, v0 = kalibrasyon.harita_geri(H_harita, _sayi(x_mm) - kayma[0],
+                                             _sayi(y_mm) - kayma[1])
+            u1, v1 = kalibrasyon.harita_geri(H_harita,
+                                             _sayi(x_mm) - kayma[0] + yaricap_mm,
+                                             _sayi(y_mm) - kayma[1])
+        except kalibrasyon.KalibrasyonHatasi:
+            return None
+        # Kalibrasyon uzayından işlenen karenin uzayına.
+        px, py = u0 / (sx or 1.0), v0 / (sy or 1.0)
+        r = max(1.0, math.hypot((u1 - u0) / (sx or 1.0), (v1 - v0) / (sy or 1.0)))
+    else:
+        olcek = mm_px(k) * sx
+        if olcek <= 0:
+            return None
+        # Ters dönüşüm: merkeze göre kaydır, geri döndür, aynala, piksele böl.
+        cx, cy = merkez(kare, k)
+        dx, dy = _sayi(x_mm) - cx, _sayi(y_mm) - cy
+        aci = -math.radians(_sayi(k.get("donme")))
+        c, s = math.cos(aci), math.sin(aci)
+        yerel_x = dx * c - dy * s
+        yerel_y = dx * s + dy * c
+        if k.get("ayna_x"):
+            yerel_x = -yerel_x
+        if k.get("ayna_y"):
+            yerel_y = -yerel_y
+        px = yerel_x / olcek + W / 2.0
+        py = yerel_y / olcek + H / 2.0
+        r = max(1.0, yaricap_mm / olcek)
     x1, y1 = int(round(px - r)), int(round(py - r))
     x2, y2 = int(round(px + r)), int(round(py + r))
     # Kırpıp kareye sığdırıyoruz; hiç kesişmiyorsa pencere yok.

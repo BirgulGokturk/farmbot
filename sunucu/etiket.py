@@ -1,25 +1,34 @@
-"""AprilTag ile kamera kalibrasyonu — tıklamayı ölçümle değiştiriyor.
+"""AprilTag ile kamera kalibrasyonu — ölçümün TEK yolu.
 
-NEDEN VAR. Bugünkü iki yöntem de kullanıcının bir piksele TIKLAMASINA
-dayanıyor: "iki kare" hareketli kamerada, "ölçek" sabit kamerada. Tıklama
-3-5 piksel şaşıyor ve o şaşma karenin tamamına yayılıyor — 640 piksellik
-bir karede 4 piksel, %0,6 ölçek hatası demek; 535 mm'lik yatakta 3 mm.
+NEDEN VAR. Önceki iki yöntem de kullanıcının bir piksele TIKLAMASINA
+dayanıyordu: "iki kare" hareketli kamerada, "ölçek" sabit kamerada.
+Tıklama 3-5 piksel şaşıyor ve o şaşma karenin tamamına yayılıyor — 640
+piksellik bir karede 4 piksel, %0,6 ölçek hatası demek; 535 mm'lik
+yatakta 3 mm. İkisi de kaldırıldı; buradaki yol ikisinin de yerini
+alıyor.
 
 AprilTag'in dört köşesi matematiksel olarak tanımlı ve algılayıcı onları
 alt piksel hassasiyetiyle buluyor. İnsan eli işin içinden çıkıyor.
 
-SABİT KAMERANIN ASIL DERDİNİ DE BU ÇÖZÜYOR. `coz_olcek` yalnız ölçek
-veriyor; açı ve konum veremiyor, çünkü sabit kameranın karesinin makine
-koordinatı yok. Bu yüzden bahçe ekranı kareyi yatağın neresine koyacağını
-bilmiyordu. Koordinatı BİLİNEN yerlere etiket yapıştırılırsa kamera
-ölçeği, dönmeyi ve konumu birden öğreniyor.
+SABİT KAMERANIN ASIL DERDİNİ DE BU ÇÖZÜYOR. Sabit kameranın karesinin
+makine koordinatı yok; bu yüzden çözümleme "bu leke yatağın şurasında"
+diyemiyordu. Koordinatı BİLİNEN yerlere etiket yapıştırılırsa kamera
+ölçeği, dönmeyi ve konumu birden öğreniyor — kare yatağa oturuyor.
 
-İKİ SEVİYE:
+ÜÇ SEVİYE:
 
   * **bir etiket + kenar ölçüsü** → yalnız `mm_px`. Kayıt gerekmiyor,
     etiketi eline alıp kadraja tutman yetiyor.
   * **iki ya da daha çok etiket + makine koordinatları** → `mm_px`,
     `donme`, `ofset_x/y`. Bahçenin zemini yerine oturuyor.
+  * **dört ya da daha çok etiket** → üstüne **harita** (perspektifli
+    homografi). Eğik bakan kamerada sahada ölçüldü: benzerlik 51,8 mm,
+    harita 9,3 mm yanılıyordu.
+
+HAREKETLİ KAMERADA SONUÇ GÖRECELİYE ÇEVRİLİYOR. Etiketler yatağa
+yapıştırılı, koordinatları mutlak; çözüm de mutlak çıkıyor. Sabit
+kamerada aranan tam bu. Uç kamerasında ise `ofset` "kameranın UÇTAN
+kayması" demek ve makinenin tarama anındaki konumu çıkarılıyor.
 
 Üç ve daha çok etiketle ARTIK (residual) anlamlı oluyor ve kalibrasyonun
 ne kadar tuttuğunu söylüyor. İki etikette artık her zaman sıfır çıkar —
@@ -374,35 +383,16 @@ def coz_yerlesim(bulunanlar: list[dict[str, Any]], konumlar: dict[str, Any],
             "Etiketler üst üste düşüyor — aralarında ölçülebilir mesafe yok. "
             "Karenin farklı yerlerinde duran etiketler kullanın.")
 
-    # DÖRT ETİKETTEN SONRA PERSPEKTİF DE ÇÖZÜLÜYOR.
-    #
-    # Benzerlik (ölçek + dönme + kaydırma) kameranın yatağa DİK baktığını
-    # varsayıyor. Bu kurulumda kamera sert bir açıyla bakıyor ve varsayım
-    # sahada 52 mm hata verdi; aynı ölçümden çıkan projektif harita 9 mm'ye
-    # indirdi. İki modelin hatası da dönüyor: aradaki fark, kameranın ne
-    # kadar eğik baktığını SÖYLÜYOR — tahmin etmiyoruz.
-    harita = None
-    harita_artik = None
-    if len(eslesen) >= 4:
-        import otokalib
-        px_ham = [tuple(e["merkez"]) for e, _ in eslesen]
-        harita = otokalib._projektif(px_ham, q)
-        if harita is not None:
-            kare = 0.0
-            for (u, v), (x, y) in zip(px_ham, q):
-                hx, hy = otokalib.uygula(harita, u, v)
-                kare += (hx - x) ** 2 + (hy - y) ** 2
-            harita_artik = math.sqrt(kare / len(px_ham))
-
     # DÖRT ETİKETTEN SONRA PERSPEKTİF DE ÇIKIYOR.
     #
     # Benzerlik (ölçek + dönme + kaydırma) kameranın yatağa DİK baktığını
-    # varsayıyor. Bu kurulumda kamera eğik bakıyor ve sahada ölçüldü:
-    # aynı noktalarda benzerlik 51,8 mm, projektif 9,3 mm yanılıyordu.
-    # Dört nokta homografiyi tam belirliyor, fazlası hatayı ölçülebilir
-    # yapıyor.
+    # varsayıyor. Bu kurulumda kamera sert bir açıyla bakıyor ve sahada
+    # ölçüldü: aynı noktalarda benzerlik 51,8 mm, projektif 9,3 mm
+    # yanılıyordu. Dört nokta homografiyi tam belirliyor, fazlası hatayı
+    # ölçülebilir yapıyor. İki modelin hatası da dönüyor: aradaki fark,
+    # kameranın ne kadar eğik baktığını SÖYLÜYOR — tahmin etmiyoruz.
     harita = None
-    proj_artik = None
+    harita_artik = None
     if len(eslesen) >= 4:
         import otokalib
         px = [(e["merkez"][0], e["merkez"][1]) for e, _ in eslesen]
@@ -412,12 +402,10 @@ def coz_yerlesim(bulunanlar: list[dict[str, Any]], konumlar: dict[str, Any],
             for (u, v), (x, y) in zip(px, q):
                 hx, hy = otokalib.uygula(harita, u, v)
                 kare += (hx - x) ** 2 + (hy - y) ** 2
-            proj_artik = math.sqrt(kare / len(px))
+            harita_artik = math.sqrt(kare / len(px))
 
     aci = math.degrees(en_iyi["aci"])
     return {
-        "harita": harita,
-        "projektif_artik_mm": None if proj_artik is None else round(proj_artik, 2),
         "harita": harita,
         "harita_artik_mm": None if harita_artik is None else round(harita_artik, 2),
         "mm_px": en_iyi["olcek"],
@@ -480,15 +468,55 @@ def _benzerlik(p: list[tuple[float, float]],
 # toplayıp tek satırla bağlıyoruz: `main.py` başka bir oturumda sürekli
 # değişiyor ve oraya blok eklemek her yamada çakışma demek.
 # --------------------------------------------------------------------------- #
-def yonlendirici_kur(parola_dogrula, canli_kare=None):
+def yonlendirici_kur(parola_dogrula, canli_kare=None, makine_konum=None,
+                     kamera_hareketli=None):
     """Parola denetimi çağıranın; geri kalan her şey burada.
 
     `canli_kare(kamera) -> bytes` verilirse kare ONDAN alınıyor. İki ayrı
     depo var: `kareler.son` diskteki PERİYODİK kareyi veriyor ve o aralık
     saatlik olabiliyor. Etiket taraması eski bir kareyi okursa "etiket
     yok" der ya da çoktan kaldırılmış bir etiketi bulur.
+
+    `makine_konum() -> (x, y) | (None, None)` ve
+    `kamera_hareketli(ad) -> bool` hareketli kamerada sonucu göreceliye
+    çevirmek için gerekiyor; verilmezse sonuç MUTLAK yazılıyor (sabit
+    kamera davranışı).
     """
+    import inspect
     import time
+
+    async def _kare_al(kam: str):
+        """Kare sağlayıcı eşzamanlı da olabiliyor, eşzamansız da.
+
+        Sunucu ajandan TAM çözünürlüklü kare isterken bir eşyordam
+        veriyor; denemeler düz bir işlev veriyor. İkisini de kabul
+        etmek, deneme kurulumunu sunucunun iç işleyişine bağlamamak
+        demek.
+        """
+        if not canli_kare:
+            return None
+        sonuc = canli_kare(kam)
+        if inspect.isawaitable(sonuc):
+            sonuc = await sonuc
+        return sonuc
+
+    def _makine_konum():
+        if not makine_konum:
+            return (None, None)
+        try:
+            x, y = makine_konum()
+            return (None if x is None else float(x),
+                    None if y is None else float(y))
+        except Exception:                                  # noqa: BLE001
+            return (None, None)
+
+    def _kamera_hareketli(ad: str) -> bool:
+        if not kamera_hareketli:
+            return False
+        try:
+            return bool(kamera_hareketli(ad))
+        except Exception:                                  # noqa: BLE001
+            return False
 
     from fastapi import APIRouter, HTTPException, Query
 
@@ -526,7 +554,7 @@ def yonlendirici_kur(parola_dogrula, canli_kare=None):
         parola_dogrula(jeton)
         govde = govde or {}
         kam = kalibrasyon.ad_temizle(govde.get("kamera"))
-        kare = canli_kare(kam) if canli_kare else None
+        kare = await _kare_al(kam)
         if not kare:
             kare = await asyncio.to_thread(kareler.son, kareler.ad_temizle(kam))
         if not kare:
@@ -571,22 +599,39 @@ def yonlendirici_kur(parola_dogrula, canli_kare=None):
                 "yontem": "etiket", "guncelleme": time.time(),
             }
             if yer:
-                yazilacak.update(mm_px=yer["mm_px"], donme=yer["donme"],
-                                 ofset_x=yer["ofset_x"], ofset_y=yer["ofset_y"],
-                                 ayna_y=yer["ayna_y"])
+                # HAREKETLİ KAMERADA SONUÇ GÖRECELİ OLMALI.
+                #
+                # Etiketler yatağa yapıştırılı ve koordinatları MUTLAK; o
+                # yüzden çözüm de mutlak çıkıyor: "karenin merkezi yatağın
+                # şurası". Sabit kamerada aranan tam bu. Hareketli uç
+                # kamerasında ise `ofset_x/y`nin anlamı "kameranın UÇTAN
+                # kayması" ve o kayma, mutlak sonuçtan makinenin tarama
+                # anındaki konumu çıkarılarak bulunuyor. Karıştırılırsa uç
+                # kamerasının kareleri yatağın rastgele bir yerine oturur.
+                mx, my = _makine_konum()
+                hareketli = bool(_kamera_hareketli(kam))
+                if hareketli and (mx is None or my is None):
+                    cikti["notlar"].append(
+                        "Makinenin konumu okunamadı (PLC kopuk olabilir) — "
+                        "hareketli kamerada kayma MUTLAK yazıldı. Konum "
+                        "gelince taramayı tekrarlayın.")
+                kaydir = hareketli and mx is not None and my is not None
+                yazilacak.update(
+                    mm_px=yer["mm_px"], donme=yer["donme"],
+                    ofset_x=yer["ofset_x"] - (mx if kaydir else 0.0),
+                    ofset_y=yer["ofset_y"] - (my if kaydir else 0.0),
+                    ayna_y=yer["ayna_y"])
                 # HARİTA VARSA O DA YAZILIYOR. Üçlü (ölçek/dönme/ofset)
                 # yerinde kalıyor: haritayı okumayan yerler bozulmadan
                 # çalışsın diye. Okuyanlar eğik bakışı da düzeltiyor.
                 if yer.get("harita"):
                     yazilacak["harita"] = yer["harita"]
-                    yazilacak["harita_sapma_mm"] = yer.get("projektif_artik_mm")
-                    yazilacak["harita_nokta"] = yer.get("etiket_sayisi")
-                # HARİTA VARSA O DA YAZILIYOR. Üçlü de yazılmaya devam
-                # ediyor: haritayı okumayan yerler bozulmadan çalışsın.
-                if yer.get("harita"):
-                    yazilacak["harita"] = yer["harita"]
                     yazilacak["harita_sapma_mm"] = yer.get("harita_artik_mm")
                     yazilacak["harita_nokta"] = yer.get("etiket_sayisi")
+                    # Haritanın ölçüldüğü makine konumu. Sabit kamerada
+                    # None: kamera oynamıyor, harita her zaman geçerli.
+                    yazilacak["harita_makine_x"] = mx if kaydir else None
+                    yazilacak["harita_makine_y"] = my if kaydir else None
             else:
                 yazilacak["mm_px"] = olc["mm_px"]
             cikti["kalibrasyon"] = await asyncio.to_thread(

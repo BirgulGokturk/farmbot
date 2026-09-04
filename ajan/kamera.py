@@ -69,12 +69,33 @@ VARSAYILAN = {
     "hareketli": True,
     "aktif": False,
     "aralik_sn": 3600.0,   # saatte bir kare
-    "genislik": 640,
+    # ÇEKİM GENİŞLİĞİ — kameranın gerçekten aldığı kare.
+    #
+    # 640 idi ve o çözünürlükte yeni çıkmış bir filiz karede birkaç piksel
+    # kalıyor, en küçük leke eşiğinin altına düşüp eleniyordu. Kamera 4K
+    # yapabiliyor; 1920 hem filizi görünür kılıyor hem Pi'nin JPEG
+    # sıkıştırmasını boğmuyor.
+    #
+    # AĞ BUNDAN ETKİLENMİYOR: canlı akış `canli_genislik`e küçültülerek
+    # gönderiliyor (bkz. aşağısı). Büyük kare yalnız çözümlemeye gidiyor.
+    "genislik": 1920,
     # AÇIK ÇÖZÜNÜRLÜK. `genislik` tek başına 4:3 varsayıyordu; USB
     # kameraların çoğu 16:9 kipte (1280x720) çalışıyor ve olmayan bir kip
     # istendiğinde sürücü ya en yakınını veriyor ya da hiç vermiyor.
     # Doluysa ("1280x720") bu geçerli, boşsa eski 4:3 türetmesi sürüyor.
     "cozunurluk": "",
+    # CANLI AKIŞ GENİŞLİĞİ — ağdan geçen kare.
+    #
+    # Çekim 1920'de, akış burada. Sebebi ölçülebilir: 1920x1440 JPEG ~400
+    # KB; saniyede 5 kare 2 MB/s eder ve kareler buluttaki sunucu
+    # üzerinden geçiyor. Aynı akış 640'a küçültülünce ~40 KB kalıyor.
+    #
+    # Çözümleme (AprilTag taraması, filiz bulma) küçültülmüş kareyi DEĞİL,
+    # bellekte duran tam çözünürlüklü son kareyi kullanıyor — `kamera_kare`
+    # komutu onu veriyor.
+    #
+    # 0 ya da çekim genişliğinden büyük yazılırsa küçültme yapılmıyor.
+    "canli_genislik": 640,
     "kalite": 75,
     # KAMERANIN KENDİ DENETİMLERİ (UVC). {"brightness": 40,
     # "auto_exposure": 1, "exposure_time_absolute": 250} gibi. Kare
@@ -327,6 +348,13 @@ class Kamera:
         self.cihaz_not: str = ""
         self._denetim_uyarisi = False
         self._son_denetim = ""
+        # TAM ÇÖZÜNÜRLÜKLÜ SON KARE. Canlı akış küçültülmüş kare
+        # gönderiyor; çözümleme (AprilTag, filiz) büyüğünü istiyor ve
+        # kamerayı ikinci kez açmak mümkün değil — cihaz akışta meşgul.
+        # Bu yüzden akış kareyi küçültmeden ÖNCE burada bırakıyor.
+        self._tam_kare: bytes = b""
+        self._tam_ts: float = 0.0
+        self._kucultme_uyarisi = False
 
     # --- kimlik ---
     @property
@@ -357,6 +385,71 @@ class Kamera:
                 pass
         g = int(self.ayar["genislik"])
         return g, int(g * 3 / 4)
+
+    def _akis_kucult(self, jpeg: bytes) -> bytes:
+        """Canlı akışa gidecek kareyi küçültür. Küçültemezse OLDUĞU GİBİ verir.
+
+        AĞ İÇİN, ÇÖZÜMLEME İÇİN DEĞİL. Tam çözünürlüklü kare `_tam_kare`de
+        duruyor ve çözümleme onu alıyor; buradan çıkan yalnız ekranda
+        görünen akış.
+
+        Pillow YOKSA SESSİZ KALMIYORUZ ama akışı da kesmiyoruz: kare büyük
+        gider, panel yine görüntü gösterir. Sebebi günlüğe BİR KEZ
+        yazılıyor — her karede yazmak günlüğü doldururdu.
+        """
+        hedef = int(self.ayar.get("canli_genislik", 0) or 0)
+        if hedef <= 0:
+            return jpeg
+        genislik, _ = self._boyut()
+        if genislik <= hedef:
+            return jpeg
+        try:
+            import io
+
+            from PIL import Image
+        except ImportError:
+            if not self._kucultme_uyarisi:
+                self._kucultme_uyarisi = True
+                self.gunluk_cb(
+                    f"[{self.etiket}] Pillow yok — canlı akış {genislik} piksel "
+                    f"genişliğinde gidiyor ({hedef} yerine). Pi'de: "
+                    "sudo apt install -y python3-pil", "uyari")
+            return jpeg
+        try:
+            gorsel = Image.open(io.BytesIO(jpeg))
+            gorsel.thumbnail((hedef, hedef * 10), Image.BILINEAR)
+            tampon = io.BytesIO()
+            gorsel.convert("RGB").save(tampon, format="JPEG",
+                                       quality=int(self.ayar.get("kalite", 75)))
+            return tampon.getvalue()
+        except Exception as hata:                          # noqa: BLE001
+            if not self._kucultme_uyarisi:
+                self._kucultme_uyarisi = True
+                self.gunluk_cb(f"[{self.etiket}] kare küçültülemedi: {hata} — "
+                               "akış tam çözünürlükte gidiyor", "uyari")
+            return jpeg
+
+    def tam_kare(self, azami_yas: float = 0.0) -> bytes:
+        """Çözümleme için TAM ÇÖZÜNÜRLÜKLÜ kare.
+
+        Akış açıksa bellekteki son kare (akış zaten tam çözünürlükte
+        çekiyor, yalnız gönderirken küçültüyor). Akış kapalıysa yeni bir
+        kare alınıyor.
+
+        `azami_yas` verilirse bellekteki kare o kadar eskiyse kabul
+        edilmiyor: DONMUŞ KARE, OLMAYAN KAREDEN KÖTÜ — akış durduğunda
+        son kare orada kalıyor ve onu ölçen kalibrasyon aynı görüntüyü
+        tekrar tekrar ölçüp "kamera çalışıyor" sanıyor.
+        """
+        if self._canli and self._tam_kare:
+            if azami_yas <= 0 or (time.time() - self._tam_ts) <= azami_yas:
+                return self._tam_kare
+        if self._canli:
+            # Akış açıkken cihaz meşgul; ikinci bir çekim "device busy"
+            # verir ve akışı da düşürebilir. Elimizdeki kare eskiyse
+            # bunu söylemek, taze diye eski kare vermekten iyi.
+            return b""
+        return self.kare_al()
 
     def _denetimleri_uygula(self, cihaz: str) -> None:
         """UVC denetimlerini kameraya yazar (parlaklık, pozlama, beyaz ayarı).
@@ -710,7 +803,14 @@ class Kamera:
                 if simdi - son < en_az_ara:
                     continue
                 son = simdi
-                self.gonder(self.ad, base64.b64encode(kare).decode("ascii"), time.time())
+                # ÖNCE TAMINI SAKLA, SONRA KÜÇÜLTÜP GÖNDER. Çözümleme
+                # (AprilTag taraması, filiz bulma) bu kareyi istiyor ve
+                # akış sürerken kamerayı ikinci kez açmak mümkün değil.
+                self._tam_kare = kare
+                self._tam_ts = time.time()
+                self.gonder(self.ad,
+                            base64.b64encode(self._akis_kucult(kare)).decode("ascii"),
+                            time.time())
         except Exception as hata:
             self.son_hata = str(hata)
             self.gunluk_cb(f"[{self.etiket}] Canlı akış durdu: {hata}", "hata")
@@ -862,8 +962,10 @@ class Kamera:
             "cihaz": self._cihaz,
             "cihaz_adi": str(self.ayar.get("cihaz_adi") or ""),
             "cihaz_not": self.cihaz_not,
-            "genislik": int(self.ayar.get("genislik", 640)),
+            "genislik": int(self.ayar.get("genislik", 1920)),
             "cozunurluk": str(self.ayar.get("cozunurluk") or ""),
+            # Ağdan geçen kare bu genişlikte; çekim `genislik`te.
+            "canli_genislik": int(self.ayar.get("canli_genislik", 0) or 0),
             "denetimler": dict(self.ayar.get("denetimler") or {}),
             "pi_secenekleri": dict(self.ayar.get("pi_secenekleri") or {}),
             "yol": str(self.ayar.get("yol") or "oto"),
@@ -1041,18 +1143,21 @@ class Kamera:
 # Sıralama korunuyor: panel kutuları bu sırayla diziliyor.
 
 VARSAYILAN_KAMERALAR: list[dict[str, Any]] = [
+    # Çekim 1920, akış 640: filiz büyük karede görünüyor, ağdan küçüğü
+    # geçiyor. Gerekçenin tamamı VARSAYILAN["genislik"] başında.
     {"ad": "uc", "etiket": "Uç kamerası", "hareketli": True, "yol": "pi",
-     "aktif": False, "aralik_sn": 3600.0, "genislik": 640, "kalite": 75},
+     "aktif": False, "aralik_sn": 3600.0, "genislik": 1920, "kalite": 75,
+     "canli_genislik": 640},
     {"ad": "ust", "etiket": "Üst kamera", "hareketli": False, "yol": "usb",
-     "aktif": False, "aralik_sn": 3600.0, "genislik": 640, "kalite": 75,
-     "cihaz_adi": "", "cihaz": ""},
+     "aktif": False, "aralik_sn": 3600.0, "genislik": 1920, "kalite": 75,
+     "canli_genislik": 640, "cihaz_adi": "", "cihaz": ""},
 ]
 
 #: Panelden gelen tanımda kabul edilen alanlar. Beyaz liste: bilinmeyen bir
 #: anahtar sessizce saklanıp sonra "neden çalışmıyor" sorusuna dönüşmesin.
 DUZENLENEBILIR = ("etiket", "hareketli", "aralik_sn", "genislik", "kalite",
                   "cihaz", "cihaz_adi", "yol", "sahte", "aktif",
-                  "cozunurluk", "denetimler", "pi_secenekleri")
+                  "cozunurluk", "canli_genislik", "denetimler", "pi_secenekleri")
 
 #: Kamera denetimlerinde kabul edilen ad biçimi — `v4l2-ctl --list-ctrls`
 #: adları harf, rakam ve alt çizgiden ibaret. Kabuk enjeksiyonuna kapı
@@ -1091,12 +1196,29 @@ def tanim_dogrula(ham: dict[str, Any], sira: int = 0) -> dict[str, Any]:
         genislik = int(float(ham.get("genislik", 640)))
     except (TypeError, ValueError):
         raise KameraAyarHatasi(f"'{temiz['etiket']}' çözünürlüğü sayı olmalı") from None
-    if not 160 <= genislik <= 1920:
+    # ÜST SINIR 1920'DEN 4096'YA AÇILDI. Eski gerekçe "kare
+    # WebSocket'ten geçiyor, büyüğü ağı yorar" idi ve doğruydu — ama
+    # artık ağdan geçen kare `canli_genislik`e küçültülüyor, çekim
+    # genişliği yalnız çözümlemeye gidiyor. 640'ta filiz birkaç piksel
+    # kalıp eleniyordu; asıl bedel oydu.
+    if not 160 <= genislik <= 4096:
         raise KameraAyarHatasi(
-            f"'{temiz['etiket']}' genişliği 160 ile 1920 arasında olmalı "
-            f"(verilen: {genislik}). Kare WebSocket'ten geçiyor; büyük kare ağı "
-            "ve SD kartı yorar.")
+            f"'{temiz['etiket']}' genişliği 160 ile 4096 arasında olmalı "
+            f"(verilen: {genislik}). Kameranın desteklediklerini "
+            "`v4l2-ctl --list-formats-ext` yazıyor.")
     temiz["genislik"] = genislik
+
+    # CANLI AKIŞ GENİŞLİĞİ. 0 = küçültme yok.
+    try:
+        canli_g = int(float(ham.get("canli_genislik", 640)))
+    except (TypeError, ValueError):
+        raise KameraAyarHatasi(
+            f"'{temiz['etiket']}' canlı akış genişliği sayı olmalı") from None
+    if canli_g and not 160 <= canli_g <= 4096:
+        raise KameraAyarHatasi(
+            f"'{temiz['etiket']}' canlı akış genişliği 160 ile 4096 arasında "
+            f"olmalı, ya da küçültmeyi kapatmak için 0 (verilen: {canli_g})")
+    temiz["canli_genislik"] = max(0, canli_g)
 
     try:
         aralik = float(ham.get("aralik_sn", 3600.0))
@@ -1123,9 +1245,9 @@ def tanim_dogrula(ham: dict[str, Any], sira: int = 0) -> dict[str, Any]:
                 f"'{temiz['etiket']}' çözünürlüğü 'GENİŞLİKxYÜKSEKLİK' olmalı "
                 f"(verilen: {ham_coz}). Kameranın desteklediklerini "
                 "`v4l2-ctl --list-formats-ext` yazıyor.")
-        if not (160 <= int(g) <= 1920 and 120 <= int(y) <= 1440):
+        if not (160 <= int(g) <= 4096 and 120 <= int(y) <= 3072):
             raise KameraAyarHatasi(
-                f"'{temiz['etiket']}' çözünürlüğü 160x120 ile 1920x1440 arasında "
+                f"'{temiz['etiket']}' çözünürlüğü 160x120 ile 4096x3072 arasında "
                 f"olmalı (verilen: {ham_coz}).")
         ham_coz = f"{int(g)}x{int(y)}"
     temiz["cozunurluk"] = ham_coz
