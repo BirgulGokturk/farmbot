@@ -54,7 +54,11 @@
           <button class="dugme birincil" id="d-filiz-bul">Filizleri bul</button>
           <div class="alan">
             <label for="filiz-esik">Yeşil eşiği</label>
-            <input type="number" id="filiz-esik" step="0.01" min="0.01" max="0.9"
+            <!-- ÜST SINIR 0.4. Alan 0.9'a kadar izin veriyordu ve sahada
+                 0.06 yerine 0.6 yazıldı: eşik o kadar yükselince hiçbir
+                 piksel geçmiyor, çalıştırma boşa gidiyor. Kullanılabilir
+                 aralık 0.02-0.25 civarı; 0.4 zaten fazlasıyla geniş. -->
+            <input type="number" id="filiz-esik" step="0.01" min="0.01" max="0.4"
                    placeholder="0.12">
           </div>
           <div class="alan">
@@ -69,7 +73,8 @@
           </div>
         </div>
         <p class="alt-not">Filizler bulunamıyorsa <b>en küçük fide</b>yi
-          düşürün, yeşil soluksa <b>eşiği</b>. Boyut artık <b>milimetre</b>:
+          düşürün; yeşil soluksa <b>eşiği de düşürün</b> — eşik yükseldikçe
+          daha az piksel yeşil sayılıyor. Boyut <b>milimetre</b>:
           piksel cinsinden yazıldığında çözünürlüğü yükseltmek küçük fideyi
           bulmuyordu — eşiğin fiziksel karşılığı her çözünürlükte aynı
           kalıyordu. Fesleğen kotiledonu 8-10 mm. <b>Birleştirme</b>: bu
