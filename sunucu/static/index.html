@@ -7,7 +7,7 @@
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌱</text></svg>">
 <link rel="stylesheet" href="/statik/stil.css">
 <link rel="stylesheet" href="/statik/bahce.css">
-<link rel="stylesheet" href="/statik/bahce-sahne.css">
+<link rel="stylesheet" href="/statik/bahce-tuval.css">
 <link rel="stylesheet" href="/statik/etiket.css">
 <link rel="stylesheet" href="/statik/bitki.css">
 <link rel="stylesheet" href="/statik/zamanli.css">
@@ -224,101 +224,33 @@
            Eski bahçe ekranı aşağıda `#bh-klasik` kabında ve yalnız
            "Klasik görünüm" düğmesiyle açılıyor: yeni sahne bir şeyi
            kaçırıyorsa geri dönülecek bir yer olsun. -->
-      <div class="bs" id="bs">
+      <!-- BAHÇE SAHNESİ — tek bir tuval.
+           Yatak, toprak, bitkiler ve makine `bahce-tuval.js` içinde
+           çiziliyor; burada yalnız kabuk var. DOM'da her bitkiyi bir
+           düğüm yapmak düz bir üstten görünüm için yetiyordu ama
+           derinlik, sürekli salınım ve onlarca öğenin akıcı hareketi
+           her karede düzen tetikliyor ve tablette kare düşürüyordu. -->
+      <div class="bt" id="bt">
 
-        <div class="bs-ust">
-          <!-- Bağlantı rozeti ŞERİDİN BAŞINDA: kopuk bir makinede
+        <div class="bt-ust">
+          <!-- Bağlantı rozeti şeridin BAŞINDA: kopuk bir makinede
                düğmeye basmadan önce okunması gereken tek şey bu. -->
-          <span class="bs-bagli" id="bs-bagli"><i></i><b>Makine</b></span>
+          <span class="bt-bagli" id="bt-bagli"><i></i><b>Makine</b></span>
           <span class="esnek"></span>
-          <button class="bs-ikon" id="bs-kamera" type="button" aria-pressed="false"
-                  title="Üst kameranın son karesini toprağın üstüne bindirir">Kamera katı</button>
-          <button class="bs-ikon" id="bs-egik" type="button" aria-pressed="true"
-                  title="Bahçeye eğik ya da tam tepeden bak">Eğik bak</button>
-          <button class="bs-ikon" id="bs-sakin" type="button" aria-pressed="false"
-                  title="Bütün hareketi durdurur — küçük bilgisayarda işlemciyi rahatlatır">Sakin mod</button>
-          <button class="bs-ikon" id="bs-klasik" type="button" aria-pressed="false"
+          <button class="bt-ikon" id="bt-sakin" type="button" aria-pressed="false"
+                  title="Bütün hareketi durdurur">Sakin mod</button>
+          <button class="bt-ikon" id="bt-klasik" type="button" aria-pressed="false"
                   title="Eski bahçe ekranına dön">Klasik görünüm</button>
         </div>
 
-        <!-- Uyarı satırı: kalibrasyon yok, kamera yok, ajan kopuk gibi
-             hâller. Sahne BUNLARA RAĞMEN çalışıyor, satır sebebini
-             söylüyor. -->
-        <div class="bs-uyari" id="bs-uyari" hidden></div>
+        <!-- Kalibrasyon yok, ajan kopuk gibi hâller. Sahne bunlara
+             RAĞMEN çalışıyor; satır sebebini söylüyor. -->
+        <div class="bt-uyari" id="bt-uyari" hidden></div>
 
-        <div class="bs-sahne-sar">
-          <div class="bs-sahne" id="bs-sahne">
-            <!-- Yakınlaştırma ve eğim AYRI katmanlarda olmak zorunda:
-                 ikisi tek `transform` zincirinde olunca yakınlaştırma
-                 perspektif izdüşümünden ÖNCE uygulanıyor ve parmağın
-                 altındaki nokta kayıyor. -->
-            <div class="bs-zum" id="bs-zum">
-              <div class="bs-duzlem" id="bs-duzlem">
-                <div class="bs-zemin"></div>
-                <img class="bs-kamera-kat" id="bs-kamera-kat" alt="" hidden>
-                <svg class="bs-cizim" id="bs-cizim" viewBox="0 0 1000 1000"
-                     preserveAspectRatio="none" aria-hidden="true"></svg>
-                <div class="bs-gozler" id="bs-gozler"></div>
-                <div class="bs-bitkiler" id="bs-bitkiler"></div>
-                <!-- MAKİNE. Köprü uzun kenar boyunca (makine Y'sinde)
-                     yürüyor ve X boyunca uzanıyor; kızak köprünün üstünde
-                     X'te kayıyor. Tek imleç, makinenin bahçenin üstünden
-                     geçtiğini anlatmıyordu. Konum bildirilmiyorsa hiç
-                     çizilmiyor — "herhâlde şuradadır" diye bir yer
-                     uydurulmuyor. -->
-                <div class="bs-makine" id="bs-makine" hidden>
-                  <div class="bs-portal" id="bs-portal"></div>
-                  <button class="bs-kizak" id="bs-kizak" type="button"
-                          aria-label="Makine — dokununca ne yaptığını yazar"></button>
-                  <div class="bs-bas" id="bs-bas" hidden><span class="bs-bas-ad"></span></div>
-                </div>
-                <!-- Dört köşe ölçü noktası: ekran koordinatını yatak
-                     milimetresine çeviren dönüşüm bunlardan ÖLÇÜLEREK
-                     çıkarılıyor, elle hesaplanmıyor. Görünmezler ama
-                     kaldırılamazlar. -->
-                <span class="bs-olcu" data-kose="0"></span>
-                <span class="bs-olcu" data-kose="1"></span>
-                <span class="bs-olcu" data-kose="2"></span>
-                <span class="bs-olcu" data-kose="3"></span>
-              </div>
-            </div>
-            <p class="bs-bos" id="bs-bos" hidden></p>
-            <span class="bs-rozet-zum" id="bs-zum-rozet" hidden></span>
-          </div>
+        <div class="bt-sahne" id="bt-sahne">
+          <canvas id="bt-tuval"></canvas>
+          <p class="bt-bos" id="bt-bos" hidden></p>
         </div>
-
-      <!-- TOHUM RAFI. Bir tohuma dokunmak onu ELİNE ALMAK demek: o
-           türün ekim gözleri yatakta yanıyor. Sürükleyip bırakmak da,
-           tohuma sonra göze dokunmak da aynı işi yapıyor — dokunmatikte
-           sürüklemeyi bulamayan biri gözde kalmasın. -->
-      <div class="bs-raf" id="bs-raf" role="group" aria-label="Tohum rafı"></div>
-
-      <!-- Sıra şeridi: makinenin ne yaptığı ve sırada ne beklediği. -->
-      <div class="bs-serit" id="bs-serit">
-        <span class="bs-nokta"></span>
-        <span id="bs-serit-yazi">Robot bekliyor.</span>
-        <span class="esnek"></span>
-        <button class="bs-ikon" id="bs-serit-iptal" type="button" hidden>Sırayı boşalt</button>
-      </div>
-
-      <!-- Sürüklenen tohumun parmağın altındaki gölgesi. -->
-      <div class="bs-hayalet" id="bs-hayalet" hidden></div>
-      </div>
-
-
-      <!-- AYRINTI KARTI — hem bitki hem makine bunu kullanıyor.
-           Sahnenin 3B dönüşümünden etkilenmemesi için düzlemin DIŞINDA. -->
-      <div class="bs-ortu" id="bs-ortu" hidden>
-        <section class="bs-kart" role="dialog" aria-label="Ayrıntı">
-          <header>
-            <span class="bs-kart-simge" data-rol="simge"></span>
-            <div><b data-rol="baslik"></b><small data-rol="alt"></small></div>
-            <span class="esnek"></span>
-            <button class="bs-ikon" data-rol="kapat" type="button">Kapat</button>
-          </header>
-          <dl class="bs-satirlar" data-rol="satirlar"></dl>
-          <div class="bs-kart-dugmeler" data-rol="dugmeler"></div>
-        </section>
       </div>
 
       <!-- ESKİ BAHÇE EKRANI. Kabı kapalıyken `bahce.js` haber almıyor. -->
@@ -2318,7 +2250,7 @@
 <!-- Profil görüntüleyici: haritanın verisini okuyup Z kesiti çiziyor -->
 <script src="/statik/profil.js"></script>
 <script src="/statik/bahce.js"></script>
-<script src="/statik/bahce-sahne.js"></script>
+<script src="/statik/bahce-tuval.js"></script>
 <script src="/statik/app.js"></script>
 <script src="/statik/etiket.js"></script>
 <script src="/statik/filiz.js"></script>

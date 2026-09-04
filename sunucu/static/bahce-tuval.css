@@ -1,0 +1,127 @@
+/* Bahçe — tuval sahnesinin kabuğu.
+ *
+ * Sahnenin kendisi `bahce-tuval.js` içinde tuvale çiziliyor; burada
+ * yalnız kabuk var: şerit, uyarı satırı ve tuvalin kapladığı yer.
+ * `stil.css`in kuralları (renk yalnız durum için, gölge tek kademe)
+ * burada da geçerli — istisna tuvalin İÇİ, çünkü orada toprak
+ * kahverengi olduğu için kahverengi.
+ */
+
+.bt {
+  display: flex;
+  flex-direction: column;
+  gap: var(--b2);
+  min-height: 0;
+}
+.bt[hidden] { display: none; }
+
+/* ------------------------------------------------------------- şerit */
+.bt-ust {
+  display: flex;
+  align-items: center;
+  gap: var(--b2);
+  flex-wrap: wrap;
+  flex: none;
+}
+.bt-ust .esnek { flex: 1 1 auto; }
+
+.bt-ikon {
+  font: inherit;
+  color: var(--metin-2);
+  background: var(--yuzey-2);
+  border: 1px solid transparent;
+  border-radius: 999px;
+  padding: 6px 14px;
+  cursor: pointer;
+  transition: color .15s, background .15s;
+}
+.bt-ikon:hover { color: var(--metin); }
+.bt-ikon[aria-pressed="true"] {
+  color: var(--metin);
+  background: var(--vurgu-sis);
+  border-color: var(--vurgu-koyu);
+}
+.bt-ikon[disabled] { opacity: .45; cursor: not-allowed; }
+
+/* Bağlantı rozeti ŞERİDİN BAŞINDA: kopuk bir makinede düğmeye basmadan
+   önce okunması gereken tek şey bu. */
+.bt-bagli {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--b2);
+  font-size: var(--yazi-kucuk, .82rem);
+  color: var(--metin-2);
+  background: var(--yuzey-2);
+  border-radius: 999px;
+  padding: 6px 14px;
+}
+.bt-bagli i { width: 8px; height: 8px; border-radius: 50%; background: var(--metin-3); flex: none; }
+.bt-bagli.acik i { background: var(--iyi); box-shadow: 0 0 8px rgba(76, 175, 80, .7); }
+.bt-bagli.kopuk i { background: var(--kritik); }
+.bt-bagli.calisiyor i { background: var(--vurgu); animation: bt-nabiz 1.1s infinite; }
+@keyframes bt-nabiz { 50% { opacity: .25; } }
+
+/* Sahne BUNA RAĞMEN çalışıyor; satır sebebini söylüyor. */
+.bt-uyari {
+  flex: none;
+  font-size: var(--yazi-kucuk, .82rem);
+  color: var(--uyari);
+  background: rgba(217, 165, 32, .10);
+  border-radius: 10px;
+  padding: var(--b2) var(--b3);
+}
+.bt-uyari[hidden] { display: none; }
+
+/* ------------------------------------------------------------- sahne */
+.bt-sahne {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  border-radius: 16px;
+  overflow: hidden;
+  background: #0d100c;
+  touch-action: none;         /* el hareketleri tuvale ait */
+}
+.bt-sahne canvas { display: block; }
+
+.bt-bos {
+  position: absolute;
+  left: 50%; bottom: var(--b3);
+  transform: translateX(-50%);
+  max-width: min(560px, 90%);
+  margin: 0;
+  text-align: center;
+  color: var(--metin-2);
+  background: var(--yuzen-zemin);
+  border-radius: 12px;
+  padding: var(--b2) var(--b3);
+  box-shadow: var(--golge);
+}
+.bt-bos[hidden] { display: none; }
+
+/* ==================================================================== *
+ * Bahçe sekmesi AÇIKKEN kabuğun tamamı
+ *
+ * Sol panel teknik sekmeler için dar bir liste sütunu ve orada doğru.
+ * Bahçe kullanıcının göreceği tek yüz; yatak ekranın kahramanı olacaksa
+ * ekranı alması gerekiyor. Sağdaki 3B tarla görünümü bu sekmede zaten
+ * kapalı (`Tarla.gorunurluk(false)`), yani yer boşta duruyordu; onun
+ * araç çubuğu da kapalı bir sahnenin denetimleri olduğu için gizleniyor.
+ * ==================================================================== */
+body.bahce-tuval .yuzen.sol { grid-column: 1 / -1; width: auto; }
+body.bahce-tuval #sahne-cubuk { display: none; }
+/* 3B tarla sahnesi bu sekmede zaten çizilmiyor (`Tarla.gorunurluk(false)`)
+   ama kutusu duruyor. Geniş ekranda bahçenin ALTINDA kaldığı için
+   görünmüyordu; dar ekranda kabuk yığın düzenine geçiyor ve boş sahne
+   ekranın yarısını yiyip bahçeyi katlamanın altına itiyordu. */
+body.bahce-tuval .sahne-alan { display: none; }
+body.bahce-tuval .yuzen-govde { overflow: hidden; }
+body.bahce-tuval #sayfa-bahce { height: 100%; display: flex; flex-direction: column; }
+body.bahce-tuval .bt { flex: 1 1 auto; }
+
+/* Dar ekranda panel akışın içinde ve yüzde yükseklik çöküyor: sahneye
+   ekranın üçte ikisi kadar bir taban veriliyor. */
+@media (max-width: 900px) {
+  body.bahce-tuval .yuzen-govde { overflow-y: auto; }
+  body.bahce-tuval .bt-sahne { min-height: 66vh; }
+}

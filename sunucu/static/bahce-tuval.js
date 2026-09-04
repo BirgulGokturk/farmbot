@@ -1,0 +1,1448 @@
+/* Bahçe — tuval sahnesi.
+ *
+ * NE OLDUĞU. Bahçeyle uğraşan biri için tek ekran: yükseltilmiş bir
+ * yatak, üstünde gerçek koordinatlarında duran bitkiler ve gerçek
+ * konumunda gezen makine. Teknik sekmeler (İzle/Sür/Tarla/Kamera)
+ * olduğu gibi duruyor; burası onların yerine değil.
+ *
+ * ---------------------------------------------------------------------
+ * NEDEN TUVAL, NEDEN DOM DEĞİL
+ * ---------------------------------------------------------------------
+ * Önceki deneme her bitkiyi bir DOM düğümü yapıyordu. Düz bir üstten
+ * görünüm için yeterliydi ama istenen şey bu değil: derinlik, sürekli
+ * salınım, gölge, ışık ve aynı anda onlarca öğenin akıcı hareketi.
+ * Bunların hepsi DOM'da düzen (layout) tetikliyor ve tablette kare
+ * düşürüyor. Tuvalde tek bir çizim yüzeyi var, kare başına maliyet
+ * öngörülebilir ve derinlik sıralaması (ressam algoritması) bedava.
+ *
+ * ---------------------------------------------------------------------
+ * İKİ KURAL — TASARIM BUNLARIN ÜSTÜNE KURULUYOR
+ * ---------------------------------------------------------------------
+ * 1. UYDURMA YOK. Ekrandaki her sayı ölçülmüş bir sayı. Nem
+ *    ölçülmediyse yüzde yazılmıyor, "ölçülmedi" yazılıyor. Ölçüme değil
+ *    geçen güne dayanan bir karar TAHMİN diye işaretleniyor. Bitkinin
+ *    boyu ölçülen yayılım çapından, olgunluğu ekim tarihinden geliyor;
+ *    yoksa bitki nötr çiziliyor ve etiketi "bilinmiyor" diyor.
+ *
+ *    SÜS İLE VERİ AYRI. Toprağın lekeleri, yaprakların salınımı, günün
+ *    saatine göre ışık — bunlar süs ve hiçbiri bir ölçümü temsil
+ *    etmiyor. Bir şeyin veri olduğu yerde (boy, olgunluk, nem, konum)
+ *    kaynağı bu dosyada yorumla yazılı.
+ *
+ * 2. MAKİNE KENDİLİĞİNDEN HAREKET ETMEZ. Ekim ve sulama gibi geri
+ *    alınamaz işler önce ne olacağını yazıyor, sonra onay istiyor.
+ *    Makine kopukken iş başlatan düğmeler kilitli ve sebebi yazılı.
+ *
+ * ---------------------------------------------------------------------
+ * KOORDİNAT DÜNYALARI
+ * ---------------------------------------------------------------------
+ *   mm     — yatak milimetresi, makinenin konuştuğu dil
+ *   uv     — yatağın kendi birim karesi (0..1), v=0 ARKA kenar
+ *   ekran  — tuval pikseli
+ *
+ * uv→ekran dönüşümü bir HOMOGRAFİ: yatak ekranda yamuk (arka kenar dar,
+ * ön kenar geniş) duruyor ve bu izdüşüm afin değil. Tersi de alınıyor,
+ * yani parmağın değdiği piksel tek bir matris çarpımıyla milimetreye
+ * dönüyor — eğim ya da yakınlaştırma değişince hesap kendiliğinden
+ * uyuyor.
+ */
+window.BahceTuval = (function () {
+  "use strict";
+
+  const $ = (s) => document.querySelector(s);
+  const P = () => window.Panel || {};
+
+  /* Yamuğun arka kenarı ön kenarın kaçta kaçı. 1.0 düz üstten bakış
+     demek; 0.62 yatağı bir kutu gibi gösteriyor ama arka sıradaki
+     bitkileri tanınmayacak kadar küçültüyor. 0.78 ikisinin arası. */
+  const ARKA_ORAN = 0.78;
+  /* Derinliğin dikeyde ne kadar kısaldığı. 1.0 kuş bakışı (derinlik
+     yok), 0.5 çok yatık. 0.66 eğik bir bakış. */
+  const DERINLIK_KISALMA = 0.58;
+  /* Yatağın kenar duvarı — görsel yükseklik, milimetre. Gerçek yatak
+     yüksekliği ölçülü bir değer değil; kenarın KALINLIĞI burada bir
+     sınır işareti, bir ölçüm değil. */
+  const DUVAR_MM = 95;
+  /* Milimetre yüksekliğin dikey ekran karşılığındaki oranı. */
+  const YUKSEKLIK_ORANI = 0.72;
+
+  const S = {
+    acik: false,
+    klasik: false,
+    veri: null,
+    hata: "",
+    yukleniyor: false,
+    sakin: false,
+    notlar: {},
+    tuval: null,
+    ct: null,
+    en: 0, boy: 0, dpr: 1,
+    statik: null,          // arka planın önbelleklenmiş tuvali
+    statikImza: "",
+    kare: 0,
+    dongu: 0,
+    bitki: [],             // çizime hazır bitkiler (derinliğe göre sıralı)
+    t0: performance.now(),
+  };
+
+  /* ==================================================================== *
+   * Küçük yardımcılar
+   * ==================================================================== */
+  const sayi = (d, v = 0) => {
+    const s = Number(d);
+    return Number.isFinite(s) ? s : v;
+  };
+  const kis = (d, a, b) => Math.max(a, Math.min(b, d));
+
+  function gunluk(metin, sinif) {
+    if (P().gunluk) P().gunluk(metin, sinif || "");
+  }
+
+  async function api(yol, secenek) {
+    return P().apiIste(yol, secenek);
+  }
+
+  /** Uyarı satırı: birden çok sebep olabilir, her biri kendi
+   *  anahtarıyla yazılıyor ki biri ötekini silmesin. */
+  function notYaz(anahtar, metin) {
+    if (metin) S.notlar[anahtar] = metin; else delete S.notlar[anahtar];
+    const el = $("#bt-uyari");
+    if (!el) return;
+    const hepsi = Object.values(S.notlar).filter(Boolean);
+    el.hidden = !hepsi.length;
+    el.textContent = hepsi.join(" · ");
+  }
+
+  /** Adından türeyen sabit sayı — süs için.
+   *
+   * Rastgele olsaydı her karede bitki başka türlü görünürdü; addan
+   * türetince aynı bitki her zaman aynı duruyor. Hiçbir ölçüme karşılık
+   * gelmiyor ve hiçbir sayıya dönüşmüyor. */
+  function tohum(ad) {
+    let h = 2166136261;
+    const s = String(ad || "");
+    for (let i = 0; i < s.length; i++) {
+      h ^= s.charCodeAt(i);
+      h = Math.imul(h, 16777619);
+    }
+    return (h >>> 0) / 4294967295;
+  }
+
+  /** Tekrarlanabilir sayı üreteci — toprağın lekeleri her çizimde aynı
+   *  yerde olsun diye (mulberry32). */
+  function uretec(cekirdek) {
+    let a = cekirdek >>> 0;
+    return function () {
+      a = (a + 0x6D2B79F5) >>> 0;
+      let t = a;
+      t = Math.imul(t ^ (t >>> 15), t | 1);
+      t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+
+  /* ------------------------------------------------------------- renk */
+  function hexRGB(h) {
+    const s = String(h || "").replace("#", "");
+    const t = s.length === 3 ? s.split("").map((c) => c + c).join("") : s;
+    const n = parseInt(t.slice(0, 6), 16);
+    return Number.isFinite(n)
+      ? { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255 }
+      : { r: 123, g: 191, b: 90 };
+  }
+  function rgba(c, a) { return `rgba(${c.r},${c.g},${c.b},${a})`; }
+  /** Rengi açar (o>0) ya da koyultur (o<0). */
+  function ton(c, o) {
+    const f = (k) => Math.round(o >= 0 ? k + (255 - k) * o : k * (1 + o));
+    return { r: kis(f(c.r), 0, 255), g: kis(f(c.g), 0, 255), b: kis(f(c.b), 0, 255) };
+  }
+  function karis(a, b, t) {
+    return { r: Math.round(a.r + (b.r - a.r) * t),
+             g: Math.round(a.g + (b.g - a.g) * t),
+             b: Math.round(a.b + (b.b - a.b) * t) };
+  }
+
+  /* ==================================================================== *
+   * Günün ışığı
+   *
+   * SÜS, VERİ DEĞİL. Kaynağı tarayıcının saati; hiçbir ölçüme karşılık
+   * gelmiyor ve hiçbir sayıya dönüşmüyor. Amacı, ekranın sabah ile gece
+   * arasında aynı görünmemesi — bahçeye bakan biri günün hangi
+   * saatinde olduğunu bilir ve ekranın onu yalanlaması yersiz durur.
+   * ==================================================================== */
+  function isik() {
+    const d = new Date();
+    const saat = d.getHours() + d.getMinutes() / 60;
+    // Basit bir gün eğrisi: 6'da doğuyor, 13'te tepede, 20'de batıyor.
+    const yukseklik = kis(Math.sin(((saat - 6) / 14) * Math.PI), -0.25, 1);
+    const gunduz = kis(yukseklik, 0, 1);
+    const aci = ((saat - 6) / 14) * Math.PI;         // doğu → batı
+    return {
+      gunduz,
+      // Gölge yönü: sabah sağa, akşam sola uzuyor.
+      gx: -Math.cos(aci),
+      gy: 0.55,
+      // Gölge boyu: güneş alçakken uzun.
+      boy: 1.0 + (1 - gunduz) * 1.6,
+      // Sıcaklık: şafak ve gün batımı sıcak, öğle nötr, gece serin.
+      sicak: karis({ r: 90, g: 120, b: 190 },
+                   { r: 255, g: 214, b: 150 }, gunduz),
+      guc: 0.10 + gunduz * 0.22,
+    };
+  }
+
+  /* ==================================================================== *
+   * Geometri — yatak ekranda nerede duruyor
+   * ==================================================================== */
+  const G = {
+    kose: null,      // [arka-sol, arka-sağ, ön-sağ, ön-sol] ekran noktaları
+    ileri: null,
+    ters: null,
+    enPx: 0,         // ön kenarın ekran genişliği
+    mmEnI: 1, mmBoyI: 1,
+    duvarPx: 0,
+  };
+
+  function yatakSinir() {
+    const s = (S.veri && S.veri.sinirlar) || {};
+    const x = s.x || {}, y = s.y || {};
+    return { x1: sayi(x.min, 0), x2: sayi(x.max, 535),
+             y1: sayi(y.min, 0), y2: sayi(y.max, 630) };
+  }
+
+  function mmUV(x, y) {
+    const s = yatakSinir();
+    return { u: (sayi(x) - s.x1) / Math.max(1, s.x2 - s.x1),
+             v: (sayi(y) - s.y1) / Math.max(1, s.y2 - s.y1) };
+  }
+  function uvMM(u, v) {
+    const s = yatakSinir();
+    return { x: s.x1 + u * (s.x2 - s.x1), y: s.y1 + v * (s.y2 - s.y1) };
+  }
+
+  /** Birim kareden yamuğa homografi. Köşe sırası (0,0) (1,0) (1,1) (0,1). */
+  function homografi(k) {
+    const [p0, p1, p2, p3] = k;
+    const dx1 = p1.x - p2.x, dx2 = p3.x - p2.x;
+    const dy1 = p1.y - p2.y, dy2 = p3.y - p2.y;
+    const sx = p0.x - p1.x + p2.x - p3.x;
+    const sy = p0.y - p1.y + p2.y - p3.y;
+    let a, b, c, d, e, f, g, h;
+    if (Math.abs(sx) < 1e-6 && Math.abs(sy) < 1e-6) {
+      a = p1.x - p0.x; b = p2.x - p1.x; c = p0.x;
+      d = p1.y - p0.y; e = p2.y - p1.y; f = p0.y;
+      g = 0; h = 0;
+    } else {
+      const payda = dx1 * dy2 - dx2 * dy1;
+      if (Math.abs(payda) < 1e-9) return null;
+      g = (sx * dy2 - dx2 * sy) / payda;
+      h = (dx1 * sy - sx * dy1) / payda;
+      a = p1.x - p0.x + g * p1.x; b = p3.x - p0.x + h * p3.x; c = p0.x;
+      d = p1.y - p0.y + g * p1.y; e = p3.y - p0.y + h * p3.y; f = p0.y;
+    }
+    return [a, b, c, d, e, f, g, h, 1];
+  }
+
+  function matrisTers(m) {
+    const [a, b, c, d, e, f, g, h, i] = m;
+    const A = e * i - f * h, Bv = f * g - d * i, C = d * h - e * g;
+    const det = a * A + b * Bv + c * C;
+    if (!Number.isFinite(det) || Math.abs(det) < 1e-12) return null;
+    return [A / det, (c * h - b * i) / det, (b * f - c * e) / det,
+            Bv / det, (a * i - c * g) / det, (c * d - a * f) / det,
+            C / det, (b * g - a * h) / det, (a * e - b * d) / det];
+  }
+
+  /** Yatağı tuvalin ORTASINA, KENARLARDAN PAY BIRAKARAK yerleştirir.
+   *
+   * Yatak ekranın kahramanı: kalan yeri değil, ekranı alıyor. Pay
+   * yüzdeyle veriliyor ki telefonda da tablette de aynı görünsün. */
+  function geometriKur() {
+    const s = yatakSinir();
+    const mmEn = Math.max(1, s.x2 - s.x1);
+    const mmBoy = Math.max(1, s.y2 - s.y1);
+    G.mmEnI = mmEn; G.mmBoyI = mmBoy;
+
+    const payX = Math.max(14, S.en * 0.035);
+    const payY = Math.max(12, S.boy * 0.035);
+    const kullanEn = Math.max(80, S.en - payX * 2);
+    const kullanBoy = Math.max(80, S.boy - payY * 2);
+
+    // Yamuğun ekran ölçüleri: ön kenar `enPx`, dikey uzanım `boyPx`.
+    // Duvar da dikeyde yer kaplıyor, yükseklik hesabına giriyor.
+    const oran = (mmBoy / mmEn) * DERINLIK_KISALMA;
+    const duvarOraniPx = (DUVAR_MM / mmEn) * YUKSEKLIK_ORANI;
+    let enPx = kullanEn;
+    let boyPx = enPx * oran + enPx * duvarOraniPx;
+    if (boyPx > kullanBoy) {
+      enPx = kullanBoy / (oran + duvarOraniPx);
+      boyPx = kullanBoy;
+    }
+    const derinlikPx = enPx * oran;
+    G.enPx = enPx;
+    G.duvarPx = enPx * duvarOraniPx;
+
+    const cx = S.en / 2;
+    // Duvar aşağı doğru çiziliyor: yamuğu o kadar yukarı alıyoruz ki
+    // yatak + duvar birlikte ortalansın.
+    const ust = (S.boy - (derinlikPx + G.duvarPx)) / 2;
+    const arkaEn = enPx * ARKA_ORAN;
+    G.kose = [
+      { x: cx - arkaEn / 2, y: ust },                      // (0,0) arka-sol
+      { x: cx + arkaEn / 2, y: ust },                      // (1,0) arka-sağ
+      { x: cx + enPx / 2, y: ust + derinlikPx },           // (1,1) ön-sağ
+      { x: cx - enPx / 2, y: ust + derinlikPx },           // (0,1) ön-sol
+    ];
+    G.ileri = homografi(G.kose);
+    G.ters = G.ileri ? matrisTers(G.ileri) : null;
+  }
+
+  function yansit(u, v) {
+    const m = G.ileri;
+    if (!m) return { x: 0, y: 0 };
+    const w = m[6] * u + m[7] * v + m[8];
+    if (Math.abs(w) < 1e-9) return { x: 0, y: 0 };
+    return { x: (m[0] * u + m[1] * v + m[2]) / w,
+             y: (m[3] * u + m[4] * v + m[5]) / w };
+  }
+
+  function ekranUV(x, y) {
+    const t = G.ters;
+    if (!t) return null;
+    const w = t[6] * x + t[7] * y + t[8];
+    if (Math.abs(w) < 1e-9) return null;
+    return { u: (t[0] * x + t[1] * y + t[2]) / w,
+             v: (t[3] * x + t[4] * y + t[5]) / w };
+  }
+
+  /** O derinlikte bir milimetre kaç ekran pikseli.
+   *  Yamuk daraldığı için arka sıra öndekinden küçük çiziliyor. */
+  function mmPx(v) {
+    return (G.enPx * (ARKA_ORAN + (1 - ARKA_ORAN) * kis(v, 0, 1))) / G.mmEnI;
+  }
+
+  /** Yerden `mm` yükseklikteki bir noktanın ekranda ne kadar yukarı
+   *  kaydığı. Dikey kısalma yüzünden 1 mm yükseklik 1 mm derinlikten
+   *  daha az yer kaplıyor. */
+  function yukseklikPx(mm, v) {
+    return sayi(mm) * mmPx(v) * YUKSEKLIK_ORANI;
+  }
+
+  /* ==================================================================== *
+   * Arka plan — ÖNBELLEKLİ
+   *
+   * Çim, yatağın duvarları, toprak dokusu ve dikim alanları her karede
+   * yeniden çizilmiyor: bunlar ancak ölçü ya da veri değişince
+   * değişiyor. Bir kez ayrı bir tuvale çiziliyor, her kare tek
+   * `drawImage` ile geliyor. Tablette kare süresini üçte birine
+   * indiren şey bu.
+   * ==================================================================== */
+  function statikImza() {
+    const v = S.veri || {};
+    const s = yatakSinir();
+    return [S.en, S.boy, S.dpr, s.x1, s.x2, s.y1, s.y2,
+            JSON.stringify(v.alanlar || []),
+            JSON.stringify((v.bolgeler || []).map((b) => [b.x1, b.y1, b.x2, b.y2])),
+            new Date().getHours()].join("|");
+  }
+
+  function yol(ct, noktalar) {
+    ct.beginPath();
+    noktalar.forEach((p, i) => (i ? ct.lineTo(p.x, p.y) : ct.moveTo(p.x, p.y)));
+    ct.closePath();
+  }
+
+  /** Yatağın milimetre dikdörtgeninden ekran çokgeni. Kenarlar yamuk
+   *  olduğu için köşeleri bağlamak yetiyor. */
+  function mmDortgen(x1, y1, x2, y2) {
+    const a = mmUV(x1, y1), b = mmUV(x2, y1), c = mmUV(x2, y2), d = mmUV(x1, y2);
+    return [yansit(a.u, a.v), yansit(b.u, b.v), yansit(c.u, c.v), yansit(d.u, d.v)];
+  }
+
+  function statikCiz() {
+    const imza = statikImza();
+    if (S.statik && S.statikImza === imza) return;
+    S.statikImza = imza;
+
+    const t = S.statik || document.createElement("canvas");
+    t.width = Math.max(1, Math.round(S.en * S.dpr));
+    t.height = Math.max(1, Math.round(S.boy * S.dpr));
+    S.statik = t;
+    const ct = t.getContext("2d");
+    ct.setTransform(S.dpr, 0, 0, S.dpr, 0, 0);
+    ct.clearRect(0, 0, S.en, S.boy);
+
+    const I = isik();
+    cimCiz(ct, I);
+    if (!G.ileri) return;
+    yatakGolgesi(ct, I);
+    duvarCiz(ct, I);
+    toprakCiz(ct, I);
+    alanCiz(ct);
+    yasakCiz(ct);
+    cerceveCiz(ct, I);
+  }
+
+  /* ---------------------------------------------------------------- çim */
+  function cimCiz(ct, I) {
+    const g = ct.createLinearGradient(0, 0, 0, S.boy);
+    const ust = karis({ r: 34, g: 48, b: 30 }, I.sicak, I.guc * 0.5);
+    const alt = karis({ r: 20, g: 30, b: 18 }, I.sicak, I.guc * 0.25);
+    g.addColorStop(0, `rgb(${ust.r},${ust.g},${ust.b})`);
+    g.addColorStop(1, `rgb(${alt.r},${alt.g},${alt.b})`);
+    ct.fillStyle = g;
+    ct.fillRect(0, 0, S.en, S.boy);
+
+    // Çim SÜS: yatağın bir yerde durduğunu anlatıyor, bilgi taşımıyor.
+    const r = uretec(97);
+    ct.lineWidth = 1;
+    for (let i = 0; i < 900; i++) {
+      const x = r() * S.en, y = r() * S.boy;
+      const boy = 3 + r() * 5;
+      const a = 0.05 + r() * 0.07;
+      ct.strokeStyle = r() > 0.5 ? `rgba(150,200,120,${a})` : `rgba(0,0,0,${a})`;
+      ct.beginPath();
+      ct.moveTo(x, y);
+      ct.lineTo(x + (r() - 0.5) * 3, y - boy);
+      ct.stroke();
+    }
+    // Yumuşak bir aydınlık: bakışı yatağa çekiyor.
+    const o = ct.createRadialGradient(S.en / 2, S.boy * 0.42, 10,
+                                      S.en / 2, S.boy * 0.42, S.en * 0.7);
+    o.addColorStop(0, `rgba(255,255,255,${0.05 + I.gunduz * 0.05})`);
+    o.addColorStop(1, "rgba(0,0,0,0.35)");
+    ct.fillStyle = o;
+    ct.fillRect(0, 0, S.en, S.boy);
+  }
+
+  /* ------------------------------------------------------------- gölge */
+  function yatakGolgesi(ct, I) {
+    const d = cerceveKose();
+    const alt = Math.max(d[2].y, d[3].y) + G.duvarPx;
+    const merkezX = (d[2].x + d[3].x) / 2 + I.gx * G.enPx * 0.10 * I.boy;
+    const genis = (d[2].x - d[3].x) * 0.62;
+    ct.save();
+    ct.filter = "blur(18px)";
+    ct.fillStyle = `rgba(0,0,0,${0.30 + (1 - I.gunduz) * 0.12})`;
+    ct.beginPath();
+    ct.ellipse(merkezX, alt - G.duvarPx * 0.10, genis, G.duvarPx * 0.55, 0, 0, Math.PI * 2);
+    ct.fill();
+    ct.restore();
+  }
+
+  /** Çerçevenin DIŞ köşeleri — yatak sınırının 30 mm dışı.
+   *  Yatak sınırı (0..1) toprağın kendisi; tahta onun dışında duruyor,
+   *  yani ekilebilir alanı yemiyor. */
+  function cerceveKose() {
+    const ex = 30 / G.mmEnI, ey = 30 / G.mmBoyI;
+    return [yansit(-ex, -ey), yansit(1 + ex, -ey),
+            yansit(1 + ex, 1 + ey), yansit(-ex, 1 + ey)];
+  }
+
+  /* ------------------------------------------------------- kenar duvarı */
+  function duvarCiz(ct, I) {
+    const d = cerceveKose();
+    const h = G.duvarPx;
+    const tahta = { r: 122, g: 84, b: 52 };
+    const on = karis(tahta, I.sicak, I.guc);
+
+    // Ön duvar
+    const g = ct.createLinearGradient(0, d[3].y, 0, d[3].y + h);
+    const u1 = ton(on, -0.05), u2 = ton(on, -0.45);
+    g.addColorStop(0, `rgb(${u1.r},${u1.g},${u1.b})`);
+    g.addColorStop(1, `rgb(${u2.r},${u2.g},${u2.b})`);
+    ct.fillStyle = g;
+    yol(ct, [d[3], d[2], { x: d[2].x, y: d[2].y + h }, { x: d[3].x, y: d[3].y + h }]);
+    ct.fill();
+
+    // Yan duvarlar — ışığın geldiği taraf açık, öteki koyu.
+    const yan = (a, b, koyu) => {
+      const c = ton(on, koyu);
+      ct.fillStyle = `rgb(${c.r},${c.g},${c.b})`;
+      yol(ct, [a, b, { x: b.x, y: b.y + h }, { x: a.x, y: a.y + h }]);
+      ct.fill();
+    };
+    yan(d[0], d[3], I.gx < 0 ? -0.18 : -0.5);   // sol
+    yan(d[1], d[2], I.gx < 0 ? -0.5 : -0.18);   // sağ
+
+    // Tahta damarı: SÜS. Birkaç ince çizgi, kalas hissi için.
+    const r = uretec(31);
+    ct.save();
+    yol(ct, [d[3], d[2], { x: d[2].x, y: d[2].y + h }, { x: d[3].x, y: d[3].y + h }]);
+    ct.clip();
+    for (let i = 0; i < 26; i++) {
+      const y = d[3].y + h * r();
+      ct.strokeStyle = `rgba(0,0,0,${0.05 + r() * 0.10})`;
+      ct.lineWidth = 0.6 + r();
+      ct.beginPath();
+      ct.moveTo(d[3].x, y);
+      ct.bezierCurveTo(d[3].x + (d[2].x - d[3].x) * 0.35, y + (r() - 0.5) * 5,
+                       d[3].x + (d[2].x - d[3].x) * 0.7, y + (r() - 0.5) * 5,
+                       d[2].x, y + (r() - 0.5) * 3);
+      ct.stroke();
+    }
+    ct.restore();
+  }
+
+  /* ------------------------------------------------------------ toprak */
+  function toprakCiz(ct, I) {
+    const q = [yansit(0, 0), yansit(1, 0), yansit(1, 1), yansit(0, 1)];
+    ct.save();
+    yol(ct, q);
+    ct.clip();
+
+    const t1 = karis({ r: 96, g: 68, b: 46 }, I.sicak, I.guc * 0.8);
+    const t2 = { r: 52, g: 36, b: 24 };
+    const g = ct.createLinearGradient(0, q[0].y, 0, q[3].y);
+    g.addColorStop(0, `rgb(${ton(t2, 0.05).r},${ton(t2, 0.05).g},${ton(t2, 0.05).b})`);
+    g.addColorStop(0.55, `rgb(${t1.r},${t1.g},${t1.b})`);
+    g.addColorStop(1, `rgb(${ton(t1, -0.18).r},${ton(t1, -0.18).g},${ton(t1, -0.18).b})`);
+    ct.fillStyle = g;
+    ct.fill();
+
+    // TOPRAK DOKUSU — SÜS. Kesekler milimetre uzayında dağıtılıp
+    // izdüşürülüyor: arka sıradaki keseğin küçük görünmesi, derinliğin
+    // toprakta da sürmesi demek.
+    const r = uretec(20260904);
+    const s = yatakSinir();
+    for (let i = 0; i < 820; i++) {
+      const mx = s.x1 + r() * G.mmEnI;
+      const my = s.y1 + r() * G.mmBoyI;
+      const uv = mmUV(mx, my);
+      const p = yansit(uv.u, uv.v);
+      const o = mmPx(uv.v);
+      const rad = (2.5 + r() * 11) * o;
+      const koyu = r() > 0.45;
+      ct.fillStyle = koyu ? `rgba(0,0,0,${0.05 + r() * 0.13})`
+                          : `rgba(255,226,190,${0.02 + r() * 0.05})`;
+      ct.beginPath();
+      ct.ellipse(p.x, p.y, rad, rad * 0.62, r() * 3, 0, Math.PI * 2);
+      ct.fill();
+    }
+    // Birkaç çakıl — ışığı yakalayan noktalar.
+    for (let i = 0; i < 46; i++) {
+      const uv = { u: r(), v: r() };
+      const p = yansit(uv.u, uv.v);
+      const o = mmPx(uv.v);
+      ct.fillStyle = `rgba(214,204,188,${0.10 + r() * 0.16})`;
+      ct.beginPath();
+      ct.ellipse(p.x, p.y, 2.6 * o * 2, 1.7 * o * 2, 0, 0, Math.PI * 2);
+      ct.fill();
+    }
+    ct.restore();
+  }
+
+  /* ------------------------------------------------- dikim alanları */
+  function alanCiz(ct) {
+    const alanlar = (S.veri && S.veri.alanlar) || [];
+    const q = [yansit(0, 0), yansit(1, 0), yansit(1, 1), yansit(0, 1)];
+    if (!alanlar.length) {
+      // Alan tanımlı DEĞİLSE toprağı işlenmiş gibi göstermiyoruz:
+      // toprağın nerede olduğu bilinmiyor ve ekran bunu uydurmuyor.
+      return;
+    }
+    ct.save();
+    yol(ct, q);
+    ct.clip();
+
+    // Alanların DIŞI karanlık: ekilemeyen yer görünüyor, yazılmıyor.
+    ct.save();
+    ct.beginPath();
+    q.forEach((p, i) => (i ? ct.lineTo(p.x, p.y) : ct.moveTo(p.x, p.y)));
+    ct.closePath();
+    alanlar.forEach((a) => {
+      const d = mmDortgen(sayi(a.x1), sayi(a.y1), sayi(a.x2), sayi(a.y2));
+      ct.moveTo(d[0].x, d[0].y);
+      for (let i = 3; i >= 1; i--) ct.lineTo(d[i].x, d[i].y);
+      ct.closePath();
+    });
+    ct.fillStyle = "rgba(10,8,6,0.34)";
+    ct.fill("evenodd");
+    ct.restore();
+
+    // İşlenmiş toprak: tırmık izleri X boyunca, 55 mm arayla.
+    const s = yatakSinir();
+    alanlar.forEach((a) => {
+      const d = mmDortgen(sayi(a.x1), sayi(a.y1), sayi(a.x2), sayi(a.y2));
+      ct.save();
+      yol(ct, d);
+      ct.clip();
+      ct.fillStyle = "rgba(255,232,196,0.045)";
+      ct.fill();
+      const y1 = Math.min(sayi(a.y1), sayi(a.y2)), y2 = Math.max(sayi(a.y1), sayi(a.y2));
+      for (let my = y1 + 20; my < y2; my += 55) {
+        const u1 = mmUV(sayi(a.x1), my), u2 = mmUV(sayi(a.x2), my);
+        const p1 = yansit(u1.u, u1.v), p2 = yansit(u2.u, u2.v);
+        ct.strokeStyle = "rgba(0,0,0,0.13)";
+        ct.lineWidth = Math.max(1, 5 * mmPx(u1.v));
+        ct.beginPath(); ct.moveTo(p1.x, p1.y); ct.lineTo(p2.x, p2.y); ct.stroke();
+        ct.strokeStyle = "rgba(255,236,208,0.07)";
+        ct.lineWidth = Math.max(1, 3 * mmPx(u1.v));
+        ct.beginPath();
+        ct.moveTo(p1.x, p1.y - 2); ct.lineTo(p2.x, p2.y - 2);
+        ct.stroke();
+      }
+      ct.restore();
+      void s;
+    });
+    ct.restore();
+  }
+
+  /* ---------------------------------------------------- yasak bölgeler */
+  function yasakCiz(ct) {
+    const bolgeler = (S.veri && S.veri.bolgeler) || [];
+    bolgeler.forEach((b) => {
+      if (b.allow_if) return;          // koşullu bölge her zaman yasak değil
+      const d = mmDortgen(sayi(b.x1 ?? b.x_min), sayi(b.y1 ?? b.y_min),
+                          sayi(b.x2 ?? b.x_max), sayi(b.y2 ?? b.y_max));
+      ct.save();
+      yol(ct, d);
+      ct.clip();
+      ct.fillStyle = "rgba(224,82,82,0.10)";
+      ct.fill();
+      ct.strokeStyle = "rgba(224,82,82,0.28)";
+      ct.lineWidth = 2;
+      const kutu = d.reduce((a, p) => ({
+        x1: Math.min(a.x1, p.x), y1: Math.min(a.y1, p.y),
+        x2: Math.max(a.x2, p.x), y2: Math.max(a.y2, p.y),
+      }), { x1: 1e9, y1: 1e9, x2: -1e9, y2: -1e9 });
+      for (let x = kutu.x1 - (kutu.y2 - kutu.y1); x < kutu.x2; x += 12) {
+        ct.beginPath();
+        ct.moveTo(x, kutu.y1);
+        ct.lineTo(x + (kutu.y2 - kutu.y1), kutu.y2);
+        ct.stroke();
+      }
+      ct.restore();
+      ct.strokeStyle = "rgba(224,82,82,0.45)";
+      ct.lineWidth = 1.5;
+      yol(ct, d);
+      ct.stroke();
+    });
+  }
+
+  /* ------------------------------------------------- çerçevenin üst yüzü */
+  function cerceveCiz(ct, I) {
+    const d = cerceveKose();
+    const q = [yansit(0, 0), yansit(1, 0), yansit(1, 1), yansit(0, 1)];
+    const tahta = karis({ r: 146, g: 102, b: 62 }, I.sicak, I.guc);
+    ct.save();
+    ct.beginPath();
+    d.forEach((p, i) => (i ? ct.lineTo(p.x, p.y) : ct.moveTo(p.x, p.y)));
+    ct.closePath();
+    ct.moveTo(q[0].x, q[0].y);
+    for (let i = 3; i >= 1; i--) ct.lineTo(q[i].x, q[i].y);
+    ct.closePath();
+    const g = ct.createLinearGradient(0, d[0].y, 0, d[3].y);
+    g.addColorStop(0, `rgb(${ton(tahta, -0.22).r},${ton(tahta, -0.22).g},${ton(tahta, -0.22).b})`);
+    g.addColorStop(1, `rgb(${tahta.r},${tahta.g},${tahta.b})`);
+    ct.fillStyle = g;
+    ct.fill("evenodd");
+    ct.restore();
+
+    // İç kenarda ince bir gölge: toprağın çerçeveden AŞAĞIDA olduğu
+    // hissi buradan geliyor.
+    ct.save();
+    yol(ct, q);
+    ct.clip();
+    ct.strokeStyle = "rgba(0,0,0,0.45)";
+    ct.lineWidth = Math.max(3, G.duvarPx * 0.16);
+    yol(ct, q);
+    ct.stroke();
+    ct.restore();
+  }
+
+  /* ==================================================================== *
+   * Bitkiler
+   *
+   * HER TÜR KENDİ ÇİZİMİ. Hepsini aynı yaprak yığını yapmak, bahçeye
+   * bakan birinin marulla havucu ayırt edememesi demekti. Türün adından
+   * bir "arketip" seçiliyor (gülçe, tüy, çalı, şerit, üçlü); tanınmayan
+   * bir tür için arketip yine gülçe ama yaprak sayısı, genişliği ve ucu
+   * ADDAN türetiliyor, yani iki bilinmeyen tür birbirine benzemiyor.
+   *
+   * ÖLÇÜLEN NE, SÜS NE:
+   *   · genel boy      → `yaricap_mm` (ölçülen yayılım yarıçapı)
+   *   · yaprak sayısı  → `olgunluk` (geçen gün / olgunluk süresi)
+   *   · meyve          → `hasat` (gerçekten hasada hazır mı)
+   *   · salınım, damar, gölge yönü → SÜS, hiçbir ölçüme karşılık gelmiyor
+   * Olgunluk bilinmiyorsa (ekim tarihi yok) yaprak sayısı orta kademede
+   * sabitleniyor ve etiket "yaş bilinmiyor" diyor — bilinmeyeni
+   * ortalama diye çizmek, bilinmeyeni gizlemek olurdu.
+   * ==================================================================== */
+  const ARKETIPLER = {
+    gulce: ["marul", "lettuce", "kivircik", "kıvırcık", "gobek", "göbek",
+            "roka", "arugula", "ispanak", "spinach", "pazi", "pazı", "chard",
+            "lahana", "cabbage", "brokoli", "broccoli", "karnabahar",
+            "turp", "radish", "pancar", "beet", "salata"],
+    tuy: ["havuc", "havuç", "carrot", "dereotu", "dere otu", "dill",
+          "rezene", "fennel", "kimyon", "maydanoz", "parsley", "kereviz"],
+    cali: ["domates", "tomato", "biber", "pepper", "patlican", "patlıcan",
+           "eggplant", "salatalik", "salatalık", "cucumber", "kabak",
+           "zucchini", "fesleğen", "feslegen", "basil", "nane", "mint"],
+    serit: ["sogan", "soğan", "onion", "pirasa", "pırasa", "leek",
+            "sarimsak", "sarımsak", "garlic", "misir", "mısır", "corn",
+            "arpa", "bugday", "buğday", "cim", "çim"],
+    uclu: ["cilek", "çilek", "strawberry", "fasulye", "bean", "bezelye",
+           "pea", "yonca", "clover"],
+  };
+
+  function arketip(b) {
+    const ad = `${b.tur || ""} ${b.tur_ad || ""}`.toLowerCase();
+    for (const [k, sozler] of Object.entries(ARKETIPLER)) {
+      if (sozler.some((s) => ad.includes(s))) return k;
+    }
+    return "gulce";
+  }
+
+  /** Türün YAPRAK RENGİ.
+   *
+   * Kataloğun `color` alanı yaprak rengi DEĞİL: türü listede ayırt etmek
+   * için seçilmiş bir işaret rengi (çilek kırmızı, biber turuncu). Onu
+   * yaprağa boyamak çileği kırmızı bir gülçe yapıyordu. Yaprak yeşil
+   * kalıyor; tür ayrımı yeşilin tonundan geliyor (addan türetiliyor,
+   * yani aynı tür her zaman aynı ton) ve katalog rengi yalnız MEYVEDE
+   * ve etikette aksan olarak kullanılıyor. */
+  function yesil(b) {
+    const h = tohum(`${b.tur}-yaprak`);
+    // 82°..142° arası: sarımsı yeşilden mavimsi yeşile.
+    const aci = 82 + h * 60;
+    const doy = 0.34 + tohum(`${b.tur}-doy`) * 0.24;
+    return hslRGB(aci, doy, 0.34);
+  }
+
+  function hslRGB(h, s, l) {
+    const c = (1 - Math.abs(2 * l - 1)) * s;
+    const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
+    const m = l - c / 2;
+    let r = 0, g = 0, b = 0;
+    if (h < 60) { r = c; g = x; }
+    else if (h < 120) { r = x; g = c; }
+    else if (h < 180) { g = c; b = x; }
+    else if (h < 240) { g = x; b = c; }
+    else if (h < 300) { r = x; b = c; }
+    else { r = c; b = x; }
+    return { r: Math.round((r + m) * 255), g: Math.round((g + m) * 255),
+             b: Math.round((b + m) * 255) };
+  }
+
+  /** Yaprak dış hattı. `dalga` kenarı kıvırcık yapıyor (marul, lahana);
+   *  düz kenar (fasulye, çilek) için kapalı. Uç sivri: genişlik profili
+   *  uçta sıfıra iniyor. */
+  function yaprakYol(ct, uzun, genis, dalga, kayma) {
+    const N = 13;
+    // Genişlik profili: dipte dar, ortada geniş, uçta KÜT.
+    // Sivri uç bütün gülçeyi bir kar tanesine çeviriyordu.
+    const w = (t, y) => Math.pow(Math.sin(Math.PI * Math.pow(t, 0.58)), 0.72) * genis
+      * (1 + (dalga ? 0.22 * Math.sin(t * Math.PI * 6 + y) : 0));
+    ct.beginPath();
+    ct.moveTo(0, 0);
+    for (let i = 1; i <= N; i++) {
+      const t = i / N;
+      ct.lineTo(-w(t, kayma), -uzun * t);
+    }
+    for (let i = N; i >= 1; i--) {
+      const t = i / N;
+      ct.lineTo(w(t, kayma + 0.9), -uzun * t);
+    }
+    ct.closePath();
+  }
+
+  /** Tek yaprak: dipten uca açılan bir renk geçişi + orta damar.
+   *  Düz dolgu, üstten bakışta bütün yaprakları tek bir yıldıza
+   *  dönüştürüyordu; geçiş her yaprağın kendi hacmini veriyor. */
+  function yaprakCiz(ct, uzun, genis, dip, uc, dalga, kayma) {
+    yaprakYol(ct, uzun, genis, dalga, kayma);
+    const g = ct.createLinearGradient(0, 0, 0, -uzun);
+    g.addColorStop(0, rgba(dip, 0.97));
+    g.addColorStop(1, rgba(uc, 0.97));
+    ct.fillStyle = g;
+    ct.fill();
+    // İnce koyu kenar: üst üste binen iki bitki birbirinden ayrılsın.
+    ct.strokeStyle = rgba(ton(dip, -0.45), 0.55);
+    ct.lineWidth = Math.max(0.5, uzun * 0.018);
+    ct.stroke();
+    ct.strokeStyle = rgba(ton(uc, 0.28), 0.45);
+    ct.lineWidth = Math.max(0.5, uzun * 0.028);
+    ct.beginPath();
+    ct.moveTo(0, -uzun * 0.05);
+    ct.lineTo(0, -uzun * 0.86);
+    ct.stroke();
+  }
+
+  function cizGulce(ct, R, c, olgun, t, faz, ozel) {
+    const oran = olgun == null ? 0.5 : kis(olgun, 0.08, 1);
+    const dis = Math.max(10, Math.round(9 + oran * 9));
+    const katlar = [
+      { n: dis, uzun: R, ton: -0.30, egim: 0.0 },
+      { n: Math.max(7, Math.round(dis * 0.72)), uzun: R * 0.72, ton: 0.03, egim: 0.41 },
+      { n: Math.max(5, Math.round(dis * 0.45)), uzun: R * 0.44, ton: 0.26, egim: 1.07 },
+    ];
+    katlar.forEach((k, ki) => {
+      for (let i = 0; i < k.n; i++) {
+        // Açı düzgün dağılıma DAYANMIYOR: eşit aralık gülçeyi bir kar
+        // tanesi yapıyordu. Her yaprak addan türeyen küçük bir sapma
+        // alıyor — süs, ölçüm değil.
+        const sapma = (tohum(`${ki}:${i}:${faz}`) - 0.5) * 0.42;
+        const a = (Math.PI * 2 / k.n) * i + faz * 6 + k.egim + sapma;
+        const sal = Math.sin(t * 0.85 + faz * 5 + i + ki) * 0.04;
+        const uzunluk = k.uzun * (0.80 + tohum(`u${ki}:${i}:${faz}`) * 0.30);
+        ct.save();
+        ct.rotate(a + sal);
+        ct.scale(1, 0.70);          // yayılım halkasıyla aynı basıklık
+        const kayma = tohum(`r${ki}:${i}`) * 0.2;
+        yaprakCiz(ct, uzunluk, uzunluk * (ozel.genislik || 0.26),
+                  ton(c, k.ton - 0.16 + kayma), ton(c, k.ton + 0.16 + kayma),
+                  ozel.dalga, i * 0.6);
+        ct.restore();
+      }
+    });
+    // Merkez gölgesi: gülçenin ortası çukur, bu onu düz bir yıldız
+    // olmaktan çıkarıyor.
+    const g = ct.createRadialGradient(0, 0, R * 0.02, 0, 0, R * 0.5);
+    g.addColorStop(0, "rgba(0,0,0,0.34)");
+    g.addColorStop(1, "rgba(0,0,0,0)");
+    ct.fillStyle = g;
+    ct.beginPath();
+    ct.ellipse(0, 0, R * 0.5, R * 0.42, 0, 0, Math.PI * 2);
+    ct.fill();
+    ct.fillStyle = rgba(ton(c, 0.38), 0.85);
+    ct.beginPath();
+    ct.ellipse(0, 0, R * 0.09, R * 0.08, 0, 0, Math.PI * 2);
+    ct.fill();
+  }
+
+  function cizTuy(ct, R, c, olgun, t, faz) {
+    const oran = olgun == null ? 0.5 : kis(olgun, 0.08, 1);
+    const sap = Math.max(5, Math.round(5 + oran * 7));
+    for (let i = 0; i < sap; i++) {
+      const a = (Math.PI * 2 / sap) * i + faz * 6;
+      const sal = Math.sin(t * 1.3 + i + faz * 6) * 0.07;
+      const uzun = R * (0.70 + ((i * 37) % 11) / 34);
+      const renk = ton(c, -0.16 + ((i % 3) * 0.16));
+      ct.save();
+      ct.rotate(a + sal);
+      ct.scale(1, 0.70);
+      ct.strokeStyle = rgba(renk, 0.95);
+      ct.lineWidth = Math.max(0.9, R * 0.028);
+      ct.lineCap = "round";
+      ct.beginPath();
+      ct.moveTo(0, 0);
+      ct.quadraticCurveTo(uzun * 0.16, -uzun * 0.62, uzun * 0.07, -uzun);
+      ct.stroke();
+      ct.lineWidth = Math.max(0.6, R * 0.016);
+      for (let j = 2; j <= 7; j++) {
+        const o = j / 8;
+        const bx = uzun * 0.16 * o * (2 - o), by = -uzun * o;
+        const tl = uzun * 0.24 * (1 - o * 0.7);
+        ct.beginPath();
+        ct.moveTo(bx, by);
+        ct.quadraticCurveTo(bx - tl * 0.6, by - tl * 0.3, bx - tl, by - tl * 0.9);
+        ct.moveTo(bx, by);
+        ct.quadraticCurveTo(bx + tl * 0.6, by - tl * 0.3, bx + tl, by - tl * 0.9);
+        ct.stroke();
+      }
+      ct.restore();
+    }
+  }
+
+  function cizCali(ct, R, c, olgun, t, faz, hasat, aksan) {
+    const oran = olgun == null ? 0.5 : kis(olgun, 0.1, 1);
+    const dal = Math.max(5, Math.round(5 + oran * 4));
+    ct.strokeStyle = rgba(ton(c, -0.52), 0.95);
+    ct.lineCap = "round";
+    for (let i = 0; i < dal; i++) {
+      const a = (Math.PI * 2 / dal) * i + faz * 6 + Math.sin(t * 0.7 + i) * 0.04;
+      // Dallar farklı boyda: eşit uzunlukta dallar çalıyı gülçeye
+      // benzetiyordu.
+      const uzun = R * (0.62 + tohum(`d${i}:${faz}`) * 0.38);
+      ct.lineWidth = Math.max(1.4, R * 0.05);
+      ct.save();
+      ct.rotate(a);
+      ct.scale(1, 0.70);
+      // Uzun, hafif kavisli bir dal: ucunda üçlü bileşik yaprak.
+      ct.beginPath();
+      ct.moveTo(0, 0);
+      ct.quadraticCurveTo(uzun * 0.10, -uzun * 0.38, uzun * 0.04, -uzun * 0.66);
+      ct.stroke();
+      // Dal boyunca ara yaprakçıklar
+      [0.34, 0.52].forEach((o, oi) => {
+        ct.save();
+        ct.translate(uzun * 0.08 * o, -uzun * o);
+        ct.rotate(oi ? 0.9 : -0.9);
+        yaprakCiz(ct, uzun * 0.30, uzun * 0.13,
+                  ton(c, -0.34), ton(c, -0.02), false, oi);
+        ct.restore();
+      });
+      ct.translate(uzun * 0.04, -uzun * 0.66);
+      [-0.72, 0, 0.72].forEach((k, j) => {
+        ct.save();
+        ct.rotate(k);
+        yaprakCiz(ct, uzun * (j === 1 ? 0.42 : 0.33), uzun * 0.15,
+                  ton(c, -0.28), ton(c, 0.12), false, j);
+        ct.restore();
+      });
+      ct.restore();
+    }
+    // MEYVE YALNIZ GERÇEKTEN HASADA HAZIRSA. Olgunluk oranına bakıp
+    // "herhâlde meyve vermiştir" demek, ekranın uydurması olurdu.
+    // Rengi kataloğun tür rengi — meyvenin rengi orada yazıyor.
+    if (hasat) {
+      for (let i = 0; i < 3; i++) {
+        const a = faz * 9 + i * 2.1;
+        const rr = R * 0.40;
+        const mx = Math.cos(a) * rr, my = Math.sin(a) * rr * 0.82;
+        const g = ct.createRadialGradient(mx - R * 0.05, my - R * 0.05, R * 0.02,
+                                          mx, my, R * 0.17);
+        g.addColorStop(0, rgba(ton(aksan, 0.35), 1));
+        g.addColorStop(1, rgba(ton(aksan, -0.18), 1));
+        ct.fillStyle = g;
+        ct.beginPath();
+        ct.ellipse(mx, my, R * 0.155, R * 0.145, 0, 0, Math.PI * 2);
+        ct.fill();
+      }
+    }
+  }
+
+  function cizSerit(ct, R, c, olgun, t, faz) {
+    const oran = olgun == null ? 0.5 : kis(olgun, 0.1, 1);
+    const adet = Math.max(5, Math.round(5 + oran * 6));
+    for (let i = 0; i < adet; i++) {
+      // Soğan/pırasa yaprakları bir kümeden çıkıp dağılıyor; tek yöne
+      // bakan bir yelpaze palmiyeye benziyordu.
+      const a = (Math.PI * 2 / adet) * i + faz * 6
+        + (tohum(`s${i}:${faz}`) - 0.5) * 0.5;
+      const sal = Math.sin(t * 1.15 + i * 0.8 + faz * 4) * 0.08;
+      const uzun = R * (0.9 + ((i * 53) % 7) / 22);
+      const renk = ton(c, i % 2 ? -0.22 : 0.06);
+      ct.save();
+      ct.rotate(a + sal);
+      ct.scale(1, 0.70);
+      ct.beginPath();
+      ct.moveTo(-R * 0.05, 0);
+      ct.quadraticCurveTo(-R * 0.14, -uzun * 0.55, R * 0.015, -uzun);
+      ct.quadraticCurveTo(R * 0.11, -uzun * 0.55, R * 0.05, 0);
+      ct.fillStyle = rgba(renk, 0.95);
+      ct.fill();
+      ct.strokeStyle = rgba(ton(renk, -0.4), 0.5);
+      ct.lineWidth = Math.max(0.5, R * 0.015);
+      ct.stroke();
+      ct.restore();
+    }
+  }
+
+  function cizUclu(ct, R, c, olgun, t, faz, hasat, aksan) {
+    const oran = olgun == null ? 0.5 : kis(olgun, 0.1, 1);
+    const kume = Math.max(3, Math.round(3 + oran * 4));
+    // Ortada da bir küme: dışarı kaymış kümeler bitkiyi ortası delik
+    // bir çelenge çeviriyordu.
+    ct.save();
+    ct.scale(1, 0.70);
+    [-0.8, 0, 0.8].forEach((k, j) => {
+      ct.save();
+      ct.rotate(k + faz * 6);
+      yaprakCiz(ct, R * (j === 1 ? 0.40 : 0.33), R * 0.20,
+                ton(c, -0.34), ton(c, 0.04), true, j);
+      ct.restore();
+    });
+    ct.restore();
+    for (let i = 0; i < kume; i++) {
+      const a = (Math.PI * 2 / kume) * i + faz * 6;
+      const sal = Math.sin(t * 0.9 + i + faz * 3) * 0.045;
+      ct.save();
+      ct.rotate(a + sal);
+      ct.scale(1, 0.70);
+      ct.translate(0, -R * 0.36);
+      [-0.78, 0, 0.78].forEach((k, j) => {
+        ct.save();
+        ct.rotate(k);
+        yaprakCiz(ct, R * (j === 1 ? 0.58 : 0.48), R * 0.26,
+                  ton(c, -0.26), ton(c, 0.14), true, j * 1.3);
+        ct.restore();
+      });
+      ct.restore();
+    }
+    if (hasat) {
+      for (let i = 0; i < 2; i++) {
+        const a = faz * 7 + i * 2.6;
+        const mx = Math.cos(a) * R * 0.34, my = Math.sin(a) * R * 0.28;
+        ct.fillStyle = rgba(aksan, 1);
+        ct.beginPath();
+        ct.moveTo(mx, my - R * 0.11);
+        ct.bezierCurveTo(mx + R * 0.12, my - R * 0.09, mx + R * 0.08, my + R * 0.11,
+                         mx, my + R * 0.12);
+        ct.bezierCurveTo(mx - R * 0.08, my + R * 0.11, mx - R * 0.12, my - R * 0.09,
+                         mx, my - R * 0.11);
+        ct.fill();
+      }
+    }
+  }
+
+  /** Bir bitkinin bütün çizimi: gölge, yayılım halkası, gövde. */
+  function bitkiCiz(ct, b, t, I) {
+    const R = b.cizimPx / 2;
+    // Yere düşen gölge — güneşin yönünde, alçak güneşte uzun.
+    ct.save();
+    ct.globalAlpha = 0.20 + I.gunduz * 0.16;
+    ct.fillStyle = "#000";
+    ct.beginPath();
+    ct.ellipse(b.x + I.gx * R * 0.30 * I.boy, b.y + R * 0.14,
+               R * 0.74 * I.boy, R * 0.30, 0, 0, Math.PI * 2);
+    ct.fill();
+    ct.restore();
+
+    // YAYILIM HALKASI — ÖLÇÜLEN çap. Çizilen bitki en az 26 piksel
+    // oluyor ki fide görünsün; halka gerçeği söylüyor, yani küçük bir
+    // fide büyük görünmüyor, yalnız görünüyor.
+    if (b.capPx > 26) {
+      ct.save();
+      ct.setLineDash([5, 7]);
+      ct.strokeStyle = b.cakisik ? "rgba(217,165,32,0.42)" : "rgba(255,255,255,0.10)";
+      ct.lineWidth = 1;
+      ct.beginPath();
+      ct.ellipse(b.x, b.y, b.capPx / 2, b.capPx / 2 * 0.66, 0, 0, Math.PI * 2);
+      ct.stroke();
+      ct.restore();
+    }
+
+    ct.save();
+    ct.translate(b.x, b.y - yukseklikPx(16, b.v));
+    const c = b.yaprak;
+    const aksan = b.aksan;
+    const ozel = { genislik: 0.22 + b.faz * 0.12, dalga: b.tip === "gulce" };
+    if (b.tip === "tuy") cizTuy(ct, R, c, b.olgunluk, t, b.faz);
+    else if (b.tip === "cali") cizCali(ct, R, c, b.olgunluk, t, b.faz, b.hasat, aksan);
+    else if (b.tip === "serit") cizSerit(ct, R, c, b.olgunluk, t, b.faz);
+    else if (b.tip === "uclu") cizUclu(ct, R, c, b.olgunluk, t, b.faz, b.hasat, aksan);
+    else cizGulce(ct, R, c, b.olgunluk, t, b.faz, ozel);
+    ct.restore();
+  }
+
+  /* ==================================================================== *
+   * Uçuşan etiketler
+   *
+   * Bahçeye bakan biri "bu ne, nemi kaç" sorusunu bitkinin üstünde
+   * okuyabilmeli. Etiket ÖLÇÜLENİ yazıyor: nem ölçülmüşse yüzdesini,
+   * ölçülmemişse "nem ölçülmedi". Tahmine dayanan susama işareti
+   * kesikli çerçeveli — ölçülmüş bir kararla karıştırılmasın.
+   *
+   * Hepsini birden yazmak gürültü olurdu: kalabalık bir yatakta yalnız
+   * İLGİ İSTEYENLER (susamış ya da hiç ölçülmemiş) etiketleniyor,
+   * seyrek bir yatakta hepsi. Çakışan etiket çizilmiyor.
+   * ==================================================================== */
+  function yazTipi(px, kalin) {
+    return `${kalin ? "600 " : ""}${px}px system-ui, -apple-system, "Segoe UI", sans-serif`;
+  }
+
+  function yuvarlakKutu(ct, x, y, en, boy, r) {
+    ct.beginPath();
+    ct.moveTo(x + r, y);
+    ct.arcTo(x + en, y, x + en, y + boy, r);
+    ct.arcTo(x + en, y + boy, x, y + boy, r);
+    ct.arcTo(x, y + boy, x, y, r);
+    ct.arcTo(x, y, x + en, y, r);
+    ct.closePath();
+  }
+
+  /** Küçük bir künye: türün adı ve ÖLÇÜLEN nemi.
+   *
+   * Bitkinin üstüne değil, tepesinin sağ üstüne konuyor ve ince bir
+   * çizgiyle bağlanıyor — kutu bitkiyi örterse bitkiye bakılmıyor
+   * demektir. Sol kenardaki renk şeridi türün katalog rengi.
+   */
+  function etiketCiz(ct, b, kutular, I) {
+    const o = b.olcum || {};
+    const ad = String(b.tur_ad || b.tur || "bitki");
+    const nem = o.var ? `%${sayi(o.yuzde).toFixed(0)}` : "nem ölçülmedi";
+    ct.font = yazTipi(11, true);
+    const enAd = ct.measureText(ad).width;
+    ct.font = yazTipi(10, false);
+    const enNem = ct.measureText(nem).width;
+    const en = Math.round(Math.max(enAd, enNem) + 16 + (b.susadi ? 13 : 0));
+    const boy = 28;
+
+    const R = b.cizimPx / 2;
+    const yuk = yukseklikPx(16, b.v);
+    // Tepe noktası: kutunun tutunduğu yer.
+    const tx = b.x + R * 0.62;
+    const ty = b.y - yuk - R * 0.52;
+    let x = Math.round(tx + 10);
+    let yy = Math.round(ty - boy - 6);
+    // Tuvalin dışına taşmasın.
+    if (x + en > S.en - 6) x = Math.round(tx - 10 - en);
+    if (yy < 4) yy = 4;
+
+    const kutu = { x1: x, y1: yy, x2: x + en, y2: yy + boy };
+    if (kutular.some((k) => !(kutu.x2 < k.x1 - 4 || kutu.x1 > k.x2 + 4
+                              || kutu.y2 < k.y1 - 4 || kutu.y1 > k.y2 + 4))) return;
+    kutular.push(kutu);
+
+    ct.strokeStyle = "rgba(255,255,255,0.28)";
+    ct.lineWidth = 1;
+    ct.beginPath();
+    ct.moveTo(tx, ty);
+    ct.lineTo(x < tx ? x + en : x, yy + boy - 4);
+    ct.stroke();
+    ct.fillStyle = "rgba(255,255,255,0.28)";
+    ct.beginPath();
+    ct.arc(tx, ty, 2, 0, Math.PI * 2);
+    ct.fill();
+
+    ct.fillStyle = "rgba(16,18,15,0.88)";
+    yuvarlakKutu(ct, x, yy, en, boy, 8);
+    ct.fill();
+    // Sol kenarda türün katalog rengi: aynı türün bitkileri bir bakışta
+    // eşleşsin. Renk TEK BAŞINA bilgi taşımıyor, ad zaten yazılı.
+    ct.save();
+    yuvarlakKutu(ct, x, yy, en, boy, 8);
+    ct.clip();
+    ct.fillStyle = rgba(b.aksan, 0.95);
+    ct.fillRect(x, yy, 3, boy);
+    ct.restore();
+
+    ct.textBaseline = "top";
+    ct.fillStyle = "#f2f2ee";
+    ct.font = yazTipi(11, true);
+    ct.fillText(ad, x + 9, yy + 4);
+    ct.font = yazTipi(10, false);
+    ct.fillStyle = o.var ? "#c8c9bf" : "#82847a";
+    ct.fillText(nem, x + 9, yy + 16);
+
+    if (b.susadi) {
+      const dx = x + en - 9, dy = yy + 15;
+      ct.beginPath();
+      ct.moveTo(dx, dy - 6);
+      ct.quadraticCurveTo(dx + 4.5, dy + 0.5, dx, dy + 5);
+      ct.quadraticCurveTo(dx - 4.5, dy + 0.5, dx, dy - 6);
+      // TAHMİN içi boş ve kesikli: ölçülmüş bir kararla aynı görünmesin.
+      if (b.tahmin) {
+        ct.setLineDash([2, 2]);
+        ct.strokeStyle = "#4fb8e8";
+        ct.lineWidth = 1;
+        ct.stroke();
+        ct.setLineDash([]);
+      } else {
+        ct.fillStyle = "#4fb8e8";
+        ct.fill();
+      }
+    }
+    void I;
+  }
+
+  /* ==================================================================== *
+   * Veriden çizime
+   * ==================================================================== */
+  function bitkileriHazirla() {
+    const liste = (S.veri && S.veri.bitkiler) || [];
+    S.bitki = liste.map((b) => {
+      const uv = mmUV(b.x, b.y);
+      const p = yansit(uv.u, uv.v);
+      const o = mmPx(uv.v);
+      const capPx = sayi(b.yaricap_mm) * 2 * o;
+      return {
+        ad: b.ad, tur: b.tur, tur_ad: b.tur_ad, renk: b.renk || "#7bbf5a",
+        x: p.x, y: p.y, u: uv.u, v: uv.v,
+        capPx,
+        // En az 26 piksel: daha küçüğü ekranda hiç görünmüyor. Gerçek
+        // çapı yayılım halkası gösteriyor.
+        cizimPx: kis(Math.max(26, capPx), 26, Math.max(26, G.enPx * 0.42)),
+        olgunluk: b.olgunluk == null || b.yas_gun == null ? null : sayi(b.olgunluk),
+        hasat: !!b.hasat,
+        susadi: !!b.susadi,
+        tahmin: !!b.su_tahmin,
+        cakisik: !!b.cakisik,
+        olcum: b.su_olcum || {},
+        tip: arketip(b),
+        faz: tohum(b.ad),
+        yaprak: yesil(b),
+        aksan: hexRGB(b.renk || "#7bbf5a"),
+      };
+      // Ressam algoritması: arkadakiler önce çiziliyor.
+    }).sort((a, b2) => a.v - b2.v);
+  }
+
+  function ciz() {
+    const ct = S.ct;
+    if (!ct || !S.en || !S.boy) return;
+    const t = (performance.now() - S.t0) / 1000;
+    const I = isik();
+
+    statikCiz();
+    ct.setTransform(S.dpr, 0, 0, S.dpr, 0, 0);
+    ct.clearRect(0, 0, S.en, S.boy);
+    if (S.statik) ct.drawImage(S.statik, 0, 0, S.en, S.boy);
+
+    if (!G.ileri) return;
+    S.bitki.forEach((b) => bitkiCiz(ct, b, S.sakin ? 0 : t, I));
+
+    // Etiketler en üstte: bitkiler birbirinin üstüne binse de yazı
+    // okunur kalıyor.
+    // KAÇ ETİKET. Hepsini yazmak yatağı kutu tarlasına çeviriyordu.
+    // Önce ölçülüp susadığı GÖRÜLENLER, sonra tahminen susamışlar,
+    // sonra hiç ölçülmemişler; en fazla beş tane. Gerisi bitkiye
+    // dokununca açılıyor.
+    const oncelik = (b) => (b.susadi && !b.tahmin ? 0 : b.susadi ? 1
+                            : !b.olcum.var ? 2 : 3);
+    const secilen = [...S.bitki].sort((a2, b2) =>
+      oncelik(a2) - oncelik(b2) || b2.v - a2.v).slice(0, 5);
+    const kutular = [];
+    secilen.forEach((b) => etiketCiz(ct, b, kutular, I));
+
+    S.kare += 1;
+  }
+
+  /* ==================================================================== *
+   * Tuval, ölçü ve döngü
+   * ==================================================================== */
+  function olcuTazele() {
+    const kap = $("#bt-sahne");
+    const tv = S.tuval;
+    if (!kap || !tv) return false;
+    const r = kap.getBoundingClientRect();
+    const dpr = Math.min(2.5, window.devicePixelRatio || 1);
+    const en = Math.max(1, Math.round(r.width));
+    const boy = Math.max(1, Math.round(r.height));
+    if (en === S.en && boy === S.boy && dpr === S.dpr) return false;
+    S.en = en; S.boy = boy; S.dpr = dpr;
+    tv.width = Math.round(en * dpr);
+    tv.height = Math.round(boy * dpr);
+    tv.style.width = `${en}px`;
+    tv.style.height = `${boy}px`;
+    geometriKur();
+    bitkileriHazirla();
+    S.statikImza = "";
+    return true;
+  }
+
+  function dongu() {
+    S.dongu = 0;
+    if (!S.acik || S.klasik || document.hidden) return;
+    olcuTazele();
+    ciz();
+    // SAKİN MOD: tek kare çizilip duruluyor. Hareket bazı insanlar için
+    // rahatsız edici ve küçük bir cihazda boşta çizim saf ısı.
+    if (S.sakin) return;
+    S.dongu = requestAnimationFrame(dongu);
+  }
+
+  function surdur() {
+    if (!S.dongu) S.dongu = requestAnimationFrame(dongu);
+  }
+
+  /* ==================================================================== *
+   * Veri
+   * ==================================================================== */
+  async function yukle() {
+    if (S.yukleniyor) return;
+    S.yukleniyor = true;
+    try {
+      S.veri = await api("/api/bahce");
+      S.hata = "";
+      notYaz("yukle", "");
+      geometriKur();
+      bitkileriHazirla();
+      S.statikImza = "";
+      durumYaz();
+      bosYaz();
+      surdur();
+    } catch (hata) {
+      S.hata = hata.message || String(hata);
+      // Sessiz başarısızlık yok: ekran boş kalırsa sebebi yazıyor.
+      notYaz("yukle", `Bahçe okunamadı: ${S.hata}`);
+    } finally {
+      S.yukleniyor = false;
+    }
+  }
+
+  function durumYaz() {
+    const el = $("#bt-bagli");
+    const v = S.veri || {};
+    if (el) {
+      const yazi = el.querySelector("b");
+      el.classList.toggle("acik", !!v.bagli && !v.mesgul);
+      el.classList.toggle("kopuk", !v.bagli);
+      el.classList.toggle("calisiyor", !!v.bagli && !!v.mesgul);
+      if (yazi) {
+        yazi.textContent = !v.bagli ? "Makine kopuk"
+          : (v.mesgul ? "Makine çalışıyor" : "Makine hazır");
+      }
+    }
+    // Kopukken iş başlatan her düğme kilitli ve SEBEBİ yazılı.
+    document.querySelectorAll("#bt [data-makine]").forEach((d) => {
+      d.disabled = !v.bagli;
+      d.title = v.bagli ? "" : "Makine kopuk — ajan bağlanınca açılır.";
+    });
+    notYaz("bagli", v.bagli ? ""
+      : "Makineyle bağlantı yok: bahçe görünüyor ama iş başlatılamıyor.");
+  }
+
+  function bosYaz() {
+    const el = $("#bt-bos");
+    if (!el) return;
+    const v = S.veri || {};
+    const bitki = (v.bitkiler || []).length;
+    if (!(v.alanlar || []).length) {
+      el.hidden = false;
+      el.textContent = "Henüz dikim alanı tanımlı değil — toprağın nerede "
+        + "olduğu bilinmiyor. Tarla sekmesinden dikim alanı ekleyin.";
+    } else if (!bitki) {
+      el.hidden = false;
+      el.textContent = "Yatak boş.";
+    } else {
+      el.hidden = true;
+    }
+  }
+
+  /* ==================================================================== *
+   * Çekirdekten gelen haberler
+   * ==================================================================== */
+  function kareGeldi() { /* Kamera katı bu sahnede yok. */ }
+
+  function durumDegisti(d) {
+    if (!S.acik || !S.veri) return;
+    S.veri.konum = d.konum || {};
+    const bagli = !!d.bagli;
+    const mesgul = !!(d.hareket || (d.dizi && d.dizi.calisiyor));
+    if (bagli !== S.veri.bagli || mesgul !== S.veri.mesgul) {
+      S.veri.bagli = bagli;
+      S.veri.mesgul = mesgul;
+      durumYaz();
+    }
+  }
+
+  function ekimDegisti() { /* Ekim akışı bir sonraki adımda bağlanıyor. */ }
+
+  function kuyrukDegisti(k, tazele) {
+    if (!S.veri) return;
+    S.veri.kuyruk = k;
+    if (S.acik && (tazele || (k && !k.calisan && !k.bekleyen))) yukle();
+  }
+
+  function baglandi() { if (S.acik) yukle(); }
+
+  /* ==================================================================== *
+   * Sekme ve bağlama
+   * ==================================================================== */
+  function sekme(acik) {
+    S.acik = !!acik;
+    const kok = $("#bt");
+    if (kok) kok.hidden = !S.acik || S.klasik;
+    document.body.classList.toggle("bahce-tuval", S.acik && !S.klasik);
+    if (!S.acik || S.klasik) {
+      if (S.dongu) cancelAnimationFrame(S.dongu);
+      S.dongu = 0;
+      return;
+    }
+    // Yerleşim yeni değişti: ölçüyü bir sonraki karede alıyoruz.
+    requestAnimationFrame(() => { olcuTazele(); surdur(); });
+    yukle();
+  }
+
+  function ikonBagla(sec, anahtar, uygula) {
+    const d = $(sec);
+    if (!d) return;
+    let acik = false;
+    try { acik = localStorage.getItem(anahtar) === "1"; }
+    catch { /* depolama kapalı — varsayılan kalır */ }
+    uygula(acik);
+    d.setAttribute("aria-pressed", acik ? "true" : "false");
+    d.onclick = () => {
+      acik = !acik;
+      try { localStorage.setItem(anahtar, acik ? "1" : "0"); } catch { /* boş */ }
+      d.setAttribute("aria-pressed", acik ? "true" : "false");
+      uygula(acik);
+    };
+  }
+
+  function bagla() {
+    const kok = $("#bt");
+    if (!kok) return;
+    S.tuval = $("#bt-tuval");
+    if (!S.tuval) return;
+    S.ct = S.tuval.getContext("2d");
+
+    ikonBagla("#bt-sakin", "farmbot_bt_sakin", (a) => {
+      S.sakin = a;
+      if (S.acik && !S.klasik) surdur();
+    });
+
+    // KLASİK GÖRÜNÜM: yeni sahne bir şeyi kaçırıyorsa geri dönülecek
+    // yer. Eski ekran yalnız açıkken haber alıyor.
+    const klasikD = $("#bt-klasik");
+    const klasikKap = $("#bh-klasik");
+    if (klasikD && klasikKap) {
+      klasikD.onclick = () => {
+        S.klasik = !S.klasik;
+        klasikD.setAttribute("aria-pressed", S.klasik ? "true" : "false");
+        klasikD.textContent = S.klasik ? "Yeni bahçe" : "Klasik görünüm";
+        kok.hidden = S.klasik;
+        klasikKap.hidden = !S.klasik;
+        document.body.classList.toggle("bahce-tuval", !S.klasik);
+        if (window.BahceKlasik) window.BahceKlasik.sekme(S.klasik);
+        if (!S.klasik) sekme(true);
+      };
+    }
+
+    if (window.ResizeObserver) {
+      new ResizeObserver(() => {
+        if (S.acik && !S.klasik) { olcuTazele(); surdur(); }
+      }).observe($("#bt-sahne"));
+    } else {
+      addEventListener("resize", () => { olcuTazele(); surdur(); });
+    }
+    // Sekme arkaya alınınca çizim duruyor; öne gelince kaldığı yerden.
+    document.addEventListener("visibilitychange", () => {
+      if (!document.hidden) surdur();
+    });
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", bagla);
+  } else {
+    bagla();
+  }
+
+  /* Deneme kancası: ekranın kendi ölçtükleri. */
+  function olcum() {
+    return {
+      acik: S.acik, klasik: S.klasik, sakin: S.sakin,
+      en: S.en, boy: S.boy, dpr: S.dpr,
+      bitki: S.bitki.length, kare: S.kare,
+      yatakPx: Math.round(G.enPx), duvarPx: Math.round(G.duvarPx),
+      dolgu: S.en ? Math.round(G.enPx / S.en * 100) : 0,   // yatak ekranın yüzde kaçı
+      bagli: !!(S.veri || {}).bagli, hata: S.hata,
+      tipler: S.bitki.map((b) => `${b.tur}:${b.tip}`),
+      ters: !!G.ters,
+    };
+  }
+
+  return { sekme, kareGeldi, durumDegisti, kuyrukDegisti, ekimDegisti,
+           baglandi, yukle, olcum, mmUV, uvMM, ekranUV, yansit,
+           klasikMi: () => S.klasik };
+})();
+
+/* ---------------------------------------------------------------------- *
+ * KÖPRÜ.
+ *
+ * `app.js` bahçeyi `window.Bahce` üzerinden çağırıyor (beş kanca). O
+ * dosya paylaşılan bir dosya ve başka oturumlar orada çalışıyor; tek
+ * satır bile değiştirmemek için köprü burada. Eski ekran
+ * `window.BahceKlasik` adıyla saklanıyor ve yalnız "Klasik görünüm"
+ * açıkken haber alıyor — görünmeyen bir ekranı beslemek boşuna iş.
+ * ---------------------------------------------------------------------- */
+window.BahceKlasik = window.Bahce || null;
+window.Bahce = (function () {
+  "use strict";
+  const yeni = window.BahceTuval;
+  const eski = window.BahceKlasik;
+  const klasik = () => !!(eski && yeni.klasikMi());
+  return {
+    sekme(a) { yeni.sekme(a); if (eski) eski.sekme(a && yeni.klasikMi()); },
+    kareGeldi(k) { yeni.kareGeldi(k); if (klasik()) eski.kareGeldi(k); },
+    durumDegisti(d) { yeni.durumDegisti(d); if (klasik()) eski.durumDegisti(d); },
+    kuyrukDegisti(k, t) { yeni.kuyrukDegisti(k, t); if (klasik()) eski.kuyrukDegisti(k, t); },
+    ekimDegisti(e) { yeni.ekimDegisti(e); if (klasik()) eski.ekimDegisti(e); },
+    baglandi() { yeni.baglandi(); if (klasik()) eski.baglandi(); },
+    yukle() { yeni.yukle(); if (klasik()) eski.yukle(); },
+    olcum() { return yeni.olcum(); },
+  };
+})();
