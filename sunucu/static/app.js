@@ -4130,22 +4130,24 @@ function kamKutuBagla(kutu, ad, sira = 0) {
     const pay = 24;                    // kutunun bu kadarı hep görünsün
     kayma.x = Math.max(-(y.left + y.width - pay),
                        Math.min(innerWidth - y.left - pay, kayma.x));
-    /* ÜST KENAR AYRI KURALA TABİ.
+    /* ÜST SINIR, UYGULAMANIN ÇUBUĞUNUN ALTINDA.
      *
      * Alt/sağ/sol için "kutunun 24 pikseli görünsün" yetiyor: kalanı
-     * ekranın dışına taşsa da kullanıcı tutup geri çekebiliyor.
-     * ÜSTTE öyle değil — oradaki 24 piksel uygulamanın kendi üst
-     * çubuğunun arkasında kalıyor, yani kutu "görünür" sayılıyor ama
-     * hiçbir yerinden tutulamıyor ve hiçbir şeyi göstermiyor.
+     * ekranın dışına taşsa da kullanıcı tutup geri çekebiliyor. ÜSTTE
+     * öyle değil, iki kez ölçüldü:
      *
-     * Sahada tam bu oldu: sabit kameranın kutusu y = -217'ye oturdu
-     * (kutular zaten alt alta diziliyor, üstüne bir de bir kutu boyu
-     * yukarı kaydırma binince), açık olduğu hâlde ekranda görünmedi ve
-     * kullanıcı "kamera gelmiyor" dedi — kutu gelmişti, üstte duruyordu.
+     *   1) Kural yokken kutu y = -217'ye oturdu (kutular zaten alt alta
+     *      diziliyor, üstüne bir de bir kutu boyu yukarı kaydırma
+     *      binince), açık olduğu hâlde ekranda hiç görünmedi.
+     *   2) Sınır ekranın üstü yapılınca kutu 8 pikselde durdu — ama
+     *      orası panelin kendi üst çubuğunun arkası. Kutu görünüyordu,
+     *      TUTAMAĞI görünmüyordu; aşağı çekilemiyordu.
      *
-     * Kural: kutunun ÜST KENARI ekranın üstünden yukarı çıkamaz. */
-    const ustPay = 8;
-    kayma.y = Math.max(ustPay - y.top,
+     * Doğru sınır çubuğun ALT kenarı. Çubuk ölçülüyor, sabit yazılmıyor:
+     * yüksekliği yazı boyuna ve pencere genişliğine göre değişiyor. */
+    const cubuk = document.querySelector("body > header");
+    const ustSinir = (cubuk ? cubuk.getBoundingClientRect().bottom : 0) + 8;
+    kayma.y = Math.max(ustSinir - y.top,
                        Math.min(innerHeight - y.top - pay, kayma.y));
   };
   uygula();
