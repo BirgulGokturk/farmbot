@@ -84,7 +84,11 @@ window.BahceTuval = (function () {
     robot: { hx: 0, hy: 0, hz: null, gecerli: false },
     sonKare: 0,
     uzerinde: "",          // parmağın/farenin altındaki bitki
+    basili: "",            // parmağın BASTIĞI bitki
     vurguAn: {},           // ad -> 0..1 yumuşatılmış vurgu
+    basAn: {},             // ad -> 0..1 yumuşatılmış basma
+    dogus: {},             // ad -> yeni gelen bitkinin beliriş anı
+    canlanma: {},          // ad -> sulandıktan sonraki canlanma anı
     kartAd: "",
     ek: null,              // /api/bitki — kuruma geçmişi, sulama süresi
     secilenTur: "",        // eline aldığı tohum
@@ -1142,6 +1146,27 @@ window.BahceTuval = (function () {
     ct.save();
     ct.translate(b.x, b.y - yukseklikPx(16, b.v) - b.vurgu * R * 0.16);
     if (b.vurgu > 0.01) ct.scale(1 + b.vurgu * 0.05, 1 + b.vurgu * 0.05);
+    // BASINCA EZİLME: genişler, alçalır. Bir düğmenin altına inmesi
+    // gibi — dokunulan şeyin karşılık verdiği buradan anlaşılıyor.
+    if (b.bas > 0.01) ct.scale(1 + b.bas * 0.07, 1 - b.bas * 0.11);
+    // BELİRİŞ: yeni ekilen bitki hedefi bir parça aşıp yerine oturuyor.
+    const dogus = S.dogus[b.ad];
+    if (dogus != null) {
+      const o2 = (t - dogus) / 0.55;
+      if (o2 >= 1) delete S.dogus[b.ad];
+      else { const s2 = 0.25 + 0.75 * asma(o2); ct.scale(s2, s2); }
+    }
+    // SULAMA BİTİNCE BİR KEZ CANLANMA: yapraklar hafifçe kabarıp
+    // yerine oturuyor. Söylediği tek şey "bu bitki sulandı".
+    const can = S.canlanma[b.ad];
+    if (can != null) {
+      const o3 = (t - can) / 1.4;
+      if (o3 >= 1) delete S.canlanma[b.ad];
+      else {
+        const s3 = 1 + 0.10 * Math.sin(o3 * Math.PI * 3) * (1 - o3);
+        ct.scale(s3, s3);
+      }
+    }
     const c = b.yaprak;
     const aksan = b.aksan;
     // Dik siluetin ekrandaki boyu: yayılım yarıçapının katı. Perspektif
@@ -2391,6 +2416,11 @@ window.BahceTuval = (function () {
         try {
           const y = await gonder("/api/bahce/ek",
                                  { tur: tur.slug, x: yer.x, y: yer.y });
+          // Toprakta kısa bir toz bulutu: onayın karşılığı hemen
+          // görünüyor, makinenin oraya varmasını beklemeden.
+          const puv = mmUV(yer.x, yer.y);
+          const pp = yansit(puv.u, puv.v);
+          tozAt(pp.x, pp.y, Math.max(0.6, mmPx(puv.v) * 12));
           kuyrukDegisti(y.kuyruk);
           gunluk(`✓ ${tur.ad} sıraya girdi`, "ok");
           tohumSec("");
@@ -2527,14 +2557,48 @@ window.BahceTuval = (function () {
     surdur();
   }
 
+  /** TOZ BULUTU — ekim onaylandığında, tohumun düşeceği noktada.
+   *  Yerden yana yayılıp sönüyor; yukarı çıkan zerrelerden farklı bir
+   *  hareket, çünkü anlattığı şey farklı: bu "toprak kazıldı". */
+  function tozAt(x, y, olcek) {
+    if (S.sakin) return;
+    const t = (performance.now() - S.t0) / 1000;
+    for (let i = 0; i < 14; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const h = 0.4 + Math.random() * 0.8;
+      S.kutlama.push({
+        tip: "toz", x, y,
+        vx: Math.cos(a) * 26 * h * olcek,
+        vy: Math.sin(a) * 11 * h * olcek - 6 * olcek,
+        t0: t, sure: 0.55 + Math.random() * 0.4,
+        renk: "#8a6a4a", r: (2.5 + Math.random() * 4) * olcek,
+      });
+    }
+    surdur();
+  }
+
   function kutlamaCiz(ct, t) {
     if (!S.kutlama.length) return;
     S.kutlama = S.kutlama.filter((p) => t - p.t0 < p.sure);
     S.kutlama.forEach((p) => {
-      const o = (t - p.t0) / p.sure;             // 0..1
-      const x = p.x + p.vx * (t - p.t0);
-      const y = p.y + p.vy * (t - p.t0) + 26 * (t - p.t0) * (t - p.t0);
-      ct.globalAlpha = (1 - o) * 0.9;
+      const g = t - p.t0;
+      const o = g / p.sure;                      // 0..1
+      // Sönüş çıkışta yavaşlıyor: zerre birden kaybolmuyor.
+      const sol = 1 - yumusak(o);
+      if (p.tip === "toz") {
+        const x = p.x + p.vx * yumusak(o) ;
+        const y = p.y + p.vy * yumusak(o);
+        ct.globalAlpha = sol * 0.55;
+        ct.fillStyle = p.renk;
+        ct.beginPath();
+        ct.ellipse(x, y, p.r * (1 + o * 1.5), p.r * (1 + o * 1.2) * 0.6,
+                   0, 0, Math.PI * 2);
+        ct.fill();
+        return;
+      }
+      const x = p.x + p.vx * g;
+      const y = p.y + p.vy * g + 26 * g * g;
+      ct.globalAlpha = sol * 0.9;
       ct.fillStyle = p.renk;
       ct.beginPath();
       ct.arc(x, y, p.r * (1 - o * 0.4), 0, Math.PI * 2);
@@ -2548,6 +2612,14 @@ window.BahceTuval = (function () {
    * ==================================================================== */
   function bitkileriHazirla() {
     const liste = (S.veri && S.veri.bitkiler) || [];
+    // YENİ GELEN BİTKİ BELİRİYOR. Ekim onaylandıktan sonra nokta hemen
+    // yaratılıyor; ekranda birdenbire var olması "oldu mu olmadı mı"
+    // sorusunu bırakıyordu. Beliriş aşıp oturan bir eğriyle.
+    const simdi = (performance.now() - S.t0) / 1000;
+    const eski = S.gorulen || null;
+    const yeni = new Set(liste.map((b) => b.ad));
+    if (eski) liste.forEach((b) => { if (!eski.has(b.ad)) S.dogus[b.ad] = simdi; });
+    S.gorulen = yeni;
     S.bitki = liste.map((b) => {
       const uv = mmUV(b.x, b.y);
       const p = yansit(uv.u, uv.v);
@@ -2569,6 +2641,7 @@ window.BahceTuval = (function () {
         tip: arketip(b),
         faz: tohum(b.ad),
         vurgu: sayi(S.vurguAn[b.ad], 0),
+        bas: sayi(S.basAn[b.ad], 0),
         yaprak: yesil(b),
         aksan: hexRGB(b.renk || "#7bbf5a"),
       };
@@ -2608,6 +2681,13 @@ window.BahceTuval = (function () {
       b.vurgu += (hedef - b.vurgu) * k;
       if (Math.abs(b.vurgu - hedef) < 0.005) b.vurgu = hedef;
       S.vurguAn[b.ad] = b.vurgu;
+      // BASMA: parmak değdiği an ezilme başlıyor (40 ms), kalkınca
+      // geri açılıyor. Geri bildirim 100 ms'den önce görünmeli.
+      const bh = b.ad === S.basili ? 1 : 0;
+      const bk = 1 - Math.exp(-dt / (bh ? 0.04 : 0.11));
+      b.bas += (bh - b.bas) * bk;
+      if (Math.abs(b.bas - bh) < 0.005) b.bas = bh;
+      S.basAn[b.ad] = b.bas;
     });
     S.bitki.forEach((b) => bitkiCiz(ct, b, S.sakin ? 0 : t, I));
     onizlemeCiz(ct, S.sakin ? 0 : t);
@@ -2797,6 +2877,11 @@ window.BahceTuval = (function () {
       const kayit = ((k && k.isler) || []).find((i) => i.kimlik === onceki.kimlik);
       if (kayit && kayit.durum === "bitti") {
         kutlamaAt(onceki.tip, onceki.noktalar);
+        // Sulama bittiyse o bitkiler bir kez canlanıyor.
+        if (onceki.tip === "sula") {
+          const simdi = (performance.now() - S.t0) / 1000;
+          (onceki.noktalar || []).forEach((ad) => { S.canlanma[ad] = simdi; });
+        }
         S.sonIs = null;
       } else if (kayit && kayit.durum !== "calisiyor") {
         S.sonIs = null;                 // iptal ya da hata: kutlama yok
@@ -2877,7 +2962,8 @@ window.BahceTuval = (function () {
       if (S.secilenTur) return;
       const p = yerel(o);
       const w = dunya(p.x, p.y);
-      if (bitkiBul(w.x, w.y)) return;
+      const bas = bitkiBul(w.x, w.y);
+      if (bas) { S.basili = bas.ad; surdur(); return; }
       tv.setPointerCapture(o.pointerId);
       S.gezinme = { id: o.pointerId, x: o.clientX, y: o.clientY,
                     kx: S.kam.hx, ky: S.kam.hy, tasindi: false };
@@ -2917,6 +3003,11 @@ window.BahceTuval = (function () {
       tv.style.cursor = b ? "pointer" : "default";
       if (ad !== S.uzerinde) { S.uzerinde = ad; surdur(); }
     });
+
+    const basBirak = () => { if (S.basili) { S.basili = ""; surdur(); } };
+    tv.addEventListener("pointerup", basBirak);
+    tv.addEventListener("pointercancel", basBirak);
+    tv.addEventListener("pointerleave", basBirak);
 
     const gezinmeBitir = (o) => {
       if (!S.gezinme || S.gezinme.id !== o.pointerId) return;
