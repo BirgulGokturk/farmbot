@@ -22,7 +22,12 @@
 Tarla.katman({
   kimlik: "ust-kamera",
   ad: "Üst kamera görüntüsü",
-  varsayilan: false,
+  /* AÇIK GELİYOR. Kapalı geliyordu ve kullanıcı bunu bulamadı: kamera
+   * kutusunun "sahnede göster" düğmesine bastı, o düğme köşedeki yüzen
+   * kutuyu açıyor, sahnedeki görüntüyü değil. İki ayrı denetim aynı işi
+   * yapıyor sanıldı. Katman açık gelirse kalibrasyon biter bitmez
+   * görüntü kendiliğinden yerine oturuyor. */
+  varsayilan: true,
 
   /* --------------------------------------------------------- veri */
 

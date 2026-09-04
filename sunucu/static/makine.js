@@ -624,25 +624,29 @@
      * sahnede probu tohum ucundan ayıran tek şey o.
      */
     const nemProbu = new THREE.Group();
+    /* ÖLÇÜLER BÜYÜTÜLDÜ. İlk hâli gerçek orana sadıktı ama sahnede
+     * seçilmiyordu: parça zaten küçük, rengi de koyu zemine yakın.
+     * Buradaki iş ölçek doğruluğu değil, hangi başın hangisi olduğunu
+     * bir bakışta söyleyebilmek. */
     // Üstteki siyah konnektör başlığı.
-    nemProbu.add(kutu(THREE, [P * 0.42, P * 0.34, P * 0.22], [0, -P * 0.1, 0],
+    nemProbu.add(kutu(THREE, [P * 0.6, P * 0.5, P * 0.32], [0, -P * 0.12, 0],
                       { color: "#15181a", metalness: 0.1, roughness: 0.72 }));
-    // Bıçakları taşıyan ince plaka — gerçeğinde de baskı devre kartı.
-    nemProbu.add(kutu(THREE, [P * 0.38, P * 0.3, P * 0.07], [0, -P * 0.38, 0],
-                      { color: "#c9a227", metalness: 0.35, roughness: 0.45 }));
+    // Bıçakları taşıyan kart — gerçeğinde de baskı devre.
+    nemProbu.add(kutu(THREE, [P * 0.56, P * 0.42, P * 0.1], [0, -P * 0.48, 0],
+                      { color: "#e0b93a", metalness: 0.35, roughness: 0.4 }));
     // İKİ BIÇAK. Yassı ve altın sarısı: kaplama böyle görünüyor.
     [-1, 1].forEach((yon) => {
-      nemProbu.add(kutu(THREE, [P * 0.13, P * 1.5, P * 0.05],
-                        [yon * P * 0.12, -P * 1.28, 0],
-                        { color: "#c9a227", metalness: 0.4, roughness: 0.42 }));
+      nemProbu.add(kutu(THREE, [P * 0.2, P * 1.9, P * 0.08],
+                        [yon * P * 0.17, -P * 1.6, 0],
+                        { color: "#e0b93a", metalness: 0.4, roughness: 0.38 }));
     });
     // Turuncu kablolar: yukarı çıkıp gözden kayboluyorlar.
     [-1, 1].forEach((yon) => {
       const tel = new THREE.Mesh(
-        new THREE.CylinderGeometry(P * 0.035, P * 0.035, P * 1.5, 6),
-        mal(THREE, { color: yon < 0 ? "#e08a2e" : "#d8d2c4",
+        new THREE.CylinderGeometry(P * 0.05, P * 0.05, P * 1.5, 6),
+        mal(THREE, { color: yon < 0 ? "#f0932b" : "#e6e0d2",
                      metalness: 0.05, roughness: 0.7 }));
-      tel.position.set(yon * P * 0.1, P * 0.7, P * 0.05);
+      tel.position.set(yon * P * 0.14, P * 0.65, P * 0.07);
       nemProbu.add(tel);
     });
     ucKafa.add(nemProbu);
