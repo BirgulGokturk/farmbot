@@ -853,6 +853,22 @@
      * pay bırakarak. Gerçekte de öyle: tek bir alüminyum plaka, üstüne
      * üç baş vidalı.
      */
+    /* ÜÇ BAŞ DA SÜTUNUN ÖNÜNDE.
+     *
+     * Kaymalar makinenin REFERANS NOKTASINA göre tanımlı (o da nem
+     * probu), sütuna göre değil. Sahnede olduğu gibi uygulanınca küme
+     * sütunun üstüne biniyor: başlar sütunun arkasında ve içinde
+     * kalıyor, ikisi birbirini kesiyor.
+     *
+     * Gerçekte üçü de kızağın önünde, dışarı taşan bir plakaya asılı —
+     * kızağın kendi motor bloğu da aynı yönde duruyor (+X). Bütün kümeye
+     * ortak bir öne alma uyguluyoruz: bu KATI bir öteleme, başların
+     * birbirine göre yerleri hiç değişmiyor. Ölçüme giren de zaten o
+     * göreli mesafe.
+     */
+    const ONDE = P * 2.2;
+    [nemProbu, tohumUcu, baslik].forEach((g) => { g.position.x += ONDE; });
+
     /* MAKİNE MERKEZİ DE PLAKANIN İÇİNDE.
      *
      * Plaka yalnız başların arasını köprülüyordu ve plakayı Z ARABASINA
@@ -885,6 +901,8 @@
      * arasındaki boşluğu kapatıyor. */
     ucKafa.add(kutu(THREE, [P * 0.9, P * 0.7, P * 0.9],
                     [0, P * 0.42, 0], baski));
+    // Su huzmesi başlıkla birlikte öne gitti; konumu aşağıda başlığın
+    // kendi yerinden kopyalanıyor, ayrıca kaydırmaya gerek yok.
     // Vida başları plakanın KENDİ dört köşesinde — plaka büyüyünce
     // onlar da onunla gidiyor, yoksa vidalar havada kalırdı.
     [[-1, -1], [1, -1], [-1, 1], [1, 1]].forEach(([ix, iz]) => {
