@@ -106,6 +106,20 @@
     <div class="bant-ic"><div id="tani-liste" class="tani-liste"></div></div>
   </div>
 
+  <!-- ÇALIŞAN DİZİ. Sulama, ekim ve "sırayla gez" hep dizi olarak koşuyor;
+       kaçıncı adımda olduğu ve hata verirse nerede durduğu buradan
+       okunuyor. Sayfa seviyesinde, çünkü dizi hangi sekmede olursanız olun
+       koşmaya devam ediyor — eskiden Kurulum sekmesindeki program kartının
+       içindeydi ve sulama Bahçe sekmesinden başlatılırken kimse görmüyordu.
+       Durdurma düğmesi de burada: yanlış başlayan bir sulamayı acil
+       durdurmaya basmadan kesebilmek gerekiyor. -->
+  <div id="dizi-bant" class="gizli">
+    <div class="bant-ic">
+      <div id="dizi-ilerleme"></div>
+      <button class="dugme" id="d-dizi-durdur">Diziyi durdur</button>
+    </div>
+  </div>
+
   <!-- KABUK — SAHNE ARKA PLAN, paneller üstünde yüzüyor.
        Referans: FarmBot'un Farm Designer'ı. Eskiden sahne bir kartın içinde
        küçük bir kutuydu ve panel onu yarı yarıya daraltıyordu; artık sahne
@@ -180,13 +194,6 @@
       <button class="dugme" id="d-toplu-ek"
               title="Tohumluk gözünden tohum alıp seçili noktalara eker">Ek</button>
       <button class="dugme" id="d-toplu-gez">Sırayla gez</button>
-      <!-- Nokta değişkeni tanımlı bir dizi seçime uygulanıyor: dizi seçili
-           her nokta için bir kez, o noktayla çalışıyor. -->
-      <select id="toplu-dizi" class="toplu-dizi" title="Seçime uygulanacak dizi"></select>
-      <!-- Dizinin nokta dışındaki değişkenleri varsa değerleri burada
-           soruluyor; yoksa bu alan boş kalıyor. -->
-      <span id="toplu-degerler" class="toplu-degerler"></span>
-      <button class="dugme" id="d-toplu-dizi">Dizi uygula</button>
       <button class="dugme tehlike" id="d-toplu-sil">Sil</button>
       <button class="dugme" id="d-toplu-temizle">Bırak</button>
     </div>
