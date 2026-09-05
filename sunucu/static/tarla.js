@@ -100,6 +100,11 @@
     kirli: true,
     cizilenKare: 0,              // ölçüm için — kaç kare gerçekten çizildi
     kirletKaynak: {},            // ölçüm için — hangi olay kaç kez işaretledi
+    // Konsola tanı satırları (tekerlek serisi özeti, katman aç/kapa).
+    // Açık bırakıldı: takılmayı ve "kutucuk işlemiyor"u ancak sayıyla
+    // ayırt edebiliyoruz, bedeli olay serisi başına bir satır.
+    // `Tarla.olcum(false)` kapatıyor.
+    olcum: true,
   };
 
   /** Tek seferde işlenebilecek nokta sayısı — sunucudaki sınırla aynı.
@@ -474,20 +479,74 @@
     }
     kirlet("katman-ackapa");
     ciz2bTumu();
+
+    /* ÖLÇÜM. "Kutucuğu işaretledim, sahne değişmedi" üç ayrı yerde
+     * kopabiliyor ve ekran görüntüsü üçünü ayırmıyor: (1) kutucuk bu
+     * işlevi hiç çağırmıyor, (2) çağırıyor ama grup kök gruptan
+     * çıkmıyor/girmiyor, (3) giriyor da grup boş kalıyor. Aşağıdaki
+     * satır üçünü de sayıyla ayırıyor. `Tarla.olcum(false)` kapatıyor. */
+    if (T.olcum) {
+      console.log(`[tarla] katman "${kayit.tanim.kimlik}" → `
+        + `${acik ? "açık" : "kapalı"} · kökte ${kokGrup.children.indexOf(kayit.grup) >= 0} `
+        + `· parça ${kayit.grup ? kayit.grup.children.length : 0} · görünüm ${T.gorunum}`);
+    }
+    // SESSİZ BAŞARISIZLIK YOK. Açıldı ama grup boş kaldıysa katmanın
+    // `guncelle`si içeriği kurmamış demektir — kullanıcı kutucuğu
+    // işaretliyor ve sahnede hiçbir şey olmuyor. Sebebi görünsün.
+    if (acik && kayit.grup && !kayit.grup.children.length) {
+      console.warn(`[tarla] "${kayit.tanim.ad}" açıldı ama katman boş kaldı: `
+        + "guncelle() içerik kurmadı (imza önbelleği grubun boşaldığını "
+        + "görmüyor olabilir).");
+    }
   }
 
   function katmanListesiCiz() {
     const kutu = $("#katman-liste");
     if (!kutu) return;
-    kutu.innerHTML = T.katmanlar.map((k, i) => `
+    /* KUTUCUK KİMLİKLE BAĞLANIYOR, SIRA NUMARASIYLA DEĞİL.
+     *
+     * Eskiden `data-i` dizideki sırayı taşıyordu; katman dosyaları
+     * sunucudan gelen listeye göre yükleniyor ve liste yeniden
+     * çizilmeden dizi değişirse aynı numara başka katmanı gösteriyordu.
+     * Kimlik katmanın kendi değişmez adı — kayarsa kaymıyor, kaybolursa
+     * sessizce başka bir katmanı açmak yerine sebebini yazıyor. */
+    kutu.innerHTML = T.katmanlar.map((k) => `
       <label class="katman-satir">
-        <input type="checkbox" data-i="${i}"${k.acik ? " checked" : ""}>
+        <input type="checkbox" data-kimlik="${kacisli(k.tanim.kimlik)}"${k.acik ? " checked" : ""}>
         <span>${kacisli(k.tanim.ad)}</span>
       </label>`).join("");
     kutu.querySelectorAll("input").forEach((g) => {
-      g.onchange = () => katmanAcKapa(T.katmanlar[Number(g.dataset.i)], g.checked);
+      g.onchange = () => {
+        const kayit = T.katmanlar.find((k) => k.tanim.kimlik === g.dataset.kimlik);
+        if (!kayit) {
+          console.warn(`[tarla] "${g.dataset.kimlik}" katmanı listede yok — `
+            + "liste eskimiş, yeniden çiziliyor.");
+          katmanListesiCiz();
+          return;
+        }
+        katmanAcKapa(kayit, g.checked);
+      };
     });
     katmanSayaciYaz();
+  }
+
+  /** Katmanların ölçülmüş durumu — TANI İÇİN, konsoldan çağrılıyor.
+   *
+   * `kutu` kutucuğun DOM'daki hâli: kutucuk işaretli ama `acik` false
+   * çıkıyorsa `onchange` hiç çalışmamış demektir ve arıza kutucukta,
+   * sahnede değil. */
+  function katmanDurumu() {
+    const kutu = $("#katman-liste");
+    return T.katmanlar.map((k) => {
+      const g = kutu && kutu.querySelector(`input[data-kimlik="${k.tanim.kimlik}"]`);
+      return {
+        kimlik: k.tanim.kimlik, ad: k.tanim.ad, acik: k.acik,
+        kutu: g ? g.checked : null,
+        kokte: !!(k.grup && kokGrup && kokGrup.children.indexOf(k.grup) >= 0),
+        parca: k.grup ? k.grup.children.length : 0,
+        guncellemesiVar: typeof k.tanim.guncelle === "function",
+      };
+    });
   }
 
   /** Çubuktaki "Katmanlar" düğmesinin yanındaki sayaç.
@@ -922,6 +981,34 @@
     kam.hedef.set(0, hedefY, 0);
   }
 
+  /* ------------------------------------------------ üst kameranın çerçevesi
+   *
+   * `boyutla()`nin ortografik kamera bölümü buradan ayrıldı. Sebebi ölçüm:
+   * zoom YALNIZ `kam.yakinlik`i değiştiriyor, ama `boyutla()` her çağrıda
+   * tuvalin `clientWidth/Height`ini okuyor (zorlanmış yeniden yerleşim),
+   * `panelPayi()` içinde birkaç `getBoundingClientRect` daha çağırıyor,
+   * `ciz.setSize()` ile tuvalin çizim arabelleğini yeniden ayırıyor ve
+   * `boyutla2b()` ile 2B tuvalin tamamını yeniden çiziyor. Bunların hiçbiri
+   * yakınlığa bağlı değil.
+   *
+   * Son ÖLÇÜLEN yerleşim saklanıyor; zoom onu okuyup yalnız çerçeveyi
+   * yeniden kuruyor. Pencere boyu değişirse `boyutla()` zaten yeniden
+   * ölçüp burayı da tazeliyor. */
+  let sonYerlesim = null;
+
+  function ustCerceve() {
+    const L = sonYerlesim;
+    if (!L) return;
+    const yariY = Math.max((derinlikM / 2) * 1.32 * L.olcek,
+                           (genislikM / 2) * 1.32 * L.olcek / L.en) / kam.yakinlik;
+    const yariX = yariY * L.en;
+    kameraUst.left = -yariX; kameraUst.right = yariX;
+    kameraUst.top = yariY; kameraUst.bottom = -yariY;
+    if (L.kaydirVar) kameraUst.setViewOffset(L.g, L.y, -L.kaydirX, -L.kaydirY, L.g, L.y);
+    else kameraUst.clearViewOffset();
+    kameraUst.updateProjectionMatrix();
+  }
+
   function boyutla() {
     if (!ciz || !tuval) return;
     kirlet("boyutla");
@@ -949,14 +1036,8 @@
     else kamera.clearViewOffset();
     kamera.updateProjectionMatrix();
 
-    const yariY = Math.max((derinlikM / 2) * 1.32 * olcek,
-                           (genislikM / 2) * 1.32 * olcek / en) / kam.yakinlik;
-    const yariX = yariY * en;
-    kameraUst.left = -yariX; kameraUst.right = yariX;
-    kameraUst.top = yariY; kameraUst.bottom = -yariY;
-    if (kaydirVar) kameraUst.setViewOffset(g, y, -kaydirX, -kaydirY, g, y);
-    else kameraUst.clearViewOffset();
-    kameraUst.updateProjectionMatrix();
+    sonYerlesim = { g, y, en, olcek, kaydirVar, kaydirX, kaydirY };
+    ustCerceve();
 
     if (!kam.elleZoom) kamerayiSigdir(enSerbest, olcek);
     boyutla2b();
@@ -1769,15 +1850,73 @@
       hedef.addEventListener("contextmenu", (o) => o.preventDefault());
     });
 
+    /* ================================================== tekerlekle yakınlaştırma
+     *
+     * Fare tekerleği ve dokunmatik yüzey saniyede yüzü aşkın `wheel` olayı
+     * üretebiliyor, ekran ise 60 kare çiziyor: aradaki fark boşa gidiyor.
+     * Eskiden üst görünümde HER olay `boyutla()` çağırıyordu ve o yolda
+     * zorlanmış yeniden yerleşim, tuval arabelleğinin yeniden ayrılması ve
+     * 2B tuvalin baştan çizilmesi var (bkz. `ustCerceve` başlığı). Güçlü
+     * bir makinede yutuluyor, zayıfında olay kuyruğu birikiyor.
+     *
+     * Olaylar tek bir requestAnimationFrame'e toplanıyor ve zoom artık
+     * `boyutla()` değil yalnız `ustCerceve()` çağırıyor. Katmanlar hiç
+     * dokunulmuyordu, dokunulmuyor: `kirlet` yalnız bayrak koyuyor.
+     *
+     * ADIMLAR SAYILIYOR, TOPLANMIYOR: yukarı/aşağı ayrı sayaçta duruyor ve
+     * kat çarpanları (1,1 ve 0,9) tek tek uygulanmış gibi çarpılıyor.
+     * 0,9 ≠ 1/1,1 olduğu için tek bir net adım sayısına indirmek zoom
+     * merkezini kaydırırdı. Kırpma yalnız sonda: bir seri sınıra değip
+     * dönerse eski kod ortada takılıyordu.
+     *
+     * ÖLÇÜM açık: bir seri bittiğinde kaç olay geldiği, işleyicide ve
+     * uygulamada geçen süre ve o sırada gerçekten çizilen kare sayısı
+     * konsola düşüyor. `Tarla.zoomOlcum(false)` kapatıyor. */
+    const zoom = { yukari: 0, asagi: 0, bekleyen: 0,
+                   olay: 0, sure: 0, uygulaSure: 0, kare0: 0, zaman: 0, bitir: 0 };
+
+    function zoomUygula() {
+      zoom.bekleyen = 0;
+      const y = zoom.yukari, a = zoom.asagi;
+      zoom.yukari = 0; zoom.asagi = 0;
+      if (!y && !a) return;
+      const t0 = performance.now();
+      if (kam.ust) {
+        kam.yakinlik = kis(kam.yakinlik * Math.pow(1.1, y) * Math.pow(0.9, a), 0.4, 6);
+        ustCerceve();
+      } else {
+        // Üst sınır 12 m'ydi: yatak 0,6 m olduğu için makine ekranda bir
+        // noktaya dönüyor ve sahne boş çimenlikten ibaret kalıyordu. 4,5 m'de
+        // makine hâlâ karenin belirgin bir kısmını kaplıyor.
+        kam.r = kis(kam.r * Math.pow(1.1, a) * Math.pow(0.9, y), 0.35, 4.5);
+      }
+      if (T.olcum) zoom.uygulaSure += performance.now() - t0;
+      kirlet("zoom");
+    }
+
     tuval.addEventListener("wheel", (o) => {
       o.preventDefault();
+      const t0 = performance.now();
       kam.elleZoom = true;
-      if (kam.ust) { kam.yakinlik = kis(kam.yakinlik * (o.deltaY > 0 ? 0.9 : 1.1), 0.4, 6); boyutla(); }
-      // Üst sınır 12 m'ydi: yatak 0,6 m olduğu için makine ekranda bir
-      // noktaya dönüyor ve sahne boş çimenlikten ibaret kalıyordu. 4,5 m'de
-      // makine hâlâ karenin belirgin bir kısmını kaplıyor.
-      else kam.r = kis(kam.r * (o.deltaY > 0 ? 1.1 : 0.9), 0.35, 4.5);
-      kirlet("zoom");
+      if (o.deltaY > 0) zoom.asagi++; else zoom.yukari++;
+      if (!zoom.bekleyen) zoom.bekleyen = requestAnimationFrame(zoomUygula);
+      if (!T.olcum) return;
+
+      if (!zoom.olay) { zoom.kare0 = T.cizilenKare; zoom.zaman = t0; }
+      zoom.olay++;
+      zoom.sure += performance.now() - t0;
+      clearTimeout(zoom.bitir);
+      // 400 ms sessizlik = seri bitti. Tek satır özet; her olayda yazmak
+      // ölçülen şeyin kendisini yavaşlatırdı.
+      zoom.bitir = setTimeout(() => {
+        const gecen = performance.now() - zoom.zaman;
+        console.log(
+          `[tarla] zoom serisi: ${zoom.olay} olay · ${(gecen).toFixed(0)} ms · `
+          + `işleyici ${zoom.sure.toFixed(1)} ms · uygulama `
+          + `${zoom.uygulaSure.toFixed(1)} ms · çizilen kare `
+          + `${T.cizilenKare - zoom.kare0} · görünüm ${kam.ust ? "üst" : "perspektif"}`);
+        zoom.olay = 0; zoom.sure = 0; zoom.uygulaSure = 0;
+      }, 400);
     }, { passive: false });
 
     window.addEventListener("keydown", (o) => {
@@ -2196,6 +2335,15 @@
     },
 
     /** app.js dizileri yükledikçe çağırıyor — "Dizi uygula" listesi. */
+
+    /** Konsol tanı satırlarını aç/kapa. Argümansız çağrı durumu döndürüyor. */
+    olcum(acik) {
+      if (acik !== undefined) T.olcum = !!acik;
+      return T.olcum;
+    },
+
+    /** Katmanların ölçülmüş durumu — kutucuk, kök grup, parça sayısı. */
+    katmanDurumu,
 
     /** Deneme yardımcısı — kaç kare GERÇEKTEN çizildi, şu an kirli mi. */
     cizimDurumu() {

@@ -80,13 +80,36 @@ Tarla.katman({
     /* TOHUM UCUNUN KENDİ DİKEY HAREKETİ. Ana Z bütün başları birden
      * indiriyor; bu grup onun ÜSTÜNE binen kendi hareketi. İndiğinde
      * sahnede de iniyor — süsleme değil, ölçülen T konumu. */
-    const tu = p.ucKafa.userData && p.ucKafa.userData.tohumUcu;
+    const u = p.ucKafa.userData || {};
+    const tu = u.tohumUcu;
     if (tu) {
       const t = o.veri.durum.tohum_ucu || {};
       const dus = (t.kalibre && Number.isFinite(Number(t.mm)))
         ? Math.abs(Number(t.mm) - Number(t.yukari_mm || 0)) * MM : 0;
-      tu.position.y = (p.ucKafa.userData.tohumUcuY || 0) - dus;
+      tu.position.y = (u.tohumUcuY || 0) - dus;
     }
+    /* KULLANILAN BAŞ İNİYOR, ÖTEKİLER YUKARIDA KALIYOR.
+     *
+     * Üç baş aynı biçimde çizildiğinden hangisinin iş başında olduğunu
+     * ayıran tek şey bu. Kaynaklar farklı ve ikisi de GERÇEK:
+     *   - tohum ucu: kendi ekseni (PLC j4) ve ölçülen mm — yukarıda.
+     *   - sulama başlığı: pompa rölesi (`r_su_pompasi`). Röle yalnız
+     *     "akıyor/akmıyor" diyor; başlığın ayrı bir ekseni yok, o yüzden
+     *     düşme miktarı ÖLÇÜM DEĞİL, gösterim kuralı (makine.js
+     *     `AKTIF_DUSME`).
+     *   - nem probu: SİNYAL YOK. Probun kendi ekseni yok; ölçüm ana Z
+     *     ile daldırılarak yapılıyor ve "prob şu an ölçüyor" diye bir
+     *     bayrak durum paketinde geçmiyor (ajan/plc.py'deki eksen
+     *     listesinde yalnız X, Y, Z, T var). Uydurma bir durum üretmek
+     *     yerine prob sabit duruyor; `suDurumu().nemSinyali` bunu
+     *     "yok" diye söylüyor. */
+    const bslk = u.baslik;
+    if (bslk) {
+      const PN = window.Panel;
+      const akiyor = !!(PN && PN.S && PN.S.roleDurum && PN.S.roleDurum.su_pompasi);
+      bslk.position.y = (u.basY || 0) - (akiyor ? (u.aktifDusme || 0) : 0);
+    }
+    if (u.nemProbu) u.nemProbu.position.y = u.basY || 0;
     // Z kılavuzu birim yükseklikte kuruluyor, stroka göre uzatılıyor.
     const boy = Math.max(0.05, rayY - 0.045 - (ucY + 0.08));
     p.sutun.scale.y = boy;
@@ -120,7 +143,12 @@ Tarla.katman({
         this._akis = null;
       }
       if (akiyor) {
-        const basY = p.ucKafa.userData.baslikY || 0;
+        /* Huzme başlığın UCUNDAN başlıyor. Başlık pompa açıkken indiği
+         * için ofset sabit değil: grubun O ANKİ y'si + ucun grup içi
+         * ofseti. Sabit yazsaydık su, inmiş başlığın içinden çıkardı. */
+        const bs = p.ucKafa.userData.baslik;
+        const basY = (bs ? bs.position.y : (p.ucKafa.userData.basY || 0))
+          + (p.ucKafa.userData.basUcY || 0);
         // Başlığın sahnedeki yüksekliği = uç kafasının yüksekliği + yerel ofset.
         const bas = ucY + 0.04 + basY;
         const yer = Math.max(0.01, bas);      // toprak yüzeyi y = 0
@@ -143,8 +171,10 @@ Tarla.katman({
     if (!p || !p.su) return { kuruldu: false };
     // Başlığın da yerini veriyoruz: "başlık nerede" sorusu ekran
     // görüntüsünden cevaplanamıyor, sahnede küçük ve koyu.
-    const b = p.ucKafa && p.ucKafa.children.find(
-      (c) => c.type === "Group" && c.children.length > 5);
+    // BAŞLIK KİMLİKLE GELİYOR. Eskiden "çocuğu beşten çok olan grup" diye
+    // aranıyordu; üç baş aynı ve sade gövdeye indirilince o ölçüt hiçbirini
+    // bulmuyor ve "başlık yok" diye yanlış cevap veriyordu.
+    const b = p.ucKafa && p.ucKafa.userData && p.ucKafa.userData.baslik;
     /* NEM PROBUNUN YERİ DE BURADA. "Prob görünmüyor" sorusu iki ayrı
      * şey olabiliyor: kurulmamış olmak, ya da kurulup gözden kaçacak
      * bir yerde durmak. İkisini ekran görüntüsünden ayırmak mümkün
@@ -189,6 +219,21 @@ Tarla.katman({
       baslikVar: !!b,
       baslikX: b ? +b.position.x.toFixed(4) : null,
       baslikParca: b ? b.children.length : 0,
+      // Hangi baş inmiş — üçü aynı çizildiği için ayıran tek şey bu.
+      baslikDusmus: b ? +((((p.ucKafa.userData.basY || 0) - b.position.y))
+                          * 1000).toFixed(1) : null,
+      aktifDusmeMm: p.ucKafa && p.ucKafa.userData
+        ? +((p.ucKafa.userData.aktifDusme || 0) * 1000).toFixed(1) : null,
+      /* NEM PROBUNUN KENDİ SİNYALİ YOK. Probun ayrı bir ekseni yok ve
+       * durum paketinde "prob ölçüyor" diye bir bayrak geçmiyor; ölçüm
+       * ana Z ile daldırılarak yapılıyor. Prob bu yüzden sabit duruyor. */
+      nemSinyali: "yok — probun kendi ekseni ve durum bayrağı yok",
+      /* KÜMENİN VE ENGELİN Z ARALIĞI. "Küme sütunun arkasında" sorusu
+       * ancak ikisi yan yana görülünce cevaplanıyor (bkz. makine.js). */
+      engelZMm: (p.ucKafa && p.ucKafa.userData && p.ucKafa.userData.engelZ)
+        ? p.ucKafa.userData.engelZ.map((v) => +(v * 1000).toFixed(1)) : null,
+      baslarZMm: (p.ucKafa && p.ucKafa.userData && p.ucKafa.userData.baslarZ)
+        ? p.ucKafa.userData.baslarZ.map((v) => +(v * 1000).toFixed(1)) : null,
       gorunur: p.su.visible,
       boy: +p.su.scale.y.toFixed(4),
       y: +p.su.position.y.toFixed(4),

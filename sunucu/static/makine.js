@@ -25,6 +25,11 @@
 (function () {
   "use strict";
 
+  /* Uç kümesinin z ölçümünü konsola yazma. Açık: "küme sütunun arkasında"
+     sorusu ancak iki aralığı yan yana görünce cevaplanıyor. Kapatmak için
+     `FarmbotMakine.olcum(false)`. */
+  let OLCUM = true;
+
   /* ==================================================================== veri
    *
    * Makinenin BÜTÜN ölçüleri ve renkleri burada, milimetre cinsinden.
@@ -656,75 +661,65 @@
      * değil ÖTEKİ İKİ BAŞIN ORTASINA göre — kullanıcının gördüğü düzen
      * "solda sulama, ortada prob, sağda tohum ucu".
      */
-    const nemProbu = new THREE.Group();
-    /* KENDİ IŞIĞI OLAN ALTIN SARISI.
+    /* --- ÜÇ BAŞ: TEK VE AYNI GÖVDE ----------------------------------------
+     * Üçü de birbirinin aynı. Önce her biri kendi gerçeğine benzetilmişti
+     * (çatal bıçaklı nem probu, kırmızı vakum ucu, delikli duş başlığı);
+     * sahnede üç ayrı siluet üç ayrı ŞEY gibi okunuyordu ve en büyükleri
+     * (0,78P yarıçaplı başlık) kafanın kendisinden geniş görünüyordu.
+     * Sorulan soru "hangi baş nerede" — biçim ayırt etmiyor, KONUM ayırt
+     * ediyor. Sıra soldan sağa: sulama, nem, tohum (`uclar.json` dx/dy).
      *
-     * Düz bir renkti ve kafanın koyu gövdesinin önünde kayboluyordu:
-     * sahnedeki ışık yukarıdan geliyor, kafanın altında kalan her şey
-     * gölgede duruyor. `emissive` parçayı ışıktan bağımsız kılıyor —
-     * gerçeğe sadakat değil, görülebilirlik kararı.
+     * Ölçüler eskisinin belirgin altında: gövde 0,22P yarıçapında ve
+     * uçla birlikte 0,94P boyunda. Eski prob 2,9P, tohum ucu 1,7P
+     * iniyordu; ikisi de plakayı ve birbirini gölgeliyordu.
      */
-    const probMal = { color: "#f0c93a", metalness: 0.3, roughness: 0.35,
-                      emissive: "#7d6112", emissiveIntensity: 0.7 };
-    /* PROB PLAKANIN ALTINDAN BAŞLIYOR. Grubun kendi sıfırı kafanın
-     * merkezinde; parçalar buradan aşağı diziliyor. `probUst` plakanın
-     * alt yüzünün hemen altı — parçanın plakaya gömülü görünmemesi için. */
-    const probUst = -P * 0.45;
-    /* ÖLÇÜ, KOMŞUSUNA GÖRE. Prob plakanın 7 birim altına iniyordu, tohum
-     * ucu ise 1,7 — dört katı. Görünmezlik sorununu çözerken ters uca
-     * geçildi: sahnede tek görünen şey prob oldu ve makinenin geri
-     * kalanını bastırdı.
-     *
-     * Doğru ölçü mutlak bir sayı değil, YAN YANA DURDUĞU PARÇAYA göre
-     * olanı: prob tohum ucundan biraz uzun (gerçekte de öyle), ama aynı
-     * mertebede. Görülebilirlik boydan değil, kendi ışığını veren
-     * renkten geliyor — o zaten duruyor. */
-    // Siyah konnektör başlığı — kabloların girdiği blok.
-    nemProbu.add(kutu(THREE, [P * 0.55, P * 0.4, P * 0.32],
-                      [0, probUst - P * 0.2, 0],
-                      { color: "#15181a", metalness: 0.1, roughness: 0.72 }));
-    // Bıçakları taşıyan kart — gerçeğinde de altın kaplı baskı devre.
-    nemProbu.add(kutu(THREE, [P * 0.44, P * 0.42, P * 0.1],
-                      [0, probUst - P * 0.62, 0], probMal));
-    // İKİ BIÇAK — ince, yassı, çatal.
-    [-1, 1].forEach((yon) => {
-      nemProbu.add(kutu(THREE, [P * 0.16, P * 1.4, P * 0.07],
-                        [yon * P * 0.13, probUst - P * 1.5, 0], probMal));
-    });
-    // Sivri uçlar — toprağa giren kısım.
-    [-1, 1].forEach((yon) => {
+    const BAS_R = P * 0.22;
+    const BAS_BOY = P * 0.6;
+    const BAS_UC_BOY = P * 0.34;
+    const basMal = { color: "#23272a", metalness: 0.25, roughness: 0.6 };
+
+    /** Bir baş — plakanın altından sarkan gövde + aşağı bakan sivri uç.
+     *  Grubun sıfırı plakanın alt yüzünde; parçalar aşağı diziliyor. */
+    function basGovdesi() {
+      const g = new THREE.Group();
+      const govde = new THREE.Mesh(
+        new THREE.CylinderGeometry(BAS_R, BAS_R, BAS_BOY, 12), mal(THREE, basMal));
+      govde.position.y = -BAS_BOY / 2;
+      g.add(govde);
       const sivri = new THREE.Mesh(
-        new THREE.ConeGeometry(P * 0.09, P * 0.24, 4), mal(THREE, probMal));
-      sivri.position.set(yon * P * 0.13, probUst - P * 2.32, 0);
-      sivri.rotation.y = Math.PI / 4;
-      sivri.rotation.x = Math.PI;
-      nemProbu.add(sivri);
-    });
-    // Kablolar: yukarı çıkıp kafanın gövdesinde gözden kayboluyorlar.
-    [-1, 1].forEach((yon) => {
-      const tel = new THREE.Mesh(
-        new THREE.CylinderGeometry(P * 0.035, P * 0.035, P * 1.1, 6),
-        mal(THREE, { color: yon < 0 ? "#f0932b" : "#e6e0d2",
-                     metalness: 0.05, roughness: 0.7 }));
-      tel.position.set(yon * P * 0.11, probUst + P * 0.5, P * 0.08);
-      nemProbu.add(tel);
-    });
+        new THREE.ConeGeometry(BAS_R * 0.8, BAS_UC_BOY, 12), mal(THREE, basMal));
+      sivri.position.y = -BAS_BOY - BAS_UC_BOY / 2;
+      sivri.rotation.x = Math.PI;          // sivri uç AŞAĞI baksın
+      g.add(sivri);
+      return g;
+    }
+    /** Bir başın ucunun, kendi grubuna göre y'si. Su huzmesi buradan
+     *  başlıyor ve "hangi baş inmiş" ölçümü de bunu kullanıyor. */
+    const BAS_UC_Y = -(BAS_BOY + BAS_UC_BOY);
+    /* ÜÇ BAŞ AYNI YÜKSEKLİKTEN SARKIYOR. Plakanın alt yüzü y = -0,05P
+     * (kalınlık 0,34P, merkezi 0,12P); başlar onun hemen altından
+     * başlıyor. Eskiden başlık -0,62P'de, öteki ikisi 0'daydı ve üçü
+     * farklı yükseklikte duruyordu — oysa makinede üçü de aynı plakaya
+     * vidalı. */
+    const basY = -P * 0.06;
+    /* AKTİF BAŞIN DÜŞMESİ — GÖSTERİM KURALI, ÖLÇÜM DEĞİL.
+     * Yalnız tohum ucunun kendi dikey ekseni var (PLC'de j4) ve onun
+     * inişi ölçülen mm'den geliyor. Sulama başlığının ayrı bir ekseni
+     * yok; pompa rölesi yalnız "akıyor / akmıyor" diyor. Kullanılan başı
+     * ayırt etmek için uygulanan bu kadarlık düşme bir GÖSTERİM kuralı
+     * ve `suDurumu().aktifDusmeMm` ile dışarıya da öyle yazılıyor. */
+    const AKTIF_DUSME = P * 0.35;
+
+    const nemProbu = basGovdesi();
     ucKafa.add(nemProbu);
 
     /* TOHUM UCU KENDİ GRUBUNDA: kendi dikey ekseni var (PLC'de j4) ve
      * indiğinde SAHNEDE de iniyor. Grubu ayrı olmasaydı ana Z ile
      * birlikte hareket eder, kendi hareketi görünmezdi. */
-    const tohumUcu = new THREE.Group();
-    // Kırmızı taşıyıcı ve üstündeki motor — fotoğraftaki gibi.
-    tohumUcu.add(kutu(THREE, [P * 0.55, P * 1.5, P * 0.6], [0, P * 0.5, 0],
-                      { color: "#b6382c", metalness: 0.05, roughness: 0.75 }));
-    tohumUcu.add(kutu(THREE, [P * 0.7, P * 0.7, P * 0.7], [0, P * 1.6, 0],
-                      { color: "#2b2f33", metalness: 0.5, roughness: 0.4 }));
-    const uc = new THREE.Mesh(
-      new THREE.CylinderGeometry(P * 0.12, P * 0.06, P * 1.6, 12),
-      mal(THREE, { color: "#2a2e31", metalness: 0.35, roughness: 0.5 }));
-    uc.position.set(0, -P * 0.9, 0);
-    tohumUcu.add(uc);
+    /* TOHUM UCU KENDİ GRUBUNDA: kendi dikey ekseni var (PLC'de j4) ve
+     * indiğinde SAHNEDE de iniyor. Grubu ayrı olmasaydı ana Z ile
+     * birlikte hareket eder, kendi hareketi görünmezdi. */
+    const tohumUcu = basGovdesi();
     ucKafa.add(tohumUcu);
 
     // Kaymaları uygula. `mmP` bir milimetrenin sahnedeki karşılığı.
@@ -765,7 +760,7 @@
     // cevaplansın.
     ucKafa.userData.oneAlma = 0;
     ucKafa.userData.tohumUcu = tohumUcu;
-    ucKafa.userData.tohumUcuY = tohumUcu.position.y;
+    ucKafa.userData.tohumUcuY = basY;
 
     /* --- SULAMA BAŞLIĞI ----------------------------------------------------
      * Z eksenine KALICI olarak bağlı: uç değişse de o duruyor. Fotoğrafta
@@ -791,57 +786,11 @@
      * 60 mm solda" ayarı ekranda görünmüyordu; üç baş birden çizilirken
      * bu tutarsızlık göze batar hâle geldi. Kayma girilmemişse eski
      * sabit yer kullanılıyor. */
-    const basY = -P * 0.62;
-    const baslik = new THREE.Group();
+    const baslik = basGovdesi();
     // Yeri öteki iki başla AYNI kaynaktan (`yerlestir`); ayrı bir hesap
     // yazmak, üç başın birbirine göre yerini iki yerden almak demekti.
     yerlestir(baslik, "sulama");
     baslik.position.y = basY;
-    /* Başlık gövdesi — KISA ve GENİŞ silindir, altı delikli.
-     *
-     * Önce ince bir silindirdi ve sahnede uç kafasının gölgesinde
-     * kayboluyordu; kullanıcı "başlık yok" dedi, haklıydı. Duş başlığı
-     * gibi okunması için çapı büyütüldü ve alt yüzüne delikler açıldı —
-     * ayırt edici olan biçim değil, o delikler.
-     */
-    const bg = new THREE.Mesh(
-      new THREE.CylinderGeometry(P * 0.66, P * 0.78, P * 0.66, 18),
-      mal(THREE, { color: "#17191b", metalness: 0.1, roughness: 0.62 }));
-    baslik.add(bg);
-    // Alt yüzeydeki delik deseni: ortada bir, çevresinde altı.
-    const delikMal2 = mal(THREE, { color: "#050607", metalness: 0.05, roughness: 1 });
-    const delikYer = [[0, 0]];
-    for (let i = 0; i < 6; i++) {
-      const a = (i / 6) * Math.PI * 2;
-      delikYer.push([Math.cos(a) * P * 0.42, Math.sin(a) * P * 0.42]);
-    }
-    delikYer.forEach(([dx2, dz2]) => {
-      const dl = new THREE.Mesh(
-        new THREE.CylinderGeometry(P * 0.09, P * 0.09, P * 0.14, 8), delikMal2);
-      dl.position.set(dx2, -P * 0.26, dz2);
-      baslik.add(dl);
-    });
-    // Deliklerin oturduğu tabla — gövdeden biraz taşan ince disk.
-    const tabla2 = new THREE.Mesh(
-      new THREE.CylinderGeometry(P * 0.76, P * 0.76, P * 0.08, 18),
-      mal(THREE, { color: "#101214", metalness: 0.12, roughness: 0.6 }));
-    tabla2.position.y = -P * 0.3;
-    baslik.add(tabla2);
-    // Üstteki rakor
-    const rakor = new THREE.Mesh(
-      new THREE.CylinderGeometry(P * 0.17, P * 0.17, P * 0.4, 10),
-      mal(THREE, { color: "#8f969d", metalness: 0.8, roughness: 0.32 }));
-    rakor.position.y = P * 0.5;
-    baslik.add(rakor);
-    // Hortum: yukarı giden ince beyaz boru.
-    const hortum = new THREE.Mesh(
-      new THREE.CylinderGeometry(P * 0.09, P * 0.09, P * 3.4, 8),
-      mal(THREE, { color: "#d9dde0", metalness: 0.05, roughness: 0.55 }));
-    hortum.position.y = P * 2.4;
-    baslik.add(hortum);
-    /* KOL YOK. Başlığı Z sütununa uzatan bir kol vardı; başlık iskelete
-     * takılı görünmesinin sebebi oydu. Başlık artık kafanın kendi
-     * plakasına asılı, ayrı bir bağlantı parçası gerekmiyor. */
     ucKafa.add(baslik);
 
     /* NEM PROBU İKİ BAŞIN ORTASINDA. Kendi `dx/dy` ayarı girilmişse o
@@ -859,6 +808,8 @@
     } else {
       yerlestir(nemProbu, "nem");
     }
+    // Üçü de aynı plakaya vidalı: yükseklik ortak, ayıran yalnız x/z.
+    [nemProbu, tohumUcu, baslik].forEach((g) => { g.position.y = basY; });
 
     /* --- TAŞIYICI PLAKA ----------------------------------------------------
      * Üç başı da taşıyan alt plaka. ÖLÇÜSÜ VE YERİ BAŞLARDAN ÇIKIYOR.
@@ -907,6 +858,8 @@
      * plakasıyla birlikte arabanın gölgesinden çıkmalı), o yüzden ikisinden
      * ÖNCE tanımlı. */
     const payX = P * 0.9, payZ = P * 0.8;
+    // Öne alma ölçümü — IIFE içinde doldurulup dışarıda okunuyor.
+    let olcum = null;
     const oneAlma = (function () {
       /* YÖN: yatak kirişin hangi yanında.
        *
@@ -929,23 +882,53 @@
        * kullanılmıyor. */
       const yon = Math.abs(merkez) > 1e-4 ? Math.sign(merkez) : 1;
 
-      /* MESAFE: kümenin KENDİ z yayılımından. Sabit bir sayı yetmiyor ve
-       * bu ölçüldü — başların z'si eşit değil, çünkü her birinin kendi
-       * `dy` kayması var (sulama başlığı 60 mm geride). Arabanın yarı
-       * derinliği kadar ötelemek yalnız EN ÖNDEKİ başı kurtarıyor,
-       * sulama başlığı sütunun içinde kalmaya devam ediyordu.
+      /* MESAFE: ENGELİN Z ARALIĞI ÖLÇÜLÜYOR, YAZILMIYOR.
        *
-       * Doğru ölçüt: kümenin ARKADA KALAN ucu engelin ötesine geçsin.
-       * Engel, başların yüksekliğinde duran tek şey — Z kılavuz sütunu
-       * (kesiti P) — artı plakanın kendi payı ve küçük bir açıklık.
-       * Araba çok daha yukarıda, bu yükseklikte yolu kapatmıyor. */
-      const engel = P / 2 + payZ + P * 0.3;
+       * Önceki hâl `P/2 + payZ + P*0.3` idi ve tek bir parçayı — kesiti P
+       * olan Z kılavuz profilini — sayıyordu. Kızakta ondan DAHA DERİN
+       * parçalar var: arabanın gövdesi (derinlik 2,6P, yani ±1,3P) ve Z
+       * motor bloğu (2,4P, ±1,2P). Küme profilin önüne geçse bile
+       * bunların gölgesinde kalıyordu; "hâlâ arkada" bundan.
+       *
+       * `kizak` şu anda YALNIZ engelleri taşıyor — `ucKafa` en sonda
+       * ekleniyor — ve kendi dönüşümü birim, henüz bir ebeveyni de yok.
+       * O yüzden kutusu doğrudan "başların kaçması gereken hacim".
+       * Sütun birim yükseklikte kurulu ve tarla.js onu yalnız y'de
+       * uzatıyor; z aralığı ölçekten etkilenmiyor. */
+      kizak.updateMatrixWorld(true);
+      const engelKutu = new THREE.Box3().setFromObject(kizak);
+      // Sütunun kendi aralığı da ölçülüyor: eski hesabın dayandığı sayı
+      // buydu ve kızağın tamamıyla arasındaki fark, neden yetmediğini
+      // doğrudan gösteriyor.
+      const sutunKutu = new THREE.Box3().setFromObject(sutun);
+      const engelZ = yon > 0 ? engelKutu.max.z : engelKutu.min.z;
+      // Plakanın kendi payı + küçük bir açıklık; ikisi de zaten tanımlı.
+      const engel = yon * engelZ + payZ + P * 0.3;
       const zler = [nemProbu.position.z, tohumUcu.position.z, baslik.position.z];
       const arkaUc = yon > 0 ? Math.min(...zler) : Math.max(...zler);
+      olcum = { engelZ: [engelKutu.min.z, engelKutu.max.z],
+                sutunZ: [sutunKutu.min.z, sutunKutu.max.z],
+                baslarZ: [Math.min(...zler), Math.max(...zler)],
+                yon: yon, engel: engel };
       return yon * Math.max(0, engel - yon * arkaUc);
     }());
     [nemProbu, tohumUcu, baslik].forEach((g) => { g.position.z += oneAlma; });
     ucKafa.userData.oneAlma = oneAlma;
+    ucKafa.userData.engelZ = olcum.engelZ;
+    ucKafa.userData.sutunZ = olcum.sutunZ;
+    ucKafa.userData.baslarZ = [olcum.baslarZ[0] + oneAlma, olcum.baslarZ[1] + oneAlma];
+    /* ÖLÇÜM KONSOLA. "Küme hâlâ sütunun arkasında" sorusu ekran
+     * görüntüsünden cevaplanamıyor; iki aralığın ayrışıp ayrışmadığı
+     * sayıyla görünüyor. `kur` yalnız yatak/alan imzası değişince
+     * çağrılıyor, bu yüzden satır seyrek. */
+    if (OLCUM) {
+      const mm = (v) => (v * 1000).toFixed(1);
+      console.log(`[makine] sütun z [${mm(olcum.sutunZ[0])} … ${mm(olcum.sutunZ[1])}] mm`
+        + ` · kızağın tamamı z [${mm(olcum.engelZ[0])} … ${mm(olcum.engelZ[1])}] mm`
+        + ` · başlar z [${mm(ucKafa.userData.baslarZ[0])} … `
+        + `${mm(ucKafa.userData.baslarZ[1])}] mm · yön ${olcum.yon > 0 ? "+z" : "-z"}`
+        + ` · öne alma ${mm(oneAlma)} mm`);
+    }
 
     /* MAKİNE MERKEZİ DE PLAKANIN İÇİNDE.
      *
@@ -1005,16 +988,22 @@
     });
     const su = new THREE.Mesh(
       new THREE.CylinderGeometry(P * 0.1, P * 0.3, 1, 12, 1, true), suMal);
-    // Huzme deliklerin ALTINDAN başlıyor, gövdenin ortasından değil.
+    // Huzme başlığın UCUNDAN başlıyor, gövdesinin ortasından değil.
     su.position.copy(baslik.position);
-    su.position.y -= P * 0.30;
+    su.position.y = baslik.position.y + BAS_UC_Y;
     su.visible = false;
     su.raycast = () => {};
     su.userData.golgeAtma = true;
     su.userData.golgeAlmaz = true;
     ucKafa.add(su);
     ucKafa.userData.su = su;
-    ucKafa.userData.baslikY = basY;
+    /* BAŞLIK ARTIK KİMLİKLE VERİLİYOR. 90-robot.js onu "çocuğu beşten
+     * çok olan grup" diye arıyordu; üç baş aynı ve sade olunca o ölçüt
+     * hiçbirini bulmuyor. Kimliği yazmak, aramaktan sağlam. */
+    ucKafa.userData.baslik = baslik;
+    ucKafa.userData.basY = basY;          // üç başın dinlenme yüksekliği
+    ucKafa.userData.basUcY = BAS_UC_Y;    // başın ucu, kendi grubuna göre
+    ucKafa.userData.aktifDusme = AKTIF_DUSME;
     kizak.add(ucKafa);
 
     portal.add(kizak);
@@ -1094,7 +1083,11 @@
 
   /* Geometri kurucu: makine.js dışındaki hiçbir dosya `new BoxGeometry` ile
    * makine parçası kurmuyor, hepsi buradan geliyor. */
-  window.FarmbotMakine = { kur: kur, nemBoya: nemBoya, P: P, AYAK: AYAK, veri: MAKINE };
+  window.FarmbotMakine = {
+    kur: kur, nemBoya: nemBoya, P: P, AYAK: AYAK, veri: MAKINE,
+    /** Konsol tanı satırını aç/kapa (uç kümesinin z ölçümü). */
+    olcum: (acik) => { if (acik !== undefined) OLCUM = !!acik; return OLCUM; },
+  };
   /* Ölçü/renk tablosu: katmanlar ve tarla.js `MAKINE.renk.toprak` gibi
    * okuyor. Aynı nesne — iki isim, tek kaynak. */
   window.MAKINE = MAKINE;
