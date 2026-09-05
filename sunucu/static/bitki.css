@@ -8,16 +8,16 @@
  * RENK DİLİ `katmanlar/35-susuz.js` İLE AYNI ve öyle kalmalı: susadı
  * mavi (#4aa8d8), ölçülmedi turuncu (#e8a33c), nemi yeterli yeşil.
  * O dosya 3B sahnede aynı durumları çiziyor; aynı bitki iki ekranda iki
- * ayrı renkte görünürse kullanıcı ikisini ayrı şey sanar. Sayılar oradan
- * KOPYALANDI, türetilmedi — değişirse ikisi birlikte değişmeli.
+ * ayrı renkte görünürse kullanıcı ikisini ayrı şey sanar.
  *
- * "Ölçüm eskimiş" için ayrı bir renk YOK: o da bir bilgi eksikliği hâli
- * ve 35-susuz.js'in dilinde turuncu tarafta duruyor. Ayrımı renk değil,
- * rozetteki yazı ve halkanın biçimi taşıyor (dolu ama solgun halka /
- * hiç dolmayan kesikli halka).
+ * RENK TEK KANAL DEĞİL. Yeşil ile turuncu protanopi altında OKLab ΔE 3,2
+ * — ayırt edilemiyor. Renkler paylaşıldığı için değiştirilemez, o yüzden
+ * durum ÜÇ kanaldan okunuyor: rozetteki yazı, noktanın BİÇİMİ (dolu/boş
+ * × daire/eşkenar) ve renk. Halkanın dolu mu boş mu olduğu dördüncü.
  *
- * Geri kalan renkler `stil.css` değişkenlerinden; ikinci bir palet
- * kurmuyoruz. Yedek değerler yalnız stil.css yüklenemezse diye var.
+ * KART KISA TUTULUYOR. 24 kart alt alta okunuyor; her karta bir çizim
+ * koymak listeyi iki katına çıkarıyordu. Kartta yalnız karar verdiren
+ * şeyler var, gerisi Detay'ın arkasında.
  */
 
 /* --------------------------------------------------------------- şerit */
@@ -52,8 +52,8 @@
 
 /* ----------------------------------------------------------------- kart */
 .bk-izgara {
-  display: grid; gap: 12px;
-  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  display: grid; gap: 10px;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
 }
 
 .bk-kart {
@@ -62,91 +62,86 @@
   border: 1px solid var(--cizgi, #2e302c);
   border-left: 3px solid var(--bk-renk);
   border-radius: var(--yaricap, 12px);
-  padding: 12px 14px; display: flex; flex-direction: column; gap: 10px;
+  padding: 10px 12px; display: flex; flex-direction: column; gap: 8px;
 }
 .bk-kart.bk-d-susadi    { --bk-renk: #4aa8d8; }
 .bk-kart.bk-d-olculmedi { --bk-renk: #e8a33c; }
 .bk-kart.bk-d-eskimis   { --bk-renk: #e8a33c; }
 .bk-kart.bk-d-iyi       { --bk-renk: var(--iyi, #4caf50); }
 
-.bk-bas { display: flex; align-items: center; gap: 14px; }
+/* Halka SOLDA DEMİRLİ, kimlik yanında: göz kartın sol kenarında aynı
+ * yerde aynı şeyi buluyor ve 24 kart tararken o sütun bir çizgi gibi
+ * okunuyor. */
+.bk-bas { display: flex; align-items: center; gap: 12px; }
 .bk-kimlik { flex: 1; min-width: 0; }
 .bk-kimlik > b {
-  display: block; font-size: 15px; color: var(--metin, #f2f2ee);
-  overflow-wrap: anywhere;
+  display: block; font-size: 15px; line-height: 1.2;
+  color: var(--metin, #f2f2ee); overflow-wrap: anywhere;
 }
 .bk-kimlik > span {
-  display: block; font-size: var(--yazi-kucuk, 12px);
+  display: block; font-size: var(--yazi-kucuk, 12px); line-height: 1.3;
   color: var(--metin-3, #82847a);
 }
-/* TEK VE BÜYÜK DURUM İŞARETİ. Yanındaki nokta yalnız renk taşıyor;
- * durumu ADI söylüyor, yani renk körlüğünde de okunuyor. */
+
+/* TEK VE BÜYÜK DURUM İŞARETİ. Yanındaki nokta rengi taşıyor ama tek
+ * başına taşımıyor: biçimi de duruma göre değişiyor (bkz. dosya başı). */
 .bk-durum {
-  display: inline-flex; align-items: center; gap: 6px; margin-top: 6px;
-  font-size: 14px; font-weight: 600; color: var(--bk-renk);
+  display: inline-flex; align-items: center; gap: 6px; margin-top: 4px;
+  font-size: 13px; font-weight: 600; color: var(--bk-renk);
 }
 .bk-durum i {
-  width: 9px; height: 9px; border-radius: 50%;
-  background: currentColor; flex: 0 0 9px;
+  width: 10px; height: 10px; flex: 0 0 10px; background: currentColor;
+}
+.bk-d-iyi       .bk-durum i { border-radius: 50%; }
+.bk-d-susadi    .bk-durum i { border-radius: 2px; transform: rotate(45deg); }
+.bk-d-olculmedi .bk-durum i {
+  border-radius: 50%; background: transparent;
+  box-shadow: inset 0 0 0 2px currentColor;
+}
+.bk-d-eskimis   .bk-durum i {
+  border-radius: 2px; transform: rotate(45deg); background: transparent;
+  box-shadow: inset 0 0 0 2px currentColor;
 }
 
+/* Ölçüm özeti — grafiğin yerine geçen tek satır. */
+.bk-olcum {
+  margin: 4px 0 0; font-size: 11px; line-height: 1.35;
+  color: var(--metin-2, #b9bab0);
+}
+.bk-olcum-yok { color: var(--metin-3, #82847a); }
+
 /* ----------------------------------------------------------- nem halkası */
-.bk-halka { position: relative; width: 76px; height: 76px; flex: 0 0 76px; }
+.bk-halka { position: relative; width: 88px; height: 88px; flex: 0 0 88px; }
 .bk-halka svg { display: block; }
 /* İz (boş kısım) tek kademe zeminden farklı — çizgi değil, yatak. */
-.bk-iz { fill: none; stroke: var(--yuzey-2, #232422); stroke-width: 6; }
+.bk-iz { fill: none; stroke: var(--yuzey-2, #232422); stroke-width: 7; }
 /* Ölçülmemiş bitkide iz KESİKLİ: doluluk yok, biçim de "eksik" diyor. */
 .bk-iz-bos { stroke: var(--cizgi-2, #3f423c); stroke-dasharray: 3 5; }
 .bk-yay {
-  fill: none; stroke: var(--bk-renk); stroke-width: 6; stroke-linecap: round;
-}
-/* Çentik eşiği gösteriyor: bir ölçüm değil, bir SINIR — o yüzden seri
- * rengini değil, metin rengini giyiyor. */
-.bk-centik {
-  stroke: var(--metin, #f2f2ee); stroke-width: 2; stroke-linecap: round;
+  fill: none; stroke: var(--bk-renk); stroke-width: 7; stroke-linecap: round;
 }
 .bk-halka-ic {
   position: absolute; inset: 0; display: flex; flex-direction: column;
   align-items: center; justify-content: center; gap: 1px; pointer-events: none;
 }
-.bk-halka-ic .bk-simge { font-size: 20px; line-height: 1; font-style: normal; }
+.bk-halka-ic .bk-simge { font-size: 22px; line-height: 1; font-style: normal; }
 .bk-halka-ic b {
-  font-size: 11px; font-weight: 600; color: var(--metin-2, #b9bab0);
+  font-size: 13px; font-weight: 600; color: var(--metin, #f2f2ee);
 }
-.bk-halka-ic .bk-soru { font-size: 13px; color: var(--bk-renk); }
+.bk-halka-ic .bk-soru { font-size: 15px; color: var(--bk-renk); }
 
-/* --------------------------------------------------------- kuruma eğrisi */
-.bk-egri svg { display: block; width: 100%; height: auto; }
-.bk-cizgi {
-  fill: none; stroke: var(--bk-renk); stroke-width: 2;
-  stroke-linejoin: round; stroke-linecap: round;
-  vector-effect: non-scaling-stroke;
+/* --------------------------------------------------------------- işlemler
+ * TEK SIRA, EŞİT GENİŞLİK. `flex` ile üçüncü düğme alt satıra düşüyordu
+ * ve kart bir satır boyu uzuyordu; ızgara üçünü her zaman yan yana
+ * tutuyor. */
+.bk-islem { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.bk-islem .dugme {
+  width: 100%; justify-content: center; padding-left: 6px; padding-right: 6px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-/* Gerçekten okunan noktalar. Eğrinin nereden geçtiği değil, nereden
- * ÖLÇÜLDÜĞÜ — aralar seyrekse bu görünüyor. */
-.bk-nokta { fill: var(--bk-renk); opacity: .45; }
-/* Son okuma: yüzey renginde 2 px halka, çizginin üstünde kaybolmasın. */
-.bk-uc { fill: var(--bk-renk); stroke: var(--yuzey, #191a18); stroke-width: 2; }
-.bk-esik-cizgi {
-  stroke: var(--metin-3, #82847a); stroke-width: 1; stroke-dasharray: 3 3;
-  vector-effect: non-scaling-stroke;
-}
-.bk-esik-yazi { fill: var(--metin-3, #82847a); font-size: 9px; }
-.bk-egri-not {
-  margin: 2px 0 0; font-size: 11px; color: var(--metin-2, #b9bab0);
-}
-.bk-egri-yok {
-  margin: 0; font-size: 11px; color: var(--metin-3, #82847a);
-  background: var(--yuzey-2, #232422); border-radius: var(--yaricap-2, 8px);
-  padding: 8px 9px;
-}
-
-/* --------------------------------------------------------------- işlemler */
-.bk-islem { display: flex; flex-wrap: wrap; gap: 6px; }
-.bk-islem .dugme { flex: 1 1 auto; }
 
 /* ------------------------------------------------------------------ detay */
-.bk-detay { border-top: 1px solid var(--cizgi, #2e302c); padding-top: 8px; }
+.bk-detay { border-top: 1px solid var(--cizgi, #2e302c); padding-top: 6px; }
 .bk-detay > summary {
   cursor: pointer; list-style: none; font-size: var(--yazi-kucuk, 12px);
   color: var(--metin-2, #b9bab0); user-select: none;

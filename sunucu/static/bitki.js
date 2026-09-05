@@ -582,7 +582,7 @@
    * renk), o yüzden ayrımı renge bırakmıyoruz: rozette durumun adı
    * yazıyor ve halkanın BİÇİMİ farklı — ölçülmemiş halka hiç dolmuyor,
    * kesikli ve ortasında "?" var. Renk üçüncü kanal, tek kanal değil. */
-  const HALKA = { boy: 76, r: 30, kalin: 6 };
+  const HALKA = { boy: 88, r: 35, kalin: 7 };
 
   function solukluk(o) {
     const azami = sayi(o.azami_yas_sn, 86400) || 86400;
@@ -598,18 +598,6 @@
     const cevre = 2 * Math.PI * r;
     const kendiVar = !!(o.var && o.kendi);
     const yuzde = o.var ? Math.max(0, Math.min(100, sayi(o.yuzde, 0))) : null;
-    const esik = o.esik_acik ? Math.max(0, Math.min(100, sayi(o.esik, 0))) : null;
-
-    let centik = "";
-    if (esik != null) {
-      // Açı tepeden başlıyor ve saat yönünde ilerliyor — dolgu da öyle.
-      const a = (esik / 100) * 2 * Math.PI - Math.PI / 2;
-      const ic = r - kalin / 2 - 2.5, dis = r + kalin / 2 + 2.5;
-      centik = `<line x1="${(c + ic * Math.cos(a)).toFixed(2)}"
-        y1="${(c + ic * Math.sin(a)).toFixed(2)}"
-        x2="${(c + dis * Math.cos(a)).toFixed(2)}"
-        y2="${(c + dis * Math.sin(a)).toFixed(2)}" class="bk-centik"/>`;
-    }
 
     const dolgu = (kendiVar && yuzde != null)
       ? `<circle cx="${c}" cy="${c}" r="${r}" class="bk-yay"
@@ -624,7 +612,6 @@
 
     const baslik = kendiVar
       ? `Toprak nemi %${Math.round(yuzde)}`
-        + (esik != null ? `, eşik %${Math.round(esik)}` : ", eşik kapalı")
         + `, ${sureMetni(o.yas_sn)} önce kendi üstünden ölçüldü`
       : (o.var
          ? `Kendi ölçümü yok — halka boş. Yandaki bir noktada `
@@ -636,7 +623,7 @@
       <svg viewBox="0 0 ${boy} ${boy}" width="${boy}" height="${boy}" aria-hidden="true">
         <circle cx="${c}" cy="${c}" r="${r}"
                 class="bk-iz${kendiVar ? "" : " bk-iz-bos"}"/>
-        ${dolgu}${centik}
+        ${dolgu}
       </svg>
       <span class="bk-halka-ic">
         <i class="bk-simge">${kacisli(b.simge || "🌱")}</i>${ic}
@@ -644,113 +631,40 @@
     </div>`;
   }
 
-  /* -------------------------------------------------------- kuruma eğrisi
+  /* ------------------------------------------------------- ölçüm özeti
    *
-   * AMAÇ SAYI OKUTMAK DEĞİL, EĞİMİ GÖSTERMEK: dik iniyorsa toprak hızlı
-   * kuruyor, düzse durum iyi. Eşik yatay bir çizgi olarak duruyor, eğrinin
-   * ona ne kadar yaklaştığı görünsün diye. Nokta başına sayı yazmıyoruz —
-   * her noktaya değer koymak grafiği okunmaz yapıyor; sayılar Detay'da.
+   * BURADA BİR GRAFİK VARDI, KALDIRILDI. Okumalar düzensiz aralıklı
+   * (prob ancak makine o bitkiye gittiğinde okuyor) ve 24 kartlık bir
+   * listede her karta bir çizim koymak kartı iki katına çıkarıyordu.
+   * Kazandırdığı şey, aynı şeyi söyleyen tek satırın yanında yoktu.
    *
-   * YETMİYORSA HİÇ ÇİZMİYORUZ. İki noktadan çizilen şey eğilim değil,
-   * çizgidir ve ona bakıp karar vermek yanıltır. En az dört nokta
-   * istiyoruz (saatlik kovada bir bükülmenin görünebileceği en küçük
-   * sayı) ve en az iki saatlik bir açıklık (daha kısasında eğimi
-   * ölçümün kendi gürültüsü belirliyor). Bu iki sayı ÖLÇÜLMÜŞ değil,
-   * seçilmiş bir sınır — kaç ölçümden çizildiği notta yazıyor ki okuyan
-   * kendi kararını verebilsin.
+   * ÖLÇÜM BİLGİSİ GİTMİYOR: kaç ölçümden, ne kadar sürede kaç puan
+   * değiştiği yazıyor. Sayılar ölçülen iki uç okumadan geliyor; ara
+   * değer uydurulmuyor.
    *
-   * KOPUK YERDE ÇİZGİ YOK. Prob ancak makine o bitkiye gittiğinde
-   * okuyor; iki okuma arasında bir gün olabiliyor. Aradan çizgi geçirmek
-   * ölçülmemiş bir günü ölçülmüş gibi göstermek olurdu, o yüzden üç
-   * saatten uzun boşlukta çizgi kesiliyor. Gerçek okumalar küçük
-   * noktalarla duruyor: eğrinin nereden geçtiği değil, nereden ÖLÇÜLDÜĞÜ.
-   *
-   * Y EKSENİ EN AZ 15 PUAN. Dar pencerede %1'lik bir dalgalanma dik bir
-   * iniş gibi görünür; düz olanı düz göstermek bu grafiğin bütün işi. */
-  const EGRI = { en: 240, boy: 54, ust: 7, alt: 9, sol: 2, sag: 40 };
-  const EGRI_EN_AZ_NOKTA = 4;
-  const EGRI_EN_AZ_SURE_SN = 2 * 3600;
-  const EGRI_KOPUK_SN = 3 * 3600;
-  const EGRI_EN_DAR = 15;
+   * YETMİYORSA HİÇ SÖYLEMİYORUZ. İki noktadan çıkan şey eğilim değil,
+   * çizgidir. En az dört nokta ve en az iki saatlik açıklık istiyoruz;
+   * ikisi de seçilmiş sınırlar, ölçülmüş değil — o yüzden kaç ölçüm
+   * olduğu her zaman yazıyor ki okuyan kendi kararını verebilsin. */
+  const OLCUM_EN_AZ_NOKTA = 4;
+  const OLCUM_EN_AZ_SURE_SN = 2 * 3600;
 
-  function egri(b, e) {
+  function olcumOzeti(e) {
     const g = ((e && e.gecmis) || []).filter(
       (p) => Number.isFinite(Number(p && p.yuzde)) && Number.isFinite(Number(p && p.ts)));
-    const o = b.su_olcum || {};
-    const esik = o.esik_acik ? Math.max(0, Math.min(100, sayi(o.esik, 0))) : null;
-
-    if (g.length < EGRI_EN_AZ_NOKTA) {
-      return `<p class="bk-egri-yok">Eğilim için yeterli ölçüm yok —
-        ${g.length} ölçüm var, en az ${EGRI_EN_AZ_NOKTA} gerekiyor.</p>`;
+    if (g.length < OLCUM_EN_AZ_NOKTA) {
+      return `<p class="bk-olcum bk-olcum-yok">Eğilim için yeterli ölçüm yok`
+        + ` — ${g.length} ölçüm var, en az ${OLCUM_EN_AZ_NOKTA} gerekiyor.</p>`;
     }
     const sure = sayi(g[g.length - 1].ts) - sayi(g[0].ts);
-    if (sure < EGRI_EN_AZ_SURE_SN) {
-      return `<p class="bk-egri-yok">Eğilim için yeterli ölçüm yok —
-        ${g.length} ölçümün hepsi ${sureMetni(sure)} içinde alınmış,
-        eğim için en az ${sureMetni(EGRI_EN_AZ_SURE_SN)} gerekiyor.</p>`;
+    if (sure < OLCUM_EN_AZ_SURE_SN) {
+      return `<p class="bk-olcum bk-olcum-yok">Eğilim için yeterli ölçüm yok`
+        + ` — ${g.length} ölçümün hepsi ${sureMetni(sure)} içinde alınmış.</p>`;
     }
-
-    const { en, boy, ust, alt, sol, sag } = EGRI;
-    let dip = Math.min(...g.map((p) => p.yuzde));
-    let tep = Math.max(...g.map((p) => p.yuzde));
-    if (esik != null) { dip = Math.min(dip, esik); tep = Math.max(tep, esik); }
-    const pay = Math.max(2.5, (tep - dip) * 0.15);
-    dip -= pay; tep += pay;
-    if (tep - dip < EGRI_EN_DAR) {
-      const orta = (dip + tep) / 2;
-      dip = orta - EGRI_EN_DAR / 2; tep = orta + EGRI_EN_DAR / 2;
-    }
-    dip = Math.max(0, dip); tep = Math.min(100, tep);
-    if (tep - dip < EGRI_EN_DAR) {                 // 0 ya da 100'e dayandıysa
-      if (dip <= 0) tep = EGRI_EN_DAR; else dip = tep - EGRI_EN_DAR;
-    }
-
-    const t0 = sayi(g[0].ts), t1 = sayi(g[g.length - 1].ts);
-    const X = (ts) => sol + (en - sol - sag) * (t1 > t0 ? (sayi(ts) - t0) / (t1 - t0) : 1);
-    const Y = (v) => ust + (boy - ust - alt) * (1 - (sayi(v) - dip) / (tep - dip));
-
-    // Kopuk yerde çizgiyi kesiyoruz: parçalar ayrı polyline.
-    const parcalar = [];
-    let simdiki = [g[0]];
-    for (let i = 1; i < g.length; i += 1) {
-      if (sayi(g[i].ts) - sayi(g[i - 1].ts) > EGRI_KOPUK_SN) {
-        parcalar.push(simdiki); simdiki = [];
-      }
-      simdiki.push(g[i]);
-    }
-    parcalar.push(simdiki);
-
-    const cizgiler = parcalar.filter((p) => p.length > 1).map((p) =>
-      `<polyline class="bk-cizgi" points="${p.map(
-        (q) => `${X(q.ts).toFixed(1)},${Y(q.yuzde).toFixed(1)}`).join(" ")}"/>`).join("");
-    const noktalar = g.map((p) =>
-      `<circle class="bk-nokta" cx="${X(p.ts).toFixed(1)}"
-               cy="${Y(p.yuzde).toFixed(1)}" r="1.4"/>`).join("");
-    const son = g[g.length - 1];
-    const uc = `<circle class="bk-uc" cx="${X(son.ts).toFixed(1)}"
-                        cy="${Y(son.yuzde).toFixed(1)}" r="3"/>`;
-
-    let esikCizgi = "";
-    if (esik != null) {
-      const y = Y(esik).toFixed(1);
-      esikCizgi = `<line class="bk-esik-cizgi" x1="${sol}" y1="${y}"
-                         x2="${(en - sag + 4).toFixed(1)}" y2="${y}"/>
-        <text class="bk-esik-yazi" x="${(en - sag + 8).toFixed(1)}" y="${y}"
-              dominant-baseline="middle">eşik %${Math.round(esik)}</text>`;
-    }
-
-    const deg = sayi(son.yuzde) - sayi(g[0].yuzde);
+    const deg = sayi(g[g.length - 1].yuzde) - sayi(g[0].yuzde);
     const yon = deg > 0.5 ? "yükseldi" : deg < -0.5 ? "düştü" : "değişmedi";
-    const ozet = `${sureMetni(sure)} içinde ${Math.abs(deg).toFixed(1)} puan ${yon}`;
-
-    return `<div class="bk-egri">
-      <svg viewBox="0 0 ${en} ${boy}" preserveAspectRatio="xMidYMid meet"
-           role="img" aria-label="Toprak nemi eğrisi: ${kacisli(ozet)}, ${g.length} ölçüm">
-        <title>${kacisli(ozet)} · ${g.length} ölçüm</title>
-        ${esikCizgi}${cizgiler}${noktalar}${uc}
-      </svg>
-      <p class="bk-egri-not">${kacisli(ozet)} · ${g.length} ölçüm</p>
-    </div>`;
+    return `<p class="bk-olcum">${sureMetni(sure)} içinde `
+      + `${Math.abs(deg).toFixed(1)} puan ${yon} · ${g.length} ölçüm</p>`;
   }
 
   /* --------------------------------------------------------------- bir kart
@@ -807,12 +721,6 @@
       alanlar.push(alan("Ölçüm zamanı", "—", "", true));
     }
 
-    alanlar.push(o.esik_acik
-      ? alan("Sulama eşiği", `%${Math.round(sayi(o.esik))} altında`,
-             "halkadaki çentik bu değeri gösteriyor")
-      : alan("Sulama eşiği", "kapalı",
-             "eşik %100 — nem bakılmadan sulanıyor", true));
-
     alanlar.push(e.sulama_saniye != null
       ? alan("Sulama süresi", `${e.sulama_saniye} sn`,
              e.sulama_deseni && e.sulama_deseni !== "ust"
@@ -866,6 +774,10 @@
     const sn = e.sulama_saniye != null ? ` data-saniye="${e.sulama_saniye}"` : "";
     const ad = kacisli(b.ad);
 
+    // YERLEŞİM: halka solda demirli, kimlik ve durum yanında, ölçüm özeti
+    // onların altında. Grafiğin açtığı yeri boş bırakmıyoruz — kart
+    // kısalıyor ve `auto-fill` ızgarada yan yana daha çok kart sığıyor;
+    // 24 kartı alt alta okumanın bütün derdi bu.
     return `<article class="bk-kart bk-d-${d.ad}">
       <div class="bk-bas">
         ${halka(b)}
@@ -873,9 +785,9 @@
           <b>${kacisli(b.tur_ad || b.tur || "Bitki")}</b>
           <span>${ad}</span>
           <span class="bk-durum"><i></i>${kacisli(d.etiket)}</span>
+          ${olcumOzeti(e)}
         </div>
       </div>
-      ${egri(b, e)}
       <div class="bk-islem">
         <button class="dugme" type="button" data-is="nem" data-ad="${ad}"
                 title="Makine bu bitkinin üstüne gidip probu toprağa daldırır"
