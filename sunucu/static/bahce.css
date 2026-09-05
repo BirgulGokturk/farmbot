@@ -1,0 +1,272 @@
+/* Bahçe — kabuk.
+ *
+ * Sahnenin kendisi tuvalde; burada yalnız onun ÜSTÜNDE yüzen şeyler
+ * var. Kural: hiçbir panel sahneyi yukarı itmiyor, hepsi üstünde
+ * duruyor. Yatak ekranın tamamı, bilgi onun üstünde yaşıyor.
+ */
+
+.bh { position: relative; display: flex; flex-direction: column; min-height: 0; }
+.bh[hidden] { display: none; }
+
+.bh-sahne-kap {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  border-radius: 16px;
+  overflow: hidden;
+  background: #0d100c;
+  touch-action: none;
+}
+.bh-sahne-kap canvas { position: absolute; inset: 0; display: block; }
+#bh-sahne { z-index: 1; }
+
+/* --------------------------------------------------------- üst şerit */
+.bh-ust {
+  position: absolute;
+  z-index: 3;
+  left: var(--b3); right: var(--b3); top: var(--b3);
+  display: flex; align-items: center; gap: var(--b2);
+  pointer-events: none;
+}
+.bh-ust > * { pointer-events: auto; }
+.bh-ust .esnek { flex: 1 1 auto; }
+
+.bh-durum, .bh-ikon {
+  font: inherit;
+  color: var(--metin-2);
+  background: rgba(22, 24, 20, .82);
+  border: 1px solid transparent;
+  border-radius: 999px;
+  padding: 6px 14px;
+  backdrop-filter: blur(6px);
+}
+.bh-ikon { cursor: pointer; }
+.bh-ikon:hover { color: var(--metin); }
+.bh-ikon[aria-pressed="true"] { color: var(--metin); border-color: var(--vurgu-koyu);
+                                background: rgba(74, 144, 226, .30); }
+.bh-durum { display: inline-flex; align-items: center; gap: var(--b2); }
+.bh-durum i { width: 8px; height: 8px; border-radius: 50%; background: var(--metin-3); }
+.bh-durum.acik i { background: var(--iyi); box-shadow: 0 0 8px rgba(76,175,80,.7); }
+.bh-durum.kopuk i { background: var(--kritik); }
+.bh-durum.calisiyor i { background: var(--vurgu); animation: bh-nabiz 1.1s infinite; }
+@keyframes bh-nabiz { 50% { opacity: .25; } }
+
+/* SESSİZ BAŞARISIZLIK YOK: hata sahnenin üstünde, kırmızı ve okunur. */
+.bh-hata, .bh-not {
+  position: absolute;
+  z-index: 4;
+  left: var(--b3); right: var(--b3);
+  border-radius: 10px;
+  padding: var(--b2) var(--b3);
+  font-size: var(--yazi-kucuk, .82rem);
+  backdrop-filter: blur(6px);
+}
+.bh-hata { top: 58px; color: #ffd7d7; background: rgba(120, 30, 30, .82); }
+.bh-hata span { display: block; }
+.bh-not { top: 58px; color: var(--uyari); background: rgba(60, 48, 16, .82); }
+.bh-hata:not([hidden]) ~ .bh-not { top: 104px; }
+.bh-hata[hidden], .bh-not[hidden] { display: none; }
+
+/* ------------------------------------------------- görev kartı sütunu */
+.bh-isler {
+  position: absolute;
+  z-index: 3;
+  left: var(--b3); top: 106px; bottom: 96px;
+  width: min(310px, 34%);
+  display: flex; flex-direction: column; gap: var(--b2);
+  overflow-y: auto;
+  pointer-events: none;
+}
+.bh-isler > * { pointer-events: auto; }
+.bh-is {
+  display: flex; gap: var(--b2); align-items: flex-start;
+  background: rgba(22, 24, 20, .84);
+  border: 1px solid rgba(255, 255, 255, .06);
+  border-radius: 14px;
+  padding: var(--b2) var(--b3);
+  backdrop-filter: blur(8px);
+  cursor: default;
+  transition: border-color .15s, transform .15s;
+}
+.bh-is:hover { border-color: var(--cizgi-2); transform: translateX(2px); }
+.bh-is.ertelendi { opacity: .55; }
+.bh-is-simge { font-size: 20px; line-height: 1.2; }
+.bh-is b { display: block; }
+.bh-is small { display: block; color: var(--metin-3); font-size: 11px; }
+.bh-kanit { display: block; color: var(--metin-2); font-size: 11px; margin-top: 2px; }
+.bh-tahmin { display: inline-block; border: 1px dashed var(--uyari); color: var(--uyari);
+             border-radius: 6px; padding: 0 4px; margin-right: 4px; font-style: normal; }
+.bh-is-bos { color: var(--metin-3); font-size: var(--yazi-kucuk, .82rem);
+             background: rgba(22,24,20,.7); border-radius: 12px; padding: var(--b2) var(--b3); }
+
+.bh-dugmeler { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
+.bh-dugme {
+  font: inherit; font-size: 12px;
+  color: var(--metin-2);
+  background: var(--yuzey-2);
+  border: 1px solid transparent;
+  border-radius: 999px;
+  padding: 5px 12px;
+  cursor: pointer;
+}
+.bh-dugme:hover { color: var(--metin); }
+.bh-dugme.birincil { color: #fff; background: var(--vurgu); }
+.bh-dugme[disabled], .bh-ikon[disabled] { opacity: .45; cursor: not-allowed; }
+
+.bh-turler { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 6px; }
+.bh-cip {
+  font: inherit; font-size: 12px; color: var(--metin-2);
+  background: var(--yuzey); border: 1px solid transparent;
+  border-radius: 999px; padding: 3px 10px; cursor: pointer;
+}
+.bh-cip[aria-pressed="true"] { color: var(--metin); border-color: var(--iyi);
+                               background: rgba(76,175,80,.16); }
+.bh-cip .yok { color: var(--metin-3); }
+
+/* ------------------------------------------------------- bitki kartı */
+.bh-kart {
+  position: absolute;
+  z-index: 5;
+  right: var(--b3); top: 106px;
+  width: min(360px, 42%);
+  max-height: calc(100% - 210px);
+  overflow-y: auto;
+  background: rgba(22, 24, 20, .92);
+  border-radius: 16px;
+  box-shadow: var(--golge);
+  padding: var(--b3);
+  backdrop-filter: blur(10px);
+  opacity: 0;
+  transform: translateY(10px);
+  transition: opacity .18s ease, transform .2s cubic-bezier(.2,.8,.3,1);
+}
+.bh-kart.acik { opacity: 1; transform: none; }
+.bh-kart[hidden] { display: none; }
+.bh-kart header { display: flex; align-items: center; gap: var(--b2); }
+.bh-kart header .esnek { flex: 1 1 auto; }
+.bh-gerekce { margin: var(--b1) 0 var(--b2); color: var(--metin-3); font-size: 11px; }
+.bh-alanlar { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.bh-alan { background: var(--yuzey-2); border-radius: 10px; padding: 6px 10px; }
+.bh-alan i { display: block; font-style: normal; font-size: .74rem; color: var(--metin-2); }
+.bh-alan b { display: block; font-variant-numeric: tabular-nums; }
+.bh-alan em { display: block; font-style: normal; font-size: .70rem; color: var(--metin-3); }
+.bh-alan.bos b { color: var(--metin-3); font-style: italic; }
+
+/* --------------------------------------------- bitkinin halka menüsü
+ * İş uzaktaki bir düğmede değil, bitkinin ÜSTÜNDE başlıyor. */
+.bh-menu { position: absolute; z-index: 6; transform: translate(-50%, -50%); }
+.bh-menu[hidden] { display: none; }
+.bh-halka-d {
+  position: absolute;
+  width: 40px; height: 40px;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  border: 1px solid rgba(255,255,255,.12);
+  background: rgba(22, 24, 20, .92);
+  color: var(--metin);
+  font-size: 17px;
+  cursor: pointer;
+  display: grid; place-items: center;
+  box-shadow: var(--golge);
+  animation: bh-cik .18s cubic-bezier(.2,.8,.3,1) both;
+}
+.bh-halka-d:hover { border-color: var(--vurgu); }
+.bh-halka-d.su:hover  { border-color: #4fb8e8; }
+.bh-halka-d.nem:hover { border-color: #d9a520; }
+.bh-halka-d[disabled] { opacity: .4; cursor: not-allowed; }
+.bh-halka-d[data-rol="sula"]  { left: -46px; top: -14px; }
+.bh-halka-d[data-rol="nem"]   { left: 0;     top: -50px; animation-delay: .03s; }
+.bh-halka-d[data-rol="detay"] { left: 46px;  top: -14px; animation-delay: .06s; }
+@keyframes bh-cik { from { opacity: 0; transform: translate(-50%,-50%) scale(.5); } }
+.bh-halka-ad {
+  position: absolute; left: 50%; top: 22px; transform: translateX(-50%);
+  white-space: nowrap; font-size: 11px; color: var(--metin-2);
+  background: rgba(22,24,20,.9); border-radius: 8px; padding: 2px 8px;
+}
+
+/* ------------------------------------------------------- tohum rafı */
+.bh-raf {
+  position: absolute;
+  z-index: 3;
+  left: var(--b3); right: var(--b3); bottom: var(--b3);
+  display: flex; gap: var(--b2);
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+.bh-tohum {
+  flex: none;
+  display: flex; align-items: center; gap: var(--b2);
+  font: inherit; text-align: left;
+  color: var(--metin-2);
+  background: rgba(22, 24, 20, .86);
+  border: 1px solid rgba(255,255,255,.06);
+  border-radius: 12px;
+  padding: 6px 12px;
+  cursor: grab;
+  touch-action: none;
+  backdrop-filter: blur(8px);
+}
+.bh-tohum .im { font-family: "BitkiEmoji", system-ui, sans-serif; font-size: 20px; }
+.bh-tohum small { display: block; font-size: 11px; color: var(--metin-3); }
+.bh-tohum .ezili { color: var(--uyari); }
+.bh-tohum[aria-pressed="true"] { border-color: var(--iyi); background: rgba(76,175,80,.20); }
+.bh-tohum.tutuluyor { opacity: .45; }
+.bh-geri {
+  font-style: normal; color: var(--metin-3); background: var(--yuzey);
+  border-radius: 999px; width: 20px; height: 20px;
+  display: inline-grid; place-items: center; cursor: pointer;
+}
+
+.bh-bos {
+  position: absolute; z-index: 3;
+  left: 50%; bottom: 74px; transform: translateX(-50%);
+  max-width: min(520px, 80%); margin: 0; text-align: center;
+  color: var(--metin-2);
+  background: rgba(22, 24, 20, .86);
+  border-radius: 12px; padding: var(--b2) var(--b3);
+}
+.bh-bos[hidden] { display: none; }
+
+/* ------------------------------------------------------------- onay */
+.bh-onay {
+  position: fixed; inset: 0; z-index: 40;
+  display: grid; place-items: center;
+  background: rgba(0,0,0,.45);
+  padding: var(--b3);
+  opacity: 0; transition: opacity .18s ease;
+}
+.bh-onay.acik { opacity: 1; }
+.bh-onay[hidden] { display: none; }
+.bh-onay-kutu {
+  width: min(460px, 100%);
+  background: var(--yuzey);
+  border-radius: 16px;
+  box-shadow: var(--golge);
+  padding: var(--b3);
+  transform: translateY(12px) scale(.98);
+  transition: transform .22s cubic-bezier(.2,.8,.3,1);
+}
+.bh-onay.acik .bh-onay-kutu { transform: none; }
+.bh-onay-kutu p { color: var(--metin-2); margin: var(--b2) 0 0; }
+
+/* ==================================================================== *
+ * Bahçe sekmesi açıkken kabuğun tamamı
+ *
+ * Sahne ekranın ana alanı olacaksa panelin dar liste sütunu olarak
+ * kalması olmuyor. 3B tarla görünümü bu sekmede zaten çizilmiyor
+ * (`Tarla.gorunurluk(false)`), araç çubuğu da kapalı bir sahnenin
+ * denetimleri.
+ * ==================================================================== */
+body.bahce-acik .yuzen.sol { grid-column: 1 / -1; width: auto; }
+body.bahce-acik #sahne-cubuk,
+body.bahce-acik .sahne-alan { display: none; }
+body.bahce-acik .yuzen-govde { overflow: hidden; padding: var(--b2); }
+body.bahce-acik #sayfa-bahce { height: 100%; display: flex; flex-direction: column; }
+body.bahce-acik .bh { flex: 1 1 auto; }
+
+@media (max-width: 900px) {
+  body.bahce-acik .yuzen-govde { overflow-y: auto; }
+  body.bahce-acik .bh-sahne-kap { min-height: 70vh; }
+  .bh-isler { width: min(260px, 46%); }
+  .bh-kart { width: min(320px, 70%); }
+}

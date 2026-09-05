@@ -6,7 +6,7 @@
 <title>Tarım Robotu</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌱</text></svg>">
 <link rel="stylesheet" href="/statik/stil.css">
-<link rel="stylesheet" href="/statik/bahce-tuval.css">
+<link rel="stylesheet" href="/statik/bahce.css">
 <link rel="stylesheet" href="/statik/etiket.css">
 <link rel="stylesheet" href="/statik/bitki.css">
 <link rel="stylesheet" href="/statik/zamanli.css">
@@ -74,7 +74,7 @@
              geliyor, cunku ayni bitkilere BAKMANIN oteki yolu. -->
         <button data-sayfa="bitkiler">Bitkiler</button>
         <button data-sayfa="kamera">Kamera</button>
-        <button data-sayfa="otomasyon">Kurulum</button>
+        <button data-sayfa="otomasyon">Görevler</button>
         <button data-sayfa="ayarlar">Ayarlar</button>
       </nav>
 
@@ -218,74 +218,46 @@
          şablondan çoğaltılıyor ve id tekrarlanamaz. -->
     <section class="sayfa" id="sayfa-bahce">
 
-      <!-- BAHÇE SAHNESİ — tek bir tuval.
-           Yatak, toprak, bitkiler ve makine `bahce-tuval.js` içinde
-           çiziliyor; burada yalnız kabuk var. DOM'da her bitkiyi bir
-           düğüm yapmak düz bir üstten görünüm için yetiyordu ama
-           derinlik, sürekli salınım ve onlarca öğenin akıcı hareketi
-           her karede düzen tetikliyor ve tablette kare düşürüyordu. -->
-      <div class="bt" id="bt">
+      <!-- BAHÇE. Sahne ekranın tamamı; bilgi onun ÜSTÜNDE yüzüyor,
+           yanında kutularda değil. İki tuval: alttaki (zemin) çim,
+           yatak ve toprak — ölçü ya da veri değişmedikçe yeniden
+           çizilmiyor; üstteki (sahne) bitkiler, makine ve yol, o da
+           yalnız kirliyken. Boşta çizim yok. -->
+      <div class="bh" id="bh">
+        <div class="bh-sahne-kap" id="bh-sahne-kap">
+          <canvas id="bh-zemin"></canvas>
+          <canvas id="bh-sahne"></canvas>
 
-        <div class="bt-ust">
-          <!-- Bağlantı rozeti şeridin BAŞINDA: kopuk bir makinede
-               düğmeye basmadan önce okunması gereken tek şey bu. -->
-          <span class="bt-bagli" id="bt-bagli"><i></i><b>Makine</b></span>
-          <span class="esnek"></span>
-          <button class="bt-ikon" id="bt-sakin" type="button" aria-pressed="false"
-                  title="Bütün hareketi durdurur">Sakin mod</button>
+          <div class="bh-ust">
+            <span class="bh-durum" id="bh-durum"><i></i><b>Makine</b></span>
+            <span class="esnek"></span>
+            <button class="bh-ikon" id="bh-sakin" type="button" aria-pressed="false"
+                    title="Bütün hareketi durdurur">Sakin mod</button>
+          </div>
+
+          <!-- SESSİZ BAŞARISIZLIK YOK: çizim ya da olay işleme patlarsa
+               sebebi buraya yazılıyor ve sahne çalışmaya devam ediyor.
+               Önceki sürüm tek tanımsız fonksiyonla sessizce düştü. -->
+          <div class="bh-hata" id="bh-hata" hidden></div>
+          <div class="bh-not" id="bh-not" hidden></div>
+
+          <!-- Görev kartları: sunucunun ürettiği işler, sahnenin üstünde. -->
+          <div class="bh-isler" id="bh-isler"></div>
+
+          <!-- Bitki kartı: bitkiye dokunup "ⓘ" seçilince. -->
+          <aside class="bh-kart" id="bh-kart" hidden></aside>
+
+          <p class="bh-bos" id="bh-bos" hidden></p>
+
+          <!-- Bitkinin üstünde açılan halka menü: iş orada başlıyor. -->
+          <div class="bh-menu" id="bh-menu" hidden></div>
+
+          <!-- Tohum rafı: bir tohumu alıp toprağa sürükleyince ekiliyor. -->
+          <div class="bh-raf" id="bh-raf" role="group" aria-label="Tohum rafı"></div>
         </div>
 
-        <!-- Kalibrasyon yok, ajan kopuk gibi hâller. Sahne bunlara
-             RAĞMEN çalışıyor; satır sebebini söylüyor. -->
-        <div class="bt-uyari" id="bt-uyari" hidden></div>
-
-        <!-- BUGÜN NE YAPMALIYIM. Kartları sunucu üretiyor
-             (`bahce.kartlar`): ölçüt yoksa kart yok, kart varsa
-             gerekçesi de var. Şerit yalnız listelemiyor — bir karta
-             gelince o kartın bitkileri yatakta işaretleniyor, karta
-             dokununca kamera onlara gidiyor, düğme mevcut onay
-             adımından geçip işi kuyruğa koyuyor. Başka sekmeye
-             gitmeden bitiyor. -->
-        <div class="bt-isler" id="bt-isler"></div>
-
-        <div class="bt-sahne" id="bt-sahne">
-          <canvas id="bt-tuval"></canvas>
-          <p class="bt-bos" id="bt-bos" hidden></p>
-        </div>
-
-        <!-- ZAMAN ÇUBUĞU. Üst kamera kalibre olduğu için arşivdeki her
-             kare kendi milimetre yerine oturtulabiliyor: çizili yatak
-             ile gerçek toprak AYNI yerde. Geçmişe kaydırınca çizili
-             bitkiler çizilmiyor — o tarihteki boyları ölçülmedi,
-             geçmişte konuşan tek şey fotoğraf. -->
-        <div class="bt-zaman" id="bt-zaman" hidden>
-          <button class="bt-ikon" id="bt-toprak" type="button" aria-pressed="false"
-                  title="Üst kameranın son karesini çizili yatağın üstüne bindirir"
-                  >Gerçek toprak</button>
-          <input type="range" id="bt-zaman-serit" min="0" max="0" value="0"
-                 aria-label="Zaman">
-          <span class="bt-zaman-yazi" id="bt-zaman-yazi"></span>
-          <button class="bt-ikon" id="bt-zaman-simdi" type="button" hidden>Şimdiye dön</button>
-        </div>
-
-        <!-- TOHUM RAFI. Bir tohuma dokunmak onu ELİNE ALMAK demek:
-             o türün ekim gözleri yatakta yanıyor. Sürükleyip bırakmak
-             da, tohuma sonra göze dokunmak da aynı onay adımına
-             çıkıyor — dokunmatikte sürüklemeyi bulamayan biri gözde
-             kalmasın. -->
-        <div class="bt-raf" id="bt-raf" role="group" aria-label="Tohum rafı"></div>
-
-        <!-- Sürüklenen tohumun parmağın altındaki gölgesi. -->
-        <div class="bt-hayalet" id="bt-hayalet" hidden></div>
-
-        <!-- BİTKİ KARTI. Sahnenin üstünde yüzüyor; içeriği
-             `bahce-tuval.js` kuruyor. Görsel dil Bitkiler sekmesindeki
-             kartla aynı (nem halkası, kuruma eğrisi) — aynı ölçüm iki
-             ekranda aynı biçimde okunsun. -->
-        <div class="bt-ortu" id="bt-ortu" hidden>
-          <section class="bt-kart" id="bt-kart" role="dialog"
-                   aria-label="Bitki kartı" aria-modal="true"></section>
-        </div>
+        <!-- Geri alınamaz iş onay ister; ne olacağı önce yazılıyor. -->
+        <div class="bh-onay" id="bh-onay" hidden></div>
       </div>
 
     </section>
@@ -401,38 +373,6 @@
            Aynı ayarın iki yerde durup birbiriyle çelişmesini istemiyoruz;
            o yüzden burada bir kopya BIRAKMIYORUZ. -->
 
-      <!-- 4. SON ÖLÇÜMLER — grafikteki aynı veri, sayı olarak. Katlı. -->
-      <section class="bolum kapali" id="bolum-tablo">
-        <div class="bolum-ust">
-          <button class="bolum-bas" aria-expanded="false">
-            <svg class="ikon ok"><use href="#i-ok"/></svg>
-            <span class="bolum-ad">Son ölçümler</span>
-            <span class="bolum-not">Tablo</span>
-          </button>
-          <button class="yardim" type="button" aria-expanded="false"
-                  aria-controls="yardim-tablo" aria-label="Açıklama">?</button>
-        </div>
-        <div class="bolum-govde">
-          <p class="yardim-metin gizli" id="yardim-tablo">
-            Grafikteki aynı veri, sayı olarak. En yeni satır en üstte.
-          </p>
-          <div class="tablo-kutu">
-            <table class="veri">
-              <thead>
-                <tr>
-                  <!-- SÜTUN SAYISI GÖVDEYLE BİREBİR TUTMALI. Burada bir
-                       başlık eksik kalırsa tablo sessizce kayıyor: değerler
-                       yanlış başlığın altına düşüyor ve kimse fark etmiyor.
-                       Sıra app.js -> tabloCiz() ile aynı. -->
-                  <th>Saat</th><th>Sıcaklık</th><th>BMP °C</th><th>Hava nemi</th>
-                  <th>Toprak nemi</th><th>Basınç</th>
-                </tr>
-              </thead>
-              <tbody id="tablo-govde"></tbody>
-            </table>
-          </div>
-        </div>
-      </section>
     </section>
 
 
@@ -1150,137 +1090,10 @@
 
     <section class="sayfa" id="sayfa-otomasyon">
 
-      <!-- ZAMANLANMIS GOREVLER — programlarin USTUNDE duruyor:
-           program "ne yapilacak", bu "ne zaman yapilacak" ve
-           kurulum sirasi da bu. Bolumu `zamanli.js` kendi kuruyor. -->
+      <!-- ZAMANLANMIS GOREVLER — bu sayfanin tek bolumu. Adim/degisken
+           editoru olan "Programlar" ve buyume "Egriler" kaldirildi:
+           kullanilmiyorlardi. Bolumu `zamanli.js` kendi kuruyor. -->
       <div id="zamanli-bolum"></div>
-
-      <section class="bolum" id="bolum-program">
-        <div class="bolum-ust">
-          <button class="bolum-bas" aria-expanded="true">
-            <svg class="ikon ok"><use href="#i-ok"/></svg>
-            <span class="bolum-ad">Programlar</span>
-            <span class="bolum-not" id="prog-ozet"></span>
-          </button>
-          <button class="yardim" type="button" aria-expanded="false"
-                  aria-controls="yardim-program" aria-label="Açıklama">?</button>
-        </div>
-        <div class="bolum-govde">
-          <p class="yardim-metin gizli" id="yardim-program">
-            Adımlar mevcut komutları çağırır — yeni hareket yolu yok. Bir adım
-            hata verirse dizi durur ve sebebi burada kalır. Acil durdurma
-            diziyi keser; mandal temizlenmeden yeniden başlamaz.<br><br>
-            <b>Değişkenler</b> diziyi tek bir noktaya bağlı olmaktan
-            çıkarıyor. Bir adımda nokta yerine <code>$hedef</code> yazarsanız
-            değeri dizi çalıştırılırken veriliyor — böylece tek bir "sula"
-            dizisi 40 ayrı fideye uygulanabiliyor. Haritada Seç kipiyle
-            fideleri seçip <b>Dizi uygula</b> diyerek bunu yapabilirsiniz.
-          </p>
-          <div class="satir-8 alt-hizali">
-            <div class="alan esnek-alan">
-              <label for="prog-secim">Program</label>
-              <select id="prog-secim"></select>
-            </div>
-            <button class="dugme birincil" id="d-prog-calistir">Çalıştır</button>
-            <button class="dugme" id="d-prog-durdur">Durdur</button>
-            <button class="dugme tehlike" id="d-prog-sil">Sil</button>
-          </div>
-          <!-- Dizi değişken istiyorsa değerleri çalıştırmadan önce burada
-               sorulur. İstemiyorsa bu bölüm hiç görünmüyor. -->
-          <div id="prog-degerler" class="deger-kutu gizli"></div>
-          <div id="prog-ilerleme" class="gomulu gizli"></div>
-
-          <h4 class="alt-baslik">Düzenle</h4>
-          <div class="satir-8 alt-hizali">
-            <div class="alan esnek-alan">
-              <label for="prog-ad">Program adı</label>
-              <input type="text" id="prog-ad" maxlength="40" placeholder="örn. sabah-sulama">
-            </div>
-            <div class="alan dar"><label for="prog-tekrar">Tur</label>
-              <input type="number" id="prog-tekrar" min="1" max="1000" value="1"></div>
-            <button class="dugme" id="d-prog-yeni">Yeni</button>
-            <button class="dugme birincil" id="d-prog-kaydet">Kaydet</button>
-          </div>
-          <!-- DEĞİŞKENLER — dizi çağrılırken değeri verilen alanlar.
-               Adımlarda "$ad" yazılan yere bu değer konuyor. -->
-          <div class="ara-baslik-kucuk">Değişkenler</div>
-          <div id="prog-degiskenler"></div>
-          <div class="satir-8">
-            <button class="dugme" id="d-degisken-ekle">Değişken ekle</button>
-          </div>
-
-          <div class="ara-baslik-kucuk">Adımlar</div>
-          <div id="prog-adimlar"></div>
-          <div class="satir-8">
-            <button class="dugme" id="d-adim-ekle">Adım ekle</button>
-          </div>
-        </div>
-      </section>
-
-      <!-- Eğriler açık: bitkinin su/yayılım eğrisi tanımlamak günlük işin
-           parçası, kurulum işi değil. Otomatik sulama bir kez ayarlanıyor,
-           o katlı kalıyor. -->
-      <section class="bolum" id="bolum-egri">
-        <div class="bolum-ust">
-          <button class="bolum-bas" aria-expanded="true">
-            <svg class="ikon ok"><use href="#i-ok"/></svg>
-            <span class="bolum-ad">Eğriler</span>
-            <span class="bolum-not" id="egri-ozet"></span>
-          </button>
-          <button class="yardim" type="button" aria-expanded="false"
-                  aria-controls="yardim-egri" aria-label="Açıklama">?</button>
-        </div>
-        <div class="bolum-govde">
-          <p class="yardim-metin gizli" id="yardim-egri">
-            "Günde 250 ml" sabit bir sayı; oysa fide üç günlükken de hasada bir
-            hafta kalmışken de aynı suyu istemiyor. Eğri bitkinin <b>yaşına</b>
-            göre bir değer veriyor: aradaki günler doğrusal ara değerle
-            bulunuyor, uçlarda düz devam ediyor.<br><br>
-            Üç tip var — <b>su</b> (ml/gün), <b>yayılım</b> (mm, haritadaki
-            halkanın çapı) ve <b>yükseklik</b> (mm). Bir eğriyi bitkiye
-            bağlamak için haritada bitkiye tıklayıp kartından seçin. Eğriyi
-            sonradan düzenlerseniz ona bağlı bütün bitkiler yeni değeri
-            kullanır.
-          </p>
-          <div class="satir-8 alt-hizali">
-            <div class="alan esnek-alan">
-              <label for="egri-secim">Eğri</label>
-              <select id="egri-secim"></select>
-            </div>
-            <button class="dugme" id="d-egri-yeni">Yeni</button>
-            <button class="dugme tehlike" id="d-egri-sil">Sil</button>
-          </div>
-          <div class="satir-8 alt-hizali">
-            <div class="alan esnek-alan">
-              <label for="egri-ad">Ad</label>
-              <input type="text" id="egri-ad" maxlength="40" placeholder="örn. marul-su">
-            </div>
-            <div class="alan"><label for="egri-tip">Tip</label>
-              <select id="egri-tip">
-                <option value="su">Su (ml/gün)</option>
-                <option value="yayilim">Yayılım (mm)</option>
-                <option value="yukseklik">Yükseklik (mm)</option>
-              </select></div>
-          </div>
-          <div class="satir-8 alt-hizali">
-            <div class="alan esnek-alan">
-              <label for="egri-sablon">Şablondan başla</label>
-              <select id="egri-sablon"></select>
-            </div>
-            <button class="dugme" id="d-egri-sablon">Uygula</button>
-          </div>
-
-          <div class="egri-onizleme"><canvas id="egri-tuval"></canvas></div>
-
-          <div id="egri-noktalar" class="egri-noktalar"></div>
-          <div class="satir-8">
-            <button class="dugme" id="d-egri-nokta-ekle">Nokta ekle</button>
-            <span class="esnek"></span>
-            <button class="dugme birincil" id="d-egri-kaydet">Kaydet</button>
-          </div>
-        </div>
-      </section>
-
     </section>
 
 
@@ -1350,6 +1163,14 @@
           </div>
         </div>
       </section>
+
+      <!-- GELİŞMİŞ KAPISI. Aşağıdaki beş bölüm kurulum ayarı: bir kez girilip
+           bırakılıyor ve her açılışta 89 denetimin arasında duruyordu. Günlük
+           iş ise ilk iki bölüm: yasak bölgeler ve dikim alanları. Kalan
+           beşi de burada, kapının arkasında. -->
+      <details class="gelismis-kapi">
+        <summary>Gelişmiş — kurulum ayarları</summary>
+        <p class="yardim-metin">Bunlar kurulum ayarı: bir kez girilip bırakılıyor. Günlük işte açılmaları gerekmiyor.</p>
 
       <section class="bolum kapali" id="bolum-uc">
         <div class="bolum-ust">
@@ -1770,6 +1591,7 @@
           <div class="ikincil" id="kalib-ek"></div>
         </div>
       </section>
+      </details>
     </section>
       </div><!-- /.yuzen-govde -->
     </aside>
@@ -2041,7 +1863,7 @@
 <script src="/statik/tarla.js"></script>
 <!-- Profil görüntüleyici: haritanın verisini okuyup Z kesiti çiziyor -->
 <script src="/statik/profil.js"></script>
-<script src="/statik/bahce-tuval.js"></script>
+<script src="/statik/bahce.js"></script>
 <script src="/statik/app.js"></script>
 <script src="/statik/etiket.js"></script>
 <script src="/statik/filiz.js"></script>
