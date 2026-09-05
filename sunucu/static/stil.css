@@ -875,7 +875,6 @@ button.dugme.basili { background: var(--vurgu); border-color: var(--vurgu); colo
 }
 .satir button.dugme { height: 28px; padding: 0 var(--b2); font-size: var(--yazi-kucuk); }
 .tarla-kart-dugme button.dugme { height: 30px; padding: 0 var(--b2); font-size: var(--yazi-kucuk); }
-.adim button.dugme { height: 30px; padding: 0 var(--b2); font-size: var(--yazi-kucuk); }
 .satir.sinir-disi .ad { color: #ffe4a3; }
 
 /* ------------------------------------------------------------- ızgara formu */
@@ -1259,23 +1258,6 @@ table.veri td { color: var(--metin-2); }
 .cakisma-satir { margin-top: var(--b1); font-variant-numeric: tabular-nums; }
 
 /* -------------------------------------------------------------------- adımlar */
-.adim {
-  display: flex;
-  align-items: center;
-  gap: var(--b2);
-  padding: var(--b2);
-  border: 1px solid var(--cizgi);
-  border-radius: var(--b2);
-  margin-bottom: var(--b2);
-  background: var(--yuzey-2);
-  flex-wrap: wrap;
-}
-.adim .sira { color: var(--metin-3); font-size: var(--yazi-kucuk); min-width: 20px; }
-.adim select, .adim input { height: 30px; font-size: var(--yazi-kucuk); }
-.adim select { width: auto; min-width: 110px; }
-.adim input[type="number"] { width: 76px; }
-.adim input[type="text"] { width: 110px; }
-.adim .dugme { height: 30px; padding: 0 var(--b2); font-size: var(--yazi-kucuk); }
 
 
 /* ============================================================ DAR EKRAN
@@ -1468,71 +1450,8 @@ button.dugme.tehlike:disabled {
 }
 
 
-/* ====================================================================
-   DİZİ DEĞİŞKENLERİ
-   Adımlarda "$ad" yazılan yere değeri dizi çalıştırılırken konuyor.
-   ==================================================================== */
-.ara-baslik-kucuk {
-  font-size: var(--yazi-kucuk);
-  color: var(--metin-3);
-  margin: var(--b4) 0 var(--b2);
-}
-
-.degisken-satir {
-  display: flex;
-  align-items: center;
-  gap: var(--b2);
-  padding: var(--b2) 0;
-  border-bottom: 1px solid var(--cizgi);
-}
-.degisken-satir:last-child { border-bottom: none; }
-.degisken-isaret {
-  font-family: ui-monospace, Menlo, Consolas, monospace;
-  color: var(--vurgu);
-  flex: none;
-}
-.degisken-satir .dv-ad { width: 110px; flex: none; }
-.degisken-satir .dv-tip { width: 92px; flex: none; }
-.degisken-satir .dv-aciklama { flex: 1; min-width: 0; }
-.degisken-satir .degisken-sil { flex: none; }
-
-/* Çalıştırmadan önce sorulan değerler. Dizi değişken istemiyorsa bu kutu
-   hiç görünmüyor. */
-/* AYRIM: yalnız zemin. Soldaki vurgu şeridi çerçeve değil, "bu dizinin
-   değer bekleyen değişkenleri var" durum işareti. */
-.deger-kutu {
-  border-left: 2px solid var(--vurgu);
-  border-radius: var(--yaricap-2);
-  background: var(--yuzey-2);
-  padding: var(--b3);
-  margin-bottom: var(--b3);
-  display: flex;
-  flex-direction: column;
-  gap: var(--b2);
-}
-.deger-kutu.gizli { display: none; }
-.deger-satir { display: flex; align-items: center; gap: var(--b2); flex-wrap: wrap; }
-.deger-satir label {
-  font-family: ui-monospace, Menlo, Consolas, monospace;
-  font-size: var(--yazi-kucuk);
-  color: var(--vurgu);
-  min-width: 84px;
-}
-.deger-satir .dg-deger { flex: 1; min-width: 140px; }
-
-.toplu-dizi { max-width: 190px; }
-
-/* Toplu çubukta dizinin nokta dışındaki değişkenleri için küçük alanlar. */
-.toplu-degerler { display: flex; align-items: center; gap: var(--b2); }
-.toplu-deger {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--b1);
-  font-family: ui-monospace, Menlo, Consolas, monospace;
-  font-size: var(--yazi-kucuk);
-  color: var(--vurgu);
-}
-.toplu-deger input { width: 64px; }
+/* DİZİ DEĞİŞKENLERİ VE DEĞER KUTUSU kaldırıldı: adım/değişken editörü
+   panelden çıktı, toplu çubuktaki "dizi uygula" alanı da onunla gitti. */
 
 /* Kamera kalibrasyonunun tıklama tuvali KALDIRILDI: ölçüm artık
    AprilTag ile yapılıyor ve tarama kendi önizlemesini kendi çiziyor
@@ -1580,26 +1499,9 @@ button.dugme.tehlike:disabled {
 .profil-govde canvas.gizli { display: none !important; }
 .profil-ust .alan.dar { min-width: 96px; }
 
-/* ------------------------------------------------------------- eğriler */
-.egri-onizleme { margin: var(--b3) 0 var(--b2); }
-/* AYRIM: yalnız zemin — eğri çizimi zaten bir grafik, çerçeveye gerek yok. */
-.egri-onizleme canvas {
-  display: block;
-  width: 100%;
-  height: 150px;
-  background: var(--yuzey-2);
-  border-radius: var(--yaricap-2);
-}
-.egri-noktalar { display: flex; flex-direction: column; gap: var(--b1); }
-.egri-satir {
-  display: flex;
-  align-items: center;
-  gap: var(--b2);
-  padding: var(--b1) 0;
-}
-.egri-satir input { width: 88px; flex: none; }
-.egri-satir .alt-not { min-width: 42px; }
-.egri-satir .egri-nokta-sil { margin-left: auto; }
+/* Eğri DÜZENLEYİCİSİNİN stilleri kaldırıldı (önizleme tuvali, nokta
+   satırları): düzenleyici panelden çıktı. Aşağıdaki satır kalıyor —
+   bitki kartı hâlâ bir eğri seçtiriyor. */
 /* Bitki kartındaki eğri satırları: açılır liste + bugünkü değer */
 .egri-tablo select { max-width: 150px; }
 
@@ -2540,3 +2442,51 @@ body.kamera-sekmesi .toplu-cubuk { display: none; }
      orada gizlemeye gerek yok. */
   body.kamera-sekmesi .sahne-alan { display: none; }
 }
+
+/* ====================================================================
+   GELİŞMİŞ KAPISI — Ayarlar'ın kurulum bölümleri
+   Ayarlar sekmesinde 89 denetim vardı ve çoğu bir kez girilip
+   bırakılan kurulum ayarı. Günlük iş ilk iki bölüm; kalan beşi bu
+   kapının arkasında. Silinmediler, yalnız her açılışta görünmüyorlar.
+   ==================================================================== */
+.gelismis-kapi { margin-top: var(--b3); }
+.gelismis-kapi > summary {
+  cursor: pointer;
+  padding: var(--b2) var(--b3);
+  border: 1px solid var(--cizgi);
+  border-radius: var(--yaricap-2);
+  background: var(--yuzey-2);
+  color: var(--metin-2);
+  font-weight: 600;
+  list-style: none;
+}
+.gelismis-kapi > summary::-webkit-details-marker { display: none; }
+.gelismis-kapi > summary::before { content: "▸ "; color: var(--metin-3); }
+.gelismis-kapi[open] > summary::before { content: "▾ "; }
+.gelismis-kapi > summary:hover { border-color: var(--cizgi-2); }
+.gelismis-kapi > .yardim-metin { margin: var(--b2) 0 var(--b3); }
+
+/* ====================================================================
+   ÇALIŞAN DİZİ ŞERİDİ
+   Sulama, ekim ve "sırayla gez" hep dizi olarak koşuyor. Şerit acil
+   ve tanı bantlarıyla aynı yerde ama farklı renk: bu bir arıza değil,
+   süren bir iş.
+   ==================================================================== */
+#dizi-bant {
+  background: color-mix(in srgb, var(--vurgu) 14%, var(--yuzey));
+  border-bottom: 1px solid var(--cizgi);
+}
+#dizi-bant .bant-ic { display: flex; align-items: center; gap: var(--b3); }
+#dizi-ilerleme { flex: 1; min-width: 0; font-size: var(--yazi-kucuk); }
+#dizi-bant.gizli { display: none; }
+
+/* İLERLEME ÇUBUĞU. `.adim-cubuk` işaretlemesi vardı ama HİÇ stili yoktu:
+   yüzde bilgisi DOM'a yazılıyor, ekranda hiçbir şey görünmüyordu. */
+.adim-cubuk {
+  height: 4px;
+  margin-top: var(--b1);
+  background: var(--yuzey-2);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.adim-cubuk > i { display: block; height: 100%; background: var(--vurgu); }

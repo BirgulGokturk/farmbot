@@ -48,8 +48,6 @@ const S = {
   ucDurum: null,        // ajandan gelen son kafa durumu (üç baş, tohumluk)
   ekimOnay: null,       // onay bekleyen ekim oturumu (sunucudan)
   ekimAyar: {},         // onay anahtarı ve süreler
-  programlar: [],
-  adimlar: [],
   bolgeDuzenleniyor: false,   // kullanıcı yazarken durum akışı üzerine yazmasın
   sinirlar: null,        // ajandan gelen yumuşak sınırlar
   sekme: localStorage.getItem("farmbot_sekme") || "izle",
@@ -1295,165 +1293,6 @@ async function gozTablosuKaydet() {
   }
 }
 
-/* -------------------------------------------------------------- programlar */
-const ADIM_TIPLERI = { nokta: "Noktaya git", bekle: "Bekle", role: "Röle" };
-const ROLELER = ["su_pompasi", "hava_pompasi"];
-
-function adimSatiri(adim, sira) {
-  const secenek = (liste, secili) => liste
-    .map((d) => `<option value="${kacisli(d)}"${d === secili ? " selected" : ""}>${kacisli(d || "(bırak)")}</option>`).join("");
-
-  // Tanımlı değişkenler adım alanlarında "$ad" olarak seçilebiliyor: dizi
-  // çağrılırken değeri veriliyor. "Şu noktayı sula" yerine "verilen noktayı sula".
-  const degiskenler = (S.degiskenler || []);
-  const degiskenAdlari = (tip) => degiskenler.filter((d) => d.tip === tip).map((d) => "$" + d.ad);
-
-  let param = "";
-  if (adim.tip === "nokta") {
-    param = `<select class="param p-ad">${secenek(
-      [...degiskenAdlari("nokta"), ...S.noktalar.map((n) => n.ad)], adim.ad)}</select>`;
-  } else if (adim.tip === "bekle") {
-    const sayiDegisken = degiskenAdlari("sayi");
-    param = sayiDegisken.length
-      ? `<select class="param p-saniye-sec">${secenek(
-          ["(sayı gir)", ...sayiDegisken], String(adim.saniye).startsWith("$") ? adim.saniye : "(sayı gir)")}</select>
-         <input type="number" class="param p-saniye${String(adim.saniye).startsWith("$") ? " gizli" : ""}"
-                min="0" max="600" step="1" value="${String(adim.saniye).startsWith("$") ? 5 : (adim.saniye ?? 5)}"> sn`
-      : `<input type="number" class="param p-saniye" min="0" max="600" step="1" value="${adim.saniye ?? 5}"> sn`;
-  } else if (adim.tip === "role") {
-    param = `<select class="param p-ad">${secenek(ROLELER, adim.ad)}</select>
-             <label style="font-size:12px;color:var(--metin-3)">
-               <input type="checkbox" class="p-durum"${adim.durum ? " checked" : ""}> aç</label>`;
-  }
-
-  return `<div class="adim-satir" data-i="${sira}">
-    <span class="sira">${sira + 1}</span>
-    <select class="tip">${Object.entries(ADIM_TIPLERI)
-      .map(([k, v]) => `<option value="${k}"${k === adim.tip ? " selected" : ""}>${v}</option>`).join("")}</select>
-    ${param}
-    <button class="dugme adim-sil">✕</button>
-  </div>`;
-}
-
-function adimlariCiz(adimlar) {
-  S.adimlar = adimlar;
-  const kutu = $("#prog-adimlar");
-  kutu.innerHTML = adimlar.length
-    ? adimlar.map(adimSatiri).join("")
-    : '<p class="alt-not">Adım yok — "+ Adım ekle" ile başlayın.</p>';
-
-  $$("#prog-adimlar .tip").forEach((sec) => {
-    // Tip değişince parametre alanı da değişmeli; satırı yeniden çiziyoruz.
-    sec.onchange = () => {
-      const liste = adimlariTopla();
-      liste[Number(sec.closest(".adim-satir").dataset.i)] = { tip: sec.value };
-      adimlariCiz(liste);
-    };
-  });
-  $$("#prog-adimlar .adim-sil").forEach((d) => {
-    d.onclick = () => {
-      const liste = adimlariTopla();
-      liste.splice(Number(d.closest(".adim-satir").dataset.i), 1);
-      adimlariCiz(liste);
-    };
-  });
-}
-
-/* ------------------------------------------------------ dizi değişkenleri
- *
- * Bir dizi "verilen noktayı sula" diyebilsin diye. Değişken tanımı dizinin
- * yanında duruyor; adımlarda "$ad" yazılan yere değeri dizi ÇALIŞTIRILIRKEN
- * konuyor. Yerleştirme ve eksik değer denetimi sunucuda (programlar.py),
- * panelde değil.
- */
-const DEGISKEN_TIPLERI = { nokta: "Nokta", sayi: "Sayı", metin: "Metin" };
-
-function degiskenSatiri(d, sira) {
-  return `<div class="degisken-satir" data-i="${sira}">
-    <span class="degisken-isaret">$</span>
-    <input type="text" class="dv-ad" maxlength="24" placeholder="hedef" value="${kacisli(d.ad || "")}">
-    <select class="dv-tip">${Object.entries(DEGISKEN_TIPLERI)
-      .map(([k, v]) => `<option value="${k}"${k === d.tip ? " selected" : ""}>${v}</option>`).join("")}</select>
-    <input type="text" class="dv-aciklama" maxlength="80" placeholder="açıklama (isteğe bağlı)"
-           value="${kacisli(d.aciklama || "")}">
-    <button class="dugme degisken-sil">✕</button>
-  </div>`;
-}
-
-function degiskenleriCiz(liste) {
-  S.degiskenler = liste;
-  const kutu = $("#prog-degiskenler");
-  kutu.innerHTML = liste.length
-    ? liste.map(degiskenSatiri).join("")
-    : '<p class="alt-not">Değişken yok — dizi hep aynı noktalara gider.</p>';
-  $$("#prog-degiskenler .degisken-sil").forEach((d) => {
-    d.onclick = () => {
-      const l = degiskenleriTopla();
-      l.splice(Number(d.closest(".degisken-satir").dataset.i), 1);
-      degiskenleriCiz(l);
-      adimlariCiz(adimlariTopla());     // adım açılır listeleri değişti
-    };
-  });
-  // Ad ya da tip değişince adım listelerindeki seçenekler de değişmeli.
-  $$("#prog-degiskenler .dv-ad, #prog-degiskenler .dv-tip").forEach((g) => {
-    g.onchange = () => { degiskenleriCiz(degiskenleriTopla()); adimlariCiz(adimlariTopla()); };
-  });
-}
-
-function degiskenleriTopla() {
-  return $$("#prog-degiskenler .degisken-satir").map((el) => ({
-    ad: el.querySelector(".dv-ad").value.trim(),
-    tip: el.querySelector(".dv-tip").value,
-    aciklama: el.querySelector(".dv-aciklama").value.trim(),
-  })).filter((d) => d.ad);
-}
-
-/** Seçili dizi değişken istiyorsa değer formunu çizer, istemiyorsa gizler. */
-function degerFormuCiz() {
-  const kutu = $("#prog-degerler");
-  const p = S.programlar.find((x) => x.ad === $("#prog-secim").value);
-  const liste = (p && p.degiskenler) || [];
-  if (!liste.length) { kutu.classList.add("gizli"); kutu.innerHTML = ""; return; }
-  kutu.classList.remove("gizli");
-  kutu.innerHTML = `<div class="alt-not">Bu dizi çalıştırılırken değer istiyor:</div>` +
-    liste.map((d) => {
-      const alan = d.tip === "nokta"
-        ? `<select class="dg-deger" data-ad="${kacisli(d.ad)}">${
-            S.noktalar.map((n) => `<option>${kacisli(n.ad)}</option>`).join("")}</select>`
-        : `<input type="${d.tip === "sayi" ? "number" : "text"}" class="dg-deger"
-                  data-ad="${kacisli(d.ad)}" placeholder="${kacisli(d.aciklama || d.tip)}">`;
-      return `<div class="deger-satir">
-        <label>$${kacisli(d.ad)}</label>${alan}
-        ${d.aciklama ? `<span class="alt-not">${kacisli(d.aciklama)}</span>` : ""}
-      </div>`;
-    }).join("");
-}
-
-function degerleriTopla() {
-  const d = {};
-  $$("#prog-degerler .dg-deger").forEach((g) => { d[g.dataset.ad] = g.value; });
-  return d;
-}
-
-function adimlariTopla() {
-  return $$("#prog-adimlar .adim-satir").map((el) => {
-    const tip = el.querySelector(".tip").value;
-    const adim = { tip };
-    if (tip === "nokta") adim.ad = el.querySelector(".p-ad")?.value || "";
-    if (tip === "bekle") {
-      const sec = el.querySelector(".p-saniye-sec");
-      adim.saniye = sec && sec.value.startsWith("$")
-        ? sec.value
-        : Number(el.querySelector(".p-saniye").value);
-    }
-    if (tip === "role") {
-      adim.ad = el.querySelector(".p-ad").value;
-      adim.durum = el.querySelector(".p-durum").checked;
-    }
-    return adim;
-  });
-}
-
 
 /* ================================================== kamera kalibrasyonu
  *
@@ -1901,166 +1740,21 @@ function kalibBagla() {
 /* ============================================================== eğriler
  *
  * Sabit "günde X ml" yerine bitkinin YAŞINA göre değer. Değerlendirme
- * sunucuda (egriler.py); panelin işi eğriyi düzenlemek ve çizmek.
+ * sunucuda (`egriler.py`); panelin işi yalnız listeyi taşımak.
+ *
+ * DÜZENLEYİCİ KALDIRILDI. Kurulum sekmesindeki eğri kartı — şablon seçici,
+ * grafik, nokta tablosu — kullanılmıyordu. EĞRİLERİN KENDİSİ DURUYOR:
+ * sulama deseni ve bitkinin yaşa göre yayılım/yükseklik hesabı onlara
+ * bakıyor (`sulama.guncel_yaricap_mm`), 3B sahne de aynı listeden çiziyor.
+ * Giden yalnız düzenleme arayüzü; veri, sunucu hesabı ve çizim yerinde.
  */
-const EGRI_BIRIM = { su: "ml/gün", yayilim: "mm", yukseklik: "mm" };
-
-function egriNoktaSatiri(n, sira) {
-  return `<div class="egri-satir" data-i="${sira}">
-    <span class="alt-not">gün</span>
-    <input type="number" class="en-gun" min="0" max="400" step="1" value="${n[0]}">
-    <span class="alt-not en-birim">değer</span>
-    <input type="number" class="en-deger" min="0" step="1" value="${n[1]}">
-    <button class="dugme egri-nokta-sil">✕</button>
-  </div>`;
-}
-
-function egriNoktalariCiz(noktalar) {
-  S.egriNoktalari = noktalar;
-  const kutu = $("#egri-noktalar");
-  kutu.innerHTML = noktalar.length
-    ? noktalar.map(egriNoktaSatiri).join("")
-    : '<p class="alt-not">Nokta yok — en az iki nokta gerekiyor.</p>';
-  const birim = EGRI_BIRIM[$("#egri-tip").value] || "";
-  $$("#egri-noktalar .en-birim").forEach((e) => { e.textContent = birim; });
-  $$("#egri-noktalar .egri-nokta-sil").forEach((d) => {
-    d.onclick = () => {
-      const l = egriNoktalariTopla();
-      l.splice(Number(d.closest(".egri-satir").dataset.i), 1);
-      egriNoktalariCiz(l);
-      egriCiz();
-    };
-  });
-  $$("#egri-noktalar input").forEach((g) => { g.onchange = egriCiz; });
-  egriCiz();
-}
-
-function egriNoktalariTopla() {
-  return $$("#egri-noktalar .egri-satir").map((el) => [
-    Number(el.querySelector(".en-gun").value),
-    Number(el.querySelector(".en-deger").value),
-  ]);
-}
-
-/** Eğriyi çiziyor — kaydetmeden önce ne yaptığını görmek için. */
-function egriCiz() {
-  const tuval = $("#egri-tuval");
-  if (!tuval) return;
-  const c = tuval.getContext("2d");
-  const g = tuval.clientWidth || 400, y = tuval.clientHeight || 140;
-  const oran = Math.min(window.devicePixelRatio || 1, 2);
-  tuval.width = g * oran; tuval.height = y * oran;
-  c.setTransform(oran, 0, 0, oran, 0, 0);
-  c.clearRect(0, 0, g, y);
-
-  const noktalar = egriNoktalariTopla().slice().sort((a, b) => a[0] - b[0]);
-  // ust: 22 — birim yazısı en üstteki ızgara etiketiyle çakışmasın.
-  const kenar = { sol: 42, sag: 10, ust: 22, alt: 22 };
-  const gg = g - kenar.sol - kenar.sag, yy = y - kenar.ust - kenar.alt;
-  const enGun = Math.max(1, ...noktalar.map((n) => n[0]));
-  const enDeger = Math.max(1, ...noktalar.map((n) => n[1]));
-  const px = (gun) => kenar.sol + (gun / enGun) * gg;
-  const py = (d) => kenar.ust + (1 - d / enDeger) * yy;
-
-  c.font = "10px ui-monospace, Menlo, Consolas, monospace";
-  c.strokeStyle = "#2a2a28"; c.lineWidth = 1;
-  for (let i = 0; i <= 4; i++) {
-    const yv = kenar.ust + (yy * i) / 4;
-    c.beginPath(); c.moveTo(kenar.sol, yv); c.lineTo(g - kenar.sag, yv); c.stroke();
-    c.fillStyle = "#8a8a80"; c.textAlign = "right";
-    c.fillText(String(Math.round(enDeger * (1 - i / 4))), kenar.sol - 6, yv + 3);
-  }
-  c.fillStyle = "#8a8a80"; c.textAlign = "left";
-  c.fillText("gün", kenar.sol, y - 6);
-  c.textAlign = "right";
-  c.fillText(String(Math.round(enGun)), g - kenar.sag, y - 6);
-  c.textAlign = "left";
-  c.fillText(EGRI_BIRIM[$("#egri-tip").value] || "", 4, 10);
-
-  if (noktalar.length < 2) return;
-  c.strokeStyle = "var(--vurgu)";
-  c.strokeStyle = "#3987e5";
-  c.lineWidth = 2;
-  c.beginPath();
-  noktalar.forEach((n, i) => (i ? c.lineTo(px(n[0]), py(n[1])) : c.moveTo(px(n[0]), py(n[1]))));
-  c.stroke();
-  c.fillStyle = "rgba(57,135,229,.12)";
-  c.lineTo(px(noktalar[noktalar.length - 1][0]), py(0));
-  c.lineTo(px(noktalar[0][0]), py(0));
-  c.closePath(); c.fill();
-  c.fillStyle = "#3987e5";
-  noktalar.forEach((n) => {
-    c.beginPath(); c.arc(px(n[0]), py(n[1]), 3.5, 0, Math.PI * 2); c.fill();
-  });
-}
-
-async function egrileriYukle(secilecek) {
+async function egrileriYukle() {
   try {
     const y = await apiIste("/api/egriler");
     S.egriler = y.egriler || [];
-    S.egriSablonlari = y.sablonlar || [];
-    const secili = secilecek || $("#egri-secim").value;
-    $("#egri-secim").innerHTML = S.egriler.length
-      ? S.egriler.map((e) => `<option${e.ad === secili ? " selected" : ""}>${kacisli(e.ad)}</option>`).join("")
-      : '<option value="">(eğri yok)</option>';
-    $("#egri-sablon").innerHTML = S.egriSablonlari
-      .map((e, i) => `<option value="${i}">${kacisli(e.ad)}</option>`).join("");
-    if (secili && S.egriler.some((e) => e.ad === secili)) egriYukle(secili);
-    // Bitki kartındaki eğri seçenekleri de aynı listeden besleniyor.
+    // Sahne bitkinin yaşa göre çapını bu listeden çiziyor.
     if (window.Tarla && window.Tarla.egrilerDegisti) window.Tarla.egrilerDegisti(S.egriler);
   } catch (hata) { /* eğri yoksa sorun değil */ }
-}
-
-function egriYukle(ad) {
-  const e = S.egriler.find((x) => x.ad === ad);
-  if (!e) return;
-  $("#egri-ad").value = e.ad;
-  $("#egri-tip").value = e.tip;
-  egriNoktalariCiz(e.noktalar.map((n) => [...n]));
-}
-
-function egriBagla() {
-  if (!$("#egri-secim")) return;
-  $("#egri-secim").onchange = () => egriYukle($("#egri-secim").value);
-  $("#egri-tip").onchange = () => egriNoktalariCiz(egriNoktalariTopla());
-  $("#d-egri-yeni").onclick = () => {
-    $("#egri-ad").value = "";
-    egriNoktalariCiz([[0, 20], [30, 150]]);
-  };
-  $("#d-egri-nokta-ekle").onclick = () => {
-    const l = egriNoktalariTopla();
-    const son = l.length ? l[l.length - 1] : [0, 0];
-    egriNoktalariCiz([...l, [son[0] + 10, son[1]]]);
-  };
-  $("#d-egri-sablon").onclick = () => {
-    const s = S.egriSablonlari[Number($("#egri-sablon").value)];
-    if (!s) return;
-    $("#egri-ad").value = s.ad;
-    $("#egri-tip").value = s.tip;
-    egriNoktalariCiz(s.noktalar.map((n) => [...n]));
-  };
-  $("#d-egri-kaydet").onclick = async () => {
-    try {
-      const y = await apiIste("/api/egriler", {
-        method: "POST",
-        body: JSON.stringify({ ad: $("#egri-ad").value, tip: $("#egri-tip").value,
-                               noktalar: egriNoktalariTopla() }),
-      });
-      gunluk(`✓ '${y.egri.ad}' eğrisi kaydedildi`, "ok");
-      await egrileriYukle(y.egri.ad);
-    } catch (hata) { gunluk(`✕ ${hata.message}`, "hata"); }
-  };
-  $("#d-egri-sil").onclick = async () => {
-    const ad = $("#egri-secim").value;
-    if (!ad || !confirm(`'${ad}' eğrisi silinsin mi?`)) return;
-    try {
-      await apiIste(`/api/egriler?ad=${encodeURIComponent(ad)}`, { method: "DELETE" });
-      gunluk(`✓ '${ad}' silindi`, "ok");
-      await egrileriYukle();
-    } catch (hata) { gunluk(`✕ ${hata.message}`, "hata"); }
-  };
-  window.addEventListener("resize", egriCiz);
-  egriNoktalariCiz([[0, 20], [30, 150]]);
 }
 
 
@@ -2196,35 +1890,22 @@ function tanilariCiz(d) {
   $("#tani-liste").innerHTML = hepsi.map(taniKarti).join("");
 }
 
-async function programlariYukle(secilecek) {
-  try {
-    const govde = await apiIste("/api/programlar");
-    S.programlar = govde.programlar || [];
-    const secili = secilecek || $("#prog-secim").value;
-    $("#prog-secim").innerHTML = S.programlar
-      .map((p) => `<option${p.ad === secili ? " selected" : ""}>${kacisli(p.ad)}</option>`).join("");
-    if (secili && S.programlar.some((p) => p.ad === secili)) programYukle(secili);
-    else degerFormuCiz();
-    // Haritadaki "Dizi uygula" listesi de aynı kaynaktan besleniyor.
-    if (window.Tarla && window.Tarla.dizilerDegisti) window.Tarla.dizilerDegisti(S.programlar);
-  } catch (hata) {
-    gunluk(`✕ Programlar yüklenemedi: ${hata.message}`, "hata");
-  }
-}
-
-function programYukle(ad) {
-  const p = S.programlar.find((x) => x.ad === ad);
-  if (!p) return;
-  $("#prog-ad").value = p.ad;
-  $("#prog-tekrar").value = p.tekrar || 1;
-  degiskenleriCiz((p.degiskenler || []).map((d) => ({ ...d })));
-  adimlariCiz(p.adimlar.map((a) => ({ ...a })));
-  degerFormuCiz();
-}
-
+/* ------------------------------------------------------- çalışan dizi
+ *
+ * Sulama, ekim ve "sırayla gez" hep bir DİZİ olarak koşuyor: makineye
+ * gönderilen şey adım listesi. Bu gösterge o dizinin kaçıncı adımda
+ * olduğunu ve hata verirse nerede durduğunu yazıyor.
+ *
+ * SAYFA SEVİYESİNE ÇIKTI. Eskiden Kurulum sekmesindeki program kartının
+ * içindeydi. Program editörü kaldırıldı, ama gösterge onun parçası
+ * değildi: sulama Bahçe sekmesinden başlatılıyor ve ilerlemesi başka
+ * bir sekmede duruyordu. Şerit artık üst bantlarla aynı yerde, hangi
+ * sekmede olursanız olun görünüyor.
+ */
 function diziGuncelle(d) {
   if (!d) return;
-  const kutu = $("#prog-ilerleme");
+  const bant = $("#dizi-bant"), kutu = $("#dizi-ilerleme");
+  if (!bant || !kutu) return;
   if (d.calisiyor || d.hata) {
     const oran = d.toplam ? Math.round((d.adim / d.toplam) * 100) : 0;
     kutu.innerHTML =
@@ -2236,13 +1917,12 @@ function diziGuncelle(d) {
         : "") +
       (d.hata ? `<div class="rozet-uyari" style="display:block;margin-top:8px">
                    ✕ Dizi ${d.adim}. adımda durdu: ${kacisli(d.hata)}</div>` : "");
-    kutu.classList.remove("gizli");
+    bant.classList.remove("gizli");
   } else {
-    kutu.classList.add("gizli");
+    bant.classList.add("gizli");
   }
-  $("#d-prog-calistir").disabled = !S.ajanBagli || d.calisiyor;
-  $("#d-prog-durdur").disabled = !d.calisiyor;
 }
+
 
 /* ------------------------------------------------------------------ kamera */
 // Kamera bir eklenti: kapaliyken makinenin hicbir islevi etkilenmiyor.
@@ -4487,7 +4167,6 @@ async function gecmisYukle() {
     hava_nem: v.hava_nem[i], toprak_nem: v.toprak_nem[i],
     basinc: v.basinc[i],
   })).slice(-SATIR_SINIRI);
-  tabloCiz();
   grafikleriYaz();
   S.sonZaman = v.ts.length ? v.ts[v.ts.length - 1] : 0;
   gorunurlukGuncelle();
@@ -4501,7 +4180,6 @@ const SATIR_SINIRI = 900;
 function noktaEkle(olcum) {
   S.satirlar.push(olcum);
   if (S.satirlar.length > SATIR_SINIRI) S.satirlar.shift();
-  tabloCiz();
   grafikleriYaz();
 }
 
@@ -4532,20 +4210,11 @@ function grafikleriYaz() {
   yaz(S.grafikler.basinc, [al("basinc")], DUZ_TABAN.basinc);
 }
 
-function tabloCiz() {
-  const govde = $("#tablo-govde");
-  const parcalar = [];
-  for (let i = S.satirlar.length - 1; i >= Math.max(0, S.satirlar.length - 100); i--) {
-    const s = S.satirlar[i];
-    parcalar.push(
-      `<tr><td>${new Date(s.ts * 1000).toLocaleString("tr-TR")}</td>` +
-      `<td>${sayi(s.hava_sicaklik)}</td><td>${sayi(s.bmp_sicaklik)}</td>` +
-      `<td>${sayi(s.hava_nem)}</td><td>${sayi(toprakYuzde(s.toprak_nem), 0)}</td>` +
-      `<td>${sayi(s.basinc)}</td></tr>`
-    );
-  }
-  govde.innerHTML = parcalar.join("");
-}
+/* SON ÖLÇÜMLER TABLOSU KALDIRILDI. İzle sekmesinde grafiğin altında
+ * aynı verinin sayı hâli duruyordu — kendi yardım metni de "grafikteki
+ * aynı veri, sayı olarak" diyordu. Aynı şeyi iki kez göstermek sekmeyi
+ * uzatmaktan başka bir işe yaramıyordu. Ölçümlerin kendisi duruyor:
+ * grafik onları çiziyor, `S.satirlar` de yerinde. */
 
 /* ----------------------------------------------------------------- kartlar */
 function kartlariGuncelle(o) {
@@ -5132,47 +4801,12 @@ function olaylariBagla() {
   };
 
   $("#d-nokta-kaydet").onclick = noktaKaydet;
-  $("#prog-secim").onchange = () => programYukle($("#prog-secim").value);
-  $("#d-prog-yeni").onclick = () => {
-    $("#prog-ad").value = ""; $("#prog-tekrar").value = 1;
-    degiskenleriCiz([]); adimlariCiz([]); degerFormuCiz();
-  };
-  $("#d-adim-ekle").onclick = () => adimlariCiz([...adimlariTopla(), { tip: "nokta", ad: S.noktalar[0]?.ad || "" }]);
-  $("#d-degisken-ekle").onclick = () => {
-    degiskenleriCiz([...degiskenleriTopla(), { ad: "hedef", tip: "nokta", aciklama: "" }]);
-    adimlariCiz(adimlariTopla());
-  };
-  $("#d-prog-kaydet").onclick = async () => {
-    try {
-      const p = await apiIste("/api/programlar", {
-        method: "POST",
-        body: JSON.stringify({ ad: $("#prog-ad").value, tekrar: Number($("#prog-tekrar").value),
-                               degiskenler: degiskenleriTopla(),
-                               adimlar: adimlariTopla() }),
-      });
-      gunluk(`✓ '${p.program.ad}' kaydedildi (${p.program.adimlar.length} adım)`, "ok");
-      await programlariYukle(p.program.ad);
-    } catch (hata) { gunluk(`✕ ${hata.message}`, "hata"); }
-  };
-  $("#d-prog-calistir").onclick = async () => {
-    try {
-      const s = await apiIste("/api/programlar/calistir", {
-        method: "POST",
-        body: JSON.stringify({ ad: $("#prog-secim").value, degerler: degerleriTopla() }),
-      });
-      gunluk(s.ok ? `✓ ${s.mesaj}` : `✕ ${s.mesaj}`, s.ok ? "ok" : "hata");
-    } catch (hata) { gunluk(`✕ ${hata.message}`, "hata"); }
-  };
-  $("#d-prog-durdur").onclick = () => komutGonder("dizi_durdur");
-  $("#d-prog-sil").onclick = async () => {
-    const ad = $("#prog-secim").value;
-    if (!ad || !confirm(`'${ad}' silinsin mi?`)) return;
-    try {
-      await apiIste(`/api/programlar?ad=${encodeURIComponent(ad)}`, { method: "DELETE" });
-      gunluk(`✓ '${ad}' silindi`, "ok");
-      await programlariYukle();
-    } catch (hata) { gunluk(`✕ ${hata.message}`, "hata"); }
-  };
+  // ÇALIŞAN DİZİYİ DURDURMA. Program editörüyle birlikte gitmedi: dizi
+  // sulamayı da çalıştırıyor ve yanlış başlayan bir sulamayı acil
+  // durdurmaya basmadan kesebilmek gerekiyor. Düğme ilerleme şeridinin
+  // içinde, yani ancak koşan bir dizi varken görünüyor.
+  const diziDur = $("#d-dizi-durdur");
+  if (diziDur) diziDur.onclick = () => komutGonder("dizi_durdur");
 
   const gozEkle = $("#d-goz-satir-ekle");
   if (gozEkle) {
@@ -5739,7 +5373,6 @@ async function basla() {
   $("#d-geri-al-kapat").onclick = geriAlKapat;
   kalibBagla();
   kalibrasyonYukle();
-  egriBagla();
   // Tarla sahnesi kendi dosyasında; three.js yüklenmediyse panel yine çalışsın.
   try {
     if (window.Tarla) await window.Tarla.kur();
@@ -5749,7 +5382,6 @@ async function basla() {
   if (Object.keys(S.grafikler).length) await gecmisYukle();
   await egrileriYukle();
   await noktalariYukle();
-  await programlariYukle();
   await dikimYukle();
   // Sayfa açılırken zaten kare varsa hemen göster — HER KAMERA İÇİN
   // ayrı ayrı, yoksa yalnızca son kare gelen kameranın kutusu açılırdı.

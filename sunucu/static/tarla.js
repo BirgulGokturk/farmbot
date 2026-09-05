@@ -1527,48 +1527,13 @@
 
   /* -------------------------------------------------------- toplu işlem */
 
-  /** Nokta değişkeni olan diziler — seçime uygulanabilenler. Liste app.js'ten
-   *  geliyor; katman ya da çekirdek dizi deposunu ayrıca okumuyor. */
-  let uygunDiziler = [];
-
-  function dizileriTazele(programlar) {
-    const sec = $("#toplu-dizi");
-    if (!sec) return;
-    uygunDiziler = (programlar || []).filter(
-      (p) => (p.degiskenler || []).filter((d) => d.tip === "nokta").length === 1);
-    const onceki = sec.value;
-    sec.innerHTML = uygunDiziler.length
-      ? uygunDiziler.map((p) => `<option>${kacisli(p.ad)}</option>`).join("")
-      : '<option value="">(nokta değişkenli dizi yok)</option>';
-    if (uygunDiziler.some((p) => p.ad === onceki)) sec.value = onceki;
-    sec.disabled = !uygunDiziler.length;
-    const d = $("#d-toplu-dizi");
-    if (d) d.disabled = !uygunDiziler.length;
-    diziDegerleriCiz();
-  }
-
-  /** Seçilen dizinin nokta DIŞINDAKİ değişkenleri için alan açıyor.
-   *  Nokta değişkeni seçimin kendisinden geliyor, sorulmuyor. */
-  function diziDegerleriCiz() {
-    const kutu = $("#toplu-degerler");
-    if (!kutu) return;
-    const p = uygunDiziler.find((x) => x.ad === ($("#toplu-dizi") || {}).value);
-    const digerleri = ((p && p.degiskenler) || []).filter((d) => d.tip !== "nokta");
-    kutu.innerHTML = digerleri.map((d) => `
-      <label class="toplu-deger" title="${kacisli(d.aciklama || d.ad)}">
-        <span>$${kacisli(d.ad)}</span>
-        <input type="${d.tip === "sayi" ? "number" : "text"}" data-ad="${kacisli(d.ad)}"
-               value="${d.tip === "sayi" ? 3 : ""}">
-      </label>`).join("");
-  }
-
-  function diziDegerleriTopla() {
-    const d = {};
-    document.querySelectorAll("#toplu-degerler input").forEach((g) => {
-      d[g.dataset.ad] = g.value;
-    });
-    return d;
-  }
+  /* DİZİ UYGULAMA KALDIRILDI. Kayıtlı bir diziyi seçime uygulayan açılır
+   * liste ve "Dizi uygula" düğmesi buradaydı. Dizileri YAZAN editör
+   * (Kurulum > Programlar) kullanılmadığı için kaldırıldı; uygulanacak
+   * yeni bir dizi yazılamayacağına göre uygulama düğmesi de anlamsız
+   * kalıyordu. Dizi MOTORU duruyor: sulama, ekim ve "sırayla gez" hâlâ
+   * adım dizisi olarak koşuyor (`programlar.py`).
+   */
 
   async function topluIslem(islem) {
     const adlar = [...T.secim];
@@ -1643,11 +1608,6 @@
       } catch (h) {
         gunluk(`⚠ Ekim önizlemesi alınamadı: ${h.message}`, "uyari");
       }
-    }
-    if (islem === "dizi") {
-      govde.dizi = ($("#toplu-dizi") || {}).value || "";
-      if (!govde.dizi) { gunluk("Uygulanacak dizi seçilmedi", "uyari"); return; }
-      govde.degerler = diziDegerleriTopla();
     }
     try {
       const y = await P().apiIste("/api/toplu", {
@@ -2236,7 +2196,6 @@
     },
 
     /** app.js dizileri yükledikçe çağırıyor — "Dizi uygula" listesi. */
-    dizilerDegisti(programlar) { dizileriTazele(programlar); },
 
     /** Deneme yardımcısı — kaç kare GERÇEKTEN çizildi, şu an kirli mi. */
     cizimDurumu() {
@@ -2567,8 +2526,6 @@
     if (ekDugme) ekDugme.onclick = () => topluIslem("ek");
     $("#d-toplu-gez").onclick = () => topluIslem("gez");
     $("#d-toplu-sil").onclick = () => topluIslem("sil");
-    $("#d-toplu-dizi").onclick = () => topluIslem("dizi");
-    $("#toplu-dizi").onchange = () => diziDegerleriCiz();
     $("#d-toplu-temizle").onclick = () => secimiBirak();
     kipSec(localStorage.getItem("farmbot_tarla_kip") || "tasi");
 

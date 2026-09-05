@@ -690,52 +690,9 @@ async def api_toplu(govde: dict[str, Any], jeton: str = Query(default="")):
         return {"ok": True, "silinen": [n.get("ad") for n in silinen],
                 "geri_al": parti,
                 "mesaj": f"{len(silinen)} nokta silindi"}
-
-    if islem == "dizi":
-        # KAYITLI DİZİYİ SEÇİMİN HER NOKTASINA UYGULA.
-        #
-        # "Şu noktayı sula" yerine "verilen noktayı sula": dizi bir nokta
-        # değişkeni tanımlıyor, biz onu seçili her nokta için bir kez
-        # dolduruyoruz ve çıkan adımları arka arkaya ekliyoruz. Tek bir
-        # "sula" dizisi 40 fideye böyle uygulanıyor.
-        prog_ad = str(govde.get("dizi", ""))
-        program = await asyncio.to_thread(programlar.bul, prog_ad)
-        if program is None:
-            raise HTTPException(status_code=404, detail=f"'{prog_ad}' adında dizi yok")
-
-        nokta_degiskenleri = [d for d in program.get("degiskenler", [])
-                              if d.get("tip") == "nokta"]
-        if len(nokta_degiskenleri) != 1:
-            raise HTTPException(
-                status_code=400,
-                detail=f"'{prog_ad}' dizisinde tam olarak bir nokta değişkeni olmalı "
-                       f"(şu an {len(nokta_degiskenleri)}). Diziye "
-                       "\"nokta\" tipinde bir değişken ekleyin.")
-        hedef = nokta_degiskenleri[0]["ad"]
-
-        # Nokta dışındaki değişkenlerin değeri istekte gelmeli.
-        digerleri = {d["ad"]: govde.get("degerler", {}).get(d["ad"])
-                     for d in program.get("degiskenler", []) if d["ad"] != hedef}
-
-        adimlar = []
-        try:
-            for nokta_ad in adlar:
-                adimlar.extend(await asyncio.to_thread(
-                    programlar.coz, program, {**digerleri, hedef: nokta_ad}))
-        except programlar.ProgramHatasi as hata:
-            raise HTTPException(status_code=400, detail=str(hata))
-
-        if len(adimlar) > programlar.AZAMI_ADIM:
-            raise HTTPException(
-                status_code=400,
-                detail=f"{len(adlar)} nokta × {len(adimlar) // max(1, len(adlar))} adım = "
-                       f"{len(adimlar)} adım, sınır {programlar.AZAMI_ADIM}. "
-                       "Daha az nokta seçin ya da diziyi kısaltın.")
-
-        return await merkez.komut_gonder("dizi_baslat", {
-            "ad": f"{prog_ad} × {len(adlar)} nokta", "adimlar": adimlar,
-            "tekrar": 1, "hiz": govde.get("hiz"),
-        })
+    # DİZİ UYGULAMA KALDIRILDI. "Kayıtlı bir diziyi seçili her noktaya
+    # uygula" işlemi buradaydı. Dizileri yazan editör panelden çıkarıldı,
+    # yeni dizi yazılamıyor; uygulama yolu da onunla birlikte gitti.
 
     if islem == "ek":
         cozum = await asyncio.to_thread(_ekim_coz, adlar)
@@ -2374,67 +2331,21 @@ async def api_tepsi_goz(govde: dict[str, Any], jeton: str = Query(default="")):
 
 
 # --------------------------------------------------------------------------- #
-# Kayıtlı programlar
-# --------------------------------------------------------------------------- #
-@app.get("/api/programlar")
-async def api_programlar(jeton: str = Query(default="")):
-    _parola_dogrula(jeton)
-    return {"programlar": await asyncio.to_thread(programlar.hepsi)}
-
-
-@app.post("/api/programlar")
-async def api_program_kaydet(govde: dict[str, Any], jeton: str = Query(default="")):
-    _parola_dogrula(jeton)
-    try:
-        program = await asyncio.to_thread(
-            programlar.kaydet, govde.get("ad", ""), govde.get("adimlar") or [],
-            int(govde.get("tekrar", 1)), govde.get("degiskenler") or [])
-    except programlar.ProgramHatasi as hata:
-        raise HTTPException(status_code=400, detail=str(hata))
-    except (TypeError, ValueError) as hata:
-        raise HTTPException(status_code=400, detail=f"Geçersiz program: {hata}")
-    return {"ok": True, "program": program}
-
-
-@app.delete("/api/programlar")
-async def api_program_sil(ad: str = Query(...), jeton: str = Query(default="")):
-    _parola_dogrula(jeton)
-    if not await asyncio.to_thread(programlar.sil, ad):
-        raise HTTPException(status_code=404, detail=f"'{ad}' adında program yok")
-    return {"ok": True}
-
-
-@app.post("/api/programlar/calistir")
-async def api_program_calistir(govde: dict[str, Any], jeton: str = Query(default="")):
-    """Programı çözüp ajana gönderir.
-
-    Nokta adları burada koordinata çevriliyor; ajan nokta deposunu bilmiyor.
-    Eksik bir nokta varsa dizi HİÇ başlamıyor — yarıda durmasındansa.
-    """
-    _parola_dogrula(jeton)
-    ad = str(govde.get("ad", ""))
-    program = await asyncio.to_thread(programlar.bul, ad)
-    if program is None:
-        raise HTTPException(status_code=404, detail=f"'{ad}' adında program yok")
-    try:
-        # Değişkenli dizi: değerler istekte geliyor. Biri eksikse dizi HİÇ
-        # başlamıyor — yarıda "değer yok" diye durmaktansa.
-        adimlar = await asyncio.to_thread(
-            programlar.coz, program, govde.get("degerler") or {})
-    except programlar.ProgramHatasi as hata:
-        raise HTTPException(status_code=400, detail=str(hata))
-    return await merkez.komut_gonder("dizi_baslat", {
-        "ad": program["ad"], "adimlar": adimlar,
-        "tekrar": program.get("tekrar", 1), "hiz": govde.get("hiz"),
-    })
-
+# Program uç noktaları KALDIRILDI
+#
+# Adım/değişken editörü panelden çıkarıldı — kullanılmıyordu. Onunla
+# birlikte program yazma, silme ve elle çalıştırma uçları da gitti.
+# `programlar.py` DURUYOR: `coz()` adım çözücüsü sulamanın, ekimin ve
+# "sırayla gez"in tek yolu, `AZAMI_ADIM` de hepsinin ortak sınırı.
 
 # --------------------------------------------------------------------------- #
 # Eğriler — zamana göre değişen değerler
 #
 # "Günde 250 ml" sabit bir sayı; oysa fide üç günlükken de hasada bir hafta
 # kalmışken de aynı suyu istemiyor. Eğri bitkinin YAŞINA göre değer veriyor.
-# Hesap `egriler.py` içinde; panel eğriyi çiziyor, değerlendirmiyor.
+# Hesap `egriler.py` içinde. Panel eğriyi YAZMIYOR: düzenleyici kaldırıldı
+# (kullanılmıyordu), liste yalnız okunuyor — 3B sahne bitkinin yaşa göre
+# çapını ondan çiziyor.
 # --------------------------------------------------------------------------- #
 @app.get("/api/egriler")
 async def api_egriler(jeton: str = Query(default="")):
@@ -2442,38 +2353,6 @@ async def api_egriler(jeton: str = Query(default="")):
     return {"egriler": await asyncio.to_thread(egriler.hepsi),
             "sablonlar": egriler.SABLONLAR,
             "tipler": {t: egriler.BIRIM[t] for t in egriler.GECERLI_TIPLER}}
-
-
-@app.post("/api/egriler")
-async def api_egri_kaydet(govde: dict[str, Any], jeton: str = Query(default="")):
-    _parola_dogrula(jeton)
-    try:
-        egri = await asyncio.to_thread(
-            egriler.kaydet, govde.get("ad", ""), govde.get("tip", ""),
-            govde.get("noktalar") or [])
-    except egriler.EgriHatasi as hata:
-        raise HTTPException(status_code=400, detail=str(hata))
-    return {"ok": True, "egri": egri}
-
-
-@app.delete("/api/egriler")
-async def api_egri_sil(ad: str = Query(...), jeton: str = Query(default="")):
-    _parola_dogrula(jeton)
-    if not await asyncio.to_thread(egriler.sil, ad):
-        raise HTTPException(status_code=404, detail=f"'{ad}' adında eğri yok")
-    return {"ok": True}
-
-
-@app.get("/api/egriler/deger")
-async def api_egri_deger(ad: str = Query(...), gun: float = Query(default=0),
-                         jeton: str = Query(default="")):
-    """Bir eğrinin belirli yaştaki değeri — hesabın tek yeri sunucuda."""
-    _parola_dogrula(jeton)
-    egri = await asyncio.to_thread(egriler.bul, ad)
-    if egri is None:
-        raise HTTPException(status_code=404, detail=f"'{ad}' adında eğri yok")
-    return {"ad": egri["ad"], "tip": egri["tip"], "birim": egri["birim"],
-            "gun": gun, "deger": egriler.deger(egri, gun)}
 
 
 # --------------------------------------------------------------------------- #
