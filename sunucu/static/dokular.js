@@ -112,7 +112,6 @@
     cim: 1024,        // ekranı kaplıyor, en çok tekrarlanan doku
     gok: 512,         // dikey gradyan, ince desen yok — 512 fazlasıyla yeter
     firca: 512,       // fırça izi ince çizgi, çözünürlükten en çok o kazanıyor
-    cicek: 128,       // ekranda ~10 px, ama alfa eşiğinde kenar temizliği önemli
   };
 
   /* Anizotropik süzme. Zemin düzlemi kameraya göre çok yatık duruyor;
@@ -519,54 +518,6 @@
     return c;
   }
 
-  /* ============================================================ çiçek
-   *
-   * Tek bir çiçek başı: beş taç yaprak + göbek. Doku GRİ TONLU; rengi
-   * her çiçek kendi köşe renginden alıyor, böylece beyazdan mora bütün
-   * çeşit tek dokuyu ve tek malzemeyi paylaşıyor.
-   *
-   * Kenar yumuşak ama alfa eşiği kullanıldığı için saydamlık sıralaması
-   * gerekmiyor — sıralama, ekranda yüzlerce küçük dörtgen varken en
-   * pahalı iş olurdu.
-   */
-  function cicekDoku(en) {
-    en = en || BOY.cicek;
-    const c = kanvas(en), g = c.getContext("2d");
-    const o = en / 2, R = en * 0.44;
-    g.clearRect(0, 0, en, en);
-    for (let i = 0; i < 5; i++) {
-      const a = (i / 5) * Math.PI * 2 - Math.PI / 2;
-      const px = o + Math.cos(a) * R * 0.52, py = o + Math.sin(a) * R * 0.52;
-      const gr = g.createRadialGradient(px, py, 0, px, py, R * 0.52);
-      gr.addColorStop(0.00, "rgba(255,255,255,1)");
-      gr.addColorStop(0.82, "rgba(246,246,246,1)");
-      gr.addColorStop(1.00, "rgba(232,232,232,0)");
-      g.fillStyle = gr;
-      g.save();
-      g.translate(px, py);
-      g.rotate(a);
-      g.scale(1, 0.62);
-      g.beginPath();
-      g.arc(0, 0, R * 0.52, 0, Math.PI * 2);
-      g.fill();
-      g.restore();
-    }
-    const gb = g.createRadialGradient(o, o, 0, o, o, R * 0.30);
-    gb.addColorStop(0.0, "rgba(150,140,90,1)");
-    gb.addColorStop(1.0, "rgba(214,206,170,1)");
-    g.fillStyle = gb;
-    g.beginPath();
-    g.arc(o, o, R * 0.30, 0, Math.PI * 2);
-    g.fill();
-    return c;
-  }
-
-  /* ============================================================ gökyüzü
-   *
-   * Dikey gradyan: tepede koyu mavi-gri, ufka doğru açılıp sıcak bir tona
-   * dönüyor. Düz siyah arka plan sahneyi kesip atıyordu; ufuk çizgisi
-   * makinenin bir yerde DURDUĞU hissini veren şey.
-   */
   function gokyuzuDoku(en) {
     en = en || BOY.gok;
     const c = kanvas(en), g = c.getContext("2d");
@@ -623,16 +574,6 @@
         kutu.firca = dokuYap(THREE, fircaliDoku(BOY.firca), [3, 3]);
       }
       return kutu.firca;
-    },
-
-    /** Çiçek başı dokusu — gri tonlu, rengi köşe renginden geliyor. */
-    cicek(THREE) {
-      if (!kutu.cicekDoku) {
-        const d = new THREE.CanvasTexture(cicekDoku(BOY.cicek));
-        d.anisotropy = Math.min(4, azamiAnizotropi);
-        kutu.cicekDoku = d;
-      }
-      return kutu.cicekDoku;
     },
 
     /** Gökyüzü gradyanı — kubbe için. */
