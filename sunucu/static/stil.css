@@ -1110,6 +1110,14 @@ table.veri td { color: var(--metin-2); }
   overflow: hidden;
   background: #0e1210;
 }
+/* `touch-action: none` KALIYOR ve kaydırma JS'ten yürüyor.
+ *
+ * Tarayıcıya bırakılan seçenekler ikisi de yetmiyordu: `none` sayfayı
+ * sahnenin üstünde tamamen kilitliyor (parmak orada sıkışıyor), `pan-y`
+ * ise iki parmaklı jesti tarayıcıyla paylaşıyor — parmaklar hem sahneyi
+ * çeviriyor hem sayfayı kaydırıyor. Kilit duruyor, boş sahnede tek
+ * parmakla yapılan sürükleme kaydırılabilir kabı JS eliyle kaydırıyor
+ * (bkz. tarla.js `kaydirilacakKap`); böylece iki jest hiç karışmıyor. */
 .tarla-sahne canvas { display: block; width: 100%; height: 100%; touch-action: none; }
 .tarla-sahne.gizli { display: none; }
 /* 2B tuval yatağın oranına göre daraltılıyor (bkz. boyutla2b); ortalanıyor. */
@@ -1272,6 +1280,28 @@ table.veri td { color: var(--metin-2); }
 @media (max-width: 900px) {
   #uygulama { height: auto; overflow: visible; }
   header { position: sticky; top: 0; }
+
+  /* ÜST ÇUBUK 720-900 ARASINDA TAŞIYORDU — ÖLÇÜLDÜ.
+   *
+   * Taban kurallarla tek satırın istediği genişlik: yedi sekme
+   * (7 x 32 px iç boşluk + metin) ~506 px, sağ grup (üç ışık 64 +
+   * boşluk 16 + "Acil durdurma" düğmesi ~120) ~200 px, ızgara
+   * `1fr auto 1fr` olduğu için sol sütun da sağ kadar yer istiyor,
+   * artı iki 16 px boşluk: ~938 px. Raspberry'nin ekranı 800 px.
+   * İki satıra geçen kural yalnız 720'de vardı, o yüzden 800'de çubuk
+   * yatay taşıyordu.
+   *
+   * İKİ SATIR YAPMIYORUZ: 800x480'de asıl kıt olan yükseklik ve ikinci
+   * satır 40 px daha yerdi. Bunun yerine sekmelerin iç boşluğu yarıya
+   * iniyor (7 x 16 = 112 px kazanç), marka yazısı ve "Acil durdurma"
+   * metni kısalıyor (~80 px). Kalan ~778 px 800'e sığıyor. Yine de
+   * sığmayan bir kurulum olursa sekme şeridi yatay kayıyor —
+   * taşıp kesilmektense kaydırılabilir olsun. */
+  nav.sekmeler { min-width: 0; overflow-x: auto; scrollbar-width: none; }
+  nav.sekmeler::-webkit-scrollbar { display: none; }
+  nav.sekmeler button { padding: 0 var(--b2); flex: none; }
+  .marka span { display: none; }        /* simge kalıyor, yazı yer açıyor */
+  .acil-dugme { padding: 0 var(--b2); font-size: var(--yazi-kucuk); }
 
   main.kabuk {
     display: flex;
@@ -2490,3 +2520,107 @@ body.kamera-sekmesi .toplu-cubuk { display: none; }
   overflow: hidden;
 }
 .adim-cubuk > i { display: block; height: 100%; background: var(--vurgu); }
+/* ==================================================================== KISA EKRAN
+ *
+ * Raspberry'nin paneli 800x480. Bugüne kadar bütün kırılma noktaları
+ * yalnız GENİŞLİĞE bakıyordu; oysa 800 px genişlik rahat, kıt olan 480
+ * px yükseklik.
+ *
+ * ÖLÇÜM (taban kurallarla, 800x480, PLC tanısı görünürken):
+ *   üst çubuk      48 + 1 px kenar                        =  49
+ *   tanı şeridi    16+16 iç boşluk + 20 satır + 1 kenar   =  53
+ *   bölüm başlığı  16 panel + 20 başlık + 16 gövde payı   =  52
+ *                                                    toplam 154 px (%32)
+ *   (acil durdurma mandallıysa üstüne 37 px daha: 191 px)
+ *   Kalanı da 42vh'lik sahne şeridi (202 px) yiyor; panele 124 px kalıyor.
+ *
+ * BU BLOKTAN SONRA:
+ *   üst çubuk      36 + 1                                 =  37
+ *   tanı şeridi     8+8 + 20 + 1                          =  37
+ *   bölüm başlığı   8 + 20 + 8                            =  36
+ *                                                    toplam 110 px (%23)
+ *   Sahne artık sabit değil, KALAN yere uyuyor.
+ *
+ * Sınır 560 px seçildi: 480'in üstünde bir pay bırakıyor (tarayıcı
+ * çubuğu olan bir kurulumda 480'lik ekran 430-450 px içerik verir) ve
+ * 600 px'lik yaygın telefon manzara yüksekliğinin altında kalıyor.
+ * Genişlikten bağımsız: kısa olan her ekranda aynı sorun var.
+ */
+@media (max-height: 560px) {
+  :root {
+    --ust-yuk: 36px;
+  }
+
+  /* Şeritler sıkışıyor. Tanı şeridi ayrıca daha az yer kaplıyor: 40vh
+     480 px'de 192 px demekti, yani ekranın kırkta biri değil ikide biri. */
+  #acil-bant { padding: var(--b1) 0; }
+  #tani-bant { padding: var(--b2) 0; max-height: 28vh; }
+  #gunluk-serit button { padding: var(--b1) 0; }
+
+  /* Bölüm başlıkları alçalıyor. Başlığın kendisi değil, ÇEVRESİNDEKİ
+     boşluk küçülüyor — 13 px'lik yazıyı küçültmek okunurluğu bozardı,
+     oysa yenen yerin çoğu boşluktu. */
+  .yuzen-govde { padding: var(--b2) var(--b3); }
+  .bolum-govde { padding-top: var(--b2); }
+  .bolum + .bolum { margin-top: var(--b2); padding-top: var(--b2); }
+  .bolum-govde > * + * { margin-top: var(--b2); }
+
+  /* Sahne şeridi SABİT DEĞİL, KALAN YERE UYUYOR.
+   *
+   * Dar ekran kuralları (900 px) kabuğu normal akışa bırakıyor
+   * (`#uygulama { height: auto }`) ve sahneye 42vh sabit boy veriyor.
+   * Kısa ekranda ikisi birden yanlış: sayfa ekrandan uzuyor ve sahne
+   * her koşulda ekranın %42'sini alıyor. Kabuk yeniden ekrana
+   * kilitleniyor, sahne esneyen parça oluyor, paneller kendi içinde
+   * kayıyor. 150 px alt sınır: altında 3B sahne bir şerit bile değil. */
+  #uygulama { height: 100dvh; overflow: hidden; }
+  main.kabuk { overflow-y: auto; min-height: 0; }
+  .sahne-alan { flex: 1 1 auto; height: auto; min-height: 150px; }
+  /* "Büyüt" kısa ekranda da anlamını koruyor: sahne kalan yerin
+     tamamını alıyor, paneller kayarak altında kalıyor. */
+  .sahne-alan.buyuk { height: auto; min-height: 60vh; }
+
+  /* Açılır paneller ekranın yarısını geçmesin. */
+  .acilir { max-height: 52vh; }
+  #tarla-kart, .tarla-kart { max-height: 60vh; }
+}
+
+/* ======================================================================= TELEFON
+ *
+ * En küçük kırılma noktası 720 px'di; 390-430 px'lik telefonlarda sekme
+ * çubuğu, ayar kartları ve düğme sıraları taşıyordu. Bu blok yalnız
+ * TAŞMAYI kesiyor: sıralar sarıyor, en küçük dokunma hedefi 44 px'in
+ * altına inmiyor, tek satıra sığmayan şerit kayıyor.
+ */
+@media (max-width: 430px) {
+  /* Sekme çubuğu: yedi sekme 430 px'e sığmıyor ve `flex: 1` onları
+     eşit bölüp metni kırpıyordu. Kendi genişliğinde kalıp yatay
+     kayıyorlar — kesik bir sekme adı, kaydırılabilir bir şeritten kötü. */
+  nav.sekmeler { overflow-x: auto; scrollbar-width: none; }
+  nav.sekmeler::-webkit-scrollbar { display: none; }
+  nav.sekmeler button { flex: none; padding: 0 var(--b3); min-width: 64px; }
+
+  main { padding: var(--b2) var(--b1); }
+  .kart { padding: var(--b2); }
+
+  /* DÜĞME SIRALARI. Sarma zaten vardı (`.satir-8` taban kuralı), eksik
+     olan sardıktan SONRAKİ genişlikti: düğmeler kendi metin boyunda
+     kalıp sırayı düzensiz bırakıyor, uzun etiketli olan tek başına
+     taşıyordu. Sarınca kalan yeri paylaşıyorlar.
+     Dokunma hedefi 44 px'in altına inmiyor — taban 32 px (`--alan-y`),
+     fareyle sorun değil, parmakla az. */
+  .satir-8 > .dugme, .satir-16 > .dugme { flex: 1 1 auto; }
+  .dugme { min-height: 44px; }
+
+  /* Ölçüm kutuları: taban 140 px'lik sütun 430 px'de ikiye zor sığıyor
+     ve gövde metni kırpılıyordu. */
+  .olcum-izgara { grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); }
+  /* Giriş alanları sıranın kalanını alsın: sabit 160 px'lik metin
+     kutusu, etiketiyle birlikte 430 px'i geçiyordu. */
+  .alan input, .alan select { width: 100%; min-width: 0; }
+  .satir-8 > input[type="text"] { width: auto; flex: 1 1 140px; }
+
+  /* Tablo kendi içinde kayıyor (`overflow: auto` zaten var); telefonda
+     yüksekliği de kısalıyor, 320 px ekranın yarısından çok. */
+  .tablo-kutu { max-height: 220px; }
+}

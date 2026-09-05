@@ -1715,13 +1715,98 @@
     ciz2bTumu();
   }
 
+  /** Sahnenin içinde bulunduğu kaydırılabilir kap — yoksa null (pencere).
+   *
+   * Kısa ekranda kabuk ekrana kilitleniyor ve asıl kaydırma `main.kabuk`
+   * içinde oluyor (stil.css "KISA EKRAN"); geniş/uzun ekranda sayfanın
+   * kendisi kayıyor. Sabit bir seçici yazmak ikisinden birini bozardı. */
+  function kaydirilacakKap(el) {
+    let e = el && el.parentElement;
+    while (e && e !== document.body) {
+      const s = getComputedStyle(e).overflowY;
+      if ((s === "auto" || s === "scroll") && e.scrollHeight - e.clientHeight > 4) return e;
+      e = e.parentElement;
+    }
+    return null;
+  }
+
   function olaylariBagla() {
     [tuval, tuval2b].forEach((hedef) => {
       let bas = null;
       const ucBoyutlu = hedef === tuval;
 
+      /* ====================================================== DOKUNMA
+       *
+       * SORUN İKİYDİ. (1) Yakınlaştırma yalnız fare tekerleğine bağlıydı;
+       * dokunmatik ekranda yakınlaştırmanın hiçbir yolu yoktu. (2) Tuvalde
+       * `touch-action: none` var — döndürme için doğru, ama sahnenin
+       * üstünde sayfa hiç kaydırılamıyordu ve 800x480'de sahne ekranın
+       * büyük bölümünü kapladığı için parmak orada sıkışıyordu.
+       *
+       * SEÇİM: TEK PARMAK SAYFAYI KAYDIRIYOR, İKİ PARMAK SAHNEYİ SÜRÜYOR.
+       *
+       * Neden bu yön: sahnenin üstünde kalan bir kullanıcının kaçış yolu
+       * OLMAMASI, döndürmenin bir parmak eksik olmasından daha ağır bir
+       * arıza. Kaydırma bir cihazın en temel jesti ve orada çalışmayınca
+       * panel bozuk görünüyor; döndürme ise iki parmakla aynen sürüyor.
+       * Diğer seçenek (`touch-action: pan-y`) denenmedi çünkü jesti
+       * tarayıcıyla PAYLAŞIYOR: aynı hareket hem sahneyi çevirir hem
+       * sayfayı kaydırır ve hangisinin olacağı tarayıcıya kalır.
+       *
+       * KORUNANLAR: tek parmakla DOKUNMA (seçim) aynen çalışıyor —
+       * kaydırma ancak parmak kımıldayınca başlıyor. Bir ÖĞENİN üstünde
+       * başlayan tek parmak sürüklemesi de öğeyi taşımaya devam ediyor;
+       * kaydırma yalnız BOŞ sahnede devreye giriyor. Fare ve kalem hiç
+       * etkilenmiyor: bu yolların tamamı `pointerType === "touch"` ile
+       * sınırlı.
+       *
+       * İkinci işaretçi ayrı bir dokunma yolu açmıyor, mevcut
+       * pointerdown/move/up akışına giriyor. */
+      const isaretciler = new Map();     // pointerId -> {x, y}
+      let iki = null;                    // iki parmaklı jestin başlangıcı
+
+      const ikiParmakBasla = () => {
+        const [a, b] = [...isaretciler.values()];
+        iki = { uzaklik: Math.max(1, Math.hypot(a.x - b.x, a.y - b.y)),
+                ortaX: (a.x + b.x) / 2, ortaY: (a.y + b.y) / 2,
+                r: kam.r, yakinlik: kam.yakinlik,
+                theta: kam.theta, phi: kam.phi };
+      };
+
+      const ikiParmakSurdur = () => {
+        const [a, b] = [...isaretciler.values()];
+        const uz = Math.max(1, Math.hypot(a.x - b.x, a.y - b.y));
+        const oran = uz / iki.uzaklik;
+        kam.elleZoom = true;
+        /* Parmak arası AÇILDIKÇA yakınlaşıyor. Üst (ortografik) kamerada
+         * `yakinlik` doğrudan büyüteç, perspektifte `r` UZAKLIK — o
+         * yüzden biri çarpılıyor, öteki bölünüyor. Tekerlek yolundaki
+         * kırpma sınırlarının aynısı kullanılıyor; iki yol aynı aralıkta
+         * kalmazsa aynı sahne iki farklı sınıra çarpardı. */
+        if (kam.ust) {
+          kam.yakinlik = kis(iki.yakinlik * oran, 0.4, 6);
+          ustCerceve();
+        } else {
+          kam.r = kis(iki.r / oran, 0.35, 4.5);
+          // Orta noktanın kayması sahneyi çeviriyor: tek parmakla
+          // yapılan işin aynısı, yalnız kaynağı iki parmağın ortası.
+          const ox = (a.x + b.x) / 2, oy = (a.y + b.y) / 2;
+          kam.theta = iki.theta - (ox - iki.ortaX) * 0.006;
+          kam.phi = kis(iki.phi - (oy - iki.ortaY) * 0.006, 0.08, Math.PI / 2.15);
+        }
+        kirlet("iki-parmak");
+      };
+
       hedef.addEventListener("pointerdown", (o) => {
         hedef.setPointerCapture(o.pointerId);
+        isaretciler.set(o.pointerId, { x: o.clientX, y: o.clientY });
+        if (o.pointerType === "touch" && isaretciler.size >= 2) {
+          // İkinci parmak indi: tek parmakla başlamış iş iptal.
+          if (bas && bas.kutuSecim) kutuGizle();
+          bas = null;
+          if (isaretciler.size === 2 && ucBoyutlu) ikiParmakBasla();
+          return;
+        }
         const mm = ucBoyutlu ? zemindeMM(o) : olay2bMM(o);
 
         // SEÇ KİPİ — sol tuş kutu çizer, öğe sürüklenmez, sahne dönmez.
@@ -1736,12 +1821,24 @@
         bas = { x: o.clientX, y: o.clientY, mm, vurus, tasindi: false,
                 kaydir: o.button === 1 || o.shiftKey,
                 theta: kam.theta, phi: kam.phi, hedefKopya: kam.hedef.clone() };
+        /* TEK PARMAK, BOŞ SAHNE: sayfayı kaydırıyor. Bir öğenin üstünde
+         * başladıysa öğe taşınmaya devam ediyor — kaçış yolu açmak için
+         * çalışan bir işi elinden almaya gerek yok. */
+        if (o.pointerType === "touch" && !vurus) {
+          const kap = kaydirilacakKap(hedef);
+          bas.sayfaKaydir = { kap, top: kap ? kap.scrollTop : window.scrollY };
+        }
         if (vurus) sec(vurus);
       });
 
       hedef.addEventListener("pointerleave", () => hayaletTazele(null));
 
       hedef.addEventListener("pointermove", (o) => {
+        if (isaretciler.has(o.pointerId)) {
+          const p = isaretciler.get(o.pointerId);
+          p.x = o.clientX; p.y = o.clientY;
+        }
+        if (iki && isaretciler.size >= 2) { ikiParmakSurdur(); return; }
         const mm = ucBoyutlu ? zemindeMM(o) : olay2bMM(o);
         if (!bas) {
           // İmleç biçimi de AYNI aramadan: gözün üstünde "tıklanabilir"
@@ -1789,6 +1886,14 @@
         if (!bas.tasindi && Math.hypot(dx, dy) < 4) return;
         bas.tasindi = true;
 
+        if (bas.sayfaKaydir) {
+          // Kaydırma yönü parmakla AYNI: parmak yukarı giderse içerik de
+          // yukarı, yani kaydırma konumu artıyor.
+          const k = bas.sayfaKaydir;
+          if (k.kap) k.kap.scrollTop = k.top - dy;
+          else window.scrollTo(0, Math.max(0, k.top - dy));
+          return;
+        }
         if (bas.kutuSecim) {
           kutuCiz(bas, o);
         } else if (bas.vurus && mm) {
@@ -1845,6 +1950,15 @@
           secimiKapat();
         }
       };
+      /* İşaretçi defteri `bitir`den ÖNCE temizleniyor: `bitir` iş yoksa
+       * hemen çıkıyor (`if (!bas) return`) ve defteri orada temizlemek
+       * iki parmaklı jestin sonunu hiç görmezdi. */
+      const isaretciBirak = (o) => {
+        isaretciler.delete(o.pointerId);
+        if (isaretciler.size < 2) iki = null;
+      };
+      hedef.addEventListener("pointerup", isaretciBirak);
+      hedef.addEventListener("pointercancel", isaretciBirak);
       hedef.addEventListener("pointerup", bitir);
       hedef.addEventListener("pointercancel", bitir);
       hedef.addEventListener("contextmenu", (o) => o.preventDefault());

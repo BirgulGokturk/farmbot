@@ -3792,50 +3792,71 @@ function kamKutuBagla(kutu, ad, sira = 0) {
     }
   } catch { /* bozuk kayıt — varsayılan konumda kal */ }
 
-  const uygula = () => {
-    kutu.style.transform = `translate(${kayma.x}px, ${kayma.y}px)`;
+  /** Kutunun transform'suz yeri — ızgaranın/akışın ona verdiği asıl yer. */
+  const yeri = (el) => {
+    const onceki = el.style.transform;
+    el.style.transform = "";
+    const r = el.getBoundingClientRect();
+    el.style.transform = onceki;
+    return r;
   };
-  /* Ekran dışına kaçmasın: kutunun ızgaradaki yerini transform'suz ölçüp
-   * kaymayı o ölçüye göre sınırlıyoruz. Aksi hâlde kutu bir kez dışarı
-   * sürüklenince geri getirilemiyor. */
-  const sinirla = () => {
-    const onceki = kutu.style.transform;
-    kutu.style.transform = "";
-    const y = kutu.getBoundingClientRect();
-    kutu.style.transform = onceki;
-    /* Kutu GİZLİYKEN ölçüm sıfır dönüyor ve sınırlama kaydedilmiş konumu
-     * eziyordu: açılışta kutu gizli olduğu için kayıt her seferinde
-     * kayboluyor, kamera hep köşeye dönüyordu. Ölçülemiyorsa dokunmuyoruz;
-     * kutu görünür olunca yeniden sınırlanıyor. */
-    if (!y.width || !y.height) return;
-    if (kutu.classList.contains("buyuk")) return;
-    const pay = 24;                    // kutunun bu kadarı hep görünsün
-    kayma.x = Math.max(-(y.left + y.width - pay),
-                       Math.min(innerWidth - y.left - pay, kayma.x));
-    /* ÜST SINIR, UYGULAMANIN ÇUBUĞUNUN ALTINDA.
-     *
-     * Alt/sağ/sol için "kutunun 24 pikseli görünsün" yetiyor: kalanı
-     * ekranın dışına taşsa da kullanıcı tutup geri çekebiliyor. ÜSTTE
-     * öyle değil, iki kez ölçüldü:
-     *
-     *   1) Kural yokken kutu y = -217'ye oturdu (kutular zaten alt alta
-     *      diziliyor, üstüne bir de bir kutu boyu yukarı kaydırma
-     *      binince), açık olduğu hâlde ekranda hiç görünmedi.
-     *   2) Sınır ekranın üstü yapılınca kutu 8 pikselde durdu — ama
-     *      orası panelin kendi üst çubuğunun arkası. Kutu görünüyordu,
-     *      TUTAMAĞI görünmüyordu; aşağı çekilemiyordu.
-     *
-     * Doğru sınır çubuğun ALT kenarı. Çubuk ölçülüyor, sabit yazılmıyor:
-     * yüksekliği yazı boyuna ve pencere genişliğine göre değişiyor. */
-    /* Çubuk `#uygulama` sarmalayıcısının içinde; `body > header` diye
-     * arayınca bulunamıyordu ve sınır sessizce sıfıra düşüyordu — yani
-     * düzeltme hiç çalışmadı. Sarmalayıcıyı da hesaba katıyoruz, yedek
-     * olarak da ilk `header`ı. */
+
+  /** Üst sınır: uygulama çubuğunun ALT kenarı (aşağıda gerekçesi). */
+  const ustSiniri = () => {
     const cubuk = document.querySelector("#uygulama > header")
                || document.querySelector("header");
-    const ustSinir = (cubuk ? cubuk.getBoundingClientRect().bottom : 0) + 8;
-    kayma.y = Math.max(ustSinir - y.top,
-                       Math.min(innerHeight - y.top - pay, kayma.y));
+    return (cubuk ? cubuk.getBoundingClientRect().bottom : 0) + 8;
+  };
+
+  /* ALT SINIR ARTIK `innerHeight` DEĞİL.
+   *
+   * Kutunun altında duran şeritler var: toplu işlem çubuğu, profil ve
+   * günlük şeridi. Sınırı pencerenin dibine koymak, kutunun bu şeritlerin
+   * ÜSTÜNE binmesine izin vermek demekti — 480 piksellik ekranda üçü
+   * birden ekranın alt üçte birini tutuyor. Görünür olanların en
+   * üsttekinin kenarı sınır oluyor; hiçbiri görünmüyorsa pencere dibi. */
+  const altSiniri = () => {
+    let alt = innerHeight;
+    ["#toplu-cubuk", "#profil", "#gunluk-serit"].forEach((sec) => {
+      const e = document.querySelector(sec);
+      if (!e || !e.offsetHeight) return;
+      const r = e.getBoundingClientRect();
+      if (r.height && r.top > 0 && r.top < alt) alt = r.top;
+    });
+    return alt;
+  };
+
+  /** Kaymanın GÖRÜNÜR ALANA çekilmiş hâli. `kayma`yı DEĞİŞTİRMİYOR:
+   *  kayıtlı konum bu ekrana sığmıyor diye kaydı ezmek, kullanıcının
+   *  büyük ekrandaki düzenini küçük ekranda bir kez açmakla silerdi. */
+  const sinirlanmis = () => {
+    const y = yeri(kutu);
+    if (!y.width || !y.height) return kayma;      // gizliyken ölçülemiyor
+    if (kutu.classList.contains("buyuk")) return kayma;
+    const pay = 24;                    // kutunun bu kadarı hep görünsün
+    const alt = altSiniri();
+    return {
+      x: Math.max(-(y.left + y.width - pay),
+                  Math.min(innerWidth - y.left - pay, kayma.x)),
+      /* ÜST SINIR, UYGULAMANIN ÇUBUĞUNUN ALTINDA.
+       *
+       * Alt/sağ/sol için "kutunun 24 pikseli görünsün" yetiyor: kalanı
+       * ekranın dışına taşsa da kullanıcı tutup geri çekebiliyor. ÜSTTE
+       * öyle değil, iki kez ölçüldü:
+       *
+       *   1) Kural yokken kutu y = -217'ye oturdu ve açık olduğu hâlde
+       *      ekranda hiç görünmedi.
+       *   2) Sınır ekranın üstü yapılınca kutu 8 pikselde durdu — ama
+       *      orası panelin kendi üst çubuğunun arkası. Kutu görünüyordu,
+       *      TUTAMAĞI görünmüyordu; aşağı çekilemiyordu. */
+      y: Math.max(ustSiniri() - y.top,
+                  Math.min(alt - y.top - pay, kayma.y)),
+    };
+  };
+
+  const uygula = () => {
+    const g = sinirlanmis();
+    kutu.style.transform = `translate(${g.x}px, ${g.y}px)`;
   };
   uygula();
   /* Kutu görünür olunca GERÇEK boyuna göre yeniden diziyoruz. Tahmini
@@ -3846,10 +3867,29 @@ function kamKutuBagla(kutu, ad, sira = 0) {
     if (!kendi || !sira) return;
     const boy = kutu.offsetHeight;
     if (!boy) return;                       // gizliyken ölçülemiyor
-    kayma.y = -sira * (boy + 8);
+    /* KUTULAR ZATEN ALT ALTA MI — ÖLÇÜLÜYOR, VARSAYILMIYOR.
+     *
+     * Geniş ekranda bütün kutular aynı ızgara hücresine (sağ alt)
+     * oturuyor ve birbirini TAM örtüyor; yukarı kaydırma bunun için var.
+     * Dar ekranda (900 px altı) ızgara yerini flex sütununa bırakıyor ve
+     * kutular zaten alt alta akıyor — orada kaydırma onları yukarıdaki
+     * panellerin üstüne çıkarıyordu. Ayırt eden ölçü: transform'suz
+     * yerleri birbirinden farklı mı. */
+    const ilk = kutu.parentElement && kutu.parentElement.firstElementChild;
+    if (ilk && ilk !== kutu && Math.abs(yeri(kutu).top - yeri(ilk).top) > 4) {
+      kayma.y = 0;
+      return;
+    }
+    /* ADIM SABİT 230 DEĞİL. O sayı bir tahmindi (başlık + 4:3 görüntü) ve
+     * 480 piksellik ekranda iki kutu ekranın yarısını yukarı taşıyordu.
+     * Adım kutunun GERÇEK boyundan geliyor; o boy da sığmıyorsa yer neye
+     * elveriyorsa o kadar — kutuları ekranın dışına itmektense üst üste
+     * bindirmek yeğ, çünkü başlıkları yine tutulabiliyor. */
+    const bosluk = Math.max(0, yeri(kutu).top - ustSiniri());
+    kayma.y = -sira * Math.min(boy + 8, bosluk / sira);
   };
-  KAM_SINIRLA.set(ad, () => { yenidenDiz(); sinirla(); uygula(); });
-  sinirla(); uygula();
+  KAM_SINIRLA.set(ad, () => { yenidenDiz(); uygula(); });
+  yenidenDiz(); uygula();
 
   let surukle = null;
   bas.addEventListener("pointerdown", (e) => {
@@ -3867,7 +3907,6 @@ function kamKutuBagla(kutu, ad, sira = 0) {
     if (!surukle) return;
     kayma.x = surukle.bx + (e.clientX - surukle.x);
     kayma.y = surukle.by + (e.clientY - surukle.y);
-    sinirla();
     uygula();
   });
   const birak = () => {
@@ -3875,6 +3914,10 @@ function kamKutuBagla(kutu, ad, sira = 0) {
     surukle = null;
     kendi = false;            // artık kullanıcının konumu; kendiliğinden dizme
     kutu.classList.remove("surukleniyor");
+    // KAYIT SÜRÜKLEMEDE yazılıyor ve görünür alana çekilmiş hâliyle:
+    // kullanıcı kutuyu nerede bıraktıysa orası. Pencere küçüldüğü için
+    // yapılan sınırlama kayda İŞLEMİYOR (bkz. `sinirlanmis`).
+    kayma = sinirlanmis();
     try {
       localStorage.setItem(anahtarKayma, JSON.stringify(kayma));
     } catch { /* depolama kapalı olabilir — konum bu oturumda kalır */ }
@@ -3882,7 +3925,7 @@ function kamKutuBagla(kutu, ad, sira = 0) {
   bas.addEventListener("pointerup", birak);
   bas.addEventListener("pointercancel", birak);
   // Pencere küçülünce kutu dışarıda kalabilir.
-  addEventListener("resize", () => { sinirla(); uygula(); });
+  addEventListener("resize", () => { yenidenDiz(); uygula(); });
 
   /* --- boyut kademesi --- (seçim tarayıcıda, kamera başına) */
   const olcekDugme = rol("olcek");
@@ -3898,7 +3941,7 @@ function kamKutuBagla(kutu, ad, sira = 0) {
     if (secili.sinif) kutu.classList.add(secili.sinif);
     if (olcekDugme) olcekDugme.textContent = secili.etiket;
     // Büyüyen kutu ekranın dışına taşabilir; sınırlama yeniden koşsun.
-    sinirla(); uygula();
+    uygula();
     kamKatmanHizala();
   };
   olcekUygula();
@@ -3922,7 +3965,7 @@ function kamKutuBagla(kutu, ad, sira = 0) {
     }
     // Küçülürken sürüklenmiş konum yeniden sınırlanmalı: pencere
     // büyükken değişmiş olabilir.
-    if (!buyuk) { sinirla(); uygula(); }
+    if (!buyuk) uygula();
     kamKatmanHizala();
   };
   if (buyutDugme) buyutDugme.onclick = () => buyutYaz(!kutu.classList.contains("buyuk"));
