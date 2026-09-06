@@ -292,7 +292,14 @@ body.bahce-acik #sayfa-bahce { height: 100%; }
 }
 @media (max-height: 520px) {
   .bh-is, .bh-kimlik { padding-top: var(--b1); padding-bottom: var(--b1); }
-  .bh-kimlik { min-height: 44px; }
+  /* ŞERİTLER TEK SATIR. Kesitin yüksekliği bu ekranda en kıt kaynak:
+     şerit ikinci satıra taşarsa nem sütunu ekrandan düşüyor. */
+  .bh-kimlik { min-height: 40px; flex-wrap: nowrap; overflow: hidden; }
+  .bh-k-bas, .bh-k-olcu { min-width: 0; flex-wrap: nowrap; overflow: hidden; }
+  .bh-k-ad, .bh-k-tur, .bh-k-olcu > * { white-space: nowrap; }
+  /* İlk iki ölçü (nem ve yaş) kalıyor, gerisi sahnede zaten yazılı. */
+  .bh-k-olcu > *:nth-child(n+3) { display: none; }
+  .bh-k-cubuk { display: none; }
   /* Gerekçe SATIRI kalıyor — "tahmin" işareti dar ekranda da görünmeli;
      yalnız tek satıra iniyor. */
   .bh-is-neden { flex-wrap: nowrap; overflow: hidden; }

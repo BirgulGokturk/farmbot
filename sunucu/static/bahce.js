@@ -83,7 +83,11 @@ window.Bahce = (function () {
     kaydir: 0, kaydirHedef: 0,        // yatay gezinme (piksel)
     secili: "", uzerinde: "", basili: "",
     kartIx: 0,                        // hangi görev cümlesi gösteriliyor
-    ekimTur: null, bosYer: [],        // ekim akışı: seçilen tür ve boş yerler
+    ekimTur: null, bosYer: [], isKip: "kart",
+    katalog: null, katalogT: 0,       // /api/turler — ekim derinliği
+    gecmis: null, gecmisAd: "", gecmisT: 0,   // seçili bitkinin nem geçmişi
+    islanma: {}, ekim: {},            // canlı olayların bitki başına durumu
+    rob: null, suIs: null, ekIs: null, olayAd: "",
     zerre: [], notlar: {}, hatalar: [], sonIs: null, sonT: 0,
     olcum: { kare: 0, sure: 0, enUzun: 0, sayac: 0 },
   };
@@ -407,30 +411,75 @@ window.Bahce = (function () {
   });
 
   /* ==================================================================== *
-   * BİTKİ SİLUETİ — yandan.
+   * BİTKİ SİLUETİ — yandan, TÜRE GÖRE.
    *
    * Planda bitki bir daireydi ve hepsi birbirinin aynıydı. Kesitte bitki
-   * bir siluet: türü biçiminden, yaşı boyundan, susaması duruşundan
-   * okunuyor. Siluet önbelleğe bir kez çiziliyor; sahneye tek drawImage.
+   * bir siluet: türü BİÇİMİNDEN okunuyor. Marul rozet açıyor, havuç tüy
+   * salıyor, soğan boru gibi dikiliyor, domates dallanıyor, kabak yere
+   * yayılıyor, mısır tek sap uzatıyor. Yaş ve olgunluk boyu ve yaprak
+   * sayısını sürüyor; tür biçimi onun YERİNE değil, ONUNLA çalışıyor.
+   *
+   * Toprak çizgisinin ALTI da türe göre: havucun kazık kökü aşağı iner,
+   * marulun saçak kökü yüzeyde yayılır, soğanın yumrusu hemen altta
+   * durur. Kesitin en güçlü tarafı bu ve boş duruyordu.
+   *
+   * BİÇİM BİR ÖLÇÜ DEĞİL. Kök derinliği hiçbir yerde ÖLÇÜLMÜYOR; katalog
+   * yalnız türün kök TİPİNİ biliyor. Bu yüzden köke milimetre yazmıyoruz
+   * ve kimlik şeridinde "tür biçimi, ölçülmedi" diye duruyor. Tür
+   * tanınmıyorsa uydurma bir havuç çizilmiyor: jenerik biçim kesik
+   * çizgiyle çiziliyor ve tanınmadığı yazıyor.
+   *
+   * Siluet önbelleğe bir kez çiziliyor; sahneye tek drawImage.
    * ==================================================================== */
-  const BICIM_GUL = 0;   // rozet: marul, lahana, ıspanak
-  const BICIM_TUY = 1;   // tüylü: havuç, dereotu, maydanoz
-  const BICIM_CALI = 2;  // çalı: domates, biber, fesleğen
   const SPRITE_EN = 128; // önbellek tuvalinin genişliği (px)
   const RAY_BOSLUK = 34; // makine rayının altında boş kalan şerit (px)
-  const BOY_ORAN = [0.62, 1.15, 1.30];
 
-  function bicimSec(b) {
-    const s = `${b.tur || ""} ${b.tur_ad || ""}`.toLowerCase();
-    if (/havu|derey|dereot|maydanoz|soğan|sogan|pırasa|pirasa|rezene|turp/.test(s))
-      return BICIM_TUY;
-    if (/domat|biber|patlıcan|patlican|fesleğen|feslegen|çilek|cilek|fasulye|salatalık|salatalik|kabak|nane|börülce/.test(s))
-      return BICIM_CALI;
-    if (/marul|lahana|ıspanak|ispanak|pazı|pazi|roka|kıvırcık|kivircik|semizotu/.test(s))
-      return BICIM_GUL;
-    return tohum(b.tur || b.ad) < 0.5 ? BICIM_GUL : BICIM_CALI;
+  /* Üst biçimler ve her birinin boy/en oranı. */
+  const UST_ORAN = {
+    rozet: 0.62, tuy: 1.10, boru: 1.35, cali: 1.30, sarilan: 1.55,
+    yayilan: 0.48, sap: 1.75, bas: 1.90, yumruust: 0.75, bilinmiyor: 0.90,
+  };
+  /* Kök tipleri ve insan diliyle karşılığı — kimlik şeridi bunu yazıyor. */
+  const KOK_ADI = {
+    kazik: "kazık kök", "kazik-etli": "etli kazık kök", sacak: "saçak kök",
+    sogan: "soğan (yumru) kök", yumru: "yumru kök", derin: "derin dallı kök",
+    bilinmiyor: "kök tipi bilinmiyor",
+  };
+
+  /* TÜR BİÇİM KATALOĞU — `docs/bitki_turleri.json` içindeki 37 türün
+     tamamı. Buradaki şey ÖLÇÜ değil BİÇİM: hangi siluetle çizileceği.
+     Listede olmayan bir slug jenerik biçme düşüyor ve bunu saklamıyor. */
+  const TUR_BICIM = {
+    aycicegi: ["bas", "kazik"], bamya: ["cali", "kazik"],
+    bezelye: ["sarilan", "sacak"], biber: ["cali", "sacak"],
+    biberiye: ["cali", "derin"], brokoli: ["rozet", "sacak"],
+    dereotu: ["tuy", "kazik"], domates: ["cali", "derin"],
+    fasulye: ["sarilan", "sacak"], "fesleğen": ["cali", "sacak"],
+    feslegen: ["cali", "sacak"], havuc: ["tuy", "kazik-etli"],
+    ispanak: ["rozet", "sacak"], kabak: ["yayilan", "derin"],
+    karnabahar: ["rozet", "sacak"], karpuz: ["yayilan", "derin"],
+    kavun: ["yayilan", "derin"], kekik: ["cali", "sacak"],
+    kereviz: ["rozet", "sacak"], lahana: ["rozet", "sacak"],
+    marul: ["rozet", "sacak"], maydanoz: ["tuy", "kazik"],
+    misir: ["sap", "derin"], nane: ["cali", "sacak"],
+    nohut: ["cali", "kazik"], patates: ["yumruust", "yumru"],
+    patlican: ["cali", "derin"], pazi: ["rozet", "kazik"],
+    pirasa: ["boru", "sacak"], roka: ["rozet", "sacak"],
+    salatalik: ["yayilan", "sacak"], sarimsak: ["boru", "sogan"],
+    semizotu: ["yayilan", "sacak"], sogan: ["boru", "sogan"],
+    "tatli-patates": ["yayilan", "yumru"], turp: ["rozet", "kazik-etli"],
+    cilek: ["yayilan", "sacak"], uzum: ["sarilan", "derin"],
+  };
+
+  /** Türün biçimi — bulunamazsa bunu SAKLAMIYOR, bilinmiyor diyor. */
+  function turBicim(b) {
+    const slug = String((b && b.tur) || "").toLowerCase();
+    const t = TUR_BICIM[slug];
+    if (t) return { ust: t[0], kok: t[1], bilinen: true, slug };
+    return { ust: "bilinmiyor", kok: "bilinmiyor", bilinen: false, slug };
   }
 
+  /* -------------------------------------------------------- çizim taşları */
   /** Tek yaprak: sapından ucuna iki eğri. Susamışsa uç aşağı düşüyor. */
   function yaprakCiz(ct, x, y, uzunluk, aci, kalinlik, dus) {
     const a = aci + dus;
@@ -443,45 +492,70 @@ window.Bahce = (function () {
     ct.quadraticCurveTo(ox - nx, oy - ny + dus * uzunluk * 0.35, x, y);
     ct.fill();
   }
+  /** Dilimli geniş yaprak (kabakgiller): kenarı loblu, damarı belli. */
+  function loblcuYaprak(ct, x, y, r, aci, renk) {
+    ct.save();
+    ct.translate(x, y);
+    ct.rotate(aci);
+    ct.beginPath();
+    for (let i = 0; i <= 22; i++) {
+      const t = (i / 22) * Math.PI * 2;
+      const k = r * (0.78 + 0.22 * Math.cos(t * 5));
+      const px = Math.cos(t) * k, py = Math.sin(t) * k * 0.52;
+      if (i === 0) ct.moveTo(px, py); else ct.lineTo(px, py);
+    }
+    ct.closePath();
+    ct.fillStyle = rgba(renk, 0.95);
+    ct.fill();
+    ct.strokeStyle = rgba(ton(renk, -0.35), 0.5);
+    ct.lineWidth = 0.8;
+    ct.stroke();
+    ct.restore();
+  }
+  function meyveCiz(ct, x, y, c, renk) {
+    ct.fillStyle = rgba(renk, 0.95);
+    ct.beginPath(); ct.arc(x, y, c, 0, 6.3); ct.fill();
+    ct.fillStyle = "rgba(255,255,255,0.30)";
+    ct.beginPath(); ct.arc(x - c * 0.3, y - c * 0.35, c * 0.28, 0, 6.3); ct.fill();
+  }
 
-  function gulCiz(ct, r, renk, olgun, dus, en, boy) {
-    const kok = { x: en / 2, y: boy - 2 };
+  /* ------------------------------------------------------------- biçimler */
+  function cizRozet(ct, r, renk, turRenk, olgun, dus, en, boy) {
+    const kx = en / 2, ky = boy - 2;
     const adet = Math.round(5 + olgun * 9);
     for (let i = 0; i < adet; i++) {
       const t = adet === 1 ? 0.5 : i / (adet - 1);
       const yan = t < 0.5 ? -1 : 1;
       const aci = -Math.PI / 2 + (t - 0.5) * 2.45 + (r() - 0.5) * 0.18;
       const uz = boy * (0.52 + 0.46 * (1 - Math.abs(t - 0.5) * 1.4)) * (0.82 + r() * 0.3);
-      const koyu = 0.5 - Math.abs(t - 0.5);
-      ct.fillStyle = rgba(ton(renk, -0.32 + koyu * 0.62), 0.97);
-      yaprakCiz(ct, kok.x + yan * 2, kok.y, uz, aci, uz * 0.30, dus * (0.35 + t * 0.2));
+      ct.fillStyle = rgba(ton(renk, -0.32 + (0.5 - Math.abs(t - 0.5)) * 0.62), 0.97);
+      yaprakCiz(ct, kx + yan * 2, ky, uz, aci, uz * 0.30, dus * (0.35 + t * 0.2));
     }
-    ct.fillStyle = rgba(ton(renk, 0.30), 0.85);
-    ct.beginPath(); ct.ellipse(kok.x, kok.y - boy * 0.10, en * 0.055, boy * 0.07, 0, 0, 6.3);
+    ct.fillStyle = rgba(ton(turRenk, 0.20), 0.85);
+    ct.beginPath(); ct.ellipse(kx, ky - boy * 0.10, en * 0.055, boy * 0.07, 0, 0, 6.3);
     ct.fill();
   }
 
-  function tuyCiz(ct, r, renk, olgun, dus, en, boy) {
-    const kokX = en / 2, kokY = boy - 2;
+  function cizTuy(ct, r, renk, turRenk, olgun, dus, en, boy) {
+    const kx = en / 2, ky = boy - 2;
     const adet = Math.round(4 + olgun * 7);
     ct.lineCap = "round";
     for (let i = 0; i < adet; i++) {
       const t = adet === 1 ? 0.5 : i / (adet - 1);
       const yon = (t - 0.5) * 2;
       const uz = boy * (0.60 + 0.40 * (1 - Math.abs(yon))) * (0.8 + r() * 0.35);
-      const ucX = kokX + yon * en * 0.30 * (0.7 + r() * 0.6);
-      const ucY = kokY - uz + dus * uz * 0.55;
+      const ucX = kx + yon * en * 0.30 * (0.7 + r() * 0.6);
+      const ucY = ky - uz + dus * uz * 0.55;
       ct.strokeStyle = rgba(ton(renk, -0.18 + r() * 0.35), 0.95);
       ct.lineWidth = 1.6;
       ct.beginPath();
-      ct.moveTo(kokX, kokY);
-      ct.quadraticCurveTo(kokX + yon * en * 0.10, kokY - uz * 0.62, ucX, ucY);
+      ct.moveTo(kx, ky);
+      ct.quadraticCurveTo(kx + yon * en * 0.10, ky - uz * 0.62, ucX, ucY);
       ct.stroke();
-      // İnce tüyler: sapın üst yarısında çift yönlü kılcallar.
       ct.lineWidth = 1;
       for (let k = 1; k <= 5; k++) {
         const p = 0.42 + k * 0.11;
-        const sx = kokX + (ucX - kokX) * p, sy = kokY + (ucY - kokY) * p;
+        const sx = kx + (ucX - kx) * p, sy = ky + (ucY - ky) * p;
         const l = en * 0.055 * (1 - p) * 3;
         ct.beginPath();
         ct.moveTo(sx - l, sy - l * 0.5); ct.lineTo(sx + l, sy + l * 0.5);
@@ -490,25 +564,49 @@ window.Bahce = (function () {
     }
   }
 
-  function caliCiz(ct, r, renk, turRenk, olgun, dus, en, boy, meyve) {
-    const kokX = en / 2, kokY = boy - 2;
-    const govdeBoy = boy * (0.55 + olgun * 0.35);
+  /** Boru: soğan, sarımsak, pırasa — dik, silindirik, uçları sivri. */
+  function cizBoru(ct, r, renk, turRenk, olgun, dus, en, boy) {
+    const kx = en / 2, ky = boy - 2;
+    const adet = Math.round(3 + olgun * 4);
+    for (let i = 0; i < adet; i++) {
+      const yon = (i % 2 ? 1 : -1) * (0.4 + (i / adet) * 0.9);
+      const uz = boy * (0.72 + r() * 0.26);
+      const ucX = kx + yon * en * 0.16;
+      const ucY = ky - uz + dus * uz * 0.42;
+      const gen = en * 0.055 * (1 - i / (adet + 2));
+      ct.beginPath();
+      ct.moveTo(kx - gen, ky);
+      ct.quadraticCurveTo(kx + yon * en * 0.04, ky - uz * 0.6, ucX, ucY);
+      ct.quadraticCurveTo(kx + yon * en * 0.04 + gen * 1.4, ky - uz * 0.6, kx + gen, ky);
+      ct.closePath();
+      ct.fillStyle = rgba(ton(renk, -0.25 + r() * 0.4), 0.95);
+      ct.fill();
+    }
+    // Toprak üstündeki boyun: gövde yüzeyde şişkin başlıyor.
+    ct.fillStyle = rgba(ton(turRenk, -0.05), 0.9);
+    ct.beginPath();
+    ct.ellipse(kx, ky - boy * 0.02, en * 0.09, boy * 0.045, 0, 0, 6.3);
+    ct.fill();
+  }
+
+  function cizCali(ct, r, renk, turRenk, olgun, dus, en, boy, meyve) {
+    const kx = en / 2, ky = boy - 2;
+    const govde = boy * (0.55 + olgun * 0.35);
     ct.strokeStyle = rgba(ton(renk, -0.45), 1);
     ct.lineWidth = Math.max(1.5, en * 0.022);
     ct.lineCap = "round";
     ct.beginPath();
-    ct.moveTo(kokX, kokY);
-    ct.quadraticCurveTo(kokX + (r() - 0.5) * en * 0.06, kokY - govdeBoy * 0.6,
-      kokX + (r() - 0.5) * en * 0.10, kokY - govdeBoy);
+    ct.moveTo(kx, ky);
+    ct.quadraticCurveTo(kx + (r() - 0.5) * en * 0.06, ky - govde * 0.6,
+      kx + (r() - 0.5) * en * 0.10, ky - govde);
     ct.stroke();
     const dal = Math.round(3 + olgun * 4);
     for (let i = 0; i < dal; i++) {
       const t = (i + 0.7) / (dal + 0.4);
       const yan = i % 2 ? 1 : -1;
-      const bx = kokX, by = kokY - govdeBoy * t;
+      const bx = kx, by = ky - govde * t;
       const uz = en * (0.20 + 0.26 * (1 - t)) * (0.75 + r() * 0.5);
-      const aci = yan * (0.55 + r() * 0.35) - Math.PI / 2 * 0.35;
-      const uy = by - Math.abs(Math.sin(aci)) * uz * 0.55 + dus * uz * 0.7;
+      const uy = by - uz * 0.4 + dus * uz * 0.7;
       const dx = bx + yan * uz;
       ct.strokeStyle = rgba(ton(renk, -0.35), 1);
       ct.lineWidth = Math.max(1, en * 0.012);
@@ -521,17 +619,365 @@ window.Bahce = (function () {
           (yan > 0 ? -0.55 : -2.6) + (r() - 0.5) * 0.3, uz * 0.20, dus * 0.6);
       }
       if (meyve && t > 0.35 && r() < 0.55) {
-        const fx = bx + (dx - bx) * 0.72, fy = by + (uy - by) * 0.72 + uz * 0.22;
-        const c = en * (0.045 + r() * 0.03);
-        ct.fillStyle = rgba(turRenk, 0.95);
-        ct.beginPath(); ct.arc(fx, fy, c, 0, 6.3); ct.fill();
-        ct.fillStyle = "rgba(255,255,255,0.32)";
-        ct.beginPath(); ct.arc(fx - c * 0.3, fy - c * 0.35, c * 0.28, 0, 6.3); ct.fill();
+        meyveCiz(ct, bx + (dx - bx) * 0.72, by + (uy - by) * 0.72 + uz * 0.22,
+          en * (0.045 + r() * 0.03), turRenk);
       }
     }
   }
 
-  /** Önbellek anahtarı: aynı görünen bitkiler aynı tuvali paylaşır. */
+  /** Sarılan: fasulye, bezelye, üzüm — sırık ve ona dolanan sap. */
+  function cizSarilan(ct, r, renk, turRenk, olgun, dus, en, boy, meyve) {
+    const kx = en / 2, ky = boy - 2;
+    const sirik = boy * (0.55 + olgun * 0.43);
+    ct.strokeStyle = "rgba(150,124,92,0.8)";
+    ct.lineWidth = Math.max(1.4, en * 0.018);
+    ct.beginPath(); ct.moveTo(kx, ky); ct.lineTo(kx + en * 0.03, ky - sirik); ct.stroke();
+    ct.strokeStyle = rgba(ton(renk, -0.3), 0.95);
+    ct.lineWidth = Math.max(1.2, en * 0.014);
+    ct.beginPath();
+    const sar = Math.round(3 + olgun * 4);
+    for (let i = 0; i <= sar * 8; i++) {
+      const t = i / (sar * 8);
+      const y = ky - sirik * t;
+      const x = kx + Math.sin(t * sar * Math.PI * 2) * en * 0.085 + en * 0.03 * t;
+      if (i === 0) ct.moveTo(x, y); else ct.lineTo(x, y);
+    }
+    ct.stroke();
+    for (let i = 0; i < sar * 2; i++) {
+      const t = (i + 0.5) / (sar * 2);
+      const y = ky - sirik * t;
+      const x = kx + Math.sin(t * sar * Math.PI * 2) * en * 0.085 + en * 0.03 * t;
+      const yan = Math.cos(t * sar * Math.PI * 2) > 0 ? 1 : -1;
+      ct.fillStyle = rgba(ton(renk, -0.15 + r() * 0.4), 0.95);
+      yaprakCiz(ct, x, y, en * (0.12 + r() * 0.08),
+        yan > 0 ? -0.5 : -2.6, en * 0.05, dus * 0.5);
+      if (meyve && r() < 0.4) {
+        // Baklagil kabuğu: yuvarlak meyve değil, sarkan bir kese.
+        ct.save(); ct.translate(x + yan * en * 0.05, y + en * 0.04);
+        ct.rotate(yan * 0.5);
+        ct.fillStyle = rgba(turRenk, 0.9);
+        ct.beginPath(); ct.ellipse(0, 0, en * 0.055, en * 0.018, 0, 0, 6.3); ct.fill();
+        ct.restore();
+      }
+    }
+  }
+
+  /** Yayılan: kabak, karpuz, çilek — alçak, geniş, loblu yapraklı. */
+  function cizYayilan(ct, r, renk, turRenk, olgun, dus, en, boy, meyve) {
+    const kx = en / 2, ky = boy - 2;
+    ct.strokeStyle = rgba(ton(renk, -0.4), 0.9);
+    ct.lineWidth = Math.max(1.2, en * 0.014);
+    const kol = Math.round(2 + olgun * 3);
+    for (let i = 0; i < kol; i++) {
+      const yan = i % 2 ? 1 : -1;
+      const uz = en * (0.24 + 0.20 * (i / kol) + r() * 0.10);
+      const ux = kx + yan * uz;
+      ct.beginPath();
+      ct.moveTo(kx, ky);
+      ct.quadraticCurveTo(kx + yan * uz * 0.5, ky - boy * 0.30, ux, ky - boy * 0.10);
+      ct.stroke();
+      loblcuYaprak(ct, kx + yan * uz * 0.55, ky - boy * (0.30 + r() * 0.25),
+        en * (0.13 + r() * 0.06), (r() - 0.5) * 0.5 + dus * 0.4,
+        ton(renk, -0.2 + r() * 0.4));
+      loblcuYaprak(ct, ux, ky - boy * (0.14 + r() * 0.2),
+        en * (0.11 + r() * 0.05), (r() - 0.5) * 0.5 + dus * 0.4,
+        ton(renk, -0.3 + r() * 0.4));
+      if (meyve && i === 0) {
+        meyveCiz(ct, kx + yan * uz * 0.75, ky - boy * 0.06, en * 0.075, turRenk);
+      }
+    }
+  }
+
+  /** Sap: mısır — tek gövde, uzun kavisli yapraklar, olgunsa koçan. */
+  function cizSap(ct, r, renk, turRenk, olgun, dus, en, boy, meyve) {
+    const kx = en / 2, ky = boy - 2;
+    const h = boy * (0.62 + olgun * 0.36);
+    ct.strokeStyle = rgba(ton(renk, -0.42), 1);
+    ct.lineWidth = Math.max(1.8, en * 0.026);
+    ct.beginPath(); ct.moveTo(kx, ky); ct.lineTo(kx, ky - h); ct.stroke();
+    const yap = Math.round(3 + olgun * 4);
+    for (let i = 0; i < yap; i++) {
+      const t = (i + 0.6) / (yap + 0.6);
+      const yan = i % 2 ? 1 : -1;
+      const by = ky - h * t;
+      const uz = en * (0.34 - 0.14 * t) * (0.85 + r() * 0.3);
+      ct.beginPath();
+      ct.moveTo(kx, by);
+      ct.quadraticCurveTo(kx + yan * uz * 0.7, by - uz * 0.35 + dus * uz * 0.5,
+        kx + yan * uz, by + uz * (0.18 + dus * 0.5));
+      ct.quadraticCurveTo(kx + yan * uz * 0.6, by - uz * 0.12, kx, by + en * 0.012);
+      ct.closePath();
+      ct.fillStyle = rgba(ton(renk, -0.2 + r() * 0.35), 0.95);
+      ct.fill();
+    }
+    if (meyve) {
+      ct.save();
+      ct.translate(kx + en * 0.05, ky - h * 0.45);
+      ct.rotate(0.35);
+      ct.fillStyle = rgba(turRenk, 0.95);
+      ct.beginPath(); ct.ellipse(0, 0, en * 0.035, en * 0.10, 0, 0, 6.3); ct.fill();
+      ct.restore();
+    }
+    // Tepe püskülü: mısırın en tanınır tarafı.
+    ct.strokeStyle = rgba(ton(turRenk, 0.2), 0.8);
+    ct.lineWidth = 1;
+    for (let i = 0; i < 5; i++) {
+      ct.beginPath();
+      ct.moveTo(kx, ky - h);
+      ct.lineTo(kx + (i - 2) * en * 0.02, ky - h - en * (0.05 + r() * 0.04));
+      ct.stroke();
+    }
+  }
+
+  /** Baş: ayçiçeği — uzun sap, iri yapraklar, tepede tabak çiçek. */
+  function cizBas(ct, r, renk, turRenk, olgun, dus, en, boy) {
+    const kx = en / 2, ky = boy - 2;
+    const h = boy * (0.60 + olgun * 0.38);
+    ct.strokeStyle = rgba(ton(renk, -0.45), 1);
+    ct.lineWidth = Math.max(1.8, en * 0.026);
+    ct.beginPath(); ct.moveTo(kx, ky); ct.lineTo(kx, ky - h); ct.stroke();
+    for (let i = 0; i < 4; i++) {
+      const t = (i + 0.5) / 5;
+      const yan = i % 2 ? 1 : -1;
+      ct.fillStyle = rgba(ton(renk, -0.2 + r() * 0.3), 0.95);
+      yaprakCiz(ct, kx, ky - h * t, en * (0.22 - 0.06 * t),
+        yan > 0 ? -0.5 : -2.65, en * 0.10, dus * 0.6);
+    }
+    const cap = en * (0.10 + olgun * 0.09);
+    ct.fillStyle = rgba(ton(turRenk, 0.1), 0.95);
+    for (let i = 0; i < 12; i++) {
+      const a = (i / 12) * Math.PI * 2;
+      ct.beginPath();
+      ct.ellipse(kx + Math.cos(a) * cap, ky - h + Math.sin(a) * cap * 0.9,
+        cap * 0.45, cap * 0.22, a, 0, 6.3);
+      ct.fill();
+    }
+    ct.fillStyle = "rgba(74,52,30,0.95)";
+    ct.beginPath(); ct.arc(kx, ky - h, cap * 0.62, 0, 6.3); ct.fill();
+  }
+
+  /** Yumru üstü: patates — alçak, dolgun, çok yapraklı öbek. */
+  function cizYumruUst(ct, r, renk, turRenk, olgun, dus, en, boy) {
+    const kx = en / 2, ky = boy - 2;
+    const dal = Math.round(3 + olgun * 3);
+    for (let i = 0; i < dal; i++) {
+      const yan = (i / (dal - 1 || 1) - 0.5) * 2;
+      const uz = boy * (0.55 + r() * 0.4);
+      const ux = kx + yan * en * 0.26, uy = ky - uz + dus * uz * 0.4;
+      ct.strokeStyle = rgba(ton(renk, -0.4), 0.95);
+      ct.lineWidth = Math.max(1, en * 0.014);
+      ct.beginPath();
+      ct.moveTo(kx, ky);
+      ct.quadraticCurveTo(kx + yan * en * 0.10, ky - uz * 0.6, ux, uy);
+      ct.stroke();
+      for (let k = 0; k < 3; k++) {
+        const p = 0.35 + k * 0.28;
+        ct.fillStyle = rgba(ton(renk, -0.25 + r() * 0.45), 0.95);
+        yaprakCiz(ct, kx + (ux - kx) * p, ky + (uy - ky) * p,
+          en * (0.09 + r() * 0.05), k % 2 ? -0.7 : -2.45, en * 0.045, dus * 0.5);
+      }
+    }
+  }
+
+  /** Bilinmeyen tür: uydurma bir biçim değil, KESİK ÇİZGİLİ jenerik öbek. */
+  function cizBilinmiyor(ct, r, renk, turRenk, olgun, dus, en, boy) {
+    const kx = en / 2, ky = boy - 2;
+    ct.save();
+    ct.setLineDash([5, 4]);
+    ct.strokeStyle = "rgba(226,222,208,0.75)";
+    ct.lineWidth = 1.6;
+    ct.beginPath();
+    ct.moveTo(kx, ky);
+    ct.lineTo(kx, ky - boy * 0.45);
+    ct.stroke();
+    const adet = Math.round(3 + olgun * 3);
+    for (let i = 0; i < adet; i++) {
+      const yan = (i / (adet - 1 || 1) - 0.5) * 2;
+      ct.beginPath();
+      ct.ellipse(kx + yan * en * 0.22, ky - boy * (0.5 + r() * 0.3),
+        en * 0.13, boy * 0.12, yan * 0.4, 0, 6.3);
+      ct.stroke();
+    }
+    ct.restore();
+  }
+
+  /* --------------------------------------------------------------- kökler */
+  /** Kök siluetleri. Hepsi 0..1 aralığında çiziliyor: (0,0) sap dibi,
+   *  (0,1) kesit bandının dibi. Ölçek çağıran tarafta. */
+  function kokKazik(ct, r, en, boy, etli, renk) {
+    const uz = boy * (etli ? 0.62 : 0.80);
+    if (etli) {
+      // Etli kazık kök ÜRÜNÜN kendisi: havuç, turp. Türün rengi burada.
+      ct.beginPath();
+      ct.moveTo(-en * 0.16, 0);
+      ct.quadraticCurveTo(-en * 0.10, uz * 0.55, 0, uz);
+      ct.quadraticCurveTo(en * 0.10, uz * 0.55, en * 0.16, 0);
+      ct.closePath();
+      ct.fillStyle = rgba(renk, 0.92);
+      ct.fill();
+      ct.strokeStyle = "rgba(255,255,255,0.16)";
+      ct.lineWidth = 0.8;
+      for (let i = 1; i <= 4; i++) {
+        const t = i / 5;
+        ct.beginPath();
+        ct.moveTo(-en * 0.16 * (1 - t), uz * t);
+        ct.lineTo(en * 0.16 * (1 - t), uz * t);
+        ct.stroke();
+      }
+    } else {
+      ct.strokeStyle = "rgba(232,214,182,0.85)";
+      ct.lineWidth = Math.max(1, en * 0.035);
+      ct.beginPath();
+      ct.moveTo(0, 0);
+      ct.quadraticCurveTo(en * 0.05, uz * 0.5, (r() - 0.5) * en * 0.14, uz);
+      ct.stroke();
+    }
+    ct.strokeStyle = "rgba(232,214,182,0.7)";
+    ct.lineWidth = Math.max(0.6, en * 0.016);
+    for (let i = 0; i < 7; i++) {
+      const t = 0.12 + (i / 7) * 0.8;
+      const yan = i % 2 ? 1 : -1;
+      ct.beginPath();
+      ct.moveTo(0, uz * t);
+      ct.quadraticCurveTo(yan * en * 0.10, uz * (t + 0.05),
+        yan * en * (0.14 + r() * 0.10), uz * (t + 0.10));
+      ct.stroke();
+    }
+  }
+  function kokSacak(ct, r, en, boy) {
+    // Saçak kök SIĞ ve GENİŞ: yüzeye yakın bir yelpaze.
+    const uz = boy * 0.34;
+    ct.strokeStyle = "rgba(232,214,182,0.78)";
+    ct.lineCap = "round";
+    for (let i = 0; i < 11; i++) {
+      const t = i / 10;
+      const yan = (t - 0.5) * 2;
+      ct.lineWidth = Math.max(0.6, en * (0.020 - Math.abs(yan) * 0.008));
+      ct.beginPath();
+      ct.moveTo(0, 0);
+      ct.quadraticCurveTo(yan * en * 0.16, uz * 0.5,
+        yan * en * (0.26 + r() * 0.12), uz * (0.7 + r() * 0.5));
+      ct.stroke();
+    }
+  }
+  function kokSogan(ct, r, en, boy, renk) {
+    const cap = en * 0.19;
+    ct.beginPath();
+    ct.ellipse(0, cap * 0.75, cap, cap * 0.95, 0, 0, 6.3);
+    ct.fillStyle = rgba(renk, 0.9);
+    ct.fill();
+    ct.strokeStyle = "rgba(0,0,0,0.18)";
+    ct.lineWidth = 0.8;
+    for (let i = -2; i <= 2; i++) {
+      ct.beginPath();
+      ct.ellipse(0, cap * 0.75, cap * (0.25 + Math.abs(i) * 0.2), cap * 0.9, 0,
+        -Math.PI * 0.1, Math.PI * 1.1);
+      ct.stroke();
+    }
+    ct.strokeStyle = "rgba(232,214,182,0.7)";
+    ct.lineWidth = Math.max(0.6, en * 0.014);
+    for (let i = 0; i < 8; i++) {
+      const yan = (i / 7 - 0.5) * 2;
+      ct.beginPath();
+      ct.moveTo(yan * cap * 0.5, cap * 1.6);
+      ct.lineTo(yan * en * (0.12 + r() * 0.08), cap * 1.6 + boy * (0.16 + r() * 0.14));
+      ct.stroke();
+    }
+  }
+  function kokYumru(ct, r, en, boy, renk) {
+    const uz = boy * 0.48;
+    ct.strokeStyle = "rgba(232,214,182,0.72)";
+    ct.lineWidth = Math.max(0.8, en * 0.020);
+    for (let i = 0; i < 5; i++) {
+      const yan = (i / 4 - 0.5) * 2;
+      const ux = yan * en * (0.10 + r() * 0.16), uy = uz * (0.35 + r() * 0.5);
+      ct.beginPath();
+      ct.moveTo(0, 0);
+      ct.quadraticCurveTo(yan * en * 0.10, uy * 0.6, ux, uy);
+      ct.stroke();
+      // Yumrular sapın ucunda: patatesin kendisi.
+      ct.save();
+      ct.translate(ux, uy);
+      ct.rotate(yan * 0.4);
+      ct.fillStyle = rgba(renk, 0.9);
+      ct.beginPath();
+      ct.ellipse(0, 0, en * (0.055 + r() * 0.03), en * (0.04 + r() * 0.02), 0, 0, 6.3);
+      ct.fill();
+      ct.restore();
+    }
+  }
+  function kokDerin(ct, r, en, boy) {
+    // Derin dallı: birkaç ana kol aşağı iner, her biri ikiye ayrılır.
+    const uz = boy * 0.86;
+    ct.strokeStyle = "rgba(232,214,182,0.8)";
+    ct.lineCap = "round";
+    const kol = 3;
+    for (let i = 0; i < kol; i++) {
+      const yan = (i - 1) * 0.9;
+      const ux = yan * en * 0.14;
+      ct.lineWidth = Math.max(0.9, en * 0.026);
+      ct.beginPath();
+      ct.moveTo(0, 0);
+      ct.quadraticCurveTo(ux * 0.6, uz * 0.45, ux, uz * (0.72 + r() * 0.25));
+      ct.stroke();
+      ct.lineWidth = Math.max(0.6, en * 0.013);
+      for (let k = 0; k < 4; k++) {
+        const t = 0.25 + k * 0.18;
+        const y2 = uz * t;
+        const s = k % 2 ? 1 : -1;
+        ct.beginPath();
+        ct.moveTo(ux * t, y2);
+        ct.quadraticCurveTo(ux * t + s * en * 0.08, y2 + uz * 0.08,
+          ux * t + s * en * (0.13 + r() * 0.09), y2 + uz * (0.12 + r() * 0.08));
+        ct.stroke();
+      }
+    }
+  }
+  function kokBilinmiyor(ct, r, en, boy) {
+    // KÖK TİPİ BİLİNMİYOR. Uydurma bir kök çizmiyoruz: yalnız kesik
+    // çizgili kısa bir iz ve bilinmezliğin kendisi.
+    ct.save();
+    ct.setLineDash([3, 4]);
+    ct.strokeStyle = "rgba(226,214,192,0.55)";
+    ct.lineWidth = Math.max(0.8, en * 0.020);
+    ct.beginPath();
+    ct.moveTo(0, 0);
+    ct.lineTo(0, boy * 0.22);
+    ct.stroke();
+    ct.beginPath();
+    ct.ellipse(0, boy * 0.34, en * 0.16, boy * 0.12, 0, 0, 6.3);
+    ct.stroke();
+    ct.restore();
+  }
+
+  /** Kökü sahneye çiziyor: (x, tabanY) sap dibi, `boy` kesit derinliği. */
+  function kokCiz(ct, b, x, tabanY, gen, d, vurgu) {
+    const bic = turBicim(b);
+    const olgun = kis(sayi(b.olgunluk), 0.05, 1);
+    // Kök YAŞLA büyüyor; tipi türden, boyu olgunluktan.
+    const derin = (G.kesitAlt - G.kesitUst) * (0.34 + olgun * 0.52);
+    const en = Math.max(14, gen * 2.2);
+    const r = uretec(Math.floor(tohum(b.ad + "kok") * 4294967295));
+    const turRenk = hexRGB(b.renk || "#7bbf5a");
+    ct.save();
+    ct.globalAlpha = vurgu ? 0.92 : 0.30 + d * 0.22;
+    // Sap dibinden kesitin üstüne inen boyun: gövde ile kök tek parça.
+    // Sönük duruyor — yirmi dört bitkide parlak bir çit oluyordu.
+    ct.strokeStyle = "rgba(196,176,142,0.42)";
+    ct.lineWidth = kis(gen * 0.05, 0.8, 1.6);
+    ct.beginPath(); ct.moveTo(x, tabanY); ct.lineTo(x, G.kesitUst); ct.stroke();
+    ct.translate(x, G.kesitUst);
+    if (bic.kok === "kazik") kokKazik(ct, r, en, derin, false, turRenk);
+    else if (bic.kok === "kazik-etli") kokKazik(ct, r, en, derin, true, turRenk);
+    else if (bic.kok === "sacak") kokSacak(ct, r, en, derin);
+    else if (bic.kok === "sogan") kokSogan(ct, r, en, derin, turRenk);
+    else if (bic.kok === "yumru") kokYumru(ct, r, en, derin, turRenk);
+    else if (bic.kok === "derin") kokDerin(ct, r, en, derin);
+    else kokBilinmiyor(ct, r, en, derin);
+    ct.restore();
+  }
+
+  /* ------------------------------------------------------------ önbellek */
   function spriteAnahtar(b) {
     const olgunKova = Math.round(kis(sayi(b.olgunluk), 0, 1) * 8);
     return `${b.tur || "?"}|${b.ad}|${olgunKova}|${b.susadi ? 1 : 0}|${b.hasat ? 1 : 0}`;
@@ -540,15 +986,15 @@ window.Bahce = (function () {
   /* YAPRAK YEŞİLDİR. Türün rengi katalogdan geliyor ve çoğu zaman ÜRÜNÜN
      rengi: domates kırmızı, havuç turuncu. Onu yaprağa boyayınca sahne
      kırmızı yıldızlarla dolan bir şeye dönüyordu. Yaprak yeşilin türe
-     göre kaymış bir tonu; türün kendi rengi meyvede ve toprak üstü
-     ürününde duruyor. */
+     göre kaymış bir tonu; türün kendi rengi meyvede, çiçekte, yumruda. */
   const YAPRAK = { r: 111, g: 174, b: 85 };
   const yaprakRengi = (renk) => karis(renk, YAPRAK, 0.78);
 
   function spriteYap(b) {
-    const bicim = bicimSec(b);
+    const bic = turBicim(b);
     const en = SPRITE_EN;
-    const boy = Math.round(en * BOY_ORAN[bicim]);
+    const oran = UST_ORAN[bic.ust] || 1;
+    const boy = Math.round(en * oran);
     const c = document.createElement("canvas");
     c.width = en; c.height = boy;
     const ct = c.getContext("2d");
@@ -559,10 +1005,19 @@ window.Bahce = (function () {
     // yarım düşük. Kesin ile tahmin aynı görünmüyor.
     const dus = b.susadi ? (b.su_tahmin ? 0.16 : 0.30) : 0;
     const r = uretec(Math.floor(tohum(b.ad) * 4294967295));
-    if (bicim === BICIM_GUL) gulCiz(ct, r, renk, olgun, dus, en, boy);
-    else if (bicim === BICIM_TUY) tuyCiz(ct, r, renk, olgun, dus, en, boy);
-    else caliCiz(ct, r, renk, turRenk, olgun, dus, en, boy, !!b.hasat);
-    return { tuval: c, en, boy, oran: BOY_ORAN[bicim], bicim };
+    const meyve = !!b.hasat;
+    const a = [ct, r, renk, turRenk, olgun, dus, en, boy];
+    if (bic.ust === "rozet") cizRozet.apply(null, a);
+    else if (bic.ust === "tuy") cizTuy.apply(null, a);
+    else if (bic.ust === "boru") cizBoru.apply(null, a);
+    else if (bic.ust === "cali") cizCali.apply(null, a.concat([meyve]));
+    else if (bic.ust === "sarilan") cizSarilan.apply(null, a.concat([meyve]));
+    else if (bic.ust === "yayilan") cizYayilan.apply(null, a.concat([meyve]));
+    else if (bic.ust === "sap") cizSap.apply(null, a.concat([meyve]));
+    else if (bic.ust === "bas") cizBas.apply(null, a);
+    else if (bic.ust === "yumruust") cizYumruUst.apply(null, a);
+    else cizBilinmiyor.apply(null, a);
+    return { tuval: c, en, boy, oran, bicim: bic };
   }
 
   function spriteAl(b) {
@@ -705,36 +1160,6 @@ window.Bahce = (function () {
     return n;
   }
 
-  /** Kök: bitkinin toprağa uzanan payı — yaşla derinleşiyor. */
-  function kokCiz(ct, b, x, tabanY, gen, d) {
-    const olgun = kis(sayi(b.olgunluk), 0.05, 1);
-    const boy = (G.kesitAlt - G.kesitUst) * (0.16 + olgun * 0.30);
-    const r = uretec(Math.floor(tohum(b.ad + "kok") * 4294967295));
-    ct.save();
-    ct.globalAlpha = 0.22 + d * 0.26;
-    ct.strokeStyle = "rgba(232,214,182,0.8)";
-    ct.lineCap = "round";
-    ct.lineWidth = kis(gen * 0.06, 0.9, 2.2);
-    ct.beginPath();
-    ct.moveTo(x, tabanY);
-    ct.quadraticCurveTo(x + (r() - 0.5) * gen * 0.2, G.kesitUst + boy * 0.55,
-      x + (r() - 0.5) * gen * 0.3, G.kesitUst + boy);
-    ct.stroke();
-    ct.lineWidth = kis(gen * 0.035, 0.6, 1.3);
-    const yan = 3 + Math.round(olgun * 4);
-    for (let i = 0; i < yan; i++) {
-      const t = (i + 1) / (yan + 1);
-      const sy = G.kesitUst + boy * t;
-      const yon = i % 2 ? 1 : -1;
-      ct.beginPath();
-      ct.moveTo(x, sy);
-      ct.quadraticCurveTo(x + yon * gen * 0.22, sy + boy * 0.10,
-        x + yon * gen * (0.35 + r() * 0.25), sy + boy * (0.16 + r() * 0.14));
-      ct.stroke();
-    }
-    ct.restore();
-  }
-
   /* ==================================================================== *
    * SAHNE KATMANI
    * ==================================================================== */
@@ -762,9 +1187,14 @@ window.Bahce = (function () {
 
   function bitkiCiz(ct, b, secili, uzerinde) {
     const m = b._m;
+    kokCiz(ct, b, m.x, m.taban, m.sutun, m.d, secili);
     const n = sutunCiz(ct, b, m.x, m.sutun, m.d, secili);
-    kokCiz(ct, b, m.x, m.taban, m.sutun, m.d);
+    // SU VERİLDİ AMA ÖLÇÜLMEDİ: ıslanma cephesi sütunun ÜSTÜNE ayrı bir
+    // katman olarak biniyor, sütunu doldurmuyor. Taralı oyuk taralı kalıyor.
+    if (S.islanma[b.ad]) islanmaCiz(ct, b, m.x, m.sutun, m.d);
+    if (S.ekim[b.ad]) ekimCiz(ct, b, m.x, m.sutun, m.d);
 
+    if (S.islanma[b.ad]) islakLeke(ct, b, m);
     // Toprakta oturduğu yer: siluetin altındaki gölge onu yüzeye bastırıyor.
     ct.save();
     ct.globalAlpha = 0.20 + m.d * 0.16;
@@ -839,13 +1269,49 @@ window.Bahce = (function () {
     }
   }
 
-  /** Makine: X rayı gökyüzünde, araba gerçek X'inde, kol derinliğe iniyor. */
+  /** Hazne gözleri arabanın üstünde: tohum HANGİ GÖZDEN geliyor.
+   *  Yalnız ekim sırasında ya da tür seçiliyken çiziliyor. */
+  function hazneCiz(ct, x, y, slug) {
+    const g = (S.veri && S.veri.hazne_gozleri) || [];
+    if (!g.length) return;
+    const kutu = 9, ara = 2;
+    const en = g.length * (kutu + ara) - ara;
+    ct.save();
+    ct.translate(x - en / 2, y);
+    for (let i = 0; i < g.length; i++) {
+      const c = g[i] || {};
+      const bu = slug && String(c.tohum || "") === String(slug);
+      ct.fillStyle = c.dolu ? (bu ? "rgba(150,214,140,0.95)" : "rgba(196,186,160,0.55)")
+                            : "rgba(30,32,34,0.6)";
+      ct.fillRect(i * (kutu + ara), 0, kutu, kutu);
+      ct.strokeStyle = bu ? "rgba(190,240,180,0.95)" : "rgba(200,206,214,0.35)";
+      ct.lineWidth = bu ? 1.4 : 0.8;
+      ct.strokeRect(i * (kutu + ara) + 0.5, 0.5, kutu - 1, kutu - 1);
+      if (bu) {
+        // HANGİ GÖZ. Aynı tür birden çok gözde olabilir, biri boşalmış
+        // olabilir; kullanıcıya gereken şey gözün kendisi.
+        ct.save();
+        ct.font = "700 9px system-ui,sans-serif";
+        ct.textAlign = "center";
+        ct.shadowColor = "rgba(0,0,0,0.9)";
+        ct.shadowBlur = 3;
+        ct.fillStyle = c.dolu ? "rgba(190,240,180,1)" : "rgba(240,186,110,1)";
+        ct.fillText(`${c.ad || "göz"}${c.dolu ? "" : " · boş"}`,
+          i * (kutu + ara) + kutu / 2, kutu + 11);
+        ct.restore();
+      }
+    }
+    ct.restore();
+  }
+
+  /** Makine: X rayı gökyüzünün tepesinde, araba GERÇEK X'inde, kol
+   *  ÖLÇÜLEN z'ye göre iniyor. z ölçülü değilse iniş çizilmiyor ve
+   *  sebebi yazıyor — inişi uydurmak, olmayan bir hareketi göstermekti. */
   function robotCiz(ct) {
-    const k = (S.veri && S.veri.konum) || null;
-    const bagli = !!(S.veri && S.veri.bagli);
+    const m = makineDurum();
     const rayY = 13;
     ct.save();
-    ct.globalAlpha = bagli ? 1 : 0.32;
+    ct.globalAlpha = m.bagli ? 1 : 0.32;
     ct.strokeStyle = "rgba(198,206,216,0.55)";
     ct.lineWidth = 3;
     ct.beginPath(); ct.moveTo(0, rayY); ct.lineTo(S.en, rayY); ct.stroke();
@@ -853,28 +1319,49 @@ window.Bahce = (function () {
     ct.fillRect(0, rayY - 3, 10, 6);
     ct.fillRect(S.en - 10, rayY - 3, 10, 6);
 
-    if (k) {
-      const d = derinlik(k.y);
-      const x = ekranX(k.x, d);
+    if (m.var) {
+      const p = S.rob || m;
+      const d = derinlik(p.y);
+      const x = ekranX(p.x, d);
       const hedefY = toprakY(d);
-      const z = sayi(k.z, 0);
-      const toprakZ = sayi(S.veri && S.veri.toprak_z, 0);
-      // Z ekseni: kol ne kadar indiyse o kadar uzuyor. Toprağa değdiğinde
-      // uç tam yüzeyde. Hiçbir şey uydurmuyoruz: z yoksa kol kısa kalıyor.
-      const oran = toprakZ ? kis(z / toprakZ, 0, 1) : 0.15;
-      const ucY = rayY + (hedefY - rayY) * (0.25 + oran * 0.75);
+      const yuk = S.rob ? S.rob.yuk : m.yuk;
+      const ucY = m.zVar ? rayY + (hedefY - rayY) * (1 - kis(yuk, 0, 1))
+                         : rayY + (hedefY - rayY) * 0.22;
       ct.strokeStyle = "rgba(216,222,232,0.7)";
       ct.lineWidth = 2;
       ct.beginPath(); ct.moveTo(x, rayY); ct.lineTo(x, ucY); ct.stroke();
-      ct.fillStyle = bagli ? "rgba(226,232,242,0.95)" : "rgba(150,156,166,0.8)";
+      ct.fillStyle = m.bagli ? "rgba(226,232,242,0.95)" : "rgba(150,156,166,0.8)";
       ct.fillRect(x - 11, rayY - 7, 22, 14);
       ct.fillStyle = "rgba(60,66,78,0.9)";
       ct.fillRect(x - 4, ucY - 5, 8, 7);
-      ct.strokeStyle = "rgba(255,255,255,0.14)";
-      ct.setLineDash([2, 5]);
-      ct.lineWidth = 1;
-      ct.beginPath(); ct.moveTo(x, ucY); ct.lineTo(x, hedefY); ct.stroke();
-      ct.setLineDash([]);
+      if (!m.zVar) {
+        ct.font = "500 9px system-ui,sans-serif";
+        ct.textAlign = "left";
+        ct.fillStyle = "rgba(240,196,120,0.9)";
+        ct.fillText("z ölçülmüyor", x + 14, rayY + 4);
+      } else {
+        ct.strokeStyle = "rgba(255,255,255,0.14)";
+        ct.setLineDash([2, 5]);
+        ct.lineWidth = 1;
+        ct.beginPath(); ct.moveTo(x, ucY); ct.lineTo(x, hedefY); ct.stroke();
+        ct.setLineDash([]);
+      }
+      // HAZNE: ekim işi çalışırken ya da tür seçiliyken arabanın üstünde.
+      // Hazne arabanın ALTINDA: rayın üstünde çizilince ekranın dışında
+      // kalıyordu.
+      const ekSlug = S.ekIs ? String((S.ix[S.ekIs.ad] || {}).tur || "")
+                            : (S.ekimTur ? S.ekimTur.slug : "");
+      if (ekSlug) hazneCiz(ct, x, rayY + 10, ekSlug);
+      // Ucun altındaki hedef: makine kime çalışıyor.
+      if (S.olayAd && S.ix[S.olayAd] && S.ix[S.olayAd]._m) {
+        const t = S.ix[S.olayAd]._m;
+        ct.strokeStyle = "rgba(140,196,240,0.6)";
+        ct.setLineDash([3, 4]);
+        ct.lineWidth = 1;
+        ct.beginPath(); ct.arc(t.x, t.taban, Math.max(10, t.en * 0.34), 0, 6.3);
+        ct.stroke();
+        ct.setLineDash([]);
+      }
     }
     ct.restore();
   }
@@ -889,18 +1376,548 @@ window.Bahce = (function () {
       z.y += z.vy * dt;
       z.omur -= dt;
       if (z.omur <= 0 || z.y > z.yer) { S.zerre.splice(i, 1); continue; }
-      ct.fillStyle = `rgba(140,196,236,${kis(z.omur * 2, 0, 0.85)})`;
+      ct.fillStyle = `rgba(158,214,248,${kis(z.omur * 2, 0, 0.95)})`;
       ct.beginPath();
-      ct.ellipse(z.x, z.y, 1.4, 2.6, 0, 0, 6.3);
+      ct.ellipse(z.x, z.y, 1.7, 3.0, 0, 0, 6.3);
       ct.fill();
     }
   }
   function zerreEk(x, y, yer) {
-    for (let i = 0; i < 4; i++) {
-      S.zerre.push({ x: x + (Math.random() - 0.5) * 10, y,
-                     vx: (Math.random() - 0.5) * 26, vy: 20 + Math.random() * 40,
-                     yer, omur: 0.8 + Math.random() * 0.5 });
+    // Uç toprağa inmişse su dökülmüyor, SIÇRIYOR: damlalar yanlara ve
+    // yukarı gidiyor. Yüksekten geliyorsa düşüyor.
+    const yakin = yer - y < 26;
+    for (let i = 0; i < 5; i++) {
+      S.zerre.push({
+        x: x + (Math.random() - 0.5) * 12, y,
+        vx: (Math.random() - 0.5) * (yakin ? 90 : 26),
+        vy: yakin ? -(30 + Math.random() * 70) : 20 + Math.random() * 40,
+        yer: yer + 2, omur: 0.5 + Math.random() * 0.5,
+      });
     }
+  }
+
+  /* ==================================================================== *
+   * TÜR KATALOĞU — ekim derinliği ve olgunluk süresi.
+   *
+   * `/api/bahce` türlerin yalnız yayılımını ve olgunluk gününü taşıyor;
+   * ekim derinliği (`sow_depth_mm`) katalogda duruyor ve YENİ UÇ AÇMADAN
+   * var olan `/api/turler`den okunuyor. Sayı gerçek: ekim canlandırması
+   * tohumu bu derinliğe bırakıyor ve rakamı yazıyor. Katalog okunamazsa
+   * ya da tür için derinlik yazılı değilse UYDURULMUYOR — tohum yüzeyin
+   * hemen altında duruyor ve "ekim derinliği bilinmiyor" yazıyor.
+   * ==================================================================== */
+  const katalogAl = guvenli("katalog", async function () {
+    if (S.katalogT && Date.now() - S.katalogT < 600000) return S.katalog;
+    try {
+      const c = await api("/api/turler");
+      const k = {};
+      for (const t of (c.turler || [])) {
+        if (!t || !t.slug) continue;
+        k[String(t.slug)] = {
+          ekim_mm: t.sow_depth_mm == null || t.sow_depth_mm === ""
+            ? null : sayi(t.sow_depth_mm, 0),
+          su_ml: t.water_ml_per_day == null ? null : sayi(t.water_ml_per_day, 0),
+          gunes: String(t.sun_requirement || ""),
+        };
+      }
+      S.katalog = k;
+      S.katalogT = Date.now();
+      notYaz("katalog", "");
+    } catch (h) {
+      S.katalog = S.katalog || {};
+      notYaz("katalog", "Tür kataloğu okunamadı — ekim derinliği bilinmiyor.");
+    }
+    return S.katalog;
+  });
+  const ekimDerinligi = (b) => {
+    const k = (S.katalog || {})[String((b && b.tur) || "")];
+    return k && k.ekim_mm != null ? k.ekim_mm : null;
+  };
+
+  /* ==================================================================== *
+   * SEÇİLİ BİTKİNİN NEM GEÇMİŞİ
+   *
+   * `/api/bitki` bitkinin nem yarıçapına düşen OKUMALARI zaman sırasıyla
+   * veriyor. Sütunun içine geçmiş su seviyeleri olarak çiziliyor: eski
+   * okumalar soluk çizgiler, yenisi sütunun kendi üstü. Eğri uydurmuyoruz,
+   * yalnız ölçülen noktalar var.
+   * ==================================================================== */
+  const gecmisAl = guvenli("geçmiş", async function (ad) {
+    if (!ad) return;
+    if (S.gecmisAd === ad && Date.now() - S.gecmisT < 20000) return;
+    S.gecmisAd = ad; S.gecmisT = Date.now(); S.gecmis = null;
+    try {
+      const c = await api("/api/bitki");
+      const e = (c.ek || {})[ad] || null;
+      if (S.gecmisAd !== ad) return;              // seçim bu arada değişti
+      S.gecmis = e ? {
+        noktalar: (e.gecmis || []).slice(-24),
+        egilim: e.egilim || null,
+        sula_adet: sayi(e.sula_adet, 0), nem_adet: sayi(e.nem_adet, 0),
+        sula_toplam_sn: sayi(e.sula_toplam_sn, 0),
+        ortanca_fark: e.ortanca_fark == null ? null : sayi(e.ortanca_fark, 0),
+        ortanca: c.ortanca == null ? null : sayi(c.ortanca, 0),
+      } : { noktalar: [], egilim: null, yok: true };
+      notYaz("gecmis", "");
+    } catch (h) {
+      S.gecmis = null;
+      notYaz("gecmis", "Nem geçmişi okunamadı — sütunda yalnız son ölçüm var.");
+    }
+    isteKare();
+  });
+
+  /* ==================================================================== *
+   * OLAY MOTORU — sulama ve ekim GERÇEKTEN olan şeyler.
+   *
+   * Hiçbir canlandırma kendi kendine oynamıyor. Üç şart birden:
+   *   1. kuyrukta o tipte bir iş ÇALIŞIYOR,
+   *   2. makine bağlı ve konumu geliyor,
+   *   3. uç o bitkinin üstünde ve toprağa inmiş (z ölçülü).
+   * Üçü sağlanmazsa ekranda hareket yok. Konum ara karelerde yumuşatılıyor
+   * ama ASLA ölçülen konumun ilerisine geçmiyor: hedef son gelen paket.
+   *
+   * SU VERİLDİ, NEM ÖLÇÜLMEDİ. Sulama canlandırması nem sütununu
+   * DOLDURMUYOR. Suyun toprağa inişi ayrı bir katman: kesik kenarlı,
+   * çizgili, üstünde "sulandı · ölçülmedi" yazan bir ıslanma cephesi.
+   * Ölçülmemiş bir sütun sulandıktan sonra da taralı oyuk olarak duruyor —
+   * su vermek bilmek değil.
+   * ==================================================================== */
+  const YAKIN_MM = 70;          // uç bu kadar yakınsa "o bitkinin üstünde"
+  const ISLANMA_SUR = 6;        // ıslanma cephesinin dolma süresi (sn), üst sınır
+
+  function makineDurum() {
+    const v = S.veri || {};
+    const k = v.konum || null;
+    const bagli = !!v.bagli;
+    const toprakZ = sayi(v.toprak_z, 0);
+    const guvZ = sayi(v.guvenli_z, toprakZ + 340);
+    const z = k ? sayi(k.z, guvZ) : guvZ;
+    const arali = Math.abs(guvZ - toprakZ) > 1 ? Math.abs(guvZ - toprakZ) : 340;
+    return {
+      bagli, var: !!k,
+      x: k ? sayi(k.x, 0) : 0, y: k ? sayi(k.y, 0) : 0, z,
+      zVar: !!k && k.z != null && v.toprak_z != null,
+      // Yerden yükseklik ORANI: 0 = toprakta, 1 = güvenli yükseklikte.
+      yuk: kis(Math.abs(z - toprakZ) / arali, 0, 1),
+      yerden: z - toprakZ,
+    };
+  }
+  function calisanIs() {
+    const k = (S.veri && S.veri.kuyruk) || {};
+    const c = k.calisan;
+    if (c && c.durum === "calisiyor") return c;
+    return (k.isler || []).find((i) => i && i.durum === "calisiyor") || null;
+  }
+  /** Ucun altındaki bitki — işin hedefleri arasından, en yakını. */
+  function ucAltindaki(is) {
+    const m = makineDurum();
+    if (!m.bagli || !m.var) return null;
+    const hedef = new Set((is && is.noktalar) || []);
+    let en = null, enD = YAKIN_MM;
+    for (const b of S.bitki) {
+      if (hedef.size && !hedef.has(String(b.ad))) continue;
+      const d = Math.hypot(sayi(b.x) - m.x, sayi(b.y) - m.y);
+      if (d < enD) { enD = d; en = b; }
+    }
+    return en;
+  }
+
+  /** Bitkinin yatak Y'si — damla kaynağını hesaplarken kullanılıyor. */
+  const p2y = (b) => sayi(b.y, 0);
+  /** Ucun ekrandaki Y'si: ölçülen z'den, yoksa kısa sabit kol. */
+  function ucEkranY(m, d) {
+    const rayY = 13, hedefY = toprakY(d);
+    const yuk = S.rob ? S.rob.yuk : m.yuk;
+    return m.zVar ? rayY + (hedefY - rayY) * (1 - kis(yuk, 0, 1))
+                  : rayY + (hedefY - rayY) * 0.22;
+  }
+
+  function olayGuncelle(dt) {
+    const m = makineDurum();
+    // Konum yumuşatma: gelen paket hedef, ekran ona doğru gidiyor.
+    if (m.var) {
+      if (!S.rob) S.rob = { x: m.x, y: m.y, yuk: m.yuk };
+      const k = kis(dt * 7, 0, 1);
+      S.rob.x += (m.x - S.rob.x) * k;
+      S.rob.y += (m.y - S.rob.y) * k;
+      S.rob.yuk += (m.yuk - S.rob.yuk) * k;
+    } else S.rob = null;
+
+    const is = calisanIs();
+    S.suIs = null; S.ekIs = null;
+    if (!is || !m.bagli) { S.olayAd = ""; return; }
+    const b = ucAltindaki(is);
+    S.olayAd = b ? String(b.ad) : "";
+    if (!b) return;
+
+    // Uç toprağa inmiş mi? Z ölçülü değilse iniş ÇİZİLMİYOR ve olay
+    // başlamıyor — inişi uydurmak, olmayan bir şeyi göstermek olurdu.
+    const indi = m.zVar && m.yuk < 0.18;
+
+    if (is.tip === "sula") {
+      S.suIs = { ad: b.ad, indi, is };
+      if (indi) {
+        const sure = kis(sayi(b.sulama_saniye, 3), 1, ISLANMA_SUR);
+        const o = S.islanma[b.ad] || { t: 0, sn: 0 };
+        o.t = kis(o.t + dt / sure, 0, 1);
+        o.sn += dt;
+        o.ts = Date.now();
+        S.islanma[b.ad] = o;
+        // Damlalar UCUN olduğu yerden düşüyor ve saniyede ~11 tane: her
+        // karede damla üretmek Pi'de yüzlerce nesne demekti.
+        if (b._m && o.ts - sayi(o.damlaT, 0) > 70) {
+          o.damlaT = o.ts;
+          const dd = derinlik(p2y(b));
+          zerreEk(ekranX(m.x, dd), ucEkranY(m, dd) + 3, b._m.taban);
+        }
+      }
+    } else if (is.tip === "ek") {
+      const der = ekimDerinligi(b);
+      const o = S.ekim[b.ad] || { t: 0, derinlik: der };
+      o.derinlik = der;
+      o.ts = Date.now();
+      if (indi) o.t = kis(o.t + dt / 1.6, 0, 1);
+      S.ekim[b.ad] = o;
+      S.ekIs = { ad: b.ad, indi, is, derinlik: der };
+    }
+  }
+
+  /** Islanma cephesi: suyun toprağa inişi. ÖLÇÜM DEĞİL, verilen su. */
+  /** Biten olayların izleri: sunucu "bayat" dediyse ya da iki dakika
+   *  geçtiyse siliniyor. İz sonsuza kadar durursa ekran geçmişi şimdi
+   *  gibi gösterir. */
+  function olayTemizle() {
+    const simdi = Date.now();
+    for (const ad of Object.keys(S.islanma)) {
+      const b = S.ix[ad];
+      const o = S.islanma[ad];
+      const eski = simdi - sayi(o.ts, 0) > 120000;
+      // Sunucu okumayı "bayat" işaretlediyse sütun zaten sulamayı
+      // anlatıyor: iz görevini bitirdi.
+      const bayat = b && (b.su_olcum || {}).bayat;
+      if (eski || bayat || !b) delete S.islanma[ad];
+    }
+    for (const ad of Object.keys(S.ekim)) {
+      if (!S.ix[ad] || simdi - sayi(S.ekim[ad].ts, 0) > 120000) delete S.ekim[ad];
+    }
+  }
+
+  function islanmaCiz(ct, b, x, gen, d) {
+    const o = S.islanma[b.ad];
+    if (!o) return;
+    const yariEn = Math.max(9, gen * 0.62);
+    const derin = (G.kesitAlt - G.kesitUst) * (0.20 + o.t * 0.55);
+    const ust = G.kesitUst;
+    ct.save();
+    ct.globalAlpha = 0.7 + d * 0.3;
+    const g = ct.createLinearGradient(0, ust, 0, ust + derin);
+    g.addColorStop(0, "rgba(126,200,244,0.62)");
+    g.addColorStop(0.7, "rgba(112,178,226,0.30)");
+    g.addColorStop(1, "rgba(126,196,240,0.02)");
+    ct.fillStyle = g;
+    ct.fillRect(x - yariEn, ust, yariEn * 2, derin);
+    // Sızma izleri: aşağı inen ince damar çizgileri.
+    ct.strokeStyle = "rgba(176,220,250,0.5)";
+    ct.lineWidth = 1;
+    const r = uretec(Math.floor(tohum(b.ad + "su") * 4294967295));
+    for (let i = 0; i < 5; i++) {
+      const sx = x - yariEn + r() * yariEn * 2;
+      ct.beginPath();
+      ct.moveTo(sx, ust);
+      ct.lineTo(sx + (r() - 0.5) * 6, ust + derin * (0.5 + r() * 0.5));
+      ct.stroke();
+    }
+    ct.setLineDash([4, 4]);
+    ct.strokeStyle = "rgba(176,220,250,0.75)";
+    ct.beginPath();
+    ct.moveTo(x - yariEn, ust + derin);
+    ct.lineTo(x + yariEn, ust + derin);
+    ct.stroke();
+    ct.setLineDash([]);
+    // TARAMA SUYUN ÜSTÜNE GERİ BİNİYOR. Ölçülmemiş bir sütun sulandıktan
+    // sonra da OYUK: suyun rengi bilinmezliği örtmüyor. Bunu yapmazsak
+    // dolan cephe "artık biliyoruz" der; oysa bilinen tek şey su verildiği.
+    if (!nemDurum(b).var) {
+      ct.globalAlpha = 0.85;
+      ct.fillStyle = taramaDeseni(ct);
+      ct.fillRect(x - yariEn, ust, yariEn * 2, derin);
+      ct.globalAlpha = 1;
+    }
+    ct.font = "700 10px system-ui,sans-serif";
+    ct.textAlign = "center";
+    ct.shadowColor = "rgba(0,0,0,0.85)";
+    ct.shadowBlur = 3;
+    ct.fillStyle = "rgba(206,236,255,1)";
+    ct.fillText("sulandı · ölçülmedi", x, ust + derin + 12);
+    ct.restore();
+  }
+
+  /** Yüzeyde ıslak leke — suyun toprağa girdiği nokta. */
+  function islakLeke(ct, b, m) {
+    const o = S.islanma[b.ad];
+    if (!o) return;
+    const r = Math.max(8, m.en * 0.30) * (0.5 + o.t * 0.5);
+    ct.save();
+    ct.globalAlpha = 0.45;
+    ct.translate(m.x, m.taban);
+    ct.scale(1, 0.32);
+    const g = ct.createRadialGradient(0, 0, r * 0.2, 0, 0, r);
+    g.addColorStop(0, "rgba(46,86,118,0.9)");
+    g.addColorStop(1, "rgba(46,86,118,0)");
+    ct.fillStyle = g;
+    ct.beginPath(); ct.arc(0, 0, r, 0, 6.3); ct.fill();
+    ct.restore();
+  }
+
+  /** Ekim: tohumun düşüşü, derinliği ve üstünün örtülmesi. */
+  function ekimCiz(ct, b, x, gen, d) {
+    const o = S.ekim[b.ad];
+    if (!o) return;
+    const bant = G.kesitAlt - G.kesitUst;
+    // DERİNLİK GERÇEK SAYIDAN: katalogdaki mm, kesitin üst çeyreğine
+    // oranlanıyor (100 mm = çeyreğin tamamı). Sayı ekranda da yazıyor.
+    const oran = o.derinlik == null ? 0.10 : kis(o.derinlik / 100, 0.02, 1);
+    const hedef = G.kesitUst + bant * 0.25 * oran;
+    const y = G.kesitUst + (hedef - G.kesitUst) * yumusakIn(o.t);
+    ct.save();
+    ct.globalAlpha = 0.9;
+    ct.fillStyle = "#f0e0b0";
+    ct.beginPath();
+    ct.ellipse(x, y, Math.max(3, gen * 0.16), Math.max(4, gen * 0.20), 0, 0, 6.3);
+    ct.fill();
+    if (o.t >= 1) {
+      // Üstü örtüldü: tohumun üstünde küçük bir toprak höyüğü.
+      ct.fillStyle = "rgba(120,88,60,0.9)";
+      ct.beginPath();
+      ct.ellipse(x, G.kesitUst - 1, gen * 0.5, 3.5, 0, Math.PI, 0);
+      ct.fill();
+    }
+    ct.setLineDash([2, 3]);
+    ct.strokeStyle = "rgba(232,216,168,0.6)";
+    ct.lineWidth = 1;
+    ct.beginPath(); ct.moveTo(x - gen * 0.6, y); ct.lineTo(x + gen * 0.6, y); ct.stroke();
+    ct.setLineDash([]);
+    ct.font = "700 10px system-ui,sans-serif";
+    ct.textAlign = "left";
+    ct.shadowColor = "rgba(0,0,0,0.85)";
+    ct.shadowBlur = 3;
+    ct.fillStyle = o.derinlik == null ? "rgba(240,186,110,1)" : "rgba(244,236,212,1)";
+    ct.fillText(o.derinlik == null ? "ekim derinliği bilinmiyor"
+                                   : `${Math.round(o.derinlik)} mm derine`,
+      x + gen * 0.8, y + 4);
+    ct.restore();
+  }
+  const yumusakIn = (t) => 1 - Math.pow(1 - kis(t, 0, 1), 2);
+
+  /* ==================================================================== *
+   * SEÇİLİ BİTKİ — bilgi ayrı bir panele kaçmıyor, KESİTİN İÇİNDE duruyor.
+   *
+   * Sahne kararıyor, yalnız seçilenin şeridi aydınlık kalıyor; kökü
+   * belirginleşiyor, nem sütunu vurgulanıyor, sütunun içine geçmiş
+   * ölçümler seviye çizgileri olarak düşüyor. Yayılım çemberi yüzeyde
+   * çiziliyor ve çakışan komşular işaretleniyor. Olgun boy hayalet siluet
+   * olarak arkada duruyor: bitkinin nereye gideceği görünüyor.
+   * ==================================================================== */
+  function perdeCiz(ct, m) {
+    const yariEn = Math.max(m.sutun * 1.9, m.en * 0.72);
+    ct.save();
+    ct.beginPath();
+    ct.rect(0, 0, S.en, S.boy);
+    ct.rect(m.x - yariEn, 0, yariEn * 2, S.boy);
+    ct.fillStyle = "rgba(6,8,10,0.42)";
+    ct.fill("evenodd");
+    ct.restore();
+  }
+
+  /** Yayılım çemberi yüzeyde; çakışan komşular turuncu. */
+  function yayilimCiz(ct, b, m) {
+    const rMM = sayi(b.yayilim_mm, 0) * 0.5;
+    if (rMM <= 0) return;
+    const rx = rMM * G.pxMM * m.o;
+    ct.save();
+    ct.translate(m.x, m.taban);
+    ct.scale(1, 0.30);
+    ct.beginPath(); ct.arc(0, 0, rx, 0, 6.3);
+    ct.strokeStyle = b.cakisik ? "rgba(236,150,86,0.8)" : "rgba(196,226,255,0.30)";
+    ct.setLineDash([5, 5]);
+    ct.lineWidth = 1.2;
+    ct.stroke();
+    ct.setLineDash([]);
+    ct.restore();
+    if (!b.cakisik) return;
+    // Çakışan komşular: hangileri olduğu görünmeden "çakışık" demek,
+    // kullanıcıya bakacak yer vermemek olurdu.
+    for (const k of S.bitki) {
+      if (k === b || !k._m) continue;
+      const kr = sayi(k.yayilim_mm, 0) * 0.5;
+      const d = Math.hypot(sayi(k.x) - sayi(b.x), sayi(k.y) - sayi(b.y));
+      if (kr <= 0 || d >= rMM + kr) continue;
+      ct.save();
+      ct.strokeStyle = "rgba(236,150,86,0.6)";
+      ct.lineWidth = 1;
+      ct.setLineDash([3, 3]);
+      ct.beginPath(); ct.moveTo(m.x, m.taban); ct.lineTo(k._m.x, k._m.taban); ct.stroke();
+      ct.translate(k._m.x, k._m.taban);
+      ct.scale(1, 0.30);
+      ct.beginPath(); ct.arc(0, 0, kr * G.pxMM * k._m.o, 0, 6.3); ct.stroke();
+      ct.restore();
+    }
+  }
+
+  /** Olgun boy hayaleti: bugünkü siluetin arkasında, kesik çizgili. */
+  function hayaletCiz(ct, b, m) {
+    const olgun = kis(sayi(b.olgunluk), 0, 1);
+    if (olgun >= 0.98) return;
+    const tamMM = Math.max(30, sayi(b.yayilim_mm, 60));
+    let en = kis(tamMM * G.pxMM * m.o, 14, S.en * 0.17);
+    const tavan = Math.max(20, (m.taban - RAY_BOSLUK) * 0.92);
+    if (en * m.sprite.oran > tavan) en = tavan / m.sprite.oran;
+    const boy = en * m.sprite.oran;
+    ct.save();
+    ct.globalAlpha = 0.20;
+    ct.drawImage(m.sprite.tuval, m.x - en / 2, m.taban - boy, en, boy);
+    ct.restore();
+    ct.save();
+    ct.setLineDash([4, 5]);
+    ct.strokeStyle = "rgba(214,232,206,0.45)";
+    ct.lineWidth = 1;
+    ct.beginPath();
+    ct.moveTo(m.x - en / 2, m.taban - boy);
+    ct.lineTo(m.x + en / 2, m.taban - boy);
+    ct.stroke();
+    ct.restore();
+  }
+
+  /** Geçmiş ölçümler: sütunun içinde seviye çizgileri, eskiler soluk. */
+  function gecmisCiz(ct, b, m) {
+    const g = S.gecmis;
+    const yariEn = Math.max(9, m.sutun * 0.5) + 4;
+    if (!g) {
+      ct.save();
+      ct.font = "500 9px system-ui,sans-serif";
+      ct.textAlign = "center";
+      ct.fillStyle = "rgba(226,214,192,0.6)";
+      ct.fillText(S.gecmisAd === b.ad ? "geçmiş okunuyor…" : "geçmiş yok",
+        m.x, G.kesitAlt - 4);
+      ct.restore();
+      return;
+    }
+    const n = g.noktalar || [];
+    ct.save();
+    for (let i = 0; i < n.length; i++) {
+      const t = n.length === 1 ? 1 : i / (n.length - 1);   // eski 0, yeni 1
+      const y = nemY(n[i].yuzde);
+      ct.strokeStyle = `rgba(196,226,250,${0.12 + t * 0.5})`;
+      ct.lineWidth = i === n.length - 1 ? 1.6 : 1;
+      ct.beginPath();
+      ct.moveTo(m.x - yariEn, y);
+      ct.lineTo(m.x + yariEn, y);
+      ct.stroke();
+    }
+    ct.restore();
+    if (!n.length) {
+      ct.save();
+      ct.font = "500 9px system-ui,sans-serif";
+      ct.textAlign = "center";
+      ct.fillStyle = "rgba(226,214,192,0.6)";
+      ct.fillText("hiç ölçüm yok", m.x, G.kesitAlt - 4);
+      ct.restore();
+    }
+  }
+
+  /** Bu bitkiyi hedefleyen kuyruk işleri. */
+  function bitkininIsleri(ad) {
+    const k = (S.veri && S.veri.kuyruk) || {};
+    return (k.isler || []).filter(
+      (i) => i && (i.durum === "bekliyor" || i.durum === "calisiyor")
+        && (i.noktalar || []).indexOf(ad) >= 0);
+  }
+
+  const ETIKET = { sula: "Sulama", ek: "Ekim", nem: "Nem ölçümü",
+                   foto: "Fotoğraf", gez: "Ziyaret" };
+
+  /** Künye satırları — kutuda değil, bitkinin yanında. */
+  function kunyeCiz(ct, b, m) {
+    const bic = m.sprite.bicim;
+    const n = nemDurum(b);
+    const satir = [];
+    const yas = Math.round(sayi(b.yas_gun, 0)), olgun = Math.round(sayi(b.olgun_gun, 0));
+    satir.push([`${yas} günlük`, "nötr"]);
+    if (olgun) {
+      const kalan = Math.max(0, olgun - yas);
+      satir.push([b.hasat ? "hasada hazır" : `hasada ${kalan} gün`,
+                  b.hasat ? "iyi" : "nötr"]);
+    } else satir.push(["olgunluk süresi bilinmiyor", "sonuk"]);
+    // KÖK TİPİ BİR ÖLÇÜ DEĞİL: katalogdaki tür biçimi. Derinliği hiçbir
+    // yerde ölçülmüyor ve burada da sayı yazmıyor.
+    satir.push([`${KOK_ADI[bic.kok] || KOK_ADI.bilinmiyor}`
+      + (bic.bilinen ? " · tür biçimi, ölçülmedi" : ""), "sonuk"]);
+    if (!bic.bilinen) satir.push(["tür tanınmadı — jenerik biçim", "uyari"]);
+    const der = ekimDerinligi(b);
+    satir.push([der == null ? "ekim derinliği bilinmiyor" : `ekim derinliği ${Math.round(der)} mm`,
+                der == null ? "sonuk" : "nötr"]);
+    if (n.var) {
+      satir.push([`nem %${Math.round(n.yuzde)}`
+        + (n.bayat ? " · sulamadan önceki okuma"
+          : !n.kendi ? ` · ${Math.round(n.uzak)} mm öteden ödünç`
+            : ` · ${sureKisa(n.yas)} önce`),
+        n.bayat || !n.kendi ? "uyari" : "nötr"]);
+    } else satir.push(["nem ölçülmedi", "uyari"]);
+    if (n.esikAcik && n.esik > 0) satir.push([`eşik %${Math.round(n.esik)}`, "sonuk"]);
+    const g = S.gecmis;
+    if (g && g.egilim) {
+      const d = sayi(g.egilim.degisim, 0);
+      satir.push([`${g.egilim.adet} ölçüm · ${d > 0 ? "+" : ""}${d.toFixed(1)} puan`
+        + ` / ${sureKisa(g.egilim.sure_sn)}`, d < 0 ? "uyari" : "nötr"]);
+    } else if (g && (g.noktalar || []).length === 1) {
+      satir.push(["tek ölçüm — eğilim yok", "sonuk"]);
+    }
+    if (g && g.ortanca_fark != null) {
+      satir.push([`bahçe ortancasına göre ${g.ortanca_fark > 0 ? "+" : ""}`
+        + `${g.ortanca_fark.toFixed(1)} puan`, "sonuk"]);
+    }
+    if (g && (g.sula_adet || g.nem_adet)) {
+      satir.push([`${g.sula_adet} sulama · ${g.nem_adet} ölçüm kayıtlı`, "sonuk"]);
+    }
+    if (b.cakisik) satir.push(["komşusuyla çakışıyor", "uyari"]);
+    for (const i of bitkininIsleri(b.ad)) {
+      satir.push([`${i.durum === "calisiyor" ? "şu an" : "sırada"}: `
+        + (ETIKET[i.tip] || i.tip), i.durum === "calisiyor" ? "vurgu" : "sonuk"]);
+    }
+
+    const RENK = { "nötr": "rgba(238,234,224,0.94)", sonuk: "rgba(186,182,170,0.8)",
+                   uyari: "rgba(240,186,110,0.95)", iyi: "rgba(140,214,130,0.95)",
+                   vurgu: "rgba(140,196,240,0.95)" };
+    ct.save();
+    ct.font = "500 11px system-ui,sans-serif";
+    const en = Math.max.apply(null, satir.map((s) => ct.measureText(s[0]).width)) + 8;
+    const sag = m.x + m.sutun * 2.1 + 10;
+    const sol = sag + en < S.en - 8;
+    const x = sol ? sag : m.x - m.sutun * 2.1 - 10 - en;
+    ct.textAlign = "left";
+    // Yazı sahnenin İÇİNDE duruyor: kutusu yok, zemini yok. Okunabilirliği
+    // perdenin karartması ve harflerin altındaki gölge sağlıyor — sahnenin
+    // köşesine bir bilgi kutusu koymamak bu ekranın kuralı.
+    let y = kis(G.gokAlt * 0.42, 16, S.boy - satir.length * 15 - 10);
+    ct.shadowColor = "rgba(0,0,0,0.9)";
+    ct.shadowBlur = 4;
+    ct.shadowOffsetY = 1;
+    for (const [metin, sinif] of satir) {
+      ct.fillStyle = RENK[sinif] || RENK["nötr"];
+      ct.fillText(metin, x, y);
+      y += 15;
+    }
+    ct.restore();
+  }
+
+  function secimCiz(ct, b) {
+    if (!b || !b._m) return;
+    const m = b._m;
+    perdeCiz(ct, m);
+    hayaletCiz(ct, b, m);
+    yayilimCiz(ct, b, m);
+    gecmisCiz(ct, b, m);
+    kunyeCiz(ct, b, m);
   }
 
   /* ==================================================================== *
@@ -915,6 +1932,7 @@ window.Bahce = (function () {
     if (S.zerre.length) return true;
     if (Math.abs(S.kaydirHedef - S.kaydir) > 0.4) return true;
     if (S.bosYer && S.bosYer.length) return true;
+    if (S.suIs || S.ekIs) return true;
     if (S.veri && S.veri.mesgul) return true;
     return false;
   }
@@ -932,7 +1950,7 @@ window.Bahce = (function () {
     S.dongu = 0;
     // NABIZ 20 KARE/SN. Ekim kipinde tek kımıldayan şey boş yerlerin
     // nabzı; onun için Pi'yi 60 kare/sn döndürmenin anlamı yok.
-    const yalnizNabiz = !S.zerre.length
+    const yalnizNabiz = !S.zerre.length && !S.suIs && !S.ekIs
       && Math.abs(S.kaydirHedef - S.kaydir) <= 0.4
       && !(S.veri && S.veri.mesgul);
     if (yalnizNabiz && t - (S.sonT || 0) < 48) {
@@ -972,6 +1990,8 @@ window.Bahce = (function () {
       S.kaydir += (S.kaydirHedef - S.kaydir) * kis(dt * 9, 0, 1);
     else S.kaydir = S.kaydirHedef;
 
+    olayGuncelle(dt);
+
     ct.clearRect(0, 0, S.en, S.boy);
     if (S.zemin) ct.drawImage(S.zemin, 0, 0, S.en, S.boy);
     yatakUcCiz(ct);
@@ -980,6 +2000,7 @@ window.Bahce = (function () {
     for (const b of liste) b._m = bitkiOlcu(b);
     bosYerCiz(ct);
     for (const b of liste) bitkiCiz(ct, b, b.ad === S.secili, b.ad === S.uzerinde);
+    if (S.secili && S.ix[S.secili]) secimCiz(ct, S.ix[S.secili]);
     robotCiz(ct);
     zerreCiz(ct, dt);
     S.kirli = false;
@@ -1041,6 +2062,30 @@ window.Bahce = (function () {
     const metin = $("#bh-is-metin"), neden = $("#bh-is-neden");
     const evet = $("#bh-is-evet"), ertele = $("#bh-is-ertele");
     const sayac = $("#bh-is-sayac");
+
+    // EKİM OTURUMU ÖNCELİKLİ. Makine tohumu aldı ve "ucunda duruyorsa
+    // devam" diye BEKLİYOR; bunu saklamak, makineyi sessizce durdurmak
+    // olurdu. Ekranın ortasında soru kutusu da açmıyoruz — şeritte tek
+    // düğme, kullanıcı başka işine devam edebilir.
+    const eo = (S.veri && S.veri.ekim) || {};
+    if (eo.aktif) {
+      S.isKip = "ekim";
+      const sira = sayi(eo.sira, 0), toplam = sayi(eo.toplam, 0);
+      metin.textContent = `🌱 Ekim sürüyor${toplam ? ` · ${sira}/${toplam}` : ""}`
+        + (eo.tur_ad ? ` · ${eo.tur_ad}` : "");
+      neden.innerHTML = eo.soru
+        ? `<span class="bh-ac">${kacisli(eo.soru)}</span>`
+        : '<span class="bh-kanit">makine kuyruktaki ekim işini yürütüyor</span>';
+      evet.hidden = !eo.soru;
+      evet.disabled = !bagli;
+      evet.textContent = "Devam et";
+      evet.title = bagli ? "" : "Makine bağlı değil";
+      ertele.hidden = true;
+      sayac.hidden = true;
+      $("#bh-is-geri").hidden = true; $("#bh-is-ileri").hidden = true;
+      return;
+    }
+    S.isKip = "kart";
 
     if (!k) {
       metin.textContent = S.veri ? "Bugün bekleyen iş yok." : "Bahçe okunuyor…";
@@ -1132,10 +2177,12 @@ window.Bahce = (function () {
     const n = nemYazi(b);
     const yas = sayi(b.yas_gun, 0), olgun = sayi(b.olgun_gun, 0);
     const oran = kis(sayi(b.olgunluk), 0, 1);
+    // SIRA ÖNEMLİ: dar ekranda şerit ilk iki ölçüyü gösterip gerisini
+    // kesiyor. Nem en öne geliyor, çünkü bu ekranın konusu o.
     const olculer = [
+      `<span class="bh-ol nem ${n.sinif}">${kacisli(n.yazi)}</span>`,
       `<span class="bh-ol"><b>${Math.round(yas)}</b> günlük${olgun
         ? ` · olgunluk ${Math.round(olgun)} gün` : ""}</span>`,
-      `<span class="bh-ol nem ${n.sinif}">${kacisli(n.yazi)}</span>`,
       b.sulama_ts ? `<span class="bh-ol">son sulama ${kacisli(tarih(b.sulama_ts))}</span>`
                   : '<span class="bh-ol yok">hiç sulanmadı</span>',
     ];
@@ -1145,6 +2192,13 @@ window.Bahce = (function () {
       }</span>`);
     }
     if (b.hasat) olculer.push('<span class="bh-ol hasat">hasada hazır</span>');
+    // KÖK TİPİ, EKİM DERİNLİĞİ VE GEÇMİŞ ŞERİTTE DEĞİL SAHNEDE. Şerit
+    // 800×480'de üç satıra taşıyor ve kesiti eziyordu; bilgi zaten
+    // seçili bitkinin yanında, kesitin içinde yazıyor.
+    const bic = turBicim(b);
+    if (!bic.bilinen) {
+      olculer.push('<span class="bh-ol susadi">tür tanınmadı — jenerik biçim</span>');
+    }
 
     kok.innerHTML =
       `<div class="bh-k-bas">
@@ -1430,6 +2484,7 @@ window.Bahce = (function () {
     if (yer) { ekimOnayla(yer); return; }
     const b = noktaBitki(px, py);
     S.secili = b ? b.ad : "";
+    if (b) gecmisAl(b.ad); else { S.gecmis = null; S.gecmisAd = ""; }
     kimlikYaz();
     isteKare();
   });
@@ -1448,7 +2503,15 @@ window.Bahce = (function () {
   });
 
   /** Kartın "evet" düğmesi: kart tipi hangi işe karşılık geliyorsa o. */
+  const ekimOnayGec = guvenli("ekim onayı", async function () {
+    try {
+      await gonder("/api/bahce/onay", {});
+      await veriYukle();
+    } catch (h) { notYaz("onay", `Onay geçmedi: ${(h && h.message) || h}`); }
+  });
+
   const kartEvet = guvenli("kart eylemi", function () {
+    if (S.isKip === "ekim") { ekimOnayGec(); return; }
     const k = suankiKart();
     if (!k) return;
     const adlar = (k.noktalar || []).map(String);
@@ -1529,6 +2592,9 @@ window.Bahce = (function () {
       const c = await api("/api/bahce");
       S.veri = c || {};
       bitkileriHazirla();
+      katalogAl();
+      olayTemizle();
+      if (S.secili) gecmisAl(S.secili);
       geometriKur();
       zeminCiz();                     // yatak sınırları değişmiş olabilir
       notYaz("veri", "");
