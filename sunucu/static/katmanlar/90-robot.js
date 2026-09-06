@@ -76,7 +76,17 @@ Tarla.katman({
     // toprak_z'ye eşitken uç tam yüzeye değiyor.
     const toprakZ = Number(o.veri.durum.toprak_z) || 0;
     const ucY = o.kis(z - toprakZ, 0, (o.sinir.z.max || 550) - toprakZ) * MM;
-    p.ucKafa.position.set(0, ucY + 0.04, 0);
+    /* KAFA, UCUNDAN OTURTULUYOR — sabit 40 mm'den değil.
+     *
+     * Eskiden `ucY + 0.04` yazılıydı ve başın ucunun kafa merkezinin
+     * 20 mm altında olduğu varsayılıyordu. Baş boyu artık taşıyıcı
+     * plakanın ölçüsünden türüyor (makine.js: 36 derecelik bakıştan
+     * görünebilmesi için gereken sarkma) ve 90 mm'ye çıktı; sabit sayı
+     * kalsaydı uç, makine Z'si toprak yüzeyindeyken toprağın 50 mm
+     * altına iner, sahnede gömülü görünürdü. Ölçü artık kafanın kendi
+     * en alt noktasından geliyor. */
+    const ua = p.ucKafa.userData || {};
+    p.ucKafa.position.set(0, ucY - (Number(ua.altY) || -0.02), 0);
     /* TOHUM UCUNUN KENDİ DİKEY HAREKETİ. Ana Z bütün başları birden
      * indiriyor; bu grup onun ÜSTÜNE binen kendi hareketi. İndiğinde
      * sahnede de iniyor — süsleme değil, ölçülen T konumu. */
@@ -110,10 +120,13 @@ Tarla.katman({
       bslk.position.y = (u.basY || 0) - (akiyor ? (u.aktifDusme || 0) : 0);
     }
     if (u.nemProbu) u.nemProbu.position.y = u.basY || 0;
-    // Z kılavuzu birim yükseklikte kuruluyor, stroka göre uzatılıyor.
-    const boy = Math.max(0.05, rayY - 0.045 - (ucY + 0.08));
+    /* Z kılavuzu birim yükseklikte kuruluyor, stroka göre uzatılıyor.
+     * ALT UCU KAFANIN TEPESİNDEN: sabit bir pay, baş uzayıp kafa
+     * yükselince sütunun plakanın içinde başlamasına yol açardı. */
+    const kafaUst = p.ucKafa.position.y + (Number(ua.ustY) || 0.08);
+    const boy = Math.max(0.05, rayY - 0.045 - kafaUst);
     p.sutun.scale.y = boy;
-    p.sutun.position.set(0, ucY + 0.08 + boy / 2, 0);
+    p.sutun.position.set(0, kafaUst + boy / 2, 0);
 
     /* SU HUZMESİ. Kaynak tek: kartın bildirdiği röle durumu (`r_su_pompasi`).
      * Panel kendi tahminini tutmuyor — "sulama komutu gönderdim, demek ki

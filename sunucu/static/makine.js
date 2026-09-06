@@ -674,28 +674,25 @@
      * iniyordu; ikisi de plakayı ve birbirini gölgeliyordu.
      */
     const BAS_R = P * 0.22;
-    const BAS_BOY = P * 0.6;
-    const BAS_UC_BOY = P * 0.34;
+    /* Sivri ucun toplam boya oranı — gövde ne kadar uzarsa uzasın uç
+       aynı oranda kalıyor, üçü de aynı görünsün diye. */
+    const BAS_UC_ORAN = 0.36;
     const basMal = { color: "#23272a", metalness: 0.25, roughness: 0.6 };
 
     /** Bir baş — plakanın altından sarkan gövde + aşağı bakan sivri uç.
      *  Grubun sıfırı plakanın alt yüzünde; parçalar aşağı diziliyor. */
-    function basGovdesi() {
-      const g = new THREE.Group();
+    function basGovdesiKur(g, toplamBoy) {
+      const ucBoy = toplamBoy * BAS_UC_ORAN, govdeBoy = toplamBoy - ucBoy;
       const govde = new THREE.Mesh(
-        new THREE.CylinderGeometry(BAS_R, BAS_R, BAS_BOY, 12), mal(THREE, basMal));
-      govde.position.y = -BAS_BOY / 2;
+        new THREE.CylinderGeometry(BAS_R, BAS_R, govdeBoy, 12), mal(THREE, basMal));
+      govde.position.y = -govdeBoy / 2;
       g.add(govde);
       const sivri = new THREE.Mesh(
-        new THREE.ConeGeometry(BAS_R * 0.8, BAS_UC_BOY, 12), mal(THREE, basMal));
-      sivri.position.y = -BAS_BOY - BAS_UC_BOY / 2;
+        new THREE.ConeGeometry(BAS_R * 0.8, ucBoy, 12), mal(THREE, basMal));
+      sivri.position.y = -govdeBoy - ucBoy / 2;
       sivri.rotation.x = Math.PI;          // sivri uç AŞAĞI baksın
       g.add(sivri);
-      return g;
     }
-    /** Bir başın ucunun, kendi grubuna göre y'si. Su huzmesi buradan
-     *  başlıyor ve "hangi baş inmiş" ölçümü de bunu kullanıyor. */
-    const BAS_UC_Y = -(BAS_BOY + BAS_UC_BOY);
     /* ÜÇ BAŞ AYNI YÜKSEKLİKTEN SARKIYOR. Plakanın alt yüzü y = -0,05P
      * (kalınlık 0,34P, merkezi 0,12P); başlar onun hemen altından
      * başlıyor. Eskiden başlık -0,62P'de, öteki ikisi 0'daydı ve üçü
@@ -710,7 +707,7 @@
      * ve `suDurumu().aktifDusmeMm` ile dışarıya da öyle yazılıyor. */
     const AKTIF_DUSME = P * 0.35;
 
-    const nemProbu = basGovdesi();
+    const nemProbu = new THREE.Group();
     ucKafa.add(nemProbu);
 
     /* TOHUM UCU KENDİ GRUBUNDA: kendi dikey ekseni var (PLC'de j4) ve
@@ -719,7 +716,7 @@
     /* TOHUM UCU KENDİ GRUBUNDA: kendi dikey ekseni var (PLC'de j4) ve
      * indiğinde SAHNEDE de iniyor. Grubu ayrı olmasaydı ana Z ile
      * birlikte hareket eder, kendi hareketi görünmezdi. */
-    const tohumUcu = basGovdesi();
+    const tohumUcu = new THREE.Group();
     ucKafa.add(tohumUcu);
 
     // Kaymaları uygula. `mmP` bir milimetrenin sahnedeki karşılığı.
@@ -786,7 +783,7 @@
      * 60 mm solda" ayarı ekranda görünmüyordu; üç baş birden çizilirken
      * bu tutarsızlık göze batar hâle geldi. Kayma girilmemişse eski
      * sabit yer kullanılıyor. */
-    const baslik = basGovdesi();
+    const baslik = new THREE.Group();
     // Yeri öteki iki başla AYNI kaynaktan (`yerlestir`); ayrı bir hesap
     // yazmak, üç başın birbirine göre yerini iki yerden almak demekti.
     yerlestir(baslik, "sulama");
@@ -916,6 +913,40 @@
     const plakaBoy = Math.max(P * 1.6, enBuyukZ - enKucukZ);
     const plakaX = (enKucukX + enBuyukX) / 2;
     const plakaZ = (enKucukZ + enBuyukZ) / 2;
+
+    /* ================================================================
+     * BAŞIN BOYU PLAKADAN TÜRÜYOR — SABİT YAZILMIYOR.
+     *
+     * Ölçüt (bkz. aşağıdaki "GÖRÜNÜRLÜK ÖLÇÜSÜ"): başın ucundan kameraya
+     * giden ışın her 1 mm yatay yolda tan(36°) = 0,7265 mm yükseliyor ve
+     * plakanın alt yüzü hizasına `sarkma / 0,7265` kadar yatay yol sonra
+     * ulaşıyor. Plaka o mesafeden uzağa taşıyorsa ışın plakaya çarpıyor.
+     * En kötü durum, en dıştaki başın plakanın KARŞI kenarına uzaklığı.
+     *
+     * Ölçülen: 126,8 mm genişliğindeki plakada bu mesafe 117,4 mm, yani
+     * gereken sarkma 85,3 mm. Baş 19 mm sarkıyordu ve 24 azimutun
+     * 24'ünde plakanın altında kalıyordu (ışın testi).
+     *
+     * Sayı SABİT YAZILMIYOR: kaymalar (`uclar.json`) ya da kenar payı
+     * değişince plaka da değişiyor ve boy onunla birlikte gidiyor.
+     * %6 pay, ışının tam plakanın kenarını sıyırmasını önlüyor. Alt
+     * sınır eski boy (0,94P): plaka çok küçülse bile baş görünür kalsın
+     * diye kısalmıyor. */
+    const BAKIS_TAN = Math.tan(Math.PI * 0.20);        // tan(36°) = 0,7265
+    const plakaAltY = P * 0.12 - P * 0.34 / 2;
+    let kenarMesafe = 0;
+    basYerleri.forEach((v) => {
+      kenarMesafe = Math.max(kenarMesafe,
+        Math.abs(v.x - enKucukX), Math.abs(enBuyukX - v.x),
+        Math.abs(v.z - enKucukZ), Math.abs(enBuyukZ - v.z));
+    });
+    const BAS_BOY_TOPLAM = Math.max(
+      P * 0.94, (kenarMesafe * BAKIS_TAN - plakaAltY + basY) * 1.06);
+    /** Bir başın ucunun, kendi grubuna göre y'si. Su huzmesi buradan
+     *  başlıyor ve "hangi baş inmiş" ölçümü de bunu kullanıyor. */
+    const BAS_UC_Y = -BAS_BOY_TOPLAM;
+    [nemProbu, tohumUcu, baslik].forEach((g) => basGovdesiKur(g, BAS_BOY_TOPLAM));
+
     ucKafa.add(kutu(THREE, [plakaEn, P * 0.34, plakaBoy],
                     [plakaX, P * 0.12, plakaZ], baski));
     /* BAĞLANTI KULAĞI. Plakayı arabanın gövdesine bağlayan kısa dikey
@@ -966,6 +997,12 @@
     ucKafa.userData.baslik = baslik;
     ucKafa.userData.basY = basY;          // üç başın dinlenme yüksekliği
     ucKafa.userData.basUcY = BAS_UC_Y;    // başın ucu, kendi grubuna göre
+    /* KAFANIN ALT VE ÜST UCU — 90-robot.js yerleştirmede kullanıyor.
+     * Baş boyu artık plakadan türediği için sabit yazılamaz: eskiden
+     * "uç kafası 40 mm yukarı, ucu 20 mm altta" varsayımı koda gömülüydü
+     * ve baş uzayınca uç toprağın 50 mm altına iniyordu. */
+    ucKafa.userData.altY = basY + BAS_UC_Y;   // en alt nokta (negatif)
+    ucKafa.userData.ustY = P * 2.82;          // üst bloğun tepesi
     ucKafa.userData.aktifDusme = AKTIF_DUSME;
 
     /* ================================================================
@@ -995,15 +1032,8 @@
      * yanındaki kenar payı değil. Kamera hangi yandan bakarsa baksın
      * ışın plakanın altından çıkmak zorunda; en kötü durum en dıştaki
      * başın karşı kenara uzaklığı. */
-    const BAKIS_TAN = Math.tan(Math.PI * 0.20);        // tan(36°) = 0,7265
-    const plakaAltY = P * 0.12 - P * 0.34 / 2;
     const sarkma = plakaAltY - (basY + BAS_UC_Y);
-    let mesafe = 0;
-    [nemProbu.position, tohumUcu.position, baslik.position].forEach((v) => {
-      mesafe = Math.max(mesafe,
-        Math.abs(v.x - (plakaX - plakaEn / 2)), Math.abs((plakaX + plakaEn / 2) - v.x),
-        Math.abs(v.z - (plakaZ - plakaBoy / 2)), Math.abs((plakaZ + plakaBoy / 2) - v.z));
-    });
+    const mesafe = kenarMesafe;
     const gerekenSarkma = mesafe * BAKIS_TAN;
     ucKafa.userData.gorunurluk = {
       sarkma, mesafe, gerekenSarkma, yeterli: sarkma >= gerekenSarkma,
