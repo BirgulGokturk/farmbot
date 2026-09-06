@@ -76,57 +76,47 @@ Tarla.katman({
     // toprak_z'ye eşitken uç tam yüzeye değiyor.
     const toprakZ = Number(o.veri.durum.toprak_z) || 0;
     const ucY = o.kis(z - toprakZ, 0, (o.sinir.z.max || 550) - toprakZ) * MM;
-    /* KAFA, UCUNDAN OTURTULUYOR — sabit 40 mm'den değil.
+    /* KAFA UCUNDAN OTURUYOR, SÜTUN KAFANIN TEPESİNDEN BAŞLIYOR.
      *
-     * Eskiden `ucY + 0.04` yazılıydı ve başın ucunun kafa merkezinin
-     * 20 mm altında olduğu varsayılıyordu. Baş boyu artık taşıyıcı
-     * plakanın ölçüsünden türüyor (makine.js: 36 derecelik bakıştan
-     * görünebilmesi için gereken sarkma) ve 90 mm'ye çıktı; sabit sayı
-     * kalsaydı uç, makine Z'si toprak yüzeyindeyken toprağın 50 mm
-     * altına iner, sahnede gömülü görünürdü. Ölçü artık kafanın kendi
-     * en alt noktasından geliyor. */
-    const ua = p.ucKafa.userData || {};
-    p.ucKafa.position.set(0, ucY - (Number(ua.altY) || -0.02), 0);
-    /* TOHUM UCUNUN KENDİ DİKEY HAREKETİ. Ana Z bütün başları birden
-     * indiriyor; bu grup onun ÜSTÜNE binen kendi hareketi. İndiğinde
-     * sahnede de iniyor — süsleme değil, ölçülen T konumu. */
+     * İkisi de makine.js'in ÖLÇTÜĞÜ değerlerden geliyor
+     * (`userData.altY` / `ustY`); burada sabit sayı yok. Baş boyu tabla
+     * ölçüsünden türüyor ve tabla da kaymalardan; sabit bir "40 mm aşağı"
+     * yazılsaydı kayma ayarı değişince uç ya toprağa gömülür ya havada
+     * kalırdı. `ucY` toprak yüzeyi sıfır olacak biçimde hesaplandığı için
+     * makine Z'si toprak yüzeyindeyken başın ucu tam y = 0'a oturuyor. */
     const u = p.ucKafa.userData || {};
-    const tu = u.tohumUcu;
-    if (tu) {
-      const t = o.veri.durum.tohum_ucu || {};
-      const dus = (t.kalibre && Number.isFinite(Number(t.mm)))
-        ? Math.abs(Number(t.mm) - Number(t.yukari_mm || 0)) * MM : 0;
-      tu.position.y = (u.tohumUcuY || 0) - dus;
-    }
-    /* KULLANILAN BAŞ İNİYOR, ÖTEKİLER YUKARIDA KALIYOR.
-     *
-     * Üç baş aynı biçimde çizildiğinden hangisinin iş başında olduğunu
-     * ayıran tek şey bu. Kaynaklar farklı ve ikisi de GERÇEK:
-     *   - tohum ucu: kendi ekseni (PLC j4) ve ölçülen mm — yukarıda.
-     *   - sulama başlığı: pompa rölesi (`r_su_pompasi`). Röle yalnız
-     *     "akıyor/akmıyor" diyor; başlığın ayrı bir ekseni yok, o yüzden
-     *     düşme miktarı ÖLÇÜM DEĞİL, gösterim kuralı (makine.js
-     *     `AKTIF_DUSME`).
-     *   - nem probu: SİNYAL YOK. Probun kendi ekseni yok; ölçüm ana Z
-     *     ile daldırılarak yapılıyor ve "prob şu an ölçüyor" diye bir
-     *     bayrak durum paketinde geçmiyor (ajan/plc.py'deki eksen
-     *     listesinde yalnız X, Y, Z, T var). Uydurma bir durum üretmek
-     *     yerine prob sabit duruyor; `suDurumu().nemSinyali` bunu
-     *     "yok" diye söylüyor. */
-    const bslk = u.baslik;
-    if (bslk) {
-      const PN = window.Panel;
-      const akiyor = !!(PN && PN.S && PN.S.roleDurum && PN.S.roleDurum.su_pompasi);
-      bslk.position.y = (u.basY || 0) - (akiyor ? (u.aktifDusme || 0) : 0);
-    }
-    if (u.nemProbu) u.nemProbu.position.y = u.basY || 0;
-    /* Z kılavuzu birim yükseklikte kuruluyor, stroka göre uzatılıyor.
-     * ALT UCU KAFANIN TEPESİNDEN: sabit bir pay, baş uzayıp kafa
-     * yükselince sütunun plakanın içinde başlamasına yol açardı. */
-    const kafaUst = p.ucKafa.position.y + (Number(ua.ustY) || 0.08);
+    p.ucKafa.position.set(0, ucY - Number(u.altY || 0), 0);
+    const kafaUst = p.ucKafa.position.y + Number(u.ustY || 0);
+    // Z kılavuzu birim yükseklikte kuruluyor, stroka göre uzatılıyor.
     const boy = Math.max(0.05, rayY - 0.045 - kafaUst);
     p.sutun.scale.y = boy;
     p.sutun.position.set(0, kafaUst + boy / 2, 0);
+
+    /* KULLANILAN BAŞ İNİYOR, ÖTEKİLER TABLADA KALIYOR.
+     *
+     * Üç baş aynı çizildiği için iş başındakini ayıran tek şey bu.
+     * Kaynaklar ayrı ve ikisi de GERÇEK:
+     *   - tohum ucu: kendi ekseni (PLC'de j4) ve ölçülen mm.
+     *   - sulama başlığı: pompa rölesi (`r_su_pompasi`). Röle yalnız
+     *     "akıyor/akmıyor" diyor; başlığın ayrı ekseni yok, düşme miktarı
+     *     bu yüzden ÖLÇÜM DEĞİL, gösterim kuralı (makine.js).
+     *   - nem probu: SİNYAL YOK. Probun kendi ekseni yok, ölçüm ana Z ile
+     *     daldırılarak yapılıyor ve durum paketinde "prob ölçüyor" diye
+     *     bir bayrak geçmiyor (ajan/plc.py'de yalnız X, Y, Z, T var).
+     *     Uydurma bir durum üretmek yerine prob tablada duruyor. */
+    const dinlenme = Number(u.basY || 0);
+    if (u.tohumUcu) {
+      const t = o.veri.durum.tohum_ucu || {};
+      const dus = (t.kalibre && Number.isFinite(Number(t.mm)))
+        ? Math.abs(Number(t.mm) - Number(t.yukari_mm || 0)) * MM : 0;
+      u.tohumUcu.position.y = dinlenme - dus;
+    }
+    if (u.baslik) {
+      const PN = window.Panel;
+      const akiyor = !!(PN && PN.S && PN.S.roleDurum && PN.S.roleDurum.su_pompasi);
+      u.baslik.position.y = dinlenme - (akiyor ? Number(u.aktifDusme || 0) : 0);
+    }
+    if (u.nemProbu) u.nemProbu.position.y = dinlenme;
 
     /* SU HUZMESİ. Kaynak tek: kartın bildirdiği röle durumu (`r_su_pompasi`).
      * Panel kendi tahminini tutmuyor — "sulama komutu gönderdim, demek ki
@@ -159,14 +149,14 @@ Tarla.katman({
         /* Huzme başlığın UCUNDAN başlıyor. Başlık pompa açıkken indiği
          * için ofset sabit değil: grubun O ANKİ y'si + ucun grup içi
          * ofseti. Sabit yazsaydık su, inmiş başlığın içinden çıkardı. */
-        const bs = p.ucKafa.userData.baslik;
-        const basY = (bs ? bs.position.y : (p.ucKafa.userData.basY || 0))
-          + (p.ucKafa.userData.basUcY || 0);
-        // Başlığın sahnedeki yüksekliği = uç kafasının yüksekliği + yerel ofset.
-        const bas = ucY + 0.04 + basY;
-        const yer = Math.max(0.01, bas);      // toprak yüzeyi y = 0
+        const agizY = (u.baslik ? u.baslik.position.y : Number(u.basY || 0))
+          + Number(u.basUcY || 0);            // kafa yerelinde ağzın y'si
+        // Ağzın SAHNEDEKİ yüksekliği; toprak yüzeyi y = 0.
+        const yer = Math.max(0.01, p.ucKafa.position.y + agizY);
         p.su.scale.y = yer;
-        p.su.position.y = basY - yer / 2;
+        p.su.position.y = agizY - yer / 2;
+        // Huzme başlıkla birlikte yana kaymalı: başlığın x/z'si ayardan.
+        if (u.baslik) { p.su.position.x = u.baslik.position.x; p.su.position.z = u.baslik.position.z; }
         this._akisBasla(o);
       }
     }
@@ -219,12 +209,14 @@ Tarla.katman({
       // Probun kafa merkezine göre en alt noktası (mm). Plakanın altı
       // yaklaşık -1 mm; aradaki fark probun plakadan sarkması.
       probAltMm: probAltMm,
-      /* ÖNE ALMA KALDIRILDI — hep 0. Anahtar duruyor çünkü sayıyı
-       * okuyan bir tanı yazısı vardı ve "0" ile "alan yok" ayrı şeyler.
-       * Gerekçe makine.js'te, ışın testinin sayılarıyla. */
-      oneAlmaMm: (p.ucKafa && p.ucKafa.userData
-                  && p.ucKafa.userData.oneAlma != null)
-        ? +(p.ucKafa.userData.oneAlma * 1000).toFixed(1) : null,
+      /* KAYMASI GİRİLMEMİŞ BAŞLAR. Bunların yeri `uclar.json`dan
+       * gelmiyor, sahnede üst üste binmesinler diye çaplarına göre
+       * dizildiler. Uydurma sayı değil ama ÖLÇÜM de değil; hangileri
+       * olduğu yazılıyor ki koordinatına güvenilmesin. */
+      kaymaGirilmemis: (p.ucKafa && p.ucKafa.userData
+                        && p.ucKafa.userData.kaymaGirilmemis) || [],
+      tablaMm: (p.ucKafa && p.ucKafa.userData && p.ucKafa.userData.tabla)
+        ? p.ucKafa.userData.tabla.map((v) => +(v * 1000).toFixed(1)) : null,
       basZMm: [np, p.ucKafa && p.ucKafa.userData && p.ucKafa.userData.tohumUcu]
         .filter(Boolean).map((g) => +(g.position.z * 1000).toFixed(1)),
       baslikVar: !!b,
