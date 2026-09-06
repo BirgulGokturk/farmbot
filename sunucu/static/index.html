@@ -225,46 +225,76 @@
          şablondan çoğaltılıyor ve id tekrarlanamaz. -->
     <section class="sayfa" id="sayfa-bahce">
 
-      <!-- BAHÇE. Sahne ekranın tamamı; bilgi onun ÜSTÜNDE yüzüyor,
-           yanında kutularda değil. İki tuval: alttaki (zemin) çim,
-           yatak ve toprak — ölçü ya da veri değişmedikçe yeniden
-           çizilmiyor; üstteki (sahne) bitkiler, makine ve yol, o da
-           yalnız kirliyken. Boşta çizim yok. -->
-      <div class="bh" id="bh">
-        <div class="bh-sahne-kap" id="bh-sahne-kap">
-          <canvas id="bh-zemin"></canvas>
-          <canvas id="bh-sahne"></canvas>
+      <!-- BAHÇE — YATAĞIN ÖNDEN KESİTİ.
+           Ekran üç yatay bant: üstte tek iş cümlesi, ortada kesit,
+           altta seçili bitkinin künyesi. Kenarda kart sütunu, altta
+           kutucuk şeridi, köşede yüzen kutu YOK — hiçbiri geri gelmeyecek.
+           Bilgi sahnenin üstünde yüzmüyor; sahnenin kendisi bilgi. -->
+      <div class="bh" id="bh-kok">
 
-          <div class="bh-ust">
-            <span class="bh-durum" id="bh-durum"><i></i><b>Makine</b></span>
-            <span class="esnek"></span>
-            <button class="bh-ikon" id="bh-sakin" type="button" aria-pressed="false"
-                    title="Bütün hareketi durdurur">Sakin mod</button>
+        <!-- İŞ ŞERİDİ. Sunucu kart listesi döndürüyor, ekran tek cümle
+             gösteriyor; ötekiler sayıyla ve iki okla geçiliyor. -->
+        <div class="bh-is" id="bh-is">
+          <span class="bh-makine yok" id="bh-makine">makine bağlı değil</span>
+          <button type="button" class="bh-ok" id="bh-is-geri"
+                  aria-label="önceki iş" hidden>‹</button>
+          <div class="bh-is-orta">
+            <div class="bh-is-metin" id="bh-is-metin">Bahçe okunuyor…</div>
+            <div class="bh-is-neden" id="bh-is-neden"></div>
           </div>
-
-          <!-- SESSİZ BAŞARISIZLIK YOK: çizim ya da olay işleme patlarsa
-               sebebi buraya yazılıyor ve sahne çalışmaya devam ediyor.
-               Önceki sürüm tek tanımsız fonksiyonla sessizce düştü. -->
-          <div class="bh-hata" id="bh-hata" hidden></div>
-          <div class="bh-not" id="bh-not" hidden></div>
-
-          <!-- Görev kartları: sunucunun ürettiği işler, sahnenin üstünde. -->
-          <div class="bh-isler" id="bh-isler"></div>
-
-          <!-- Bitki kartı: bitkiye dokunup "ⓘ" seçilince. -->
-          <aside class="bh-kart" id="bh-kart" hidden></aside>
-
-          <p class="bh-bos" id="bh-bos" hidden></p>
-
-          <!-- Bitkinin üstünde açılan halka menü: iş orada başlıyor. -->
-          <div class="bh-menu" id="bh-menu" hidden></div>
-
-          <!-- Tohum rafı: bir tohumu alıp toprağa sürükleyince ekiliyor. -->
-          <div class="bh-raf" id="bh-raf" role="group" aria-label="Tohum rafı"></div>
+          <span class="bh-sayac" id="bh-is-sayac" hidden></span>
+          <button type="button" class="bh-ok" id="bh-is-ileri"
+                  aria-label="sonraki iş" hidden>›</button>
+          <button type="button" class="bh-ertele" id="bh-is-ertele" hidden>yarın sor</button>
+          <button type="button" class="bh-evet" id="bh-is-evet" hidden>Yap</button>
+          <button type="button" class="bh-sakin" id="bh-sakin" aria-pressed="false">sakin mod</button>
         </div>
 
-        <!-- Geri alınamaz iş onay ister; ne olacağı önce yazılıyor. -->
-        <div class="bh-onay" id="bh-onay" hidden></div>
+        <!-- SESSİZ BAŞARISIZLIK YOK: çizilmeyen bir şeyin sebebi burada. -->
+        <div class="bh-hata" id="bh-hata" hidden></div>
+
+        <div class="bh-tuval" id="bh-tuval">
+          <canvas id="bh-zemin"></canvas>
+          <canvas id="bh-sahne"></canvas>
+        </div>
+
+        <div class="bh-not" id="bh-not" hidden></div>
+
+        <!-- KİMLİK ŞERİDİ. Seçili bitkinin künyesi ve eylemleri. -->
+        <div class="bh-kimlik" id="bh-kimlik" data-bos="1">
+          <div class="bh-k-bos">Bir bitkiye dokun — künyesi ve işleri burada açılır.</div>
+          <div class="bh-k-eylem">
+            <button type="button" data-bh="ek-ac">Yeni bitki ek</button>
+          </div>
+        </div>
+
+        <!-- TÜR SEÇME. Tür bir şeritten değil, kipten seçiliyor; seçilince
+             boş yerler o türün yayılımına göre sahnede beliriyor. -->
+        <div class="bh-kip" id="bh-kip" hidden>
+          <div class="bh-kip-ic">
+            <div class="bh-kip-bas">
+              <span>Ne ekelim?</span>
+              <button type="button" id="bh-kip-kapat" aria-label="kapat">×</button>
+            </div>
+            <div class="bh-kip-govde" id="bh-kip-govde"></div>
+            <p class="bh-kip-dip">Tür seçilince yatakta o türün yayılımına sığan
+              boş yerler işaretlenir; birine dokununca ekim onayı açılır.</p>
+          </div>
+        </div>
+
+        <!-- ONAY. Geri alınamaz iş önce ne olacağını yazar, sonra sorar. -->
+        <div class="bh-kip bh-onay" id="bh-onay" hidden>
+          <div class="bh-kip-ic">
+            <div class="bh-kip-bas"><span id="bh-onay-bas">Onay</span></div>
+            <ul class="bh-onay-metin" id="bh-onay-metin"></ul>
+            <p class="bh-onay-uyari" id="bh-onay-uyari" hidden></p>
+            <div class="bh-onay-dugme">
+              <button type="button" id="bh-onay-hayir">Vazgeç</button>
+              <button type="button" class="bh-evet" id="bh-onay-evet">Onayla</button>
+            </div>
+          </div>
+        </div>
+
       </div>
 
     </section>
