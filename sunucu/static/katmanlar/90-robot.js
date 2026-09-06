@@ -76,34 +76,43 @@ Tarla.katman({
     // toprak_z'ye eşitken uç tam yüzeye değiyor.
     const toprakZ = Number(o.veri.durum.toprak_z) || 0;
     const ucY = o.kis(z - toprakZ, 0, (o.sinir.z.max || 550) - toprakZ) * MM;
-    /* KAFA UCUNDAN OTURUYOR, SÜTUN KAFANIN TEPESİNDEN BAŞLIYOR.
+    /* ====================== UÇ KAFASININ YERLEŞİMİ ======================
+     * makine.js'teki KOORDİNAT SÖZLEŞMESİNDEN. Buradaki tek iş, kafayı
+     * makine Z'sine oturtmak ve iş başındaki başı indirmek; x ve z'ye
+     * hiç dokunulmuyor çünkü kafa onları köprüden ve kızaktan miras
+     * alıyor (sözleşme 2 ve 5). Kafaya x/z ötelemesi yazmak, ucu makine
+     * koordinatının gösterdiği yerden kaydırmak demek olurdu.
      *
-     * İkisi de makine.js'in ÖLÇTÜĞÜ değerlerden geliyor
-     * (`userData.altY` / `ustY`); burada sabit sayı yok. Baş boyu tabla
-     * ölçüsünden türüyor ve tabla da kaymalardan; sabit bir "40 mm aşağı"
-     * yazılsaydı kayma ayarı değişince uç ya toprağa gömülür ya havada
-     * kalırdı. `ucY` toprak yüzeyi sıfır olacak biçimde hesaplandığı için
-     * makine Z'si toprak yüzeyindeyken başın ucu tam y = 0'a oturuyor. */
+     * YÜKSEKLİK. `ucY` yukarıda makine Z'sinden `toprak_z` çıkarılarak
+     * bulundu, yani toprak yüzeyi sıfır (sözleşme 1). Kafa kendi EN ALT
+     * noktasından oturuyor: `altY` başın ağzının kafa sıfırına göre y'si
+     * ve negatif; `ucY - altY` kadar yukarı konunca ağız tam `ucY`ye
+     * denk geliyor. Makine Z'si toprak yüzeyindeyken ağız y = 0'da.
+     * Sabit bir "şu kadar yukarı" yazılamaz: baş boyu tabla ölçüsünden
+     * türüyor ve tabla da kaymalardan. */
     const u = p.ucKafa.userData || {};
     p.ucKafa.position.set(0, ucY - Number(u.altY || 0), 0);
+
+    /* Z kılavuzu birim yükseklikte kuruluyor ve stroka göre uzatılıyor.
+     * ALT UCU KAFANIN TEPESİNDEN (`ustY`): sabit bir pay, baş uzayıp kafa
+     * yükseldiğinde kılavuzun tablanın içinde başlamasına yol açardı. */
     const kafaUst = p.ucKafa.position.y + Number(u.ustY || 0);
-    // Z kılavuzu birim yükseklikte kuruluyor, stroka göre uzatılıyor.
     const boy = Math.max(0.05, rayY - 0.045 - kafaUst);
     p.sutun.scale.y = boy;
     p.sutun.position.set(0, kafaUst + boy / 2, 0);
 
-    /* KULLANILAN BAŞ İNİYOR, ÖTEKİLER TABLADA KALIYOR.
-     *
-     * Üç baş aynı çizildiği için iş başındakini ayıran tek şey bu.
-     * Kaynaklar ayrı ve ikisi de GERÇEK:
-     *   - tohum ucu: kendi ekseni (PLC'de j4) ve ölçülen mm.
+    /* İŞ BAŞINDAKİ BAŞ İNİYOR, ÖTEKİLER TABLADA KALIYOR.
+     * Üç baş aynı çizildiği için hangisinin çalıştığını ayıran tek şey
+     * bu. Üç kaynak, üçü de ayrı:
+     *   - tohum ucu: KENDİ EKSENİ (PLC j4) ve ölçülen mm.
      *   - sulama başlığı: pompa rölesi (`r_su_pompasi`). Röle yalnız
-     *     "akıyor/akmıyor" diyor; başlığın ayrı ekseni yok, düşme miktarı
-     *     bu yüzden ÖLÇÜM DEĞİL, gösterim kuralı (makine.js).
-     *   - nem probu: SİNYAL YOK. Probun kendi ekseni yok, ölçüm ana Z ile
-     *     daldırılarak yapılıyor ve durum paketinde "prob ölçüyor" diye
-     *     bir bayrak geçmiyor (ajan/plc.py'de yalnız X, Y, Z, T var).
-     *     Uydurma bir durum üretmek yerine prob tablada duruyor. */
+     *     "akıyor / akmıyor" diyor; başlığın ayrı ekseni yok, düşme
+     *     miktarı bu yüzden ölçüm değil, gösterim kuralı (makine.js).
+     *   - nem probu: SİNYAL YOK. Probun kendi ekseni yok ve durum
+     *     paketinde "prob ölçüyor" diye bir bayrak geçmiyor
+     *     (ajan/plc.py'de yalnız X, Y, Z, T var). Uydurma bir durum
+     *     üretmek yerine prob tablada duruyor; `suDurumu().nemSinyali`
+     *     bunu söylüyor. */
     const dinlenme = Number(u.basY || 0);
     if (u.tohumUcu) {
       const t = o.veri.durum.tohum_ucu || {};
