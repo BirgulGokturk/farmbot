@@ -854,81 +854,44 @@
      *
      * KATI ÖTELEME. Üç başa da aynı vektör ekleniyor; birbirlerine göre
      * yerleri hiç değişmiyor ve ölçüme giren de zaten o göreli mesafe. */
-    /* Plakanın kenar payı. Öne alma mesafesi de bunu kullanıyor (küme
-     * plakasıyla birlikte arabanın gölgesinden çıkmalı), o yüzden ikisinden
-     * ÖNCE tanımlı. */
-    const payX = P * 0.9, payZ = P * 0.8;
-    // Öne alma ölçümü — IIFE içinde doldurulup dışarıda okunuyor.
-    let olcum = null;
-    const oneAlma = (function () {
-      /* YÖN: yatak kirişin hangi yanında.
-       *
-       * Köprü sahne z'sinde yürüyor ve nötr konumu z = 0; dolayısıyla
-       * dikim alanlarının z merkezinin İŞARETİ doğrudan bu sorunun
-       * cevabı. Alanlar ALANLA AĞIRLIKLANDIRILIYOR: küçük bir tohum
-       * tepsisi, büyük toprak kabını kendi yanına çekmemeli. */
-      let agirlik = 0, toplam = 0;
-      alanlar.forEach((a) => {
-        const yuzey = Math.abs(Number(a.en) || 0) * Math.abs(Number(a.boy) || 0);
-        agirlik += yuzey * (Number(a.mz) || 0);
-        toplam += yuzey;
-      });
-      const merkez = toplam > 0 ? agirlik / toplam : 0;
-      /* YATAK SİMETRİKSE İŞARET ÇIKMIYOR ve bu ölçülebilir bir durum,
-       * gizlenecek bir şey değil. Beraberlik bozucu +z: sahnenin
-       * varsayılan bakış yönü orası (tarla.js'teki kamera açıları) ve
-       * küme o yana asılınca sütun onu örtmüyor. Fiziksel bir iddia
-       * değil, yalnız beraberlik bozucu — yatak asimetrikse hiç
-       * kullanılmıyor. */
-      const yon = Math.abs(merkez) > 1e-4 ? Math.sign(merkez) : 1;
-
-      /* MESAFE: ENGELİN Z ARALIĞI ÖLÇÜLÜYOR, YAZILMIYOR.
-       *
-       * Önceki hâl `P/2 + payZ + P*0.3` idi ve tek bir parçayı — kesiti P
-       * olan Z kılavuz profilini — sayıyordu. Kızakta ondan DAHA DERİN
-       * parçalar var: arabanın gövdesi (derinlik 2,6P, yani ±1,3P) ve Z
-       * motor bloğu (2,4P, ±1,2P). Küme profilin önüne geçse bile
-       * bunların gölgesinde kalıyordu; "hâlâ arkada" bundan.
-       *
-       * `kizak` şu anda YALNIZ engelleri taşıyor — `ucKafa` en sonda
-       * ekleniyor — ve kendi dönüşümü birim, henüz bir ebeveyni de yok.
-       * O yüzden kutusu doğrudan "başların kaçması gereken hacim".
-       * Sütun birim yükseklikte kurulu ve tarla.js onu yalnız y'de
-       * uzatıyor; z aralığı ölçekten etkilenmiyor. */
-      kizak.updateMatrixWorld(true);
-      const engelKutu = new THREE.Box3().setFromObject(kizak);
-      // Sütunun kendi aralığı da ölçülüyor: eski hesabın dayandığı sayı
-      // buydu ve kızağın tamamıyla arasındaki fark, neden yetmediğini
-      // doğrudan gösteriyor.
-      const sutunKutu = new THREE.Box3().setFromObject(sutun);
-      const engelZ = yon > 0 ? engelKutu.max.z : engelKutu.min.z;
-      // Plakanın kendi payı + küçük bir açıklık; ikisi de zaten tanımlı.
-      const engel = yon * engelZ + payZ + P * 0.3;
-      const zler = [nemProbu.position.z, tohumUcu.position.z, baslik.position.z];
-      const arkaUc = yon > 0 ? Math.min(...zler) : Math.max(...zler);
-      olcum = { engelZ: [engelKutu.min.z, engelKutu.max.z],
-                sutunZ: [sutunKutu.min.z, sutunKutu.max.z],
-                baslarZ: [Math.min(...zler), Math.max(...zler)],
-                yon: yon, engel: engel };
-      return yon * Math.max(0, engel - yon * arkaUc);
-    }());
-    [nemProbu, tohumUcu, baslik].forEach((g) => { g.position.z += oneAlma; });
-    ucKafa.userData.oneAlma = oneAlma;
-    ucKafa.userData.engelZ = olcum.engelZ;
-    ucKafa.userData.sutunZ = olcum.sutunZ;
-    ucKafa.userData.baslarZ = [olcum.baslarZ[0] + oneAlma, olcum.baslarZ[1] + oneAlma];
-    /* ÖLÇÜM KONSOLA. "Küme hâlâ sütunun arkasında" sorusu ekran
-     * görüntüsünden cevaplanamıyor; iki aralığın ayrışıp ayrışmadığı
-     * sayıyla görünüyor. `kur` yalnız yatak/alan imzası değişince
-     * çağrılıyor, bu yüzden satır seyrek. */
-    if (OLCUM) {
-      const mm = (v) => (v * 1000).toFixed(1);
-      console.log(`[makine] sütun z [${mm(olcum.sutunZ[0])} … ${mm(olcum.sutunZ[1])}] mm`
-        + ` · kızağın tamamı z [${mm(olcum.engelZ[0])} … ${mm(olcum.engelZ[1])}] mm`
-        + ` · başlar z [${mm(ucKafa.userData.baslarZ[0])} … `
-        + `${mm(ucKafa.userData.baslarZ[1])}] mm · yön ${olcum.yon > 0 ? "+z" : "-z"}`
-        + ` · öne alma ${mm(oneAlma)} mm`);
-    }
+    /* ================================================================
+     * KÜMEYİ ÖNE ALMA KALDIRILDI — ÖLÇÜM ÖYLE SÖYLEDİ.
+     *
+     * Üç deneme kümeyi X'te ileri, X'te geri ve sonunda sahne z'sinde
+     * "arabanın gölgesinden çıkacak kadar" ötelemişti. Hiçbiri tutmadı,
+     * çünkü üçü de YANLIŞ ENGELİ kovalıyordu.
+     *
+     * ÖLÇÜM (three.js başsız çalıştırıldı; kameradan her başın merkezine
+     * ışın atıldı, ilk çarpılan nesne sayıldı, 24 azimutta yinelendi,
+     * makine dört ayrı konumda):
+     *
+     *   küme 24/24 açıda örtülü. İlk çarpılan nesne:
+     *     ~60 kez  BoxGeometry 144 x 6,8 x 140  (TAŞIYICI PLAKA)
+     *      ~4 kez  bağlantı kulağı
+     *      ~2 kez  Z sigma profili
+     *
+     * Yani kümeyi örten şey sütun DEĞİL, başların ASILDIĞI PLAKA. Sayılar
+     * şöyle: plakanın alt yüzü y = 239,0; başların üstü 238,8, altı 220,0
+     * — yani baş plakadan yalnız 19 mm sarkıyor. Plaka ise başların en
+     * dışından 13,6 mm (x) ve 59,6 mm (z) taşıyor. Varsayılan kamera
+     * ufkun 36 derece üstünden bakıyor (tarla.js: phi = 0,30π); o açıdan
+     * bir başın plakanın altından görünebilmesi için sarkmasının
+     * taşma / tan(36°) = taşma / 0,7265'ten büyük olması gerekiyor:
+     * 59,6 mm taşma için 82 mm sarkma lazımdı, 19 mm vardı.
+     *
+     * 59,6 mm'lik taşmayı ÜRETEN ŞEY de öne almanın kendisiydi: plaka
+     * hem başları hem (arabaya değsin diye) sıfır noktasını kapsıyor;
+     * küme 108 mm öne alınınca plaka o mesafeyi köprülemek için
+     * uzuyordu. Öne alma, önlemek için konduğu örtülmeyi kendisi
+     * üretiyordu. Kaldırıldı: başlar artık `uclar.json`daki gerçek
+     * kaymalarında duruyor.
+     *
+     * KENAR PAYI DA ÖLÇÜYE BAĞLANDI. 0,9P ve 0,8P eski BÜYÜK başlar
+     * içindi (duş başlığı 0,78P yarıçapındaydı). Başlar 0,22P'ye inince
+     * plaka onlardan kat kat geniş kaldı. Pay artık başın yarıçapından
+     * türüyor: yarıçap + vida payı. Baş biçimi değişirse pay da onunla
+     * değişiyor, elle güncellenmesi gereken bir sayı kalmıyor. */
+    const payX = BAS_R + P * 0.25, payZ = BAS_R + P * 0.25;
 
     /* MAKİNE MERKEZİ DE PLAKANIN İÇİNDE.
      *
@@ -1004,6 +967,62 @@
     ucKafa.userData.basY = basY;          // üç başın dinlenme yüksekliği
     ucKafa.userData.basUcY = BAS_UC_Y;    // başın ucu, kendi grubuna göre
     ucKafa.userData.aktifDusme = AKTIF_DUSME;
+
+    /* ================================================================
+     * GÖRÜNÜRLÜK ÖLÇÜSÜ — BAŞ PLAKANIN ALTINDAN ÇIKIYOR MU.
+     *
+     * Kümenin örtülmesi ekran görüntüsünden anlaşılmıyordu ve üç deneme
+     * boyunca yanlış engel kovalandı. Ölçüt tek bir eşitsizlik:
+     *
+     *     sarkma  >  plakanın taşması / tan(bakış yüksekliği)
+     *
+     * Varsayılan kamera ufkun 36 derecesinden bakıyor (tarla.js
+     * phi = 0,30π → 90° − 54° = 36°, tan = 0,7265). Taşma, plakanın
+     * kenarı ile en dıştaki başın dış yüzü arasındaki mesafe; sarkma,
+     * plakanın alt yüzü ile başın ucu arası. İkisi de burada ÖLÇÜLÜYOR,
+     * yazılmıyor — baş biçimi ya da kaymalar değişince sayı da değişiyor
+     * ve tutmuyorsa günlüğe düşüyor. */
+    /* ÖLÇÜT: ışın başın ucundan çıkıp plakanın KENARINI geçebiliyor mu.
+     *
+     * Başın ucundan kameraya giden ışın, her 1 mm yatay yolda
+     * tan(36°) = 0,7265 mm yükseliyor (varsayılan kamera ufkun 36
+     * derecesinden bakıyor: tarla.js phi = 0,30π). Plakanın alt yüzü
+     * hizasına `sarkma / 0,7265` kadar yatay yol sonra ulaşıyor. Plaka o
+     * mesafeden daha uzağa taşıyorsa ışın plakaya çarpıyor, yani baş
+     * görünmüyor.
+     *
+     * Belirleyici mesafe, başın plakanın KARŞI kenarına olan uzaklığı —
+     * yanındaki kenar payı değil. Kamera hangi yandan bakarsa baksın
+     * ışın plakanın altından çıkmak zorunda; en kötü durum en dıştaki
+     * başın karşı kenara uzaklığı. */
+    const BAKIS_TAN = Math.tan(Math.PI * 0.20);        // tan(36°) = 0,7265
+    const plakaAltY = P * 0.12 - P * 0.34 / 2;
+    const sarkma = plakaAltY - (basY + BAS_UC_Y);
+    let mesafe = 0;
+    [nemProbu.position, tohumUcu.position, baslik.position].forEach((v) => {
+      mesafe = Math.max(mesafe,
+        Math.abs(v.x - (plakaX - plakaEn / 2)), Math.abs((plakaX + plakaEn / 2) - v.x),
+        Math.abs(v.z - (plakaZ - plakaBoy / 2)), Math.abs((plakaZ + plakaBoy / 2) - v.z));
+    });
+    const gerekenSarkma = mesafe * BAKIS_TAN;
+    ucKafa.userData.gorunurluk = {
+      sarkma, mesafe, gerekenSarkma, yeterli: sarkma >= gerekenSarkma,
+      plaka: [plakaEn, plakaBoy],
+    };
+    if (OLCUM) {
+      const mm = (v) => (v * 1000).toFixed(1);
+      const g = ucKafa.userData.gorunurluk;
+      console.log(`[makine] baş görünürlüğü: sarkma ${mm(g.sarkma)} mm · `
+        + `plaka ${mm(plakaEn)}x${mm(plakaBoy)} mm · en uzak kenar ${mm(g.mesafe)} mm · `
+        + `36°'den gereken sarkma ${mm(g.gerekenSarkma)} mm → `
+        + `${g.yeterli ? "görünür" : "PLAKA ÖRTÜYOR"}`);
+      // SESSİZ BAŞARISIZLIK YOK: yetmiyorsa sebebi sayıyla söylüyoruz.
+      if (!g.yeterli) {
+        console.warn(`[makine] Üç baş kendi taşıyıcı plakalarının altında kalıyor: `
+          + `${mm(g.sarkma)} mm sarkma var, ${mm(g.gerekenSarkma)} mm gerekiyor. `
+          + `Ya baş uzayacak ya plaka daralacak — ikisi de görünüşü değiştirir.`);
+      }
+    }
     kizak.add(ucKafa);
 
     portal.add(kizak);

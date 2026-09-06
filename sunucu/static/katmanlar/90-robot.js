@@ -206,11 +206,9 @@ Tarla.katman({
       // Probun kafa merkezine göre en alt noktası (mm). Plakanın altı
       // yaklaşık -1 mm; aradaki fark probun plakadan sarkması.
       probAltMm: probAltMm,
-      /* KÜMENİN ÖNE ALINMASI (mm, sahne z). Başlar kızağın önünde mi
-       * arkasında mı — ekran görüntüsünden ayırt edilemiyordu, üstelik
-       * yön yatağın yerine göre değişiyor. İşaret yatağın kirişe göre
-       * hangi yanda olduğunu, büyüklük de kümenin Z sütununu ne kadar
-       * açıkla geçtiğini söylüyor. */
+      /* ÖNE ALMA KALDIRILDI — hep 0. Anahtar duruyor çünkü sayıyı
+       * okuyan bir tanı yazısı vardı ve "0" ile "alan yok" ayrı şeyler.
+       * Gerekçe makine.js'te, ışın testinin sayılarıyla. */
       oneAlmaMm: (p.ucKafa && p.ucKafa.userData
                   && p.ucKafa.userData.oneAlma != null)
         ? +(p.ucKafa.userData.oneAlma * 1000).toFixed(1) : null,
@@ -228,12 +226,21 @@ Tarla.katman({
        * durum paketinde "prob ölçüyor" diye bir bayrak geçmiyor; ölçüm
        * ana Z ile daldırılarak yapılıyor. Prob bu yüzden sabit duruyor. */
       nemSinyali: "yok — probun kendi ekseni ve durum bayrağı yok",
-      /* KÜMENİN VE ENGELİN Z ARALIĞI. "Küme sütunun arkasında" sorusu
-       * ancak ikisi yan yana görülünce cevaplanıyor (bkz. makine.js). */
-      engelZMm: (p.ucKafa && p.ucKafa.userData && p.ucKafa.userData.engelZ)
-        ? p.ucKafa.userData.engelZ.map((v) => +(v * 1000).toFixed(1)) : null,
-      baslarZMm: (p.ucKafa && p.ucKafa.userData && p.ucKafa.userData.baslarZ)
-        ? p.ucKafa.userData.baslarZ.map((v) => +(v * 1000).toFixed(1)) : null,
+      /* BAŞ GÖRÜNÜRLÜĞÜ — asıl ölçü. "Küme sütunun arkasında" sanılıyordu;
+       * ışın testi sütunun 96 atıştan yalnız 0-2'sinde önde olduğunu,
+       * kümeyi örten şeyin başların ASILDIĞI PLAKA olduğunu gösterdi.
+       * `sarkma` başın plakadan ne kadar sarktığı, `gerekenSarkma` 36
+       * derecelik varsayılan bakıştan görünmesi için gerekeni (bkz.
+       * makine.js). `yeterli` false ise baş plakanın altında kalıyor. */
+      gorunurluk: (p.ucKafa && p.ucKafa.userData && p.ucKafa.userData.gorunurluk)
+        ? (() => {
+            const g = p.ucKafa.userData.gorunurluk;
+            return { sarkmaMm: +(g.sarkma * 1000).toFixed(1),
+                     gerekenSarkmaMm: +(g.gerekenSarkma * 1000).toFixed(1),
+                     enUzakKenarMm: +(g.mesafe * 1000).toFixed(1),
+                     plakaMm: g.plaka.map((v) => +(v * 1000).toFixed(1)),
+                     yeterli: g.yeterli };
+          })() : null,
       gorunur: p.su.visible,
       boy: +p.su.scale.y.toFixed(4),
       y: +p.su.position.y.toFixed(4),
