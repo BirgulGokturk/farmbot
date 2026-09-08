@@ -225,39 +225,46 @@
          şablondan çoğaltılıyor ve id tekrarlanamaz. -->
     <section class="sayfa" id="sayfa-bahce">
 
-      <!-- BAHÇE — OYUN ALANI.
-           Çiftçi, PLC'ye bağlı eksenlerin sahnedeki karşılığı: konumu durum
-           paketinden, hızı eksenin hızı. Karo ızgarası yatağın gerçek
-           koordinat uzayı; karoya dokunmak gerçek `git` komutu.
-           Yatağın ön duvarı kesit: kökler ve nem sütunları orada, ölçülmemiş
-           nem taralı oyuk olarak duruyor. -->
-      <div class="bh" id="bh-kok">
+      <!-- BAHÇE. Sahne ekranın tamamı; bilgi onun ÜSTÜNDE yüzüyor,
+           yanında kutularda değil. İki tuval: alttaki (zemin) çim,
+           yatak ve toprak — ölçü ya da veri değişmedikçe yeniden
+           çizilmiyor; üstteki (sahne) bitkiler, makine ve yol, o da
+           yalnız kirliyken. Boşta çizim yok. -->
+      <div class="bh" id="bh">
+        <div class="bh-sahne-kap" id="bh-sahne-kap">
+          <canvas id="bh-zemin"></canvas>
+          <canvas id="bh-sahne"></canvas>
 
-        <div class="bh-ust">
-          <h2>Bahçe</h2>
-          <span class="esnek"></span>
-          <button type="button" class="bh-sakin" id="bh-sakin" aria-pressed="false">sakin mod</button>
+          <div class="bh-ust">
+            <span class="bh-durum" id="bh-durum"><i></i><b>Makine</b></span>
+            <span class="esnek"></span>
+            <button class="bh-ikon" id="bh-sakin" type="button" aria-pressed="false"
+                    title="Bütün hareketi durdurur">Sakin mod</button>
+          </div>
+
+          <!-- SESSİZ BAŞARISIZLIK YOK: çizim ya da olay işleme patlarsa
+               sebebi buraya yazılıyor ve sahne çalışmaya devam ediyor.
+               Önceki sürüm tek tanımsız fonksiyonla sessizce düştü. -->
+          <div class="bh-hata" id="bh-hata" hidden></div>
+          <div class="bh-not" id="bh-not" hidden></div>
+
+          <!-- Görev kartları: sunucunun ürettiği işler, sahnenin üstünde. -->
+          <div class="bh-isler" id="bh-isler"></div>
+
+          <!-- Bitki kartı: bitkiye dokunup "ⓘ" seçilince. -->
+          <aside class="bh-kart" id="bh-kart" hidden></aside>
+
+          <p class="bh-bos" id="bh-bos" hidden></p>
+
+          <!-- Bitkinin üstünde açılan halka menü: iş orada başlıyor. -->
+          <div class="bh-menu" id="bh-menu" hidden></div>
+
+          <!-- Tohum rafı: bir tohumu alıp toprağa sürükleyince ekiliyor. -->
+          <div class="bh-raf" id="bh-raf" role="group" aria-label="Tohum rafı"></div>
         </div>
 
-        <!-- SESSİZ BAŞARISIZLIK YOK: çizilmeyen, başlamayan, reddedilen
-             her şeyin sebebi burada. -->
-        <div class="bh-hata" id="bh-hata" hidden></div>
-        <div class="bh-not" id="bh-not" hidden></div>
-
-        <div class="bh-tuval" id="bh-tuval">
-          <canvas id="bh-sahne" aria-label="Bahçe yatağı — izometrik"></canvas>
-        </div>
-
-        <!-- Görev paneli: sunucunun kartları ve seçili bitkinin künyesi. -->
-        <div class="bh-panel" id="bh-panel"></div>
-
-        <!-- Tohum tepsisi: gerçek hazne gözleri. Boş göz seçilemiyor. -->
-        <div class="bh-tepsi" id="bh-tepsi"></div>
-
-        <div class="bh-alt" id="bh-alt" data-kip="bos">
-          <div class="bh-a-metin"><span class="bh-a-alt">Bahçe okunuyor…</span></div>
-        </div>
-
+        <!-- Geri alınamaz iş onay ister; ne olacağı önce yazılıyor. -->
+        <div class="bh-onay" id="bh-onay" hidden></div>
       </div>
 
     </section>

@@ -115,7 +115,7 @@ window.Bahce = (function () {
     /* vurgu: sahnede imlecin altındaki bitki (panelde parlar).
        vurguListe: panelde imlecin altındaki kartın bitkileri (sahnede parlar).
        tasiKip: taşınmayı bekleyen bitkinin adı. */
-    vurgu: "", vurguListe: [], tasiKip: "",
+    vurgu: "", vurguListe: [], tasiKip: "", halkaAd: "",
     hava: { sicaklik: null, nem: null, basinc: null, toprak: null, egim: null, ts: 0 },
     havaT: 0, egimT: 0,
     ot: [], toz: [], iz: [], ruzgar: { yon: 0, guc: 0.4, hYon: 0, hGuc: 0.4 },
@@ -2250,6 +2250,7 @@ window.Bahce = (function () {
     bitkiCizHepsi(c);
     makineCiz(c);
     ciftciCiz(c);
+    halkaCiz(c);
     if (!S.sakin) tozCiz(c);
     havaCiz(c);
   });
@@ -2359,16 +2360,197 @@ window.Bahce = (function () {
     return { x: (e.clientX - r.left) * S.en / r.width,
              y: (e.clientY - r.top) * S.boy / r.height };
   }
-  function bitkiBul(p) {
-    var en = null, ed = 1e9;
-    S.bitki.forEach(function (b) {
-      var sp = spriteAl(b);
-      var x = ex(uOf(b.x), vOf(b.y)), y = ey(uOf(b.x), vOf(b.y));
-      var dx = (p.x - x) / Math.max(10, sp.R), dy = (p.y - y) / Math.max(6, sp.R * ISO_ORAN);
-      var d = dx * dx + dy * dy;
-      if (d < 1 && d < ed) { ed = d; en = b; }
-    });
+  /* ==================================================================== *
+   * VURUŞ ALANI — ÇİZİLEN SİLUETİN KENDİSİ.
+   *
+   * Eskiden vuruş elipsi bitkinin TOPRAK ANKRAJINA kuruluyordu ve dikey
+   * yarıçapı ISO_ORAN ile yassılıyordu (2·max(6, R/2) piksel). Oysa sprite
+   * ankrajın YUKARISINA çiziliyor: gövde kadar yükselmiş, sp.boy kadar
+   * yüksek. Kullanıcı gördüğü yaprağa tıklıyor, elips ıskalıyor, tıklama
+   * karo dalına düşüyor ve "Eksen X … gidecek" onayı açılıyordu.
+   *
+   * Kutu artık `spriteAl`in bildiği ölçülerden geliyor — elle yazılmış
+   * sayı yok: genişlik sp.en, üst kenar gövde yüksekliği kadar yukarıda,
+   * alt kenar ankrajın altındaki gölge elipsinin dibi.
+   * ==================================================================== */
+  function vurusKutusu(b, pay) {
+    var sp = spriteAl(b);
+    var u = uOf(b.x), v = vOf(b.y);
+    var x = ex(u, v), y = ey(u, v);
+    var gy = y - govdeYuk();                 /* siluetin merkezi */
+    pay = pay || 0;
+    return {
+      ad: String(b.ad),
+      x1: x - sp.en / 2 - pay, x2: x + sp.en / 2 + pay,
+      y1: gy - sp.boy / 2 - pay,             /* yaprakların tepesi */
+      y2: y + sp.R * 0.9 * ISO_ORAN + pay,   /* gölge elipsinin dibi */
+      derinlik: u + v,                       /* çizim sırası: büyük olan ÖNDE */
+      x: x, y: y, gy: gy
+    };
+  }
+  /** Vuruşta EN ÖNDEKİ kazanıyor. Çizim sırası (u+v) artan; en son çizilen
+   *  en öndedir, yani arkadaki bitki öndekinin yaprağının arkasından
+   *  seçilemiyor. Eşitlikte merkeze yakın olan. */
+  function bitkiBul(p, pay) {
+    var en = null, enD = -1e9, enU = 1e9;
+    for (var i = 0; i < S.bitki.length; i++) {
+      var k = vurusKutusu(S.bitki[i], pay);
+      if (p.x < k.x1 || p.x > k.x2 || p.y < k.y1 || p.y > k.y2) continue;
+      var u = Math.hypot(p.x - k.x, p.y - k.gy);
+      if (k.derinlik > enD || (k.derinlik === enD && u < enU)) {
+        enD = k.derinlik; enU = u; en = S.bitki[i];
+      }
+    }
     return en;
+  }
+
+  /* ==================================================================== *
+   * EYLEM HALKASI — iş, bakılan yerde başlıyor.
+   *
+   * Bitki seçilince sahnede bitkinin üstünde küçük bir halka açılıyor:
+   * sula, nemini ölç, üstüne git ve (hasada hazırsa) hasat. Yan paneldeki
+   * künye ve düğmeler DURUYOR — bu onların yerine değil, yanına.
+   *
+   * Makineli işler makine kopukken kapalı ve sebebi halkanın altında
+   * yazılı. Hasat KAYIT işi (makine kımıldamıyor), o yüzden kopukken de
+   * açık — paneldeki davranışın aynısı.
+   * ==================================================================== */
+  function halkaEylemleri(b) {
+    var e = eksenEngeli();
+    var l = [
+      { ad: "sula", etiket: "su", kapali: e.engel },
+      { ad: "olc", etiket: "nem", kapali: e.engel },
+      { ad: "git", etiket: "git", kapali: e.engel }
+    ];
+    if (b.hasat) l.push({ ad: "hasat", etiket: "hasat", kapali: false });
+    return l;
+  }
+  /** Halkanın yerleşimi — çizim ve vuruş AYNI hesabı kullanıyor. */
+  function halkaYerlesim(b) {
+    var sp = spriteAl(b);
+    var k = vurusKutusu(b, 0);
+    var l = halkaEylemleri(b), n = l.length, i, a;
+    var rb = kis(G.tw * 0.22, 13, 18);
+    var rx = Math.max(sp.en * 0.5 + rb + 6, rb * 2.6);
+    var ry = Math.max(sp.boy * 0.5 + rb + 6, rb * 1.7);
+    var a0 = -Math.PI * 0.88, a1 = -Math.PI * 0.12;
+    for (i = 0; i < n; i++) {
+      a = n === 1 ? -Math.PI / 2 : a0 + (a1 - a0) * (i / (n - 1));
+      l[i].x = k.x + Math.cos(a) * rx;
+      l[i].y = k.gy + Math.sin(a) * ry;
+      l[i].r = rb;
+    }
+    return { x: k.x, y: k.gy, alt: k.y2 + 12, dugme: l };
+  }
+  function halkaVurus(p, pay) {
+    var b = S.ix[S.halkaAd];
+    if (!b) return null;
+    var y = halkaYerlesim(b), i, d;
+    for (i = 0; i < y.dugme.length; i++) {
+      d = y.dugme[i];
+      if (Math.hypot(p.x - d.x, p.y - d.y) <= d.r + (pay || 0)) return d;
+    }
+    return null;
+  }
+  /* Simgeler vektör: emoji yazı tipi Pi'de her zaman yok. */
+  function simgeCiz(c, ad, x, y, r, renk) {
+    c.save();
+    c.translate(x, y);
+    c.strokeStyle = renk; c.fillStyle = renk;
+    c.lineWidth = Math.max(1.6, r * 0.13); c.lineCap = "round"; c.lineJoin = "round";
+    if (ad === "sula") {                       /* damla */
+      c.beginPath();
+      c.moveTo(0, -r * 0.52);
+      c.quadraticCurveTo(r * 0.42, 0, 0, r * 0.42);
+      c.quadraticCurveTo(-r * 0.42, 0, 0, -r * 0.52);
+      c.fill();
+    } else if (ad === "olc") {                 /* prob: toprağa inen uç */
+      c.beginPath(); c.moveTo(0, -r * 0.5); c.lineTo(0, r * 0.18); c.stroke();
+      c.beginPath(); c.moveTo(-r * 0.22, r * 0.02); c.lineTo(0, r * 0.34);
+      c.lineTo(r * 0.22, r * 0.02); c.stroke();
+      c.beginPath(); c.moveTo(-r * 0.46, r * 0.5); c.lineTo(r * 0.46, r * 0.5); c.stroke();
+    } else if (ad === "git") {                 /* nişan */
+      c.beginPath(); c.arc(0, 0, r * 0.36, 0, 6.3); c.stroke();
+      c.beginPath();
+      c.moveTo(-r * 0.56, 0); c.lineTo(-r * 0.2, 0);
+      c.moveTo(r * 0.2, 0); c.lineTo(r * 0.56, 0);
+      c.moveTo(0, -r * 0.56); c.lineTo(0, -r * 0.2);
+      c.moveTo(0, r * 0.2); c.lineTo(0, r * 0.56);
+      c.stroke();
+    } else {                                   /* sepet */
+      c.beginPath(); c.arc(0, r * 0.06, r * 0.38, Math.PI, 0); c.stroke();
+      c.beginPath();
+      c.moveTo(-r * 0.5, r * 0.06); c.lineTo(-r * 0.34, r * 0.5);
+      c.lineTo(r * 0.34, r * 0.5); c.lineTo(r * 0.5, r * 0.06);
+      c.closePath(); c.stroke();
+    }
+    c.restore();
+  }
+  function halkaCiz(c) {
+    var b = S.ix[S.halkaAd];
+    if (!b) return;
+    var y = halkaYerlesim(b), i, d;
+    var e = eksenEngeli();
+    c.save();
+    for (i = 0; i < y.dugme.length; i++) {
+      d = y.dugme[i];
+      /* Halkayı bitkiye bağlayan ince çizgi: hangi bitkinin halkası
+         olduğu belli olsun. */
+      c.strokeStyle = "rgba(255,246,214,.22)"; c.lineWidth = 1;
+      c.beginPath(); c.moveTo(y.x, y.y); c.lineTo(d.x, d.y); c.stroke();
+    }
+    for (i = 0; i < y.dugme.length; i++) {
+      d = y.dugme[i];
+      c.beginPath(); c.arc(d.x, d.y + 1.5, d.r, 0, 6.3);
+      c.fillStyle = "rgba(8,5,2,.5)"; c.fill();
+      c.beginPath(); c.arc(d.x, d.y, d.r, 0, 6.3);
+      c.fillStyle = d.kapali ? "rgba(38,32,26,.92)" : "rgba(28,24,18,.95)";
+      c.fill();
+      c.strokeStyle = d.kapali ? "rgba(150,140,124,.5)" : "rgba(250,224,160,.9)";
+      c.lineWidth = 2; c.stroke();
+      simgeCiz(c, d.ad, d.x, d.y - 1, d.r,
+        d.kapali ? "rgba(168,158,142,.6)" : "rgba(252,238,204,.98)");
+      c.font = "600 9px system-ui,sans-serif"; c.textAlign = "center";
+      c.fillStyle = d.kapali ? "rgba(168,158,142,.65)" : "rgba(248,232,198,.95)";
+      c.fillText(d.etiket, d.x, d.y + d.r + 9);
+    }
+    /* KAPALIYSA SEBEBİ YAZILI. */
+    if (e.engel) {
+      c.font = "600 10px system-ui,sans-serif"; c.textAlign = "center";
+      c.fillStyle = "rgba(236,124,108,.98)";
+      c.fillText("makineli işler kapalı: " + e.yazi, y.x, y.alt);
+      c.fillStyle = "rgba(214,200,178,.85)";
+      c.fillText("hasat kayıt işi, açık", y.x, y.alt + 12);
+    }
+    c.restore();
+  }
+  /** Halkanın ve panelin ORTAK eylem yolu — iki yerde iki farklı onay
+   *  metni olmasın diye tek gövde. */
+  function bitkiEylem(ad, b) {
+    if (!b) return;
+    if (ad === "sula") {
+      onayAc(b.ad + " " + sayi(b.sulama_saniye, 3).toFixed(1) + " saniye sulanacak.",
+        "süre bitkinin kendi ayarından · geri alınamaz · sulamadan sonra nem ölçümü BAYATLAR",
+        "Sula", function () { isGonder("sula", [b.ad]); });
+    } else if (ad === "olc") {
+      onayAc("Prob " + b.ad + " toprağına daldırılıp nem ölçülecek.",
+        "ölçümden sonra taralı oyuk gerçek dolguya döner", "Ölç",
+        function () { isGonder("nem", [b.ad]); });
+    } else if (ad === "git") {
+      onayAc("Eksen " + b.ad + " üstüne gidecek.",
+        "X " + Math.round(sayi(b.x)) + " mm · Y " + Math.round(sayi(b.y)) + " mm",
+        "Git", function () { isGonder("gez", [b.ad]); });
+    } else if (ad === "yakin") {
+      onayAc("Eksen " + b.ad + " üstüne gidip uç kamerasıyla yakından bakacak.",
+        "çekilen kare büyüme filmine GİRMEZ — film yalnız üst kameradan",
+        "Bak", function () {
+          gonder("/api/bahce/yakin", { ad: b.ad })
+            .then(function () { mesajYaz("Yakından bakma kuyruğa girdi."); return veriYukle(); })
+            .catch(function (h2) { mesajYaz("Olmadı: " + ((h2 && h2.message) || h2)); });
+        });
+    } else if (ad === "hasat") {
+      hasatOnay([b.ad]);
+    }
   }
   /* ---------------------------------------------------- gezinme ve dokunuş
    *
@@ -2383,11 +2565,14 @@ window.Bahce = (function () {
   var gest = {
     isaretci: {}, adet: 0, kaydi: false, bas: null, son: null,
     ikiUzak: 0, ikiTw: 0,
-    bekleyen: 0, dx: 0, dy: 0, adim: 0, ax: 0, ay: 0, olcek: 1,
+    bekleyen: 0, dx: 0, dy: 0, adim: 0, ax: 0, ay: 0, olcek: 1, kaba: false,
     sonDokunusT: 0, sonDokunusX: 0, sonDokunusY: 0,
     etkin: false, bitir: 0
   };
   var CIFT_MS = 320, SURUKLE_ESIK = 6;
+  /* Parmak ucu farenin ucundan geniş: dokunmatikte vuruş kutusu her
+     yönde bu kadar büyüyor. Yalnız VURUŞ payı — çizim değişmiyor. */
+  var DOKUNMA_PAYI = 12;
 
   function gestUygula() {
     gest.bekleyen = 0;
@@ -2435,6 +2620,9 @@ window.Bahce = (function () {
     e.preventDefault();
     var p = konum(e);
     gest.isaretci[e.pointerId] = p;
+    /* DOKUNMATİKTE PARMAK PAYI: fare için yeterli alan telefonda dar
+       kalıyor. Pay yalnız vuruşta, çizimde değil. */
+    gest.kaba = (e.pointerType === "touch" || e.pointerType === "pen");
     gest.adet++;
     if (S.tuval.setPointerCapture) { try { S.tuval.setPointerCapture(e.pointerId); } catch (h) { } }
     if (gest.adet === 1) { gest.bas = p; gest.son = p; gest.kaydi = false; }
@@ -2478,7 +2666,7 @@ window.Bahce = (function () {
     var d1 = JSON.stringify(yeni), d2 = JSON.stringify(S.uzerinde);
     if (d1 !== d2) { S.uzerinde = yeni; kirlet(); }
     /* Sahne → panel: imlecin altındaki bitki panelde de parlıyor. */
-    var b = bitkiBul(p);
+    var b = bitkiBul(p, 0);
     var ad = b ? b.ad : "";
     if (ad !== S.vurgu) { S.vurgu = ad; panelVurgula(); kirlet(); }
   });
@@ -2515,11 +2703,29 @@ window.Bahce = (function () {
   });
 
   function karoyaDokun(p) {
-    var b = bitkiBul(p);
+    var pay = gest.kaba ? DOKUNMA_PAYI : 3;
+    /* SIRA: önce açık halkanın düğmeleri, sonra bitki, sonra karo.
+       Halka açıkken karo dalı tetiklenmiyor; boşluğa dokunmak halkayı
+       kapatıyor ve orada duruyor. */
+    if (S.halkaAd) {
+      var d = halkaVurus(p, pay);
+      if (d) {
+        if (d.kapali) { mesajYaz("Bu iş şimdi yapılamaz: " + eksenEngeli().yazi + "."); return; }
+        bitkiEylem(d.ad, S.ix[S.halkaAd]);
+        return;
+      }
+    }
+    var b = bitkiBul(p, pay);
     if (b) {
       S.secili = (S.secili === b.ad) ? "" : b.ad;
+      S.halkaAd = S.secili;
       if (S.secili) gecmisAl(S.secili);
       panelYaz(); altYaz(); kirlet();
+      return;
+    }
+    if (S.halkaAd) {
+      S.halkaAd = ""; S.secili = "";
+      panelYaz(); kirlet();
       return;
     }
     var m = ekranMM(p.x, p.y);
@@ -2985,29 +3191,11 @@ window.Bahce = (function () {
       S.secili = "";
       mesajYaz(S.tepsiTur ? turAdi(S.tepsiTur) + " seçildi — bir karoya dokun." : "");
       tepsiYaz(); panelYaz();
-    } else if (ad === "birak") { S.secili = ""; panelYaz(); kirlet(); }
-    else if (ad === "sula" && b) {
-      onayAc(b.ad + " " + sayi(b.sulama_saniye, 3).toFixed(1) + " saniye sulanacak.",
-        "süre bitkinin kendi ayarından · geri alınamaz · sulamadan sonra nem ölçümü BAYATLAR",
-        "Sula", function () { isGonder("sula", [b.ad]); });
-    } else if (ad === "olc" && b) {
-      onayAc("Prob " + b.ad + " toprağına daldırılıp nem ölçülecek.",
-        "ölçümden sonra taralı oyuk gerçek dolguya döner", "Ölç",
-        function () { isGonder("nem", [b.ad]); });
-    } else if (ad === "git" && b) {
-      onayAc("Eksen " + b.ad + " üstüne gidecek.",
-        "X " + Math.round(sayi(b.x)) + " mm · Y " + Math.round(sayi(b.y)) + " mm",
-        "Git", function () { isGonder("gez", [b.ad]); });
-    } else if (ad === "yakin" && b) {
-      onayAc("Eksen " + b.ad + " üstüne gidip uç kamerasıyla yakından bakacak.",
-        "çekilen kare büyüme filmine GİRMEZ — film yalnız üst kameradan",
-        "Bak", function () {
-          gonder("/api/bahce/yakin", { ad: b.ad })
-            .then(function () { mesajYaz("Yakından bakma kuyruğa girdi."); return veriYukle(); })
-            .catch(function (h2) { mesajYaz("Olmadı: " + ((h2 && h2.message) || h2)); });
-        });
-    } else if (ad === "hasat" && b) { hasatOnay([b.ad]); }
-    else if (ad === "kart-hasat" && k) { hasatOnay((k.noktalar || []).map(String)); }
+    } else if (ad === "birak") { S.secili = ""; S.halkaAd = ""; panelYaz(); kirlet(); }
+    else if ((ad === "sula" || ad === "olc" || ad === "git" || ad === "yakin"
+              || ad === "hasat") && b) {
+      bitkiEylem(ad, b);
+    } else if (ad === "kart-hasat" && k) { hasatOnay((k.noktalar || []).map(String)); }
     else if (ad === "tasi" && b) {
       S.tasiKip = S.tasiKip ? "" : b.ad;
       mesajYaz(S.tasiKip ? b.ad + " taşınacak — yeni yerine dokun." : "Taşıma bırakıldı.");
@@ -3081,6 +3269,7 @@ window.Bahce = (function () {
       if (S.onay) { var ip = S.onay.iptal; onayKapat(); if (ip) ip(); return; }
       if (S.tasiKip) { S.tasiKip = ""; mesajYaz("Taşıma bırakıldı."); panelYaz(); return; }
       if (S.tepsiTur) { S.tepsiTur = ""; tepsiYaz(); mesajYaz(""); return; }
+      if (S.halkaAd) { S.halkaAd = ""; kirlet(); return; }
       if (S.secili) { S.secili = ""; panelYaz(); kirlet(); }
     });
     document.addEventListener("visibilitychange", function () { if (!document.hidden) kirlet(); });
@@ -3116,6 +3305,7 @@ window.Bahce = (function () {
       S.ix[String(b.ad)] = b;
     });
     if (S.secili && !S.ix[S.secili]) S.secili = "";
+    if (S.halkaAd && !S.ix[S.halkaAd]) S.halkaAd = "";
   }
   var veriYukle = guvenli("veri", function () {
     if (S.yukleniyor) return Promise.resolve();
@@ -3207,6 +3397,18 @@ window.Bahce = (function () {
     ekimDegisti: function () { if (S.acik) veriYukle(); },
     baglandi: function () { if (S.acik) veriYukle(); },
     yenile: function () { return veriYukle(); },
+    /** Vuruş kutuları — ekranda gördüğümüzle tıklanan alanın aynı olduğunu
+     *  doğrulamanın yolu. Ölçüm okuması, çizimi etkilemiyor. */
+    vurusKutulari: function () {
+      return S.bitki.map(function (b) {
+        var k = vurusKutusu(b, 0), sp = spriteAl(b);
+        return { ad: k.ad, x1: +k.x1.toFixed(1), x2: +k.x2.toFixed(1),
+                 y1: +k.y1.toFixed(1), y2: +k.y2.toFixed(1),
+                 en: +(k.x2 - k.x1).toFixed(1), boy: +(k.y2 - k.y1).toFixed(1),
+                 derinlik: +k.derinlik.toFixed(3), R: +sp.R.toFixed(1),
+                 eskiBoy: +(2 * Math.max(6, sp.R * ISO_ORAN)).toFixed(1) };
+      });
+    },
     /** Kare süresi ölçümü. */
     olcum: function (sifirla) {
       var o = S.olcum;
