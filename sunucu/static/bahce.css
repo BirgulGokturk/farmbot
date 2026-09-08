@@ -90,6 +90,18 @@ button:disabled, button.asil:disabled {
 .bh-p-makine.yok, .bh-p-makine.acil { border-left-color: var(--kritik); }
 .bh-p-makine.acil b { color: var(--kritik); }
 
+/* Sahnenin havasi — her tepkinin KAYNAGI yazili, olmayan sensor de. */
+.bh-p-hava {
+  background: var(--yuzey-2); border-radius: var(--yaricap-2); padding: var(--b2);
+  font-size: var(--yazi-kucuk); color: var(--metin-2);
+}
+.bh-p-hava .bas { display: block; color: var(--metin-3); font-size: 11px;
+                  letter-spacing: .06em; text-transform: uppercase; margin-bottom: 4px; }
+.bh-p-hava ul { margin: 0; padding: 0; list-style: none; }
+.bh-p-hava li { padding: 1px 0; font-variant-numeric: tabular-nums; }
+.bh-p-hava li b { color: var(--metin); }
+.bh-p-hava .yok { color: var(--metin-3); font-style: italic; }
+
 .bh-p-baslik {
   font-family: inherit; font-size: var(--yazi-baslik); font-weight: 600;
   color: var(--metin-2); padding-top: var(--b1);
