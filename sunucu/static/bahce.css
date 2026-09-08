@@ -1,21 +1,17 @@
-/* Bahçe — yatağın önden kesiti.
+/* Bahçe — oyun alanı.
  *
- * DÜZEN ÜÇ YATAY BANT, hiçbiri yüzmüyor:
- *   1. iş şeridi   — tek cümle, gerekçesi, eylemi (tam genişlik)
- *   2. tuval       — kesitin kendisi; kalan bütün yükseklik onun
- *   3. kimlik      — seçili bitkinin künyesi ve eylemleri (tam genişlik)
+ * DÜZEN
+ *   üst şerit  — makine durumu ve sakin mod (ince)
+ *   sahne      — izometrik yatak; bütün eylem burada
+ *   sağ panel  — görev kartları ve seçili bitkinin künyesi
+ *   alt tepsi  — tohum hazneleri (gerçek gözler, gerçek sayılar)
+ *   alt şerit  — onay ve sebep satırı
  *
- * Kenarda dikey kart sütunu, altta yatay kutucuk şeridi ve sahnenin
- * köşesinde yüzen kutu YOK. Bilgi sahnenin üstüne yapıştırılmıyor;
- * ölçüler kesitin içinde yaşıyor, cümleler bantlarda.
- *
- * `stil.css` kuralları geçerli: tek kademe gölge, 4/8/16/24 boşluk,
- * üç tipografi kademesi, renk yalnız durum için.
+ * Renk yalnız DURUM için (stil.css kuralı): eksen hazır/meşgul/kopuk,
+ * ölçüm/tahmin, susadı/hasat. Sahnenin sıcak toprak paleti tuvalde.
  */
 
-/* ------------------------------------------------------------------ kabuk
- * Bahçe sekmesi kabuğun tamamını alıyor: kesitin okunması için yükseklik
- * gerek, 800×480'de yarım ekran kesit hiçbir şey anlatmıyor. */
+/* ------------------------------------------------------------------ kabuk */
 body.bahce-acik .yuzen.sol { grid-column: 1 / -1; width: auto; }
 body.bahce-acik #sahne-cubuk,
 body.bahce-acik .sahne-alan { display: none; }
@@ -23,285 +19,177 @@ body.bahce-acik .yuzen-govde { overflow: hidden; padding: 0; }
 body.bahce-acik #sayfa-bahce { height: 100%; }
 
 .bh {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-  min-height: 320px;
-  background: #0b0d0c;
+  position: relative; display: grid; height: 100%; min-height: 320px;
+  grid-template-columns: minmax(0, 1fr) 236px;
+  grid-template-rows: auto auto minmax(0, 1fr) auto auto;
+  grid-template-areas:
+    "ust    ust"
+    "hata   hata"
+    "tuval  panel"
+    "tepsi  panel"
+    "alt    alt";
+  background: #24190f;
   border-radius: var(--yaricap);
   overflow: hidden;
 }
+#bh-kok [hidden] { display: none !important; }
 
-/* -------------------------------------------------------------- iş şeridi */
-.bh-is {
-  display: flex;
-  align-items: center;
-  gap: var(--b2);
-  padding: var(--b2) var(--b3);
-  background: var(--yuzey);
-  border-bottom: 1px solid var(--cizgi);
-  flex: 0 0 auto;
+/* -------------------------------------------------------------- üst şerit */
+.bh-ust {
+  grid-area: ust; display: flex; align-items: center; gap: var(--b2);
+  padding: var(--b1) var(--b3);
+  background: var(--yuzey); border-bottom: 1px solid var(--cizgi);
 }
-.bh-is-orta { flex: 1 1 auto; min-width: 0; }
-.bh-is-metin {
-  font-size: var(--yazi-govde);
-  font-weight: 600;
-  color: var(--metin);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+.bh-ust h2 {
+  margin: 0; font-size: var(--yazi-baslik); font-weight: 600; color: var(--metin);
 }
-.bh-is-neden {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--b2);
-  font-size: var(--yazi-kucuk);
-  color: var(--metin-3);
-  margin-top: 2px;
+.bh-ust .esnek { flex: 1 1 auto; }
+.bh-ust button, .bh-panel button, .bh-alt button, .bh-tepsi button {
+  font: inherit; font-size: var(--yazi-kucuk); height: var(--alan-y);
+  padding: 0 var(--b2); border-radius: var(--yaricap-2);
+  border: 1px solid var(--cizgi-2); background: transparent; color: var(--metin-2);
+  cursor: pointer; white-space: nowrap;
 }
-.bh-is-neden .bh-ac { color: var(--metin-2); }
-/* ÖLÇÜM İLE TAHMİN AYRI GÖRÜNÜR. Kanıt yazısı ölçümde nötr, tahminde
-   uyarı renginde ve "tahmin" sözcüğüyle başlıyor. */
-.bh-kanit { color: var(--metin-3); }
-.bh-kanit.tahmin { color: var(--uyari); }
-.bh-ert { color: var(--metin-3); }
-.bh-ert button {
-  background: none; border: 0; padding: 0;
-  color: var(--vurgu); font: inherit; cursor: pointer; text-decoration: underline;
+.bh-ust button:hover, .bh-panel button:hover, .bh-alt button:hover { color: var(--metin); }
+.bh-ust button:focus-visible, .bh-panel button:focus-visible,
+.bh-alt button:focus-visible, .bh-tepsi button:focus-visible {
+  outline: 2px solid var(--vurgu); outline-offset: 1px;
 }
-
-.bh-makine {
-  display: inline-flex; align-items: center; gap: 6px;
-  font-size: var(--yazi-kucuk);
-  color: var(--metin-3);
-  white-space: nowrap;
+button.asil {
+  background: var(--vurgu); border-color: var(--vurgu); color: #fff; font-weight: 600;
 }
-.bh-makine::before {
-  content: ""; width: 8px; height: 8px; border-radius: 50%;
-  background: var(--metin-3);
-}
-.bh-makine.hazir::before { background: var(--iyi); }
-.bh-makine.mesgul::before { background: var(--vurgu); }
-.bh-makine.yok::before { background: var(--kritik); }
-
-.bh-sayac {
-  font-size: var(--yazi-kucuk);
-  color: var(--metin-3);
-  font-variant-numeric: tabular-nums;
-}
-.bh-is button, .bh-kimlik button, .bh-kip button {
-  font: inherit;
-  font-size: var(--yazi-kucuk);
-  height: var(--alan-y);
-  padding: 0 var(--b2);
-  border-radius: var(--yaricap-2);
-  border: 1px solid var(--cizgi-2);
-  background: transparent;
-  color: var(--metin-2);
-  cursor: pointer;
-  white-space: nowrap;
-}
-.bh-is button:hover, .bh-kimlik button:hover, .bh-kip button:hover {
-  border-color: var(--metin-3); color: var(--metin);
-}
-.bh-ok { width: var(--alan-y); padding: 0; }
-/* Bölüm başına tek dolu düğme: asıl iş. */
-.bh-evet {
-  background: var(--vurgu) !important;
-  border-color: var(--vurgu) !important;
-  color: #fff !important;
-  font-weight: 600;
-}
-.bh-evet:disabled {
-  background: var(--yuzey-2) !important;
-  border-color: var(--cizgi) !important;
-  color: var(--metin-3) !important;
-  cursor: not-allowed;
+button:disabled, button.asil:disabled {
+  background: var(--yuzey-2) !important; border-color: var(--cizgi) !important;
+  color: var(--metin-3) !important; cursor: not-allowed;
 }
 .bh-sakin[aria-pressed="true"] { border-color: var(--vurgu); color: var(--vurgu); }
 
-/* ------------------------------------------------------------------ tuval */
-.bh-tuval {
-  position: relative;
-  flex: 1 1 auto;
-  min-height: 200px;
-  overflow: hidden;
-  touch-action: pan-y;
-}
+/* ------------------------------------------------------------------ sahne */
+.bh-tuval { grid-area: tuval; position: relative; min-height: 180px; overflow: hidden; }
 .bh-tuval canvas {
-  position: absolute; inset: 0;
-  display: block;
-  width: 100%; height: 100%;
+  position: absolute; inset: 0; display: block; width: 100%; height: 100%;
+  touch-action: none; user-select: none; -webkit-user-select: none; cursor: pointer;
 }
-#bh-sahne { touch-action: none; }
 
-/* ------------------------------------------------------ hata ve not şeridi
- * Köşede yüzen kutu değil: tam genişlikte bir satır, sahnenin dışında. */
-.bh-hata, .bh-not {
-  flex: 0 0 auto;
-  padding: 6px var(--b3);
+/* -------------------------------------------------------------- sağ panel */
+.bh-panel {
+  grid-area: panel; overflow-y: auto; padding: var(--b2);
+  background: var(--yuzey); border-left: 1px solid var(--cizgi);
+  display: flex; flex-direction: column; gap: var(--b2);
+}
+.bh-p-makine {
+  display: flex; flex-direction: column; gap: 2px;
+  padding: var(--b2); border-radius: var(--yaricap-2); background: var(--yuzey-2);
+  border-left: 3px solid var(--metin-3);
   font-size: var(--yazi-kucuk);
-  line-height: 1.4;
 }
-.bh-hata {
-  background: rgba(224, 82, 82, .14);
-  color: #ffb9b9;
-  border-bottom: 1px solid rgba(224, 82, 82, .3);
+.bh-p-makine b { color: var(--metin); }
+.bh-p-makine span { color: var(--metin-3); font-variant-numeric: tabular-nums; }
+.bh-p-makine.hazir { border-left-color: var(--iyi); }
+.bh-p-makine.kilit { border-left-color: var(--uyari); }
+.bh-p-makine.yok, .bh-p-makine.acil { border-left-color: var(--kritik); }
+.bh-p-makine.acil b { color: var(--kritik); }
+
+.bh-p-baslik {
+  font-family: inherit; font-size: var(--yazi-baslik); font-weight: 600;
+  color: var(--metin-2); padding-top: var(--b1);
 }
+.bh-p-bos { margin: 0; color: var(--metin-3); font-size: var(--yazi-kucuk); }
+.bh-kart {
+  background: var(--yuzey-2); border-radius: var(--yaricap-2); padding: var(--b2);
+  display: flex; flex-direction: column; gap: 4px;
+}
+.bh-kart.ertelendi { opacity: .62; }
+.bh-kart-bas { font-size: var(--yazi-govde); font-weight: 600; color: var(--metin); }
+.bh-kart-ac { margin: 0; font-size: var(--yazi-kucuk); color: var(--metin-2); }
+/* ÖLÇÜM İLE TAHMİN AYRI GÖRÜNÜR. */
+.bh-kanit { font-size: var(--yazi-kucuk); color: var(--metin-3); }
+.bh-kanit.tahmin { color: var(--uyari); }
+.bh-kart-dip { display: flex; gap: var(--b1); align-items: center; margin-top: 2px; }
+.bh-kart-dip button { flex: 1 1 auto; }
+.bh-kart-dip span { flex: 1 1 auto; font-size: var(--yazi-kucuk); color: var(--metin-3); }
+
+.bh-p-bitki {
+  background: var(--yuzey-2); border-radius: var(--yaricap-2); padding: var(--b2);
+  display: flex; flex-direction: column; gap: 6px;
+}
+.bh-p-bas { display: flex; align-items: center; gap: 6px; }
+.bh-p-simge { font-size: 18px; }
+.bh-p-ad { font-weight: 600; color: var(--metin); font-size: var(--yazi-govde); }
+.bh-p-tur { color: var(--metin-3); font-size: var(--yazi-kucuk); }
+.bh-p-olcu { margin: 0; padding: 0; list-style: none;
+             font-size: var(--yazi-kucuk); color: var(--metin-2); }
+.bh-p-olcu li { padding: 1px 0; font-variant-numeric: tabular-nums; }
+/* Nemin künyesi renkte de ayrışıyor — hiçbiri "ölçülmüş" gibi durmuyor. */
+.bh-p-olcu li.olculdu { color: var(--metin); }
+.bh-p-olcu li.odunc, .bh-p-olcu li.bayat { color: var(--uyari); }
+.bh-p-olcu li.yok { color: var(--metin-3); font-style: italic; }
+.bh-p-olcu li.susadi { color: var(--uyari); font-weight: 600; }
+.bh-p-olcu li.hasat { color: var(--iyi); }
+.bh-p-olcu li.sonuk { color: var(--metin-3); }
+.bh-p-dugme { display: grid; grid-template-columns: 1fr 1fr; gap: var(--b1); }
+.bh-p-dugme button.sade { grid-column: 1 / -1; border-color: transparent; color: var(--metin-3); }
+.bh-p-ekim {
+  background: rgba(74,144,226,.14); border-radius: var(--yaricap-2); padding: var(--b2);
+  font-size: var(--yazi-kucuk); color: var(--metin-2);
+}
+.bh-p-ekim b { display: block; color: var(--metin); }
+.bh-p-ekim p { margin: 4px 0; }
+.bh-p-ekim button { width: 100%; }
+
+/* ------------------------------------------------------------ tohum tepsisi */
+.bh-tepsi {
+  grid-area: tepsi; display: flex; align-items: center; gap: var(--b2);
+  padding: var(--b2) var(--b3); overflow-x: auto;
+  background: var(--yuzey); border-top: 1px solid var(--cizgi);
+}
+.bh-tepsi-bas, .bh-tepsi-not {
+  font-size: var(--yazi-kucuk); color: var(--metin-3); white-space: nowrap;
+}
+.bh-goz {
+  display: flex !important; flex-direction: column; align-items: flex-start;
+  height: auto !important; padding: 6px 10px !important; gap: 1px;
+  background: var(--yuzey-2) !important;
+}
+.bh-goz-ad { font-size: var(--yazi-kucuk); font-weight: 600; color: var(--metin); }
+.bh-goz-alt { font-size: 11px; color: var(--metin-3); font-variant-numeric: tabular-nums; }
+.bh-goz.secili { border-color: var(--vurgu) !important; }
+.bh-goz.secili .bh-goz-ad { color: var(--vurgu); }
+/* BOŞ HAZNE seçilemiyor ve sebebi görünüyor. */
+.bh-goz.bos { border-style: dashed !important; opacity: .7; }
+.bh-goz.bos .bh-goz-ad { color: var(--metin-3); font-weight: 400; font-style: italic; }
+.bh-tepsi-bos { font-size: var(--yazi-kucuk); color: var(--uyari); }
+
+/* --------------------------------------------------------- hata / not / alt */
+.bh-hata, .bh-not { grid-area: hata; padding: 6px var(--b3);
+                    font-size: var(--yazi-kucuk); line-height: 1.4; }
+.bh-hata { background: rgba(224,82,82,.16); color: #ffb9b9; }
 .bh-hata span { display: block; }
-.bh-not {
-  background: var(--yuzey-2);
-  color: var(--metin-2);
-  border-top: 1px solid var(--cizgi);
+.bh-not { background: var(--yuzey-2); color: var(--metin-2); }
+.bh-alt {
+  grid-area: alt; display: flex; align-items: center; gap: var(--b3);
+  padding: var(--b2) var(--b3); min-height: 48px;
+  background: var(--yuzey); border-top: 1px solid var(--cizgi);
 }
+.bh-a-metin { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
+.bh-a-metin b { color: var(--metin); font-size: var(--yazi-govde); }
+.bh-a-alt { font-size: var(--yazi-kucuk); color: var(--metin-3); }
+.bh-a-alt.vurgu { color: var(--uyari); }
+.bh-a-dugme { display: flex; gap: var(--b2); margin-left: auto; }
 
-/* -------------------------------------------------------- kimlik şeridi */
-.bh-kimlik {
-  flex: 0 0 auto;
-  display: flex;
-  align-items: center;
-  gap: var(--b3);
-  flex-wrap: wrap;
-  padding: var(--b2) var(--b3);
-  background: var(--yuzey);
-  border-top: 1px solid var(--cizgi);
-  min-height: 56px;
-}
-.bh-k-bos { flex: 1 1 auto; color: var(--metin-3); font-size: var(--yazi-kucuk); }
-.bh-k-bas { display: flex; align-items: center; gap: var(--b2); min-width: 0; }
-.bh-k-simge { font-size: 20px; line-height: 1; }
-.bh-k-ad { font-weight: 600; color: var(--metin); font-size: var(--yazi-govde); }
-.bh-k-tur { color: var(--metin-3); font-size: var(--yazi-kucuk); }
-/* Olgunluk çubuğu: sayı değil oran; yandan görünen boyla aynı şeyi söylüyor. */
-.bh-k-cubuk {
-  width: 70px; height: 4px; border-radius: 2px;
-  background: var(--yuzey-2); overflow: hidden;
-}
-.bh-k-cubuk i { display: block; height: 100%; background: var(--iyi); }
-
-.bh-k-olcu {
-  flex: 1 1 auto;
-  display: flex; flex-wrap: wrap; gap: var(--b2);
-  font-size: var(--yazi-kucuk);
-  color: var(--metin-2);
-  font-variant-numeric: tabular-nums;
-}
-.bh-ol b { color: var(--metin); }
-/* Nemin künyesi renkte de ayrılıyor: ölçüldü nötr, ödünç ve bayat uyarı,
-   ölçülmedi sönük — hiçbiri "ölçülmüş" gibi durmuyor. */
-.bh-ol.nem.olculdu { color: var(--metin); }
-.bh-ol.nem.odunc, .bh-ol.nem.bayat { color: var(--uyari); }
-.bh-ol.nem.yok, .bh-ol.yok { color: var(--metin-3); font-style: italic; }
-.bh-ol.susadi { color: var(--uyari); font-weight: 600; }
-.bh-ol.hasat { color: var(--iyi); }
-.bh-k-eylem { display: flex; gap: var(--b2); margin-left: auto; }
-.bh-kimlik button.sade { border-color: transparent; color: var(--metin-3); }
-
-/* ------------------------------------------------------------------- kip */
-/* `display` veren her kural tarayıcının `[hidden]{display:none}` kuralını
-   eziyor: kip gizliyken bile sahnenin üstünü kaplıyor ve bütün dokunmayı
-   yutuyordu. Gizleme kararı burada, tek yerde, yazılı. */
-#bh-kok [hidden] { display: none !important; }
-
-.bh-kip {
-  position: absolute; inset: 0;
-  display: flex; align-items: center; justify-content: center;
-  padding: var(--b3);
-  background: rgba(6, 8, 7, .72);
-  z-index: 5;
-}
-.bh-kip-ic {
-  width: min(560px, 100%);
-  max-height: 100%;
-  display: flex; flex-direction: column;
-  background: var(--yuzey);
-  border-radius: var(--yaricap);
-  box-shadow: var(--golge);
-  overflow: hidden;
-}
-.bh-kip-bas {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: var(--b3) var(--b3) var(--b2);
-  font-size: var(--yazi-baslik); font-weight: 600; color: var(--metin);
-}
-.bh-kip-bas button {
-  height: 28px; width: 28px; border: 0; background: none;
-  color: var(--metin-3); font-size: 18px; cursor: pointer;
-}
-.bh-kip-govde {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-  gap: var(--b2);
-  padding: 0 var(--b3);
-  overflow-y: auto;
-}
-.bh-tur {
-  display: grid !important;
-  grid-template-columns: auto 1fr;
-  grid-template-rows: auto auto;
-  gap: 2px var(--b2);
-  height: auto !important;
-  padding: var(--b2) !important;
-  text-align: left;
-}
-.bh-tur-simge { grid-row: 1 / 3; font-size: 22px; align-self: center; }
-.bh-tur-ad { color: var(--metin); font-weight: 600; }
-.bh-tur-cap { color: var(--metin-3); font-variant-numeric: tabular-nums; }
-.bh-tur-rozet { grid-column: 2; color: var(--iyi); font-size: 11px; }
-/* BOŞ HAZNE UYARISI: tohumu olmayan tür gizlenmiyor, işaretleniyor. */
-.bh-tur-rozet.uyari { color: var(--uyari); }
-.bh-tur.bos-hazne { opacity: .72; }
-.bh-kip-dip {
-  margin: 0; padding: var(--b2) var(--b3) var(--b3);
-  font-size: var(--yazi-kucuk); color: var(--metin-3);
-}
-.bh-bos { padding: 0 var(--b3) var(--b3); color: var(--metin-3); }
-
-.bh-onay-metin {
-  margin: 0; padding: 0 var(--b3) 0 calc(var(--b3) + 18px);
-  font-size: var(--yazi-govde); color: var(--metin-2); line-height: 1.55;
-}
-.bh-onay-uyari {
-  margin: var(--b2) var(--b3) 0;
-  padding: var(--b2);
-  border-radius: var(--yaricap-2);
-  background: rgba(217, 165, 32, .14);
-  color: var(--uyari);
-  font-size: var(--yazi-kucuk);
-}
-.bh-onay-dugme {
-  display: flex; justify-content: flex-end; gap: var(--b2);
-  padding: var(--b3);
-}
-.bh-onay-dugme button {
-  font: inherit; font-size: var(--yazi-kucuk); height: var(--alan-y);
-  padding: 0 var(--b3); border-radius: var(--yaricap-2);
-  border: 1px solid var(--cizgi-2); background: transparent;
-  color: var(--metin-2); cursor: pointer;
-}
-
-/* ------------------------------------------------------------- dar ekran
- * 800×480 ve telefon: şeritler iki satıra iniyor, tuval yüksekliği
- * korunuyor — kesit kısalırsa nem sütunu okunmaz olur. */
+/* -------------------------------------------------------------- dar ekran */
 @media (max-width: 720px) {
-  .bh-is { flex-wrap: wrap; }
-  .bh-is-orta { order: -1; flex-basis: 100%; }
-  .bh-k-eylem { margin-left: 0; }
-  .bh-kimlik { gap: var(--b2); }
+  /* Telefonda panel sahnenin ALTINA iniyor: izometrik yatak dar ekranda
+     yatay yeri paylaşmaya gelmiyor. */
+  .bh {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: "ust" "hata" "tuval" "tepsi" "panel" "alt";
+    grid-template-rows: auto auto minmax(200px, 1fr) auto auto auto;
+  }
+  .bh-panel { border-left: 0; border-top: 1px solid var(--cizgi); max-height: 42vh; }
 }
 @media (max-height: 520px) {
-  .bh-is, .bh-kimlik { padding-top: var(--b1); padding-bottom: var(--b1); }
-  /* ŞERİTLER TEK SATIR. Kesitin yüksekliği bu ekranda en kıt kaynak:
-     şerit ikinci satıra taşarsa nem sütunu ekrandan düşüyor. */
-  .bh-kimlik { min-height: 40px; flex-wrap: nowrap; overflow: hidden; }
-  .bh-k-bas, .bh-k-olcu { min-width: 0; flex-wrap: nowrap; overflow: hidden; }
-  .bh-k-ad, .bh-k-tur, .bh-k-olcu > * { white-space: nowrap; }
-  /* İlk iki ölçü (nem ve yaş) kalıyor, gerisi sahnede zaten yazılı. */
-  .bh-k-olcu > *:nth-child(n+3) { display: none; }
-  .bh-k-cubuk { display: none; }
-  /* Gerekçe SATIRI kalıyor — "tahmin" işareti dar ekranda da görünmeli;
-     yalnız tek satıra iniyor. */
-  .bh-is-neden { flex-wrap: nowrap; overflow: hidden; }
-  .bh-is-neden > * { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .bh-ust, .bh-alt, .bh-tepsi { padding-top: var(--b1); padding-bottom: var(--b1); }
+  .bh-alt { min-height: 40px; }
+  .bh { grid-template-columns: minmax(0, 1fr) 208px; }
 }
