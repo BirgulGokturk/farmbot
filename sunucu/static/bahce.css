@@ -93,7 +93,8 @@ button:disabled, button.asil:disabled {
 .bh-p-makine.yok, .bh-p-makine.acil { border-left-color: var(--kritik); }
 .bh-p-makine.acil b { color: var(--kritik); }
 
-/* Sahnenin havasi — her tepkinin KAYNAGI yazili, olmayan sensor de. */
+/* Bugun — ONCE BILINEN, sonra tek satirda bilinmeyen. Eksik sensor
+   bilgisi kalici bir dipnot: sonuk, kucuk, gozu tirmalamiyor. */
 .bh-p-hava {
   background: var(--yuzey-2); border-radius: var(--yaricap-2); padding: var(--b2);
   font-size: var(--yazi-kucuk); color: var(--metin-2);
@@ -104,6 +105,17 @@ button:disabled, button.asil:disabled {
 .bh-p-hava li { padding: 1px 0; font-variant-numeric: tabular-nums; }
 .bh-p-hava li b { color: var(--metin); }
 .bh-p-hava .yok { color: var(--metin-3); font-style: italic; }
+.bh-p-hava li.dipnot { margin-top: 4px; font-size: 11px; line-height: 1.35;
+                       border-top: 1px solid var(--cizgi); padding-top: 4px; }
+.bh-p-hava li.olculdu { color: var(--iyi); }
+/* Nem bir istatistik degil, bir GOREV: yapilacak is dugmesiyle duruyor. */
+.bh-p-hava li.gorev { color: var(--metin); margin-top: 4px; }
+.bh-p-hava li.gorev button { display: block; width: 100%; margin-top: 4px; }
+
+/* Panel ile sahne birbirini isaret ediyor. */
+.bh-p-bitki.vurgu, .bh-kart.vurgu {
+  outline: 2px solid var(--vurgu); outline-offset: 1px;
+}
 
 .bh-p-baslik {
   font-family: inherit; font-size: var(--yazi-baslik); font-weight: 600;
@@ -144,6 +156,9 @@ button:disabled, button.asil:disabled {
 .bh-p-olcu li.sonuk { color: var(--metin-3); }
 .bh-p-dugme { display: grid; grid-template-columns: 1fr 1fr; gap: var(--b1); }
 .bh-p-dugme button.sade { grid-column: 1 / -1; border-color: transparent; color: var(--metin-3); }
+.bh-p-dugme button[disabled] { opacity: .45; cursor: not-allowed; }
+/* Dugme kapaliysa SEBEBI hemen altinda yaziyor. */
+.bh-p-sebep { margin: 0; font-size: 11px; line-height: 1.35; color: var(--metin-3); }
 .bh-p-ekim {
   background: rgba(74,144,226,.14); border-radius: var(--yaricap-2); padding: var(--b2);
   font-size: var(--yazi-kucuk); color: var(--metin-2);
