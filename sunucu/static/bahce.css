@@ -8,7 +8,8 @@
  *   alt şerit  — onay ve sebep satırı
  *
  * Renk yalnız DURUM için (stil.css kuralı): eksen hazır/meşgul/kopuk,
- * ölçüm/tahmin, susadı/hasat. Sahnenin sıcak toprak paleti tuvalde.
+ * ölçüm/tahmin, susadı/hasat. Sahnenin sıcak toprak paleti tuvalde;
+ * kabuk koyu kalıyor ki tarla ondan ayrılsın.
  */
 
 /* ------------------------------------------------------------------ kabuk */
@@ -28,7 +29,9 @@ body.bahce-acik #sayfa-bahce { height: 100%; }
     "tuval  panel"
     "tepsi  panel"
     "alt    alt";
-  background: #24190f;
+  /* Sahnenin dışı: tuvalin koyu zeminiyle aynı aile. Eski çamur
+     kahvesi kalktı — tarla artık zeminden ayrılıyor. */
+  background: #171021;
   border-radius: var(--yaricap);
   overflow: hidden;
 }
