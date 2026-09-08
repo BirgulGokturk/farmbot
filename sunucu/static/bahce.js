@@ -275,7 +275,7 @@ window.Bahce = (function () {
    * yakınlaştırdıysa otomatik kadraj susuyor; çift tıklama onu geri açar.
    * ==================================================================== */
   var G = { tw: 40, th: 20, ox: 0, oy: 0, nx: 11, ny: 13, s: null,
-            kam: null, hedef: null, elle: false };
+            kam: null, hedef: null, elle: false, kayiyor: false };
   var PAY_X = 16, PAY_UST = 46, PAY_ALT = 22;
 
   /* Yatağın kenar kalınlığı: ÖLÇÜ DEĞİL, çizim kuralı. Toprak derinliği
@@ -626,11 +626,16 @@ window.Bahce = (function () {
   });
 
   /* ==================================================================== *
-   * TÜR BİÇİMLERİ — üstten siluet + kök tipi (kök adı künyede yazıyor).
+   * AİLE TABLOSU — YEDEK YOL, artık birincil değil.
+   *
+   * Bu tablo 37 türü 5 üst biçime indiriyor; kimlik için tek başına
+   * yetmiyordu (marul, roka ve semizotu aynı "rozet"ten geçiyordu).
+   * Türün kendi çizicisi varsa `TUR_CIZER` kazanıyor; bu tablo yalnız
+   * çizicisi olmayan türler için ve HER TÜRDE kök tipi için okunuyor.
    *
    * Biçim bir ÖLÇÜ değil: katalog türün biçimini biliyor, boyu gerçek
-   * veriden (`yaricap_mm`) geliyor. Tür tanınmıyorsa uydurma bir havuç
-   * çizilmiyor — kesik çizgili jenerik öbek ve "tür tanınmadı".
+   * veriden (`yaricap_mm`) geliyor. Tür tabloda hiç yoksa uydurma bir
+   * havuç çizilmiyor — kesik çizgili jenerik öbek ve "tür tanınmadı".
    * ==================================================================== */
   var TUR_BICIM = {
     marul: ["rozet", "sacak"], lahana: ["rozet", "sacak"], ispanak: ["rozet", "sacak"],
@@ -656,11 +661,18 @@ window.Bahce = (function () {
   function bicimSec(b) {
     var slug = String((b && b.tur) || "").toLowerCase();
     var t = TUR_BICIM[slug];
-    if (t) return { ust: t[0], kok: t[1], bilinen: true, slug: slug };
-    return { ust: "bilinmiyor", kok: "bilinmiyor", bilinen: false, slug: slug };
+    /* `ozel`: türün KENDİ çizicisi var mı. Aile (t) yedek yol. */
+    if (t) return { ust: t[0], kok: t[1], bilinen: true, slug: slug,
+                    ozel: !!TUR_CIZER[slug] };
+    return { ust: "bilinmiyor", kok: "bilinmiyor", bilinen: false, slug: slug,
+             ozel: false };
   }
   var YESIL = { r: 104, g: 168, b: 72 };
   var KONTUR = "rgba(20,42,14,.95)";
+  /* Bu yarıçapın altında hiçbir siluet okunmuyor — yaprak sayısı, kenar
+     biçimi, hepsi tek bir yeşil lekeye dönüşüyor. Çizim tabanı, ölçü
+     iddiası değil. */
+  var OKUNUR_TABAN = 13;
 
   /** Tek yaprak: dolu gövde, KALIN koyu kontur, sol üst ışık dilimi.
    *  Kontur bu sahnenin çizim dili — siluet uzaktan da okunuyor. */
@@ -721,13 +733,280 @@ window.Bahce = (function () {
     }
   }
 
+  /* ==================================================================== *
+   * TÜRE ÖZEL SİLUETLER — BİRİNCİL YOL.
+   *
+   * `TUR_BICIM` bir AİLE tablosu: 37 tür, 5 üst biçim. Marul, roka ve
+   * semizotu aynı "rozet" fonksiyonundan geçiyordu; havuçla maydanoz aynı
+   * "tüy"den. Ekranda üç tür tek türe benziyordu.
+   *
+   * Artık önce `TUR_CIZER`e bakılıyor: türün kendi çizicisi varsa o
+   * çiziliyor. Aile YEDEK yol — çizicisi olmayan türler eski biçimlerini
+   * kullanmaya devam ediyor, tabloda hiç olmayan tür ise jenerik kesik
+   * çizgili öbek + "tür tanınmadı" (uydurma havuç yok).
+   *
+   * FİDEYKEN DE OKUNSUN: bu bahçedeki bitkiler 7 günlük ve yaricap_mm 15.
+   * O yüzden ayırt edici şey yaprak SAYISI, KENAR BİÇİMİ, DURUŞ ve TON —
+   * boyut değil. Her çizici az sayıda ve iri parça kullanıyor; kontur
+   * kalınlığı yarıçapa göre değil, en az 1,5 piksel.
+   * ==================================================================== */
+
+  /** Kıvrımlı (dalgalı) kenarlı yaprak — marulun kenarı bu, rokanın değil. */
+  function yaprakDalgali(x, uz, en, ic, dis, dalga) {
+    var q, t2, k, xx, yy;
+    x.beginPath();
+    for (q = 0; q <= 26; q++) {
+      t2 = q / 26;
+      k = Math.sin(t2 * Math.PI) * en * (1 + Math.sin(t2 * Math.PI * dalga) * 0.22);
+      xx = uz * t2; yy = -k;
+      if (q === 0) x.moveTo(xx, yy); else x.lineTo(xx, yy);
+    }
+    for (q = 26; q >= 0; q--) {
+      t2 = q / 26;
+      k = Math.sin(t2 * Math.PI) * en * (1 + Math.sin(t2 * Math.PI * dalga + 1.7) * 0.22);
+      x.lineTo(uz * t2, k);
+    }
+    x.closePath();
+    var g = x.createLinearGradient(0, -en, uz, en);
+    g.addColorStop(0, ic); g.addColorStop(1, dis);
+    x.fillStyle = g; x.fill();
+    x.strokeStyle = KONTUR; x.lineWidth = Math.max(1.5, en * 0.2);
+    x.lineJoin = "round"; x.stroke();
+    x.strokeStyle = "rgba(24,50,16,.45)"; x.lineWidth = Math.max(0.8, en * 0.1);
+    x.beginPath(); x.moveTo(uz * 0.06, 0); x.lineTo(uz * 0.92, 0); x.stroke();
+  }
+
+  /** DERİN LOBLU yaprak — rokanın imzası. Sap uzun, ayanın iki yanında
+   *  keskin dilimler, uçta daha büyük bir lob. Marulun yuvarlak kenarının
+   *  tam tersi. */
+  function yaprakLoblu(x, sap, uz, en, ic, dis) {
+    var i, adet = 3, x0 = sap, boyu = uz - sap;
+    x.strokeStyle = KONTUR; x.lineWidth = Math.max(1.5, en * 0.22); x.lineCap = "round";
+    x.beginPath(); x.moveTo(0, 0); x.lineTo(sap, 0); x.stroke();
+    x.beginPath();
+    x.moveTo(x0, 0);
+    for (i = 0; i < adet; i++) {
+      var t1 = i / adet, t2 = (i + 0.5) / adet;
+      x.lineTo(x0 + boyu * t1, -en * (0.5 + t1 * 0.34));
+      x.lineTo(x0 + boyu * t2, -en * 0.1);           /* dilim arası: derin oyuk */
+    }
+    x.lineTo(uz, -en * 0.72);                        /* uç lobu daha büyük */
+    x.lineTo(uz + boyu * 0.16, 0);
+    x.lineTo(uz, en * 0.72);
+    for (i = adet - 1; i >= 0; i--) {
+      var s1 = (i + 0.5) / adet, s2 = i / adet;
+      x.lineTo(x0 + boyu * s1, en * 0.1);
+      x.lineTo(x0 + boyu * s2, en * (0.5 + s2 * 0.34));
+    }
+    x.closePath();
+    var g = x.createLinearGradient(x0, -en, uz, en);
+    g.addColorStop(0, ic); g.addColorStop(1, dis);
+    x.fillStyle = g; x.fill();
+    x.strokeStyle = KONTUR; x.lineWidth = Math.max(1.5, en * 0.2);
+    x.lineJoin = "round"; x.stroke();
+    x.strokeStyle = "rgba(24,50,16,.5)"; x.lineWidth = Math.max(0.8, en * 0.1);
+    x.beginPath(); x.moveTo(x0, 0); x.lineTo(uz, 0); x.stroke();
+  }
+
+  /* --------------------------------------------------------- MARUL
+   * Geniş, kıvrımlı kenarlı, SIKI rozet; ortada açık yeşil göbek.
+   * Yapraklar birbirine değiyor — aralarında toprak görünmüyor. */
+  function cizMarul(x, R, yes, tur, r) {
+    var n, i, kat, adet;
+    var koyu = ton(yes, -0.3), acik = ton(yes, 0.34);
+    for (n = 3; n >= 1; n--) {
+      kat = n / 3; adet = n === 3 ? 9 : (n === 2 ? 7 : 5);
+      for (i = 0; i < adet; i++) {
+        x.save();
+        x.rotate((i / adet) * Math.PI * 2 + n * 0.62 + r() * 0.14);
+        yaprakDalgali(x, R * kat * (0.94 + r() * 0.12), R * kat * 0.44,
+          rgba(n === 1 ? acik : yes, 1), rgba(n === 3 ? koyu : yes, 1), 3);
+        x.restore();
+      }
+    }
+    /* GÖBEK: rozetin ortası açık, sıkı sarılmış. */
+    x.beginPath(); x.arc(0, 0, R * 0.2, 0, 6.3);
+    x.fillStyle = rgba(ton(acik, 0.28), 1); x.fill();
+    x.strokeStyle = KONTUR; x.lineWidth = Math.max(1.4, R * 0.05); x.stroke();
+    x.strokeStyle = "rgba(238,252,196,.6)"; x.lineWidth = Math.max(0.9, R * 0.03);
+    for (i = 0; i < 3; i++) {
+      x.beginPath(); x.arc(0, 0, R * (0.07 + i * 0.05), 0.5 + i, 3.4 + i); x.stroke();
+    }
+  }
+
+  /* ---------------------------------------------------------- ROKA
+   * Uzun saplı, DERİN LOBLU yapraklar; seyrek duruyor, aralarından toprak
+   * görünüyor. Marulun tam tersi bir kenar. */
+  function cizRoka(x, R, yes, tur, r) {
+    var i, adet = 6;
+    var koyu = ton(yes, -0.26), acik = ton(yes, 0.18);
+    for (i = 0; i < adet; i++) {
+      x.save();
+      x.rotate((i / adet) * Math.PI * 2 + r() * 0.3);
+      yaprakLoblu(x, R * 0.28, R * (0.94 + r() * 0.12), R * 0.46,
+        rgba(i % 2 ? acik : yes, 1), rgba(koyu, 1));
+      x.restore();
+    }
+    x.beginPath(); x.arc(0, 0, R * 0.1, 0, 6.3);
+    x.fillStyle = rgba(koyu, 1); x.fill();
+  }
+
+  /* ------------------------------------------------------ SEMİZOTU
+   * Küçük, KALIN, etli, parlak YUVARLAK yapraklar; sürünen duruş —
+   * rozetten alçak ve dağınık, ortası boş değil ama merkeze toplanmıyor. */
+  function cizSemizotu(x, R, yes, tur, r) {
+    var i, q, adet = 5;
+    var koyu = ton(yes, -0.22), acik = ton(yes, 0.3);
+    var sap = { r: 178, g: 96, b: 74 };            /* semizotunun kırmızımsı sapı */
+    for (i = 0; i < adet; i++) {
+      var a = (i / adet) * Math.PI * 2 + r() * 0.4;
+      var uz = R * (0.5 + r() * 0.3);
+      x.save(); x.rotate(a);
+      x.strokeStyle = rgba(sap, 1); x.lineWidth = Math.max(1.6, R * 0.09);
+      x.lineCap = "round";
+      x.beginPath(); x.moveTo(0, 0); x.lineTo(uz, 0); x.stroke();
+      /* Sapın ucunda üç etli yaprak — hepsi yuvarlak, hiçbiri sivri. */
+      for (q = 0; q < 3; q++) {
+        var ay = (q - 1) * 0.75, yr = R * (0.2 + r() * 0.06);
+        var yx = uz + Math.cos(ay) * R * 0.14, yy = Math.sin(ay) * R * 0.2;
+        x.beginPath(); x.arc(yx, yy, yr, 0, 6.3);
+        x.fillStyle = rgba(q === 1 ? yes : koyu, 1); x.fill();
+        x.strokeStyle = KONTUR; x.lineWidth = Math.max(1.5, yr * 0.28); x.stroke();
+        /* ETLİ VE PARLAK: her yaprağın sol üstünde tek bir parlama. */
+        x.beginPath();
+        x.arc(yx - yr * 0.3, yy - yr * 0.34, yr * 0.32, 0, 6.3);
+        x.fillStyle = rgba(ton(acik, 0.4), 0.75); x.fill();
+      }
+      x.restore();
+    }
+  }
+
+  /* ------------------------------------------------------- MAYDANOZ
+   * ÜÇE BÖLÜNMÜŞ kıvırcık yaprak, kısa ve sık sap. Havuçtan farkı:
+   * havuç iplik gibi ve seyrek, maydanoz dolu ve kıvırcık. */
+  function cizMaydanoz(x, R, yes, tur, r) {
+    var i, q, adet = 5;
+    var koyu = ton(yes, -0.3), acik = ton(yes, 0.18);
+    for (i = 0; i < adet; i++) {
+      var a = (i / adet) * Math.PI * 2 + r() * 0.24;
+      /* SAP UZUN VE GÖRÜNÜR: marulun sıkı rozetiyle karışmasın diye
+         ayacıklar merkezden ayrı duruyor, aralarından toprak görünüyor. */
+      var sap = R * (0.5 + r() * 0.1);
+      x.save(); x.rotate(a);
+      x.strokeStyle = KONTUR; x.lineWidth = Math.max(1.8, R * 0.08); x.lineCap = "round";
+      x.beginPath(); x.moveTo(0, 0); x.lineTo(sap, 0); x.stroke();
+      x.strokeStyle = rgba(acik, 1); x.lineWidth = Math.max(1, R * 0.04);
+      x.stroke();
+      /* ÜÇE BÖLÜNMÜŞ kıvırcık ayacık: üç ayrı yaprakçık, aralarında boşluk. */
+      for (q = -1; q <= 1; q++) {
+        x.save();
+        x.translate(sap, 0);
+        x.rotate(q * 0.82);
+        yaprakDalgali(x, R * (0.34 + r() * 0.08), R * 0.15,
+          rgba(q === 0 ? acik : yes, 1), rgba(koyu, 1), 6);
+        x.restore();
+      }
+      x.restore();
+    }
+  }
+
+  /* ---------------------------------------------------------- HAVUÇ
+   * ÇOK İNCE, iplik gibi, SEYREK ve yüksek tüy. Dolu yaprak yok; sahne
+   * ipliklerin arasından görünüyor. Maydanozla karışmaması bundan. */
+  function cizHavuc(x, R, yes, tur, r) {
+    var i, q, adet = 5;
+    var acik = ton(yes, 0.3);
+    for (i = 0; i < adet; i++) {
+      var a = (i / adet) * Math.PI * 2 + r() * 0.5;
+      var uz = R * (0.9 + r() * 0.22);
+      x.save(); x.rotate(a);
+      /* Ana sap: koyu kontur + ince açık çizgi. Kalınlık yarıçapla değil,
+         okunaklılıkla sınırlı — 15 mm'lik fidede de görünüyor. */
+      x.lineCap = "round";
+      x.strokeStyle = KONTUR; x.lineWidth = Math.max(1.8, R * 0.055);
+      x.beginPath(); x.moveTo(0, 0);
+      x.quadraticCurveTo(uz * 0.55, -R * 0.14, uz, -R * 0.06); x.stroke();
+      x.strokeStyle = rgba(acik, 1); x.lineWidth = Math.max(0.9, R * 0.026);
+      x.stroke();
+      /* İplikler: karşılıklı, uca doğru kısalan, çok ince. */
+      for (q = 1; q <= 7; q++) {
+        var t2 = q / 8, px = uz * t2, py = -R * 0.14 * Math.sin(t2 * 3.1);
+        var boyu = R * 0.26 * (1 - t2 * 0.55);
+        x.strokeStyle = rgba(q % 2 ? acik : yes, 0.95);
+        x.lineWidth = Math.max(0.9, R * 0.022);
+        x.beginPath(); x.moveTo(px, py); x.lineTo(px + boyu * 0.35, py - boyu); x.stroke();
+        x.beginPath(); x.moveTo(px, py); x.lineTo(px + boyu * 0.35, py + boyu); x.stroke();
+      }
+      x.restore();
+    }
+  }
+
+  /* ------------------------------------------------------- FESLEĞEN
+   * KARŞILIKLI, iri, oval, hafif kabarık yaprak ÇİFTLERİ. Dört yaprak,
+   * hepsi büyük — az parça, iri siluet: en küçük boyda bile ayırt edilir. */
+  function cizFeslegen(x, R, yes, tur, r) {
+    var n, i;
+    var koyu = ton(yes, -0.3), acik = ton(yes, 0.16);
+    for (n = 2; n >= 1; n--) {
+      for (i = 0; i < 2; i++) {
+        var a = i * Math.PI + (n === 2 ? 0 : Math.PI / 2);
+        var uz = R * (n === 2 ? 0.95 : 0.66);
+        var en = R * (n === 2 ? 0.4 : 0.3);
+        x.save(); x.rotate(a + (r() - 0.5) * 0.14);
+        x.beginPath();
+        x.moveTo(R * 0.1, 0);
+        x.bezierCurveTo(uz * 0.35, -en, uz * 0.82, -en * 0.72, uz, 0);
+        x.bezierCurveTo(uz * 0.82, en * 0.72, uz * 0.35, en, R * 0.1, 0);
+        x.closePath();
+        var g = x.createLinearGradient(0, -en, uz, en);
+        g.addColorStop(0, rgba(n === 2 ? yes : acik, 1));
+        g.addColorStop(1, rgba(koyu, 1));
+        x.fillStyle = g; x.fill();
+        x.strokeStyle = KONTUR; x.lineWidth = Math.max(1.7, en * 0.26);
+        x.lineJoin = "round"; x.stroke();
+        /* KABARIK: orta damar boyunca parlak bir sırt. */
+        x.strokeStyle = "rgba(226,252,190,.5)"; x.lineWidth = Math.max(1, en * 0.14);
+        x.beginPath(); x.moveTo(R * 0.16, 0); x.lineTo(uz * 0.88, 0); x.stroke();
+        x.strokeStyle = "rgba(24,50,16,.4)"; x.lineWidth = Math.max(0.8, en * 0.08);
+        for (var q = 1; q <= 3; q++) {
+          var t2 = q / 4;
+          x.beginPath();
+          x.moveTo(uz * t2, 0);
+          x.lineTo(uz * (t2 + 0.16), -en * 0.5 * (1 - t2)); x.stroke();
+          x.beginPath();
+          x.moveTo(uz * t2, 0);
+          x.lineTo(uz * (t2 + 0.16), en * 0.5 * (1 - t2)); x.stroke();
+        }
+        x.restore();
+      }
+    }
+  }
+
+  /* Tür → çizici. Aile tablosu artık YEDEK; birincil yol bu. */
+  var TUR_CIZER = {
+    marul: cizMarul, roka: cizRoka, semizotu: cizSemizotu,
+    maydanoz: cizMaydanoz, havuc: cizHavuc,
+    feslegen: cizFeslegen, "fesleğen": cizFeslegen
+  };
+  /* Türe özel ton kaydırması: yan yana duran iki tür renkte de ayrılsın.
+     Renk katalogdan geliyor; bu yalnız okunaklılık için. */
+  var TUR_TON = { marul: 0.3, roka: -0.06, semizotu: 0.14,
+                  maydanoz: -0.16, havuc: 0.32, feslegen: -0.34, "fesleğen": -0.34 };
+
   /* ÜST BİÇİMLER — yan yana duran iki tür karıştırılmasın diye her biri
      yaprak SAYISI, DURUŞU, DOKUSU ve TONUYLA ayrılıyor. Renk katalogdan
      geliyor; buradaki kaydırma yalnız biçimin okunması için. */
   var BICIM_TON = { rozet: 0.16, tuy: 0.26, bicak: -0.08, cift: -0.26,
                     genis: -0.16, bas: 0.06, turp: 0.2, bilinmiyor: 0 };
 
+  /** `bic` bir BİÇİM NESNESİ: önce türün kendi çizicisine bakılıyor,
+   *  yoksa ailenin üst biçimine düşülüyor. */
   function spriteCiz(x, bic, R, yes, tur, r) {
+    var ozel = TUR_CIZER[bic.slug];
+    if (ozel) { ozel(x, R, yes, tur, r); return; }
+    aileCiz(x, bic.ust, R, yes, tur, r);
+  }
+  function aileCiz(x, bic, R, yes, tur, r) {
     var i, n, a, q;
     var koyu = ton(yes, -0.34), acik = ton(yes, 0.3);
     var trenk = hexRGB((tur && tur.renk) || "#f4a259");
@@ -761,8 +1040,9 @@ window.Bahce = (function () {
         }
         x.restore();
       }
-      /* Havucun toprak üstünde görünen turuncu omzu. */
-      omuz(x, R, trenk, 0.2, true);
+      /* Ailede omuz YOK: dereotunun toprak üstünde turuncu bir omzu
+         olmaz. Havucun kendi çizicisi var, o da omuz çizmiyor —
+         7 günlük fidede görünür bir kök omzu yok. */
     } else if (bic === "bicak") {
       /* SOĞAN/PIRASA/MISIR: uzun, dar, dimdik şeritler. Yalnız yedi tane
          ve hepsi neredeyse aynı boyda — kümelenmiş değil, dizilmiş. */
@@ -865,35 +1145,29 @@ window.Bahce = (function () {
       x.setLineDash([]);
     }
   }
-  /** Bitkinin büyüme oranı 0..1 — GERÇEK VERİDEN: sunucu `olgunluk`
-   *  gönderiyor, yoksa yaş/olgunluk gününden. İkisi de yoksa büyüme
-   *  bilinmiyor demektir ve fide boyu çiziliyor. */
-  function buyume(b) {
-    if (b.olgunluk != null) return kis(sayi(b.olgunluk), 0, 1);
-    var o = sayi(b.olgun_gun, 0);
-    if (o > 0) return kis(sayi(b.yas_gun, 0) / o, 0, 1);
-    return 0.35;
-  }
   function spriteAl(b) {
     var cap = sayi(b.yaricap_mm, 0) * 2 || sayi(b.yayilim_mm, 60);
     /* ÇİZİM ÇAPI ÜST SINIRLI: gerçek yayılım (marul 250 mm) yatağı yutar.
        Ölçü kaybolmuyor — seçili bitkide gerçek yayılım çember olarak
        ayrıca çiziliyor ve künyede mm yazıyor. */
-    var tam = kis((cap / KARO_MM) * G.tw / 2, 9, G.tw * 0.72);
-    /* BOY YAŞLA BÜYÜYOR ama tür kimliği fideyken de okunsun diye yarıdan
-       başlıyor: 0,52 → 1,0. Dört kademeye yuvarlanıyor, yoksa her gün
-       yeni bir sprite pişerdi. */
-    var g = Math.round(buyume(b) * 4) / 4;
-    var R = Math.max(9, tam * (0.52 + 0.48 * g));
+    /* BOY YALNIZ `yaricap_mm`DEN. Buraya bir de yaş/olgunluk çarpanı
+       konmuştu; `yaricap_mm` zaten bitkinin ölçülen yarıçapı, çarpan onu
+       ikinci kez küçültüyordu. Sahte fark üretmemek için kalktı.
+       OKUNUR_TABAN bir boyut iddiası DEĞİL: bu yarıçapın altında hiçbir
+       siluet ayırt edilemiyor, o yüzden çizim tabanı. Gerçek yarıçap
+       kaybolmuyor — künyede mm olarak yazıyor. */
+    var tam = kis((cap / KARO_MM) * G.tw / 2, OKUNUR_TABAN, G.tw * 0.72);
+    var R = tam;
     var bic = bicimSec(b);
     /* SPRITE YARIÇAPI KADEMELİ. Yakınlaştırma G.tw'yi sürekli değiştiriyor;
        her adımda 24 sprite'ı yeniden pişirmek zoom'u kilitliyordu (ölçülen:
        kare 7 ms, en uzun 84 ms). Yarıçap %18'lik kademelere yuvarlanıyor,
        aradaki fark çizerken ölçekleniyor: bir zoom serisinde sprite en çok
        birkaç kez pişiyor. */
-    var Rq = Math.max(9, Math.pow(1.18, Math.round(Math.log(R) / Math.log(1.18))));
+    var Rq = Math.max(OKUNUR_TABAN, Math.pow(1.18, Math.round(Math.log(R) / Math.log(1.18))));
     var olcek = R / Rq;
-    var ah = bic.ust + "|" + (b.tur || "?") + "|" + Rq.toFixed(1) + "|" + Math.round(S.dpr * 10);
+    var ah = (bic.ozel ? bic.slug : bic.ust) + "|" + (b.tur || "?") + "|"
+      + Rq.toFixed(1) + "|" + Math.round(S.dpr * 10);
     if (S.sprite[ah]) return sprOlcekle(S.sprite[ah], R, olcek);
     var boy = Math.ceil(Rq * 2 + 10);
     var c = document.createElement("canvas");
@@ -905,11 +1179,14 @@ window.Bahce = (function () {
     x.scale(1, ISO_ORAN);                   /* üstten bakış izometriğe oturuyor */
     /* Tür rengi katalogdan; biçime göre küçük bir ton kaydırması yan yana
        duran iki türü birbirinden ayırıyor. */
-    var yes = ton(karis(hexRGB(b.renk || "#7bbf5a"), YESIL, 0.62), BICIM_TON[bic.ust] || 0);
-    spriteCiz(x, bic.ust, Rq, yes, { renk: b.renk },
+    /* Ton: türün kendi kaydırması varsa o, yoksa ailenin. */
+    var kay = TUR_TON[bic.slug];
+    if (kay === undefined) kay = BICIM_TON[bic.ust] || 0;
+    var yes = ton(karis(hexRGB(b.renk || "#7bbf5a"), YESIL, 0.62), kay);
+    spriteCiz(x, bic, Rq, yes, { renk: b.renk },
       uretec(Math.floor(tohum(b.tur || b.ad) * 4294967295)));
     var s = { tuval: c, tamEn: boy, en: boy, boy: boy * ISO_ORAN, R: Rq,
-              bicim: bic, buyume: g };
+              bicim: bic };
     var say = 0; for (var kk in S.sprite) say++;
     if (say > 120) S.sprite = {};
     S.sprite[ah] = s;
@@ -1959,9 +2236,10 @@ window.Bahce = (function () {
     c.clearRect(0, 0, S.en, S.boy);
     /* DEĞİŞMEYEN BÖLGE: zemin bir kez çiziliyor, kare başına tek
        drawImage. Yalnız kadraj kıpırdayınca yeniden çiziliyor. */
-    var zd = zeminDonusum(gest.etkin);
+    var donuk = gest.etkin || G.kayiyor;
+    var zd = zeminDonusum(donuk);
     if (!zd) { zeminCiz(); zd = zeminDonusum(false); }
-    if (gest.etkin) { c.fillStyle = P_DIS2; c.fillRect(0, 0, S.en, S.boy); }
+    if (donuk) { c.fillStyle = P_DIS2; c.fillRect(0, 0, S.en, S.boy); }
     if (zd) c.drawImage(S.zemin, 0, 0, S.zemin.width, S.zemin.height, zd.e, zd.f, zd.w, zd.h);
     izCiz(c);
     uzerindeCiz(c);
@@ -2027,8 +2305,12 @@ window.Bahce = (function () {
         if (Math.abs(S.bildirilen.y - S.ciz.y) < 0.4) S.ciz.y = S.bildirilen.y;
       }
     }
-    /* Kadraj hedefe kayıyorsa zemin de onunla yeniden çiziliyor. */
-    if (kameraGuncelle(dt)) { zeminCiz(); S.kirli = true; }
+    /* KADRAJ KAYARKEN ZEMİN DONDURULUYOR. Eskiden her karede yeniden
+       çiziliyordu: açılıştaki kadraj animasyonunda kare 37 ms'ye
+       çıkıyordu (6 bitkilik sahnede ölçüldü). Artık hareket bitince bir
+       kez çiziliyor — tekerlekteki davranışın aynısı. */
+    if (kameraGuncelle(dt)) { G.kayiyor = true; S.kirli = true; }
+    else if (G.kayiyor) { G.kayiyor = false; zeminCiz(); S.kirli = true; }
     hayatGuncelle(dt);
     efektGuncelle(dt);
 
@@ -2522,7 +2804,12 @@ window.Bahce = (function () {
         + (b.hasat ? '<li class="hasat">hasada hazır — toplayınca yataktan düşür</li>' : "")
         + '<li class="sonuk">' + kacisli(KOK_ADI[bic.kok] || KOK_ADI.bilinmiyor)
         + (bic.bilinen ? " · tür biçimi, ölçülmedi" : "") + "</li>"
-        + (bic.bilinen ? "" : '<li class="susadi">tür tanınmadı — jenerik biçim çiziliyor</li>')
+        /* Siluetin nereden geldiği yazılı: türün kendi çizimi mi, yoksa
+           aile biçimi mi. Kullanıcı "bu neden şuna benziyor" diye
+           sorduğunda cevabı burada. */
+        + (bic.bilinen
+          ? '<li class="sonuk">siluet: ' + (bic.ozel ? "türe özel" : "aile biçimi (" + kacisli(bic.ust) + ")") + "</li>"
+          : '<li class="susadi">tür tanınmadı — jenerik biçim çiziliyor</li>')
         + (S.gecmis && S.gecmis.egilim
           ? "<li>" + S.gecmis.egilim.adet + " ölçüm · "
             + (sayi(S.gecmis.egilim.degisim) > 0 ? "+" : "")
