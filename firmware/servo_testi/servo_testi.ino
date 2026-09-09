@@ -1,44 +1,49 @@
 /*
- * Servo testi — uç seçici, MİKROSANİYE ve RAMPA ile
- * -------------------------------------------------
- * NEDEN DERECE DEĞİL. `Servo.write(0..180)` kütüphanenin uydurduğu bir
- * eşleme: varsayılanı 544-2400 µs. Servonun gerçek aralığı bu değilse
- * uçlarda mekanik durdurucuya dayanıyor, arada kalan açılar da kayıyor.
- * Sahada görülen belirti buydu: üç durak yerine iki uç arasında gidip
- * gelme. Telde giden şey mikrosaniye; ölçülecek ve saklanacak olan da o.
+ * Servo testi — SÜREKLİ DÖNÜŞLÜ servo, zamanlı hareket
+ * ----------------------------------------------------
+ * SAHADA ÖLÇÜLDÜ: bu servo sürekli dönüşlü (continuous rotation).
+ * Darbe genişliği KONUMU değil HIZI söylüyor:
+ *     1500 µs  -> dur
+ *     < 1500   -> bir yön, uzaklaştıkça hızlanır
+ *     > 1500   -> öteki yön
+ * Belirtiler bunu doğruladı: "0'dan 180'e gitmiyor, iki noktada gidip
+ * geliyor" (iki konum değil, iki YÖN) ve 1500'ün az dışında bırakınca
+ * durmadan dönmesi.
  *
- * NEDEN RAMPA. Hobi servosunun hız ayarı YOK: komut verildiği anda
- * hedefe tam hızla gider. Yavaşlatmanın tek yolu hedefi küçük adımlarla
- * kaydırmak. `hedef` istenen yer, `us` o an gerçekten yazılan değer;
- * `us` hedefe `hizUsSn` µs/saniye hızıyla yürüyor.
+ * KONUM ZAMANLA ÖLÇÜLÜYOR. Sürekli dönüşlü servoda konum = hız x süre.
+ * Bu taslak tam olarak bunu yapıyor: seçilen hızda seçilen süre kadar
+ * döndürüp kesiyor. "90 derece kaç saniye sürüyor" sorusunu masa
+ * başında ölçmek için.
  *
- * SERVO KONUM BİLDİRMİYOR. Potansiyometreyi kendi içinde okuyor, dışarı
- * söylemiyor. "Şu an 90 derecede" diyemeyiz, ancak "1500 µs komut ettik"
- * diyebiliriz. Panelde de böyle yazılacak.
- *
- * İKİ UÇ. Şu an iki konum aranıyor. Üçüncüsü gerekirse UC_SAYI ile
- * birlikte tur döngüsü de büyüyor.
+ * BİLİNMESİ GEREKEN SINIR — bu bir ÖLÇÜM DEĞİL, AÇIK ÇEVRİM.
+ * Servo nerede olduğunu söylemiyor ve zamanla konumlandırma KAYIYOR:
+ * besleme gerilimi, yük, sıcaklık ve motorun kalkış/duruş gecikmesi her
+ * seferinde biraz farklı bir açı veriyor. Birkaç turdan sonra uçlar
+ * yerinden kayar. Kalıcı çözüm için ya her uç konumuna bir anahtar
+ * (index) koymak ya da standart konumlu servoya geçmek gerekiyor.
+ * Şimdilik ölçüyoruz; kayma miktarını da ölçeceğiz.
  *
  * TESİSAT
  *   D9   servo sinyali
  *   Besleme AYRI 5V + ortak toprak. Yük altında 0,5-1 A çekiyor.
  *
- * STALL UYARISI: mil mekanik durdurucuya dayandığında motor zorlamaya
- * devam eder, akım fırlar, dişli sıyrılabilir. Servo VIZILDAMAYA başlarsa
- * ya da mil kımıldamayı bırakırsa HEMEN geri gelin (a / A).
- *
  * KOMUTLAR (seri ekran, 9600 baud)
- *   a / d     -25 / +25 µs    ince ayar
- *   A / D    -100 / +100 µs   kaba ayar
- *   q w       o anki değeri 1., 2. uç olarak KAYDET
- *   1 2       kayıtlı uca git
- *   t / x     tur başlat / durdur
- *   p         kayıtlı değerleri yazdır
- *   m         ortaya dön (1500 µs)
- *   + / -     durakta bekleme süresi  +-1 sn
- *   y / h     yavaşlat / hızlandır    (rampa hızı)
+ *   g         İLERİ  yönde `sure` ms dön, sonra dur
+ *   f         GERİ   yönde `sure` ms dön, sonra dur
+ *   s         hemen dur
+ *   + / -     süreyi 50 ms artır / azalt
+ *   h / y     hızı artır / azalt (1500'den uzaklık)
+ *   r         `tekrar` kadar arka arkaya darbe at (aralarında 400 ms)
+ *   R / T     tekrar sayısını artır / azalt
+ *   p         ayarları yazdır
  *
- * Bulunan değerler `uclar.json`a girilecek olanlar — derece değil.
+ * ÖLÇÜM YOLU
+ *   1. Mile bir işaret koyun (bant, kalem).
+ *   2. `g` ile tek darbe atın, dönen açıyı ölçün.
+ *   3. 90 dereceye kaç darbe gerektiğini sayın ya da `+` ile süreyi
+ *      büyütüp tek darbede 90 dereceyi tutturun.
+ *   4. Bulduğunuz süre + hız ikilisini not edin: `uclar.json`a girilecek
+ *      olan bunlar. Derece hiçbir yerde saklanmayacak.
  */
 
 #include <Servo.h>
@@ -47,54 +52,42 @@
 #define SU_POMPASI_PIN   7
 #define HAVA_POMPASI_PIN 8
 
-#define US_MIN  500
-#define US_MAX  2500
-#define UC_SAYI 2           /* şu an iki konum aranıyor */
-
-/* Rampa adımı 20 ms: servonun kendi darbe aralığı da bu. Daha sık
- * yazmanın karşılığı yok. */
-#define ADIM_MS 20
+#define US_DUR   1500       /* sürekli dönüşlü servoda "dur" */
+#define US_MIN   1000
+#define US_MAX   2000
 
 Servo servo;
-int  us    = 1500;          /* o an yazılan değer */
-int  hedef = 1500;          /* gidilmek istenen değer */
-int  uc[UC_SAYI] = {0, 0};  /* 0 = henüz kaydedilmedi */
-int  hizUsSn = 300;         /* rampa hızı, µs/saniye — düşük = yavaş */
-int  turMs   = 5000;        /* durakta bekleme */
-bool turAtiyor = false;
-int  adim = 0;
-unsigned long sonAdim = 0, sonTik = 0;
-bool vardiYazildi = true;
+int  hiz     = 80;          /* 1500'den uzaklık — küçük = yavaş */
+int  sure    = 100;         /* bir darbenin süresi, ms */
+int  tekrar  = 1;           /* r ile kaç darbe */
+int  kalanTekrar = 0;
+int  yon     = 1;           /* +1 ileri, -1 geri */
+bool donuyor = false;
+unsigned long basladi = 0, bekleme = 0;
 
-void durumYaz(const char *neden) {
-  Serial.print("us=");            Serial.print(us);
-  Serial.print("  hedef=");       Serial.print(hedef);
-  Serial.print("  hiz=");         Serial.print(hizUsSn);
-  Serial.print("  calisma_sn=");  Serial.print(millis() / 1000UL);
-  Serial.print("  ");             Serial.println(neden);
+void ayarYaz() {
+  Serial.print("hiz=");     Serial.print(hiz);
+  Serial.print(" us  sure=");  Serial.print(sure);
+  Serial.print(" ms  tekrar="); Serial.print(tekrar);
+  Serial.print("  calisma_sn="); Serial.println(millis() / 1000UL);
 }
 
-void git(int yeni, const char *neden) {
-  hedef = constrain(yeni, US_MIN, US_MAX);
-  vardiYazildi = false;
-  durumYaz(neden);
+void dur(const char *neden) {
+  servo.writeMicroseconds(US_DUR);
+  donuyor = false;
+  Serial.print("DUR  ");  Serial.println(neden);
 }
 
-void kaydet(int i) {
-  uc[i] = hedef;
-  Serial.print("KAYIT: uc");  Serial.print(i + 1);
-  Serial.print(" = ");        Serial.print(hedef);
-  Serial.println(" us");
-}
-
-void yazdir() {
-  for (int i = 0; i < UC_SAYI; i++) {
-    Serial.print("uc");  Serial.print(i + 1);  Serial.print(" = ");
-    if (uc[i]) { Serial.print(uc[i]); Serial.println(" us"); }
-    else Serial.println("(kaydedilmedi)");
-  }
-  Serial.print("hiz = ");   Serial.print(hizUsSn); Serial.println(" us/sn");
-  Serial.print("durak = "); Serial.print(turMs);   Serial.println(" ms");
+void basla(int y) {
+  yon = y;
+  int us = constrain(US_DUR + y * hiz, US_MIN, US_MAX);
+  servo.writeMicroseconds(us);
+  donuyor = true;
+  basladi = millis();
+  Serial.print(y > 0 ? "ILERI" : "GERI");
+  Serial.print("  us=");    Serial.print(us);
+  Serial.print("  sure=");  Serial.print(sure);
+  Serial.println(" ms");
 }
 
 void setup() {
@@ -106,73 +99,48 @@ void setup() {
 
   Serial.begin(9600);
   servo.attach(SERVO_PIN, US_MIN, US_MAX);
-  servo.writeMicroseconds(us);
-  durumYaz("acilis - orta");
-  Serial.println("a/d = -+25us | A/D = -+100us | q w = kaydet 1/2 | 1 2 = git");
-  Serial.println("t = tur | x = dur | p = yazdir | m = orta | + - = durak | y h = yavas/hizli");
-  Serial.println("UYARI: servo vizildarsa durdurucuya dayanmistir, geri gelin.");
+  dur("acilis");
+  Serial.println("g = ileri darbe | f = geri darbe | s = dur");
+  Serial.println("+ - = sure  |  h y = hiz  |  r = tekrar at  |  R T = tekrar sayisi  |  p = yazdir");
+  ayarYaz();
 }
 
 void loop() {
   while (Serial.available()) {
     char c = Serial.read();
-    if      (c == 'a') { turAtiyor = false; git(hedef -  25, "ince"); }
-    else if (c == 'd') { turAtiyor = false; git(hedef +  25, "ince"); }
-    else if (c == 'A') { turAtiyor = false; git(hedef - 100, "kaba"); }
-    else if (c == 'D') { turAtiyor = false; git(hedef + 100, "kaba"); }
-    else if (c == 'm') { turAtiyor = false; git(1500, "orta"); }
-    else if (c == 'q') kaydet(0);
-    else if (c == 'w') kaydet(1);
-    else if (c >= '1' && c < '1' + UC_SAYI) {
-      int i = c - '1';
-      turAtiyor = false;
-      if (uc[i]) git(uc[i], "kayitli uc");
-      else { Serial.print("uc"); Serial.print(i + 1); Serial.println(" kaydedilmedi"); }
-    }
-    else if (c == 'p') yazdir();
-    else if (c == 'x') { turAtiyor = false; Serial.println("tur durdu"); }
-    else if (c == 't') {
-      bool hepsi = true;
-      for (int i = 0; i < UC_SAYI; i++) if (!uc[i]) hepsi = false;
-      if (hepsi) { turAtiyor = true; sonAdim = 0; Serial.println("tur basladi"); }
-      else Serial.println("once iki uc de kaydedilmeli (q w)");
-    }
-    else if (c == '+') { turMs = min(20000, turMs + 1000);
-                         Serial.print("durak = "); Serial.print(turMs); Serial.println(" ms"); }
-    else if (c == '-') { turMs = max(500, turMs - 1000);
-                         Serial.print("durak = "); Serial.print(turMs); Serial.println(" ms"); }
-    else if (c == 'y') { hizUsSn = max(25, hizUsSn - 50);
-                         Serial.print("hiz = "); Serial.print(hizUsSn); Serial.println(" us/sn"); }
-    else if (c == 'h') { hizUsSn = min(3000, hizUsSn + 50);
-                         Serial.print("hiz = "); Serial.print(hizUsSn); Serial.println(" us/sn"); }
-  }
-
-  /* RAMPA: `us` hedefe adım adım yürüyor. Servo her adımda yalnız birkaç
-   * mikrosaniyelik yeni bir hedef görüyor, o yüzden yavaş dönüyor. */
-  unsigned long simdi = millis();
-  if (simdi - sonTik >= ADIM_MS) {
-    sonTik = simdi;
-    if (us != hedef) {
-      int pay = (int)((long)hizUsSn * ADIM_MS / 1000L);
-      if (pay < 1) pay = 1;
-      if (abs(hedef - us) <= pay) us = hedef;
-      else us += (hedef > us) ? pay : -pay;
-      servo.writeMicroseconds(us);
-    } else if (!vardiYazildi) {
-      vardiYazildi = true;
-      durumYaz("vardi");
+    if      (c == 'g') { kalanTekrar = 0; basla(+1); }
+    else if (c == 'f') { kalanTekrar = 0; basla(-1); }
+    else if (c == 's') { kalanTekrar = 0; dur("elle"); }
+    else if (c == '+') { sure = min(5000, sure + 50); ayarYaz(); }
+    else if (c == '-') { sure = max(20,   sure - 50); ayarYaz(); }
+    else if (c == 'h') { hiz  = min(500,  hiz + 10);  ayarYaz(); }
+    else if (c == 'y') { hiz  = max(10,   hiz - 10);  ayarYaz(); }
+    else if (c == 'R') { tekrar = min(50, tekrar + 1); ayarYaz(); }
+    else if (c == 'T') { tekrar = max(1,  tekrar - 1); ayarYaz(); }
+    else if (c == 'p') ayarYaz();
+    else if (c == 'r') {
+      kalanTekrar = tekrar;
+      Serial.print("TEKRAR x"); Serial.println(tekrar);
+      basla(+1);
+      kalanTekrar--;
     }
   }
 
-  /* Tur beklemesi ancak rampa BİTTİKTEN sonra sayılıyor: yoksa yolda
-   * geçen süre durakta geçmiş gibi olur ve 5 saniyelik durak gerçekte
-   * çok daha kısa sürerdi. */
-  if (turAtiyor && us == hedef) {
-    if (sonAdim == 0) sonAdim = simdi;
-    if (simdi - sonAdim >= (unsigned long)turMs) {
-      sonAdim = 0;
-      adim = (adim + 1) % UC_SAYI;
-      git(uc[adim], "tur");
-    }
+  /* Darbe süresi dolunca kes. Sürekli dönüşlü servoda konumu belirleyen
+   * tek şey bu süre; bu yüzden kesme işi gecikmesiz olmalı. */
+  if (donuyor && millis() - basladi >= (unsigned long)sure) {
+    unsigned long gecen = millis() - basladi;
+    dur("sure doldu");
+    Serial.print("  gercek sure = "); Serial.print(gecen); Serial.println(" ms");
+    if (kalanTekrar > 0) bekleme = millis();
+  }
+
+  /* Tekrarlar arasında kısa bekleme: motorun tamamen durması için.
+   * Beklemeden art arda darbe atmak, tek uzun darbeyle aynı şey olurdu
+   * ve saydığımız sayı anlamını yitirirdi. */
+  if (!donuyor && kalanTekrar > 0 && bekleme && millis() - bekleme >= 400) {
+    bekleme = 0;
+    basla(yon);
+    kalanTekrar--;
   }
 }
