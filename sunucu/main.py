@@ -672,6 +672,141 @@ async def api_geri_al(govde: dict[str, Any], jeton: str = Query(default="")):
 AZAMI_SECIM = 40
 
 
+# --------------------------------------------------------------------------- #
+# GEZİNME SIRASI — EN YAKIN KOMŞU
+#
+# SORUN ÖLÇÜLDÜ. Toplu işlerde sıra TIKLAMA SIRASINDAN geliyordu: panel
+# seçimi bir `Set`te tutuyor (tarla.js `T.secim`) ve Set ekleme sırasını
+# koruyor; sunucu da `adlar` listesini geldiği gibi işliyordu. Hiçbir
+# katmanda coğrafi sıralama yoktu, dolayısıyla makine bir bitkiyi atlayıp
+# uzaktakine gidiyor, sonra geri dönüyordu.
+#
+# SIRALAMA SUNUCUDA, PANELDE DEĞİL. Aynı düzeltme böylece bütün giriş
+# yollarını birden kapsıyor: Tarla toplu işlemi, Bahçe kuyruğu,
+# zamanlanmış görevler ve bileşik "ölç ve sula" turları.
+#
+# BU EN KISA YOL DEĞİL. En yakın komşu, gezgin satıcı probleminin
+# AÇGÖZLÜ yaklaşımı: her adımda o an en yakın olanı seçiyor ve geriye
+# dönüp bakmıyor. Bazı dizilimlerde optimalden belirgin sapabiliyor —
+# klasik kötü durum, sona bırakılan uzak bir noktaya bütün yolu geri
+# gitmek. Amaç optimal yol değil, tıklama sırasından kurtulmak; optimal
+# çözüm 40 nokta için bu sunucuda koşacak bir hesap da değil.
+# --------------------------------------------------------------------------- #
+def _yol_uzunlugu(noktalar_xy: list[tuple[float, float]],
+                  baslangic: tuple[float, float] | None) -> float:
+    """Verilen sırayla katedilen toplam yol (mm). Kuş uçuşu.
+
+    Makine X ve Y'yi SIRAYLA sürüyor (bkz. `plc.py`, hareket asla çapraz
+    değil), yani gerçekte katedilen yol Manhattan mesafesi. Ölçüyü yine
+    de kuş uçuşuyla veriyoruz çünkü sıralama ölçütü de o; iki ölçü aynı
+    sıralamayı üretiyor ve karşılaştırma anlamlı kalıyor.
+    """
+    toplam = 0.0
+    onceki = baslangic
+    for nk in noktalar_xy:
+        if onceki is not None:
+            toplam += math.hypot(nk[0] - onceki[0], nk[1] - onceki[1])
+        onceki = nk
+    return toplam
+
+
+def _yakin_sira(adlar: list[str],
+                kayitli: dict[str, dict[str, Any]] | None = None
+                ) -> tuple[list[str], dict[str, Any]]:
+    """Seçimi en yakın komşu sırasına dizer. -> (sıralı adlar, bilgi)
+
+    `bilgi` panele ve günlüğe gidiyor: nereden başlandı, tıklama sırası
+    kaç mm'ydi, yeni sıra kaç mm. Sıra değişiyorsa bu sürpriz olmasın.
+
+    MAKİNE KONUMU BİLİNMİYORSA UYDURULMUYOR. PLC kopukken konum yok;
+    o zaman seçimin İLK noktasından başlıyoruz ve bunu `bilgi["not"]`
+    ile söylüyoruz. Sessizce home'dan başlamış gibi davranmak, panelde
+    yazan yol uzunluğunu da yanlış yapardı.
+    (Hiç referans almamış bir makine sayaç değerini bildirmeye devam
+    ediyor ve bunu buradan ayırt etmenin yolu yok — PLC'de "referans
+    alındı" diye bir bayrak yok. Bilinen tek şey konumun gelip
+    gelmediği.)
+
+    KOORDİNATI OLMAYAN NOKTA SIRALANAMIYOR: coğrafi bir sıra ancak
+    koordinatla kurulur. Onlar listenin SONUNA, geldikleri sırayla
+    ekleniyor ve sayıları `bilgi`de yazıyor — sessizce atmak, seçilen bir
+    noktanın işlenmemesi demek olurdu.
+    """
+    if kayitli is None:
+        kayitli = {n.get("ad"): n for n in noktalar.hepsi()}
+
+    yerli: list[tuple[str, tuple[float, float]]] = []
+    yersiz: list[str] = []
+    for ad in adlar:
+        n = kayitli.get(ad) or {}
+        x, y = n.get("x"), n.get("y")
+        try:
+            yerli.append((ad, (float(x), float(y))))
+        except (TypeError, ValueError):
+            yersiz.append(ad)
+
+    mx, my = _makine_xy()
+    konum_var = mx is not None and my is not None
+    baslangic = (float(mx), float(my)) if konum_var else None
+
+    onceki_yol = _yol_uzunlugu([p for _, p in yerli], baslangic)
+
+    kalan = list(yerli)
+    sirali: list[str] = []
+    imlec = baslangic
+    if imlec is None and kalan:
+        # Konum yok: ilk seçilen noktadan başlıyoruz. Onu listeden alıp
+        # imleci oraya koyuyoruz; kalanı ona göre diziliyor.
+        ad, nk = kalan.pop(0)
+        sirali.append(ad)
+        imlec = nk
+    while kalan:
+        i_en = min(range(len(kalan)),
+                   key=lambda i: math.hypot(kalan[i][1][0] - imlec[0],
+                                            kalan[i][1][1] - imlec[1]))
+        ad, nk = kalan.pop(i_en)
+        sirali.append(ad)
+        imlec = nk
+
+    yer = {ad: nk for ad, nk in yerli}
+    yeni_yol = _yol_uzunlugu([yer[a] for a in sirali], baslangic)
+
+    notlar: list[str] = []
+    if not konum_var:
+        notlar.append("makine konumu bilinmiyor, ilk seçilen noktadan başlandı")
+    if yersiz:
+        notlar.append(f"{len(yersiz)} noktanın koordinatı yok, sona alındı")
+    return sirali + yersiz, {
+        "baslangic": "makine" if konum_var else "ilk-nokta",
+        "baslangic_xy": list(baslangic) if baslangic else None,
+        "tiklama_yol_mm": round(onceki_yol, 1),
+        "yol_mm": round(yeni_yol, 1),
+        "kazanc_mm": round(onceki_yol - yeni_yol, 1),
+        "koordinatsiz": yersiz,
+        "sira": sirali + yersiz,
+        "not": " · ".join(notlar),
+    }
+
+
+def _sira_gunluk_metni(bilgi: dict[str, Any], is_adi: str) -> str:
+    """Sıralamanın günlük satırı — kullanıcı sırayı görebilsin."""
+    metin = (f"{is_adi}: en yakından başlanarak sıralandı · "
+             f"yol {bilgi['yol_mm']:.0f} mm "
+             f"(tıklama sırasıyla {bilgi['tiklama_yol_mm']:.0f} mm)")
+    if bilgi.get("not"):
+        metin += f" · {bilgi['not']}"
+    sira = bilgi.get("sira") or []
+    if sira:
+        # Sıranın kendisi de yazılıyor: "en yakından" demek, hangi
+        # bitkiden başlandığını söylemiyor. Uzun seçimde ilk sekiz
+        # yeterli — günlük satırı okunmaz hâle gelmesin.
+        gosterilen = " → ".join(str(a) for a in sira[:8])
+        metin += f" · sıra: {gosterilen}"
+        if len(sira) > 8:
+            metin += f" → … (+{len(sira) - 8})"
+    return metin
+
+
 @app.post("/api/toplu")
 async def api_toplu(govde: dict[str, Any], jeton: str = Query(default="")):
     _parola_dogrula(jeton)
@@ -718,11 +853,24 @@ async def api_toplu(govde: dict[str, Any], jeton: str = Query(default="")):
         # demek olurdu.
         return await _ekim_baslat(cozum)
 
+    if islem not in ("sula", "gez", "nem"):
+        raise HTTPException(status_code=400, detail=f"Bilinmeyen toplu işlem: {islem!r}")
+
+    # GEZİNME SIRASI BURADA KURULUYOR. Bu üç işlemin üçü de makineyi
+    # nokta nokta dolaştırıyor ve üçü de tıklama sırasıyla gidiyordu.
+    # Kuyruk (Bahçe), zamanlanmış görevler ve bileşik ölç-sula turları da
+    # bu uca geliyor (bkz. `_kuyruk_calistir`), dolayısıyla tek yerde
+    # düzeltmek hepsini kapsıyor. `sil`, `dizi` ve `ek` bilerek dışarıda:
+    # `sil` makineyi hiç oynatmıyor, `dizi` kullanıcının kendi yazdığı
+    # sırayı yürütüyor, `ek` de tohumluk gözlerinin sırasına bağlı.
+    adlar, sira_bilgi = await asyncio.to_thread(_yakin_sira, adlar)
+    is_adlari = {"sula": "Sulama", "gez": "Gezinti", "nem": "Nem ölçümü"}
+    await merkez.yayinla({
+        "tip": "gunluk", "seviye": "bilgi",
+        "metin": _sira_gunluk_metni(sira_bilgi, is_adlari[islem])})
+
     if islem == "nem":
         return await _nem_olc_baslat(adlar)
-
-    if islem not in ("sula", "gez"):
-        raise HTTPException(status_code=400, detail=f"Bilinmeyen toplu işlem: {islem!r}")
 
     # Sulama süresi: makul bir aralıkta tutuluyor, panelden gelen sayıya
     # körlemesine güvenilmiyor.
@@ -1314,11 +1462,16 @@ async def api_sulama_onizle(govde: dict[str, Any], jeton: str = Query(default=""
             detail=f"Tek seferde en fazla {AZAMI_SECIM} nokta işlenebilir "
                    f"(seçili: {len(adlar)})")
     saniye = _istek_saniye(govde)
+    # ÖNİZLEME GERÇEK SIRAYI GÖSTERİYOR. Sulama başlatılırken sıra en
+    # yakın komşuya göre kuruluyor; önizleme tıklama sırasını gösterseydi
+    # kullanıcı başka bir yol görüp başka bir yol izlenirdi.
+    adlar, sira_bilgi = await asyncio.to_thread(_yakin_sira, adlar)
     cozum = await asyncio.to_thread(_sulama_coz, adlar, saniye)
     return {"ozet": cozum["ozet"], "ret": cozum["ret"], "uyari": cozum["uyari"],
             "adim": len(cozum["adimlar"]),
             "toplam_nokta": cozum["toplam_nokta"],
             "toplam_saniye": cozum["toplam_saniye"],
+            "sira": sira_bilgi,
             "azami_adim": programlar.AZAMI_ADIM}
 
 
