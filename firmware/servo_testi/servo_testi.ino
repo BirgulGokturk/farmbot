@@ -1,38 +1,36 @@
 /*
- * Servo testi — uç seçici
- * -----------------------
- * TEK İŞİ: servonun dönüp dönmediğini ve beslemenin yetip yetmediğini
- * göstermek. Sensör okumuyor, röle sürmüyor, Pi ile konuşmuyor. Asıl
- * firmware'e (farmbot_sensors) dokunmadan önce donanımı doğrulamak için.
+ * Servo testi — uç seçici, MİKROSANİYE ile
+ * ----------------------------------------
+ * NEDEN DERECE DEĞİL. `Servo.write(0..180)` kütüphanenin uydurduğu bir
+ * eşleme: varsayılanı 544-2400 µs. Servonun gerçek aralığı bu değilse
+ * uçlarda mekanik durdurucuya dayanıyor, arada kalan açılar da kayıyor.
+ * Sahada görülen belirti: üç durak yerine iki uç arasında gidip gelme.
+ * Telde giden şey mikrosaniye; ölçüp saklayacağımız da o olmalı.
+ *
+ * SERVO KONUM BİLDİRMİYOR. Potansiyometreyi kendi içinde okuyor, dışarı
+ * söylemiyor. "Şu an 90 derecede" diyemeyiz, ancak "1500 µs komut ettik"
+ * diyebiliriz. Panelde de böyle yazılacak.
  *
  * TESİSAT
- *   D9    servo sinyali
- *   Servo BESLEMESİ AYRI 5V'tan — Arduino'nun 5V pininden DEĞİL. Yük
- *   altında 0,5-1 A çekiyor, USB'den gelen 5V bunu veremiyor ve kart
- *   hareket ortasında sıfırlanıyor. Ortak toprak (GND) şart, yoksa
- *   sinyalin referansı olmaz.
+ *   D9   servo sinyali
+ *   Besleme AYRI 5V + ortak toprak. Yük altında 0,5-1 A çekiyor.
  *
- * RÖLELER NEDEN BURADA
- * Pompalar NC ucunda: bobin enerjisizken pompa ÇALIŞIYOR. Bu taslak
- * röleleri sürmese bile pinleri asıl firmware'deki kapalı hâline
- * (LOW) çekiyor — yoksa test boyunca su akardı. Yine de pompa
- * kablosunu çıkarmak en güvenlisi: kart sıfırlanırsa açılışın ilk
- * 1-2 saniyesinde yazılım hiç çalışmıyor ve engelleyemiyor.
+ * STALL UYARISI: mil mekanik durdurucuya dayandığında motor dönmeye
+ * çalışmaya devam eder, akım fırlar, dişli sıyrılabilir. Servo VIZILDAMAYA
+ * başlarsa ya da mil kımıldamayı bırakırsa HEMEN geri gelin (a / A).
+ * Uçları ararken küçük adımlarla yaklaşın.
  *
- * SIFIRLANMA NASIL ANLAŞILIR
- * Her satırda kartın açık kalma süresi yazıyor. Sayı GERİ GİDERSE kart
- * sıfırlanmıştır — sebebi neredeyse her zaman servonun akım çekişidir.
- * Tahmin etmeye gerek yok, ekranda görünüyor.
+ * KOMUTLAR (seri ekran, 9600 baud)
+ *   a / d     -25 / +25 µs   ince ayar
+ *   A / D    -100 / +100 µs  kaba ayar
+ *   q w e     o anki değeri 1., 2., 3. uca KAYDET
+ *   1 2 3     kayıtlı uca git
+ *   t         kayıtlı uçlar arasında tur at (2 sn bekleyerek)
+ *   x         turu durdur
+ *   p         kayıtlı değerleri yazdır
+ *   m         ortaya dön (1500 µs)
  *
- * KULLANIM
- * Seri ekranı 9600 baud aç. Kendiliğinden 0 -> 90 -> 180 -> 90 turu
- * atıyor. Elle denemek için tek karakter gönder:
- *   0 1 2   sırasıyla 0, 90, 180 derece
- *   d       tek adım sağa (5 derece) — horn hizasını bulmak için
- *   a       tek adım sola
- *   s       tur atmayı durdur / başlat
- * Bulduğunuz gerçek açıları not edin: uç açıları hiçbir zaman tam
- * 0/90/180 çıkmıyor ve asıl firmware'de ayar dosyasından gelecek.
+ * Bulduğunuz üç sayıyı not edin: `uclar.json`a girilecek olan bunlar.
  */
 
 #include <Servo.h>
@@ -41,60 +39,89 @@
 #define SU_POMPASI_PIN   7
 #define HAVA_POMPASI_PIN 8
 
-/* Adım başına bekleme. Servo 90 dereceyi anında dönmüyor; ölçmeden
- * "vardı" demek, sonraki katmanda yanlış varsayımın kaynağı olur. */
-#define VARIS_MS 900
+/* Kütüphanenin izin verdiği en geniş aralık. Servonuz bunun tamamını
+ * kullanmıyor olabilir — zaten aradığımız şey nereye kadar gittiği. */
+#define US_MIN  500
+#define US_MAX  2500
+#define TUR_MS  2000        /* turda her durakta bekleme */
 
 Servo servo;
-int aci = 90;
-bool turAtiyor = true;
-unsigned long sonAdim = 0;
+int us = 1500;
+int uc[3] = {0, 0, 0};      /* 0 = henüz kaydedilmedi */
+bool turAtiyor = false;
 int adim = 0;
-const int TUR[] = {0, 90, 180, 90};
+unsigned long sonAdim = 0;
 
 void yaz(const char *neden) {
-  Serial.print("aci=");        Serial.print(aci);
+  Serial.print("us=");            Serial.print(us);
   Serial.print("  calisma_sn=");  Serial.print(millis() / 1000UL);
-  Serial.print("  ");          Serial.println(neden);
+  Serial.print("  ");             Serial.println(neden);
 }
 
 void git(int hedef, const char *neden) {
-  aci = constrain(hedef, 0, 180);
-  servo.write(aci);
+  us = constrain(hedef, US_MIN, US_MAX);
+  servo.writeMicroseconds(us);
   yaz(neden);
 }
 
+void kaydet(int i) {
+  uc[i] = us;
+  Serial.print("KAYIT: uc");  Serial.print(i + 1);
+  Serial.print(" = ");        Serial.print(us);
+  Serial.println(" us");
+}
+
+void yazdir() {
+  for (int i = 0; i < 3; i++) {
+    Serial.print("uc");  Serial.print(i + 1);  Serial.print(" = ");
+    if (uc[i]) { Serial.print(uc[i]); Serial.println(" us"); }
+    else Serial.println("(kaydedilmedi)");
+  }
+}
+
 void setup() {
-  /* İLK İŞ: röleleri kapalıya çek. Asıl firmware'deki `roleYaz(pin,
-   * false)` ile aynı: ROLE_AKTIF_LOW 0 olduğu için kapalı = LOW. */
-  pinMode(SU_POMPASI_PIN, OUTPUT);
-  digitalWrite(SU_POMPASI_PIN, LOW);
-  pinMode(HAVA_POMPASI_PIN, OUTPUT);
-  digitalWrite(HAVA_POMPASI_PIN, LOW);
+  /* İLK İŞ: röleleri kapalıya çek — asıl firmware'deki roleYaz(pin,false)
+   * ile aynı (ROLE_AKTIF_LOW 0 olduğu için kapalı = LOW). Pompalar NC
+   * ucunda, yani sürülmezse su akar. */
+  pinMode(SU_POMPASI_PIN, OUTPUT);   digitalWrite(SU_POMPASI_PIN, LOW);
+  pinMode(HAVA_POMPASI_PIN, OUTPUT); digitalWrite(HAVA_POMPASI_PIN, LOW);
 
   Serial.begin(9600);
-  servo.attach(SERVO_PIN);
-  git(90, "acilis - orta");
-  Serial.println("Komutlar: 0 1 2 = 0/90/180 derece | a d = 5 derece sol/sag | s = tur dur/basla");
+  servo.attach(SERVO_PIN, US_MIN, US_MAX);
+  git(1500, "acilis - orta");
+  Serial.println("a/d = -+25us | A/D = -+100us | q w e = kaydet 1/2/3 | 1 2 3 = git");
+  Serial.println("t = tur | x = dur | p = yazdir | m = orta");
+  Serial.println("UYARI: servo vizildarsa ya da kimildamiyorsa durdurucuya dayanmistir, geri gelin.");
 }
 
 void loop() {
   while (Serial.available()) {
     char c = Serial.read();
-    if (c == '0') { turAtiyor = false; git(0,   "elle"); }
-    else if (c == '1') { turAtiyor = false; git(90,  "elle"); }
-    else if (c == '2') { turAtiyor = false; git(180, "elle"); }
-    else if (c == 'd') { turAtiyor = false; git(aci + 5, "ince ayar"); }
-    else if (c == 'a') { turAtiyor = false; git(aci - 5, "ince ayar"); }
-    else if (c == 's') {
-      turAtiyor = !turAtiyor;
-      Serial.println(turAtiyor ? "tur basladi" : "tur durdu");
+    if      (c == 'a') { turAtiyor = false; git(us -  25, "ince"); }
+    else if (c == 'd') { turAtiyor = false; git(us +  25, "ince"); }
+    else if (c == 'A') { turAtiyor = false; git(us - 100, "kaba"); }
+    else if (c == 'D') { turAtiyor = false; git(us + 100, "kaba"); }
+    else if (c == 'm') { turAtiyor = false; git(1500, "orta"); }
+    else if (c == 'q') kaydet(0);
+    else if (c == 'w') kaydet(1);
+    else if (c == 'e') kaydet(2);
+    else if (c >= '1' && c <= '3') {
+      int i = c - '1';
+      turAtiyor = false;
+      if (uc[i]) git(uc[i], "kayitli uc");
+      else { Serial.print("uc"); Serial.print(i + 1); Serial.println(" kaydedilmedi"); }
+    }
+    else if (c == 'p') yazdir();
+    else if (c == 'x') { turAtiyor = false; Serial.println("tur durdu"); }
+    else if (c == 't') {
+      if (uc[0] && uc[1] && uc[2]) { turAtiyor = true; Serial.println("tur basladi"); }
+      else Serial.println("once uc uc de kaydedilmeli (q w e)");
     }
   }
 
-  if (turAtiyor && millis() - sonAdim >= VARIS_MS) {
+  if (turAtiyor && millis() - sonAdim >= TUR_MS) {
     sonAdim = millis();
-    git(TUR[adim], "tur");
-    adim = (adim + 1) % 4;
+    git(uc[adim], "tur");
+    adim = (adim + 1) % 3;
   }
 }
