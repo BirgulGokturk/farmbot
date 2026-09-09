@@ -188,6 +188,7 @@ class Ajan:
         # Tohum ucunun "tam çekilmiş" T değeri ayardan gelebiliyor; boşken
         # kalibrasyonun `home`u geçerli (bkz. `plc.t_yukari_mm`).
         self._t_yukari_uygula()
+        self._guvenli_z_ofset_uygula()
         ard = ayar["arduino"]
         # Medyan penceresi: kaç örneğin ortancası gösterilsin. 5 örnek,
         # 2 sn'lik okuma aralığında 10 saniyelik bir pencere demek — tek
@@ -280,6 +281,18 @@ class Ajan:
             return {"kuru": 1023.0, "islak": 0.0}
         return {"kuru": kuru, "islak": islak}
 
+    def _guvenli_z_ofset_uygula(self) -> None:
+        """`guvenli_z_ofset` ayarını PLC sürücüsüne taşır.
+
+        Ayar `uclar.json`da (panelden düzenlenen dosya), kural ise PLC
+        sürücüsünde. İkisini bağlayan tek yer burası — `_t_yukari_uygula`
+        ile aynı kalıp.
+        """
+        try:
+            self.plc.guvenli_z_ofset = self.uclar.guvenli_z_ofset()
+        except Exception:                                    # noqa: BLE001
+            pass
+
     def _t_yukari_uygula(self) -> None:
         """`baslar.tohum.t_yukari_mm` ayarını PLC sürücüsüne taşır."""
         try:
@@ -329,23 +342,47 @@ class Ajan:
     # varsa SEBEBİ metin olarak dönüyor, boş metin "engel yok" demek.
     # ------------------------------------------------------------------ #
     def uc_secim_engel(self) -> str:
-        """Uç değiştirmeyi engelleyen sebep varsa metni, yoksak ''.
+        """Taretin dönmesini engelleyen sebep varsa metni, yoksa ''.
 
-        Z AŞAĞIDAYKEN UÇ DEĞİŞMEZ. Mekanizmayı döndürmek, başlığı
-        toprağın içinden sürüklemek olur: başı da eğer, bitkiyi de.
-        `plc.z_guvenli_mi` okunamıyorsa "güvenli değil" diyor — hata
-        anında serbest bırakmak, çarpmanın en kolay yolu.
+        Z AŞAĞIDAYKEN TARET DÖNMEZ. Üç başlık tek parçada ve aşağı bakan
+        başlık toprağın içindeyken parçayı çevirmek, o başlığı toprakta
+        sürüklemek demek: başlığı da eğer, bitkiyi de.
+
+        İKİ KURAL, SIRAYLA. Taretin kendi eşiği (`taret.z_min`) girilmişse
+        o geçerli — mekanizmanın kendi sayısı, ölçülerek giriliyor.
+        Girilmemişse karar genel Z güvenlik kuralına (`plc.z_guvenli_mi`)
+        kalıyor. Hangi kuralın uygulandığı metinde yazılı; "neden
+        dönmüyor" sorusu iki ayrı sayıdan hangisine bakılacağını da
+        söylemeli.
+
+        Konum okunamıyorsa engel VAR diyoruz: hata anında serbest
+        bırakmak, başlığı toprakta sürüklemenin en kolay yolu.
         """
+        z_min = (self.uclar.taret() or {}).get("z_min")
+        if z_min is not None:
+            try:
+                simdiki = self.plc.konum_mm()[2]
+            except Exception:
+                return ("Z konumu okunamıyor — taret döndürülmüyor. "
+                        "Robot bağlantısını denetleyin.")
+            if simdiki >= float(z_min):
+                return ""
+            return (f"Z {simdiki:.0f} mm — taret {float(z_min):.0f} mm'nin "
+                    f"altında döndürülmüyor. Aşağı bakan başlık toprağın "
+                    f"içindeyken parçayı çevirmek onu toprakta sürüklemek "
+                    f"olur. Önce Z'yi kaldırın. (Eşik: Ayarlar → Başlar → "
+                    f"taret dönüş Z'si.)")
         try:
             guvenli = self.plc.z_guvenli_mi()
         except Exception:
             guvenli = False
         if guvenli:
             return ""
-        return (f"Z aşağıda — uç değiştirilmiyor. Mekanizmayı bu hâlde "
-                f"döndürmek başlığı toprağın içinden sürüklemek olur. "
-                f"Önce Z'yi güvenli yüksekliğe (≥ {self.plc.guvenli_z:.0f} mm) "
-                f"kaldırın.")
+        return (f"Z aşağıda — taret döndürülmüyor. Aşağı bakan başlığı "
+                f"toprakta sürüklemek olur. Önce Z'yi güvenli yüksekliğe "
+                f"(≥ {self.plc.guvenli_z:.0f} mm) kaldırın. Taretin kendi "
+                f"eşiği girilmemiş; girilirse genel kural yerine o geçerli "
+                f"olur (Ayarlar → Başlar → taret dönüş Z'si).")
 
     def uc_is_engel(self, kimlik: str) -> str:
         """Bu iş için doğru uç seçili mi — değilse sebebi.
@@ -521,6 +558,7 @@ class Ajan:
                     return {"ok": False, "mesaj": "ayar bir nesne olmalı"}
                 yeni = await asyncio.to_thread(self.uclar.kaydet, gelen)
                 self._t_yukari_uygula()
+                self._guvenli_z_ofset_uygula()
                 return {"ok": True, "mesaj": "Kafa ayarları kaydedildi",
                         "veri": {"ayar": yeni,
                                  "baslar": self.uclar.baslar()}}
@@ -875,7 +913,10 @@ class Ajan:
                 "sulama_basligi": self.uclar.sulama_basligi(),
                 "z_safe_reg": int(self.uclar.ayar.get("z_safe_reg", 0) or 0),
                 "ayar": {"safe_z": self.uclar.ayar.get("safe_z"),
+                         "guvenli_z_ofset": self.uclar.guvenli_z_ofset(),
                          "servo_sure_ms": self.uclar.servo_sure_ms()},
+                # TARET — üç başlığın toplandığı, servonun çevirdiği parça.
+                "taret": self.uclar.taret(),
                 # UÇ SEÇİCİ — KOMUT EDİLEN DEĞER, ÖLÇÜM DEĞİL. `secili`
                 # None = kart hiç komut almamış ya da sıfırlanmış; panel
                 # bunu "bilinmiyor" diye yazıyor, sıfırıncı uç diye değil.

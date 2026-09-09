@@ -987,15 +987,25 @@ function ucGuncelle(u) {
     izgaraTurYaz();
   }
 
-  // ÜÇ SABİT BAŞ. Kullanıcı düzenlerken üzerine yazmıyoruz.
+  // TARET VE ÜÇ BAŞLIK. Kullanıcı düzenlerken üzerine yazmıyoruz.
   if (!S.ucAyarDuzenleniyor) {
     basTablosuCiz(u.baslar || {}, u.bas_bilgi || {});
-    const sz = $("#ua-safe_z");
-    if (sz && document.activeElement !== sz && u.ayar)
-      sz.value = u.ayar.safe_z == null ? "" : u.ayar.safe_z;
-    const zr = $("#ua-z_safe_reg");
-    if (zr && document.activeElement !== zr)
-      zr.value = u.z_safe_reg == null ? "" : u.z_safe_reg;
+    const yaz = (sec, deger) => {
+      const el = $(sec);
+      if (el && document.activeElement !== el) {
+        el.value = deger == null ? "" : deger;
+      }
+    };
+    const t = u.taret || {};
+    yaz("#taret-dx", t.dx);
+    yaz("#taret-dy", t.dy);
+    yaz("#taret-z", t.z_min);
+    yaz("#taret-sure", t.sure_ms);
+    if (u.ayar) {
+      yaz("#ua-safe_z", u.ayar.safe_z);
+      yaz("#ua-guvenli_z_ofset", u.ayar.guvenli_z_ofset);
+    }
+    yaz("#ua-z_safe_reg", u.z_safe_reg);
   }
   basOrnekYaz();
 }
@@ -1104,60 +1114,64 @@ function ucSeciciYaz(d) {
  * BİRBİRİNE GÖRE nerede olduğu: "sulama sağda 60, tohum solda 55" bir
  * bakışta okunuyor, üç ayrı kutuda okunmuyor.
  */
+/* ÜÇ BAŞLIK ARTIK TEK PARÇADA — TARET.
+ *
+ * Eskiden üç başlık üç ayrı yerde duruyordu ve her birinin kendi X/Y
+ * kayması vardı. Mekanizma değişti: üçü tek bir parçada toplandı, o
+ * parça Z ekseninin ucunda ve servo onu çeviriyor. Hangi açıya dönerse
+ * o başlık aşağı bakıyor. Yani başlık seçmek bir yere gitmek değil, bir
+ * açıya dönmek.
+ *
+ * KAYMA ARTIK BAŞ BAŞINA DEĞİL. Üç başlık aynı noktada; kayma taretin
+ * dönme ekseninin yeri ve tek bir yerde giriliyor (aşağıdaki taret
+ * bloğu). Baş başına kalan: hangi açıda olduğu, kendi Z tabanı ve
+ * kendi iniş derinliği.
+ */
 const BAS_ALANLARI = [
-  ["dx", "X kayması", 0.1],
-  ["dy", "Y kayması", 0.1],
-  ["z_min", "Z tabanı", 1],
-  ["derinlik_mm", "Derinlik", 1],
+  ["servo_aci", "Servo açısı", "°", 1,
+   "Bu başlık aşağı bakarken servonun açısı. Ölçerek girin: horn dişlisi "
+   + "hiçbir zaman tam 0/90/180'e hizalanmıyor. Boş = bu başlık serviste yok."],
+  ["z_min", "Z tabanı", "mm", 1,
+   "Bu başlığın inebileceği en alçak mutlak Z — çarpma sınırı."],
+  ["derinlik_mm", "Derinlik", "mm", 1,
+   "İşini yaparken toprak yüzeyinin ne kadar altına iniyor."],
 ];
 
-/* UÇ SEÇİCİ SERVONUN AÇISI — mm DEĞİL, DERECE. Ayrı bir sütun çünkü
- * birimi ötekilerden farklı ve boş bırakılabiliyor: boş, "bu baş
- * mekanizmaya bağlı değil" demek, sıfır derece değil.
- *
- * DEĞER ÖLÇÜLEREK GİRİLİYOR. Horn dişlisi hiçbir zaman tam 0/90/180'e
- * hizalanmıyor; kullanıcı mekanizmayı elle doğru konuma getirip panelde
- * okunan açıyı buraya yazıyor. Panelde 0/90/180 önermiyoruz — önerilen
- * sayı, ölçülmüş sayı gibi okunur. */
-const BAS_SERVO_ALANI = ["servo_aci", "Servo açısı", 1];
+/** Etiketli bir sayı kutusu. Etiket ÜSTTE: yan yana etiket, 380 px'lik
+ *  panelde kutuya bir rakamlık yer bırakıyordu (bkz. stil.css). */
+function basAlani(alan, ad, birim, adim, ipucu, deger, ekOzellik) {
+  return `<div class="alan" title="${kacisli(ipucu)}">
+    <label>${kacisli(ad)}${birim ? ` (${kacisli(birim)})` : ""}</label>
+    <input type="number" step="${adim}" data-alan="${kacisli(alan)}"
+      ${ekOzellik || ""} value="${deger == null ? "" : deger}"></div>`;
+}
 
 function basTablosuCiz(baslar, bilgi) {
   const kap = $("#bas-tablo");
   if (!kap) return;
   const sira = ["sulama", "nem", "tohum"];
-  kap.innerHTML =
-    `<div class="bas-baslik"><span>Baş</span>${
-      BAS_ALANLARI.map(([, ad]) => `<span>${ad} (mm)</span>`).join("")
-    }<span>${BAS_SERVO_ALANI[1]} (°)</span></div>`
-    + sira.map((k) => {
-      const b = baslar[k] || {};
-      const i = bilgi[k] || {};
-      return `<div class="bas-satir" data-bas="${kacisli(k)}">
-        <span class="bas-ad" title="${kacisli(i.aciklama || "")}">${
-          kacisli(i.simge || "")} ${kacisli(i.ad || k)}</span>${
-        BAS_ALANLARI.map(([alan, , adim]) =>
-          `<input type="number" step="${adim}" data-alan="${alan}"
-             value="${b[alan] == null ? "" : b[alan]}">`).join("")
-        }<input type="number" step="${BAS_SERVO_ALANI[2]}" min="0" max="180"
-             data-alan="${BAS_SERVO_ALANI[0]}" placeholder="ölçülen açı"
-             title="Boş = bu baş servoda yok"
-             value="${b[BAS_SERVO_ALANI[0]] == null ? "" : b[BAS_SERVO_ALANI[0]]}"></div>`;
-    }).join("")
-    // TOHUM UCUNUN KENDİ EKSENİ yalnız onun satırının altında: öteki iki
-    // başın böyle bir ekseni yok ve boş bir kutu göstermek "burada da var
-    // ama girilmemiş" demek olurdu.
-    + `<div class="bas-satir" data-bas="tohum">
-         <span class="bas-ad">🌱 Tohum ucu — kendi ekseni (T)</span>
-         <input type="number" step="0.5" data-alan="t_asagi_mm"
-           placeholder="aşağı T (mm)"
-           value="${(baslar.tohum || {}).t_asagi_mm == null
-                    ? "" : baslar.tohum.t_asagi_mm}">
-         <input type="number" step="0.5" data-alan="t_yukari_mm"
-           placeholder="yukarı T (mm)"
-           value="${(baslar.tohum || {}).t_yukari_mm == null
-                    ? "" : baslar.tohum.t_yukari_mm}">
-         <span></span><span></span><span></span>
-       </div>`;
+  kap.innerHTML = sira.map((k) => {
+    const b = baslar[k] || {};
+    const i = bilgi[k] || {};
+    return `<div class="bas-blok" data-bas="${kacisli(k)}">
+      <span class="bas-ad" title="${kacisli(i.aciklama || "")}">${
+        kacisli(i.simge || "")} ${kacisli(i.ad || k)}</span>
+      <div class="alan-izgara bas-alanlar">${
+        BAS_ALANLARI.map(([alan, ad, birim, adim, ipucu]) =>
+          basAlani(alan, ad, birim, adim, ipucu, b[alan],
+                   alan === "servo_aci" ? 'min="0" max="180"' : "")).join("")
+      }${
+        /* TOHUM UCUNUN KENDİ DİKEY EKSENİ yalnız onun bloğunda: öteki iki
+           başlığın böyle bir ekseni yok ve boş bir kutu göstermek
+           "burada da var ama girilmemiş" demek olurdu. */
+        k !== "tohum" ? "" :
+        basAlani("t_asagi_mm", "T aşağı", "mm", 0.5,
+                 "Tohum ucunun kendi dikey ekseni (PLC'de j4) inik konumu.",
+                 b.t_asagi_mm)
+        + basAlani("t_yukari_mm", "T yukarı", "mm", 0.5,
+                   "Aynı eksenin tam çekilmiş konumu.", b.t_yukari_mm)
+      }</div></div>`;
+  }).join("");
   kap.querySelectorAll("input").forEach((el) => {
     el.oninput = () => { S.ucAyarDuzenleniyor = true; basOrnekYaz(); };
   });
@@ -1165,43 +1179,52 @@ function basTablosuCiz(baslar, bilgi) {
 
 function basTablosuTopla() {
   const cikti = {};
-  $$("#bas-tablo .bas-satir").forEach((satir) => {
-    const k = satir.dataset.bas;
+  $$("#bas-tablo .bas-blok").forEach((blok) => {
+    const k = blok.dataset.bas;
     cikti[k] = cikti[k] || {};
-    satir.querySelectorAll("input").forEach((el) => {
+    blok.querySelectorAll("input").forEach((el) => {
       cikti[k][el.dataset.alan] = el.value === "" ? null : Number(el.value);
     });
   });
   return cikti;
 }
 
-/** Sayının NE YAPTIĞI, yazıldığı anda. İşaretin yönünü anlatan bir cümle
- *  okumak yerine örneği görmek daha hızlı. */
+/** Taret alanlarını topla — kayma, dönüş Z'si, dönüş süresi. */
+function taretTopla() {
+  const oku = (sec) => {
+    const el = $(sec);
+    return !el || el.value === "" ? null : Number(el.value);
+  };
+  return { dx: oku("#taret-dx"), dy: oku("#taret-dy"),
+           z_min: oku("#taret-z"), sure_ms: oku("#taret-sure") };
+}
+
+/** Sayının NE YAPTIĞI, yazıldığı anda. Kayma artık ÜÇÜ İÇİN AYNI: taret
+ *  tek bir noktada dönüyor ve hangi başlık aşağı bakarsa orada bakıyor. */
 function basOrnekYaz() {
   const el = $("#bas-ornek");
   if (!el) return;
-  const b = basTablosuTopla();
-  const satir = (k, ad) => {
-    const o = b[k] || {};
-    const dx = Number(o.dx) || 0, dy = Number(o.dy) || 0;
-    return `${ad}: X300 Y150 hedefine makine <b>X${(300 + dx).toFixed(0)} `
-         + `Y${(150 + dy).toFixed(0)}</b>'ye gider`;
-  };
-  el.innerHTML = "Örnek — " + [satir("sulama", "Sula"), satir("nem", "Nem ölç"),
-    satir("tohum", "Ek")].join(" · ");
+  const t = taretTopla();
+  const dx = Number(t.dx) || 0, dy = Number(t.dy) || 0;
+  el.innerHTML = `Örnek — X300 Y150 hedefine makine <b>X${(300 + dx).toFixed(0)} `
+    + `Y${(150 + dy).toFixed(0)}</b>'ye gider; hangi başlık seçiliyse o, `
+    + `orada aşağı bakar. Üç başlık aynı noktada — aralarındaki fark açı.`;
 }
 
 async function basKaydet() {
-  const baslar = basTablosuTopla();
-  const ayar = { baslar };
+  const ayar = { baslar: basTablosuTopla(), taret: taretTopla() };
   const sz = $("#ua-safe_z");
   if (sz && sz.value !== "") ayar.safe_z = Number(sz.value);
   const zr = $("#ua-z_safe_reg");
   if (zr && zr.value !== "") ayar.z_safe_reg = Number(zr.value);
+  // Z GÜVENLİ YÜKSEKLİK PAYI. "Z güvenli mi" kıyaslamasının toleransı;
+  // koda gömülü 1 mm'ydi ve hiçbir yerden değiştirilemiyordu.
+  const zo = $("#ua-guvenli_z_ofset");
+  if (zo && zo.value !== "") ayar.guvenli_z_ofset = Number(zo.value);
   const sonuc = await komutGonder("uc_kaydet", { ayar });
   if (sonuc && sonuc.ok) {
     S.ucAyarDuzenleniyor = false;
-    gunluk("✓ Baş kaymaları kaydedildi", "ok");
+    gunluk("✓ Taret ve başlık ayarları kaydedildi", "ok");
   }
 }
 
@@ -4953,8 +4976,13 @@ function olaylariBagla() {
   // ÜÇ BAŞ İÇİN "BU BAŞI ŞU NOKTAYA GÖTÜR". Kaymanın ne yaptığını
   // okumak yerine görmenin en kısa yolu: aynı X/Y'ye üç düğme, üç
   // ayrı makine koordinatı.
-  $$("#bas-git [data-bas]").forEach((d) => {
-    d.onclick = async () => {
+  /* TARETİ BİR NOKTAYA GÖTÜR. Kayma üç başlık için de aynı (taretin
+     dönme ekseni), o yüzden tek düğme — eskiden üç düğme vardı ve üçü
+     de aynı noktayı verirdi. Kayma `S.ucDurum.taret`ten geliyor;
+     `baslar[*].dx/dy` da aynı sayıyı taşıyor ama tek kaynak taret. */
+  const basGit = $("#d-bas-git");
+  if (basGit) {
+    basGit.onclick = async () => {
       const x = Number(($("#bg-x") || {}).value);
       const y = Number(($("#bg-y") || {}).value);
       const not = $("#bas-git-not");
@@ -4962,18 +4990,17 @@ function olaylariBagla() {
         if (not) not.textContent = "Önce X ve Y yazın.";
         return;
       }
-      const b = ((S.ucDurum || {}).baslar || {})[d.dataset.bas] || {};
-      const mx = x + (Number(b.dx) || 0);
-      const my = y + (Number(b.dy) || 0);
+      const t = (S.ucDurum || {}).taret || {};
+      const dx = Number(t.dx) || 0, dy = Number(t.dy) || 0;
+      const mx = x + dx, my = y + dy;
       if (not) {
-        not.innerHTML = `${kacisli(d.textContent.trim())}: hedef `
-          + `<b>X${x} Y${y}</b> → makine <b>X${mx.toFixed(1)} `
-          + `Y${my.toFixed(1)}</b> (kayma ${(Number(b.dx) || 0).toFixed(0)}/`
-          + `${(Number(b.dy) || 0).toFixed(0)})`;
+        not.innerHTML = `Hedef <b>X${x} Y${y}</b> → makine `
+          + `<b>X${mx.toFixed(1)} Y${my.toFixed(1)}</b> `
+          + `(taret kayması ${dx.toFixed(0)}/${dy.toFixed(0)})`;
       }
       await komutGonder("git", { x: mx, y: my });
     };
-  });
+  }
 
   // UÇ SEÇİCİ. Komut ajana gidiyor; Z kilidi ve açı denetimi ORADA,
   // panelde ikinci bir kopyası yok — iki yerde iki kural, biri

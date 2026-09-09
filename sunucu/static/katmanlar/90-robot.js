@@ -101,31 +101,43 @@ Tarla.katman({
     p.sutun.scale.y = boy;
     p.sutun.position.set(0, kafaUst + boy / 2, 0);
 
-    /* İŞ BAŞINDAKİ BAŞ İNİYOR, ÖTEKİLER TABLADA KALIYOR.
-     * Üç baş aynı çizildiği için hangisinin çalıştığını ayıran tek şey
-     * bu. Üç kaynak, üçü de ayrı:
+    /* AŞAĞI BAKAN BAŞLIK — TEK TANE ÇİZİLİYOR.
+     *
+     * Üç başlık tek parçada; servo hangi açıya dönerse o başlık aşağı
+     * bakıyor. Model de tek başlık çiziyor (bkz. makine.js "TARET").
+     *
+     * SEÇİLİ UÇ BİLİNMİYORSA BAŞLIK HİÇ ÇİZİLMİYOR. Servoda geri
+     * besleme yok ve kart açılışta/sıfırlandıktan sonra ne komut
+     * edildiğini bilmiyor; birini çizmek, bilinmeyeni bilinen gibi
+     * göstermek olurdu. Boş gövde "üç başlık burada, hangisinin aşağı
+     * baktığını bilmiyoruz" diyor.
+     *
+     * İNİŞ. Üç kaynak, üçü de ayrı:
      *   - tohum ucu: KENDİ EKSENİ (PLC j4) ve ölçülen mm.
      *   - sulama başlığı: pompa rölesi (`r_su_pompasi`). Röle yalnız
-     *     "akıyor / akmıyor" diyor; başlığın ayrı ekseni yok, düşme
-     *     miktarı bu yüzden ölçüm değil, gösterim kuralı (makine.js).
-     *   - nem probu: SİNYAL YOK. Probun kendi ekseni yok ve durum
-     *     paketinde "prob ölçüyor" diye bir bayrak geçmiyor
-     *     (ajan/plc.py'de yalnız X, Y, Z, T var). Uydurma bir durum
-     *     üretmek yerine prob tablada duruyor; `suDurumu().nemSinyali`
-     *     bunu söylüyor. */
+     *     "akıyor / akmıyor" diyor; ayrı ekseni yok, düşme miktarı
+     *     ölçüm değil gösterim kuralı (makine.js).
+     *   - nem probu: SİNYAL YOK. Kendi ekseni yok ve durum paketinde
+     *     "prob ölçüyor" bayrağı geçmiyor (ajan/plc.py'de yalnız
+     *     X, Y, Z, T var). Uydurma bir durum üretmek yerine sabit
+     *     duruyor; `suDurumu().nemSinyali` bunu söylüyor. */
+    const secici = ((o.veri.durum.uc || {}).secici) || {};
+    const secili = secici.secili_bas || null;
     const dinlenme = Number(u.basY || 0);
-    if (u.tohumUcu) {
-      const t = o.veri.durum.tohum_ucu || {};
-      const dus = (t.kalibre && Number.isFinite(Number(t.mm)))
-        ? Math.abs(Number(t.mm) - Number(t.yukari_mm || 0)) * MM : 0;
-      u.tohumUcu.position.y = dinlenme - dus;
+    if (u.aktifBas) {
+      u.aktifBas.visible = !!secili;
+      let dus = 0;
+      if (secili === "tohum") {
+        const t = o.veri.durum.tohum_ucu || {};
+        dus = (t.kalibre && Number.isFinite(Number(t.mm)))
+          ? Math.abs(Number(t.mm) - Number(t.yukari_mm || 0)) * MM : 0;
+      } else if (secili === "sulama") {
+        const PN = window.Panel;
+        const akiyor = !!(PN && PN.S && PN.S.roleDurum && PN.S.roleDurum.su_pompasi);
+        dus = akiyor ? Number(u.aktifDusme || 0) : 0;
+      }
+      u.aktifBas.position.y = dinlenme - dus;
     }
-    if (u.baslik) {
-      const PN = window.Panel;
-      const akiyor = !!(PN && PN.S && PN.S.roleDurum && PN.S.roleDurum.su_pompasi);
-      u.baslik.position.y = dinlenme - (akiyor ? Number(u.aktifDusme || 0) : 0);
-    }
-    if (u.nemProbu) u.nemProbu.position.y = dinlenme;
 
     /* SU HUZMESİ. Kaynak tek: kartın bildirdiği röle durumu (`r_su_pompasi`).
      * Panel kendi tahminini tutmuyor — "sulama komutu gönderdim, demek ki
@@ -158,14 +170,16 @@ Tarla.katman({
         /* Huzme başlığın UCUNDAN başlıyor. Başlık pompa açıkken indiği
          * için ofset sabit değil: grubun O ANKİ y'si + ucun grup içi
          * ofseti. Sabit yazsaydık su, inmiş başlığın içinden çıkardı. */
-        const agizY = (u.baslik ? u.baslik.position.y : Number(u.basY || 0))
+        /* Huzme aşağı bakan başlığın AĞZINDAN çıkıyor. Başlık pompa
+         * açıkken indiği için ofset sabit değil: grubun O ANKİ y'si +
+         * ağzın grup içi ofseti. Sabit yazsaydık su, inmiş başlığın
+         * içinden çıkardı. */
+        const agizY = (u.aktifBas ? u.aktifBas.position.y : Number(u.basY || 0))
           + Number(u.basUcY || 0);            // kafa yerelinde ağzın y'si
         // Ağzın SAHNEDEKİ yüksekliği; toprak yüzeyi y = 0.
         const yer = Math.max(0.01, p.ucKafa.position.y + agizY);
         p.su.scale.y = yer;
         p.su.position.y = agizY - yer / 2;
-        // Huzme başlıkla birlikte yana kaymalı: başlığın x/z'si ayardan.
-        if (u.baslik) { p.su.position.x = u.baslik.position.x; p.su.position.z = u.baslik.position.z; }
         this._akisBasla(o);
       }
     }
@@ -181,80 +195,37 @@ Tarla.katman({
   suDurumu() {
     const p = this._p;
     if (!p || !p.su) return { kuruldu: false };
-    // Başlığın da yerini veriyoruz: "başlık nerede" sorusu ekran
-    // görüntüsünden cevaplanamıyor, sahnede küçük ve koyu.
-    // BAŞLIK KİMLİKLE GELİYOR. Eskiden "çocuğu beşten çok olan grup" diye
-    // aranıyordu; üç baş aynı ve sade gövdeye indirilince o ölçüt hiçbirini
-    // bulmuyor ve "başlık yok" diye yanlış cevap veriyordu.
-    const b = p.ucKafa && p.ucKafa.userData && p.ucKafa.userData.baslik;
-    /* NEM PROBUNUN YERİ DE BURADA. "Prob görünmüyor" sorusu iki ayrı
-     * şey olabiliyor: kurulmamış olmak, ya da kurulup gözden kaçacak
-     * bir yerde durmak. İkisini ekran görüntüsünden ayırmak mümkün
-     * değildi; sayı olarak yazınca ayrılıyor. */
-    const np = p.ucKafa && p.ucKafa.userData && p.ucKafa.userData.nemProbu;
-    /* SARKMA DA GEREKİYOR. "Kuruldu ve yeri doğru" ölçülebiliyordu ama
-     * prob yine görünmüyordu: taşıyıcı plakanın tam altında duruyor ve
-     * plakadan yeterince sarkmazsa üstten bakışta plaka onu tamamen
-     * örtüyor. Ölçülen sayı buydu — 79 mm sarkma, 76 mm plaka kenarı,
-     * yani ancak 44 dereceden yatık bakışta görünüyordu. Sarkmayı da
-     * yazıyoruz ki bir daha "kurulu ama görünmüyor" ekran görüntüsünden
-     * değil sayıdan anlaşılsın. */
-    let probAltMm = null;
-    if (np && np.children.length) {
-      let alt = Infinity;
-      np.children.forEach((c) => {
-        const g = c.geometry && c.geometry.parameters;
-        const boy = g ? (g.height != null ? g.height : 0) : 0;
-        alt = Math.min(alt, c.position.y - boy / 2);
-      });
-      probAltMm = Number.isFinite(alt) ? +(alt * 1000).toFixed(1) : null;
-    }
+    /* TARET TANISI. Üç ayrı başlık yerine tek parça çizildiği için eski
+     * alanlar (prob nerede, başlık nerede, hangi baş inmiş) anlamını
+     * yitirdi: üçü aynı noktada ve sahnede yalnız aşağı bakan çiziliyor.
+     * Yerlerine, "neden görünmüyor" sorusunu cevaplayan sayılar geldi. */
+    const u = (p.ucKafa && p.ucKafa.userData) || {};
+    const t = u.taret || {};
+    const ab = u.aktifBas;
     return {
       kuruldu: true,
-      probVar: !!np,
-      probParca: np ? np.children.length : 0,
-      probX: np ? +np.position.x.toFixed(4) : null,
-      probZ: np ? +np.position.z.toFixed(4) : null,
-      // Probun kafa merkezine göre en alt noktası (mm). Plakanın altı
-      // yaklaşık -1 mm; aradaki fark probun plakadan sarkması.
-      probAltMm: probAltMm,
-      /* KAYMASI GİRİLMEMİŞ BAŞLAR. Bunların yeri `uclar.json`dan
-       * gelmiyor, sahnede üst üste binmesinler diye çaplarına göre
-       * dizildiler. Uydurma sayı değil ama ÖLÇÜM de değil; hangileri
-       * olduğu yazılıyor ki koordinatına güvenilmesin. */
-      kaymaGirilmemis: (p.ucKafa && p.ucKafa.userData
-                        && p.ucKafa.userData.kaymaGirilmemis) || [],
-      tablaMm: (p.ucKafa && p.ucKafa.userData && p.ucKafa.userData.tabla)
-        ? p.ucKafa.userData.tabla.map((v) => +(v * 1000).toFixed(1)) : null,
-      basZMm: [np, p.ucKafa && p.ucKafa.userData && p.ucKafa.userData.tohumUcu]
-        .filter(Boolean).map((g) => +(g.position.z * 1000).toFixed(1)),
-      baslikVar: !!b,
-      baslikX: b ? +b.position.x.toFixed(4) : null,
-      baslikParca: b ? b.children.length : 0,
-      // Hangi baş inmiş — üçü aynı çizildiği için ayıran tek şey bu.
-      baslikDusmus: b ? +((((p.ucKafa.userData.basY || 0) - b.position.y))
-                          * 1000).toFixed(1) : null,
-      aktifDusmeMm: p.ucKafa && p.ucKafa.userData
-        ? +((p.ucKafa.userData.aktifDusme || 0) * 1000).toFixed(1) : null,
+      // Taretin dönme ekseni ve gövde ölçüsü (mm) — kayma doğru mu.
+      taretMm: t.x == null ? null
+        : { x: +(t.x * 1000).toFixed(1), z: +(t.z * 1000).toFixed(1),
+            cap: +(t.r * 2000).toFixed(1), boy: +(t.boy * 1000).toFixed(1) },
+      /* AŞAĞI BAKAN BAŞLIK ÇİZİLİ Mİ. `false` iki ayrı şey OLABİLİR ve
+       * ikisi de doğru davranış: seçili uç bilinmiyor (kart açılışta ya
+       * da sıfırlandıktan sonra) ya da katman henüz güncellenmedi.
+       * Bilinmiyorken çizmemek bilerek: birini çizmek, bilinmeyeni
+       * bilinen gibi göstermek olurdu. */
+      aktifBasCizili: !!(ab && ab.visible),
+      aktifBasDusmusMm: ab
+        ? +(((Number(u.basY) || 0) - ab.position.y) * 1000).toFixed(1) : null,
+      aktifDusmeMm: u.aktifDusme == null
+        ? null : +(u.aktifDusme * 1000).toFixed(1),
       /* NEM PROBUNUN KENDİ SİNYALİ YOK. Probun ayrı bir ekseni yok ve
        * durum paketinde "prob ölçüyor" diye bir bayrak geçmiyor; ölçüm
        * ana Z ile daldırılarak yapılıyor. Prob bu yüzden sabit duruyor. */
       nemSinyali: "yok — probun kendi ekseni ve durum bayrağı yok",
-      /* BAŞ GÖRÜNÜRLÜĞÜ — asıl ölçü. "Küme sütunun arkasında" sanılıyordu;
-       * ışın testi sütunun 96 atıştan yalnız 0-2'sinde önde olduğunu,
-       * kümeyi örten şeyin başların ASILDIĞI PLAKA olduğunu gösterdi.
-       * `sarkma` başın plakadan ne kadar sarktığı, `gerekenSarkma` 36
-       * derecelik varsayılan bakıştan görünmesi için gerekeni (bkz.
-       * makine.js). `yeterli` false ise baş plakanın altında kalıyor. */
-      gorunurluk: (p.ucKafa && p.ucKafa.userData && p.ucKafa.userData.gorunurluk)
-        ? (() => {
-            const g = p.ucKafa.userData.gorunurluk;
-            return { sarkmaMm: +(g.sarkma * 1000).toFixed(1),
-                     gerekenSarkmaMm: +(g.gerekenSarkma * 1000).toFixed(1),
-                     enUzakKenarMm: +(g.mesafe * 1000).toFixed(1),
-                     plakaMm: g.plaka.map((v) => +(v * 1000).toFixed(1)),
-                     yeterli: g.yeterli };
-          })() : null,
+      /* DÖNME EKSENİNİN YÖNÜ BİLİNMİYOR: taretin makine X'i mi Y'si mi
+       * etrafında döndüğü söylenmedi, o yüzden öteki iki başlık gövdenin
+       * içinde ve çizilmiyor. Yön öğrenilince gövde açılabilir. */
+      donmeEkseni: "bilinmiyor — öteki iki başlık çizilmiyor",
       gorunur: p.su.visible,
       boy: +p.su.scale.y.toFixed(4),
       y: +p.su.position.y.toFixed(4),

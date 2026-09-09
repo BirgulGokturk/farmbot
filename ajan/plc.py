@@ -377,6 +377,15 @@ class Gantry:
         # yolu da geçiriyor; yoksa kayıt yalnızca bellekte kalır.
         self.kalib_yolu = ayar.get("kalibrasyon_tam_yol")
         self.guvenli_z = float(ayar.get("guvenli_z", 340.0))
+        # GÜVENLİ YÜKSEKLİK PAYI (mm). "Z güvenli mi" kıyaslamasında
+        # `guvenli_z` sayısına verilen tolerans; koda gömülü 1,0 mm'ydi ve
+        # hiçbir yerden değiştirilemiyordu. Encoder gürültüsü, duruş
+        # sapması ve kalibrasyon yuvarlaması kuruluma göre değişiyor:
+        # payı küçük tutan bir makinede Z tam sınırda dururken hareket
+        # reddediliyor, büyük tutan bir kurulumda ise sınırın altındaki
+        # bir Z güvenli sayılıyor. Panelden giriliyor (Ayarlar → Başlar),
+        # ajan `guvenli_z_ofset` ile buraya taşıyor.
+        self.guvenli_z_ofset = float(ayar.get("guvenli_z_ofset", 1.0))
         # Toprak YÜZEYİNİN makine Z'sindeki yeri. Şimdiye kadar her yer
         # yüzeyi 0 kabul ediyordu; gerçek makinede toprak kabın içinde
         # ve yüzey sıfırdan epey yukarıda. Ekim derinliği, uç açıklığı
@@ -562,7 +571,7 @@ class Gantry:
             if bit is not None:
                 return bool(bit)
         try:
-            return self.konum_mm()[2] >= self.guvenli_z - 1.0
+            return self.konum_mm()[2] >= self.guvenli_z - self.guvenli_z_ofset
         except Exception:
             return False
 
@@ -591,8 +600,9 @@ class Gantry:
                 "enable": enable,
                 "hareket": self.hareket_ediyor or bool(jog_acik),
                 "jog": jog_acik,
-                "z_guvenli": konum[2] >= self.guvenli_z - 1.0,
+                "z_guvenli": konum[2] >= self.guvenli_z - self.guvenli_z_ofset,
                 "guvenli_z": self.guvenli_z,
+                "guvenli_z_ofset": self.guvenli_z_ofset,
                 "toprak_z": self.toprak_z,
                 "toprak_t": self.toprak_t,
                 "guvenli_t": self.guvenli_t,
@@ -1106,7 +1116,7 @@ class Gantry:
         önünü kesiyor.
         """
         adimlar: list[tuple[int, float, str]] = []
-        if yatay_var and simdiki[2] < self.guvenli_z - 1.0:
+        if yatay_var and simdiki[2] < self.guvenli_z - self.guvenli_z_ofset:
             adimlar.append((2, self.guvenli_z, "Z güvenli yüksekliğe"))
         adimlar += [(1, hedef[1], "Y"), (0, hedef[0], "X"), (2, hedef[2], "Z")]
         return adimlar

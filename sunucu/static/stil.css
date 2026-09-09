@@ -918,23 +918,28 @@ button.dugme.basili { background: var(--vurgu); border-color: var(--vurgu); colo
 /* ---------------------------------------------------------------- başlar
    Üç sabit baş tek tabloda: asıl bilgi bir başın kayması değil, üçünün
    BİRBİRİNE GÖRE nerede olduğu. */
-.bas-tablo { display: flex; flex-direction: column; gap: 4px; margin: 8px 0; }
-.bas-baslik, .bas-satir {
-  /* Beş sütun: dört milimetre alanı + servo açısı (derece). Servo
-     sütunu sonda çünkü birimi ötekilerden farklı ve boş bırakılabiliyor. */
-  display: grid; grid-template-columns: minmax(150px, 1.4fr) repeat(5, 1fr);
-  gap: 6px; align-items: center;
-}
-.bas-baslik { font-size: 12px; color: var(--metin-3); }
-
-.bas-satir input { min-width: 0; }
+/* ------------------------------------------------------- baş ayarları
+ *
+ * TEK SATIRLIK IZGARA KALDIRILDI — GİRİLEN SAYI GÖRÜNMÜYORDU.
+ *
+ * Ölçü: sol panel 380 px (`--sol-en`), iç boşluk 2x16 = 32 px düşünce
+ * 348 px kalıyor. Eski düzen `minmax(150px, 1.4fr) repeat(5, 1fr)` idi;
+ * ad sütunu tek başına 150 px, beş boşluk 30 px, geriye beş kutuya
+ * 168 px yani kutu başına ~33 px kalıyordu. Kendi iç boşluğu ve
+ * kenarlığı düşünce görünen genişlik ~15 px — bir rakam. Kullanıcı
+ * yazdığı sayıyı okuyamıyordu.
+ *
+ * Yeni düzen: her başlık kendi bloğu, alanlar etiketleriyle birlikte
+ * SARIYOR (`.alan-izgara`, en az 96 px). 348 px'e üç sütun sığıyor,
+ * kutu başına ~110 px — beş altı rakam rahat okunuyor. Dar ekranda
+ * sütun sayısı kendiliğinden azalıyor, kutu daralmıyor. */
+.bas-tablo { display: flex; flex-direction: column; gap: var(--b3); margin: 8px 0; }
+.bas-blok { display: flex; flex-direction: column; gap: var(--b2); }
+.bas-blok + .bas-blok { border-top: 1px solid var(--cizgi); padding-top: var(--b3); }
 .bas-ad { font-weight: 600; font-size: 13px; }
+.bas-alanlar { grid-template-columns: repeat(auto-fit, minmax(96px, 1fr)); }
+.bas-alanlar input { min-width: 0; width: 100%; }
 .bas-git { margin: 8px 0; }
-@media (max-width: 720px) {
-  .bas-baslik { display: none; }
-  .bas-satir { grid-template-columns: 1fr 1fr; }
-  .bas-satir .bas-ad { grid-column: 1 / -1; }
-}
 
 .uc-durum { display: flex; align-items: center; gap: var(--b2); flex-wrap: wrap;
              font-size: var(--yazi-govde); color: var(--metin-2); }
