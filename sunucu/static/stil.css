@@ -920,7 +920,9 @@ button.dugme.basili { background: var(--vurgu); border-color: var(--vurgu); colo
    BİRBİRİNE GÖRE nerede olduğu. */
 .bas-tablo { display: flex; flex-direction: column; gap: 4px; margin: 8px 0; }
 .bas-baslik, .bas-satir {
-  display: grid; grid-template-columns: minmax(150px, 1.4fr) repeat(4, 1fr);
+  /* Beş sütun: dört milimetre alanı + servo açısı (derece). Servo
+     sütunu sonda çünkü birimi ötekilerden farklı ve boş bırakılabiliyor. */
+  display: grid; grid-template-columns: minmax(150px, 1.4fr) repeat(5, 1fr);
   gap: 6px; align-items: center;
 }
 .bas-baslik { font-size: 12px; color: var(--metin-3); }

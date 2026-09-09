@@ -61,7 +61,22 @@ BAS_VARSAYILAN = {"dx": 0.0, "dy": 0.0, "z_min": 0.0, "derinlik_mm": 0.0}
 #: kurulum). Makinede ters bağlıysa buraya öteki uç yazılıyor; yanlış
 #: varsayım "uç aşağıdayken X/Y serbest" demek olurdu ve o, ucu toprağa
 #: sürtmenin en kolay yolu.
-BAS_ISTEGE_BAGLI = ("t_asagi_mm", "t_yukari_mm")
+#: `servo_aci`: uç seçici servonun bu başı iş konumuna getirdiği DERECE.
+#: İsteğe bağlı ve boş bırakılabilir — boş, "bu baş servoda yok" demek
+#: (mekanizmaya henüz bağlanmamış ya da hiç bağlanmayacak), sıfır değil.
+#: Sıfır geçerli bir açı ve ikisini karıştırmak, bağlı olmayan bir başı
+#: seçmeye çalışmak olurdu.
+#:
+#: DEĞER ÖLÇÜLEREK GİRİLİYOR, HESAPLANMIYOR. Servo horn'unun dişlisi
+#: hiçbir zaman tam 0/90/180'e hizalanmıyor; kullanıcı mekanizmayı elle
+#: doğru konuma getirip panelde okunan açıyı yazıyor. Koda 0/90/180
+#: gömmek, o üç sayının doğru olduğunu varsaymak olurdu.
+BAS_ISTEGE_BAGLI = ("t_asagi_mm", "t_yukari_mm", "servo_aci")
+
+#: Servonun mekanik aralığı. Dışına sürmek dişliyi zorluyor; kart da aynı
+#: aralığı denetliyor (firmware `UC` komutu) — iki uçta da denetlemek,
+#: seri porta elle yazılan komutu da kapsıyor.
+SERVO_ACI_ALT, SERVO_ACI_UST = 0.0, 180.0
 
 VARSAYILAN = {
     # X/Y hareketinin yapılabildiği en düşük Z. Üç baş da bu yükseklikte
@@ -77,6 +92,16 @@ VARSAYILAN = {
         "nem": {"dx": 0.0, "dy": 0.0, "z_min": 0.0, "derinlik_mm": 20.0},
         "tohum": {"dx": 0.0, "dy": 0.0, "z_min": 0.0, "derinlik_mm": 0.0},
     },
+    # UÇ SEÇİCİ SERVONUN HAREKET SÜRESİ (ms). Karta gömülmüyor: süre
+    # servonun hızına, horn'un yüküne ve iki açı arasındaki mesafeye
+    # bağlı, yani bir kurulum özelliği. Kart bu süre dolana kadar
+    # "gidiyor" diyor (bkz. firmware `UC`). Buradaki 900, servo
+    # doğrulanmadığı için ÖLÇÜLMÜŞ bir değer DEĞİL; en geniş dönüşün
+    # tipik SG90/MG996 hız sayfalarına göre kabaca üst sınırı ve
+    # doğrulama sırasında ölçülüp güncellenmesi bekleniyor. Kısa
+    # tutmaktansa uzun tutuluyor: erken "vardı" demek, horn yoldayken iş
+    # başlatmak olurdu.
+    "servo_sure_ms": 900,
     # Tohumluk gözleri: koordinatı, içindeki tür ve dolu/boş hâli.
     # Liste boşken tohumluk tanımsız sayılıyor ve çizilmiyor.
     "tohumluk": {"gozler": []},
@@ -215,9 +240,18 @@ def _bas_dogrula(ham: Any) -> dict[str, Any]:
             cikti[alan] = None
             continue
         try:
-            cikti[alan] = round(float(deger), 2)
+            sayi = round(float(deger), 2)
         except (TypeError, ValueError):
             cikti[alan] = None
+            continue
+        # ARALIK DIŞI AÇI KAYDEDİLMİYOR. Kırpmak da yok: 200 yazan biri
+        # 180'i değil 200'ü kastediyor ve sessizce 180'e çekmek, panelde
+        # yazandan başka bir açıya sürmek demek. Boşa düşüyor ve
+        # `kaydet` bunu kullanıcıya söylüyor.
+        if alan == "servo_aci" and not (SERVO_ACI_ALT <= sayi <= SERVO_ACI_UST):
+            cikti[alan] = None
+            continue
+        cikti[alan] = sayi
     return cikti
 
 
@@ -328,6 +362,49 @@ class Uclar:
         kaymanın uygulanmadığı eski davranışın ta kendisi.
         """
         return self.baslar().get(str(kimlik), _bas_dogrula(None))
+
+    @staticmethod
+    def bas_indeksi(kimlik: str) -> int:
+        """Başın servo komutundaki indeksi — `BASLAR` sırası.
+
+        Kart hiçbir adı bilmiyor, yalnız 0-2 arası bir indeks alıyor
+        (bkz. firmware `UC`). Sıra tek bir yerde tanımlı olsun diye
+        burada; iki yerde iki farklı sıra, yanlış ucu seçmek demekti.
+        """
+        try:
+            return BASLAR.index(str(kimlik))
+        except ValueError:
+            return -1
+
+    def servo_sure_ms(self) -> int:
+        """Servonun hareket süresi (ms) — ayardan, koda gömülü değil."""
+        try:
+            sure = int(self.ayar.get("servo_sure_ms")
+                       or VARSAYILAN["servo_sure_ms"])
+        except (TypeError, ValueError):
+            sure = int(VARSAYILAN["servo_sure_ms"])
+        return max(1, min(10000, sure))
+
+    def servo_komutu(self, kimlik: str) -> tuple[str, str]:
+        """(komut, engel) — engel boş değilse komut GÖNDERİLMEMELİ.
+
+        Servoya gidecek satırı burada kuruyoruz çünkü açının kaynağı
+        ayar dosyası ve indeksin kaynağı `BASLAR`; ikisi de burada.
+        Açı girilmemişse komut YOK: o baş mekanizmaya bağlanmamış
+        demektir ve uydurma bir açıya sürmek mekanizmayı zorlar.
+        """
+        kimlik = str(kimlik or "")
+        indeks = self.bas_indeksi(kimlik)
+        if indeks < 0:
+            return "", f"Bilinmeyen baş: '{kimlik}'"
+        aci = self.bas(kimlik).get("servo_aci")
+        if aci is None:
+            ad = (BAS_BILGI.get(kimlik) or {}).get("ad", kimlik)
+            return "", (f"{ad} için servo açısı girilmemiş — Ayarlar → "
+                        f"Başlar ve tohumluk bölümünde ölçülen açıyı yazın. "
+                        f"Açı olmadan uç seçilmiyor; uydurma bir açıya "
+                        f"sürmek mekanizmayı zorlar.")
+        return f"UC {indeks} {int(round(float(aci)))} {self.servo_sure_ms()}", ""
 
     def sulama_basligi(self) -> dict[str, float]:
         """Sulama başlığının kayması ve Z tabanı.

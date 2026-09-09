@@ -1041,6 +1041,63 @@ function tohumUcuYaz(d) {
   $$('.jog[data-eksen="t"]').forEach((b) => { b.disabled = kilit; });
 }
 
+/* ================================================== UÇ SEÇİCİ SERVO (D9)
+ *
+ * BURADA GÖRÜNEN ŞEY KOMUT EDİLEN DEĞER, ÖLÇÜM DEĞİL. Servoda geri
+ * besleme yok: kart ne yazdığını bilir, horn'un nerede olduğunu bilmez.
+ * Panel bunu gizlemiyor — "komut edilen" yazısı her zaman görünür.
+ *
+ * BİLİNMİYOR AYRI BİR HÂL. Kart açılışta ve her sıfırlanmada (röle
+ * notundaki besleme çökmesi bunu düzenli yapıyor) konumu unutuyor;
+ * `secili` null geliyor ve panel sıfırıncı ucu değil "bilinmiyor"
+ * yazıyor. İş de o hâlde başlamıyor (kapı ajanda).
+ */
+function ucSeciciYaz(d) {
+  const kutu = $("#uc-secici");
+  if (!kutu) return;
+  const s = ((d && d.uc) || {}).secici || {};
+  const baslar = ((d && d.uc) || {}).baslar || {};
+  const bilgi = ((d && d.uc) || {}).bas_bilgi || {};
+  const engel = String(s.engel || "");
+  const bagli = !!(d && d.bagli);
+
+  // Düğme kilidi: Z aşağıdayken (engel) ya da açısı girilmemişken.
+  // Kilidin sebebi HER ZAMAN yazılı — sessizce kapalı düğme, bozuk
+  // düğmeden ayırt edilemiyor.
+  const sebepler = [];
+  if (!bagli) sebepler.push("Robot bağlı değil.");
+  if (engel) sebepler.push(engel);
+  kutu.querySelectorAll(".uc-sec").forEach((b) => {
+    const k = b.dataset.bas;
+    const aciYok = (baslar[k] || {}).servo_aci == null;
+    b.disabled = !bagli || !!engel || aciYok;
+    b.classList.toggle("secili", s.secili_bas === k);
+    b.title = aciYok
+      ? "Servo açısı girilmemiş — Ayarlar → Başlar ve tohumluk"
+      : (engel || `${(bilgi[k] || {}).ad || k} ucunu seç`);
+    if (aciYok) sebepler.push(`${(bilgi[k] || {}).ad || k}: servo açısı girilmemiş.`);
+  });
+
+  const durum = $("#uc-secici-durum");
+  if (durum) {
+    if (s.secili == null) {
+      durum.textContent = "uç konumu bilinmiyor — bir uç seçin";
+    } else {
+      const ad = (bilgi[s.secili_bas] || {}).ad || s.secili_bas || "?";
+      durum.textContent = `komut edilen: ${ad}`
+        + (s.aci == null ? "" : ` · ${Number(s.aci).toFixed(0)}°`)
+        + (s.hareket ? " · gidiyor…" : "");
+    }
+  }
+  const not = $("#uc-secici-not");
+  if (not) {
+    not.textContent = (sebepler.length ? sebepler.join(" ") + " " : "")
+      + "Servoda geri besleme yok: burada yazan, kartın komut ettiği "
+      + "değer — mekanizmanın ölçülmüş konumu değil. Kart sıfırlanınca "
+      + "konum yeniden bilinmiyora düşer.";
+  }
+}
+
 /* ------------------------------------------------------------- başlar
  *
  * ÜÇÜ BİRDEN TABLODA. Asıl bilgi tek bir başın kayması değil, üçünün
@@ -1054,13 +1111,24 @@ const BAS_ALANLARI = [
   ["derinlik_mm", "Derinlik", 1],
 ];
 
+/* UÇ SEÇİCİ SERVONUN AÇISI — mm DEĞİL, DERECE. Ayrı bir sütun çünkü
+ * birimi ötekilerden farklı ve boş bırakılabiliyor: boş, "bu baş
+ * mekanizmaya bağlı değil" demek, sıfır derece değil.
+ *
+ * DEĞER ÖLÇÜLEREK GİRİLİYOR. Horn dişlisi hiçbir zaman tam 0/90/180'e
+ * hizalanmıyor; kullanıcı mekanizmayı elle doğru konuma getirip panelde
+ * okunan açıyı buraya yazıyor. Panelde 0/90/180 önermiyoruz — önerilen
+ * sayı, ölçülmüş sayı gibi okunur. */
+const BAS_SERVO_ALANI = ["servo_aci", "Servo açısı", 1];
+
 function basTablosuCiz(baslar, bilgi) {
   const kap = $("#bas-tablo");
   if (!kap) return;
   const sira = ["sulama", "nem", "tohum"];
   kap.innerHTML =
     `<div class="bas-baslik"><span>Baş</span>${
-      BAS_ALANLARI.map(([, ad]) => `<span>${ad} (mm)</span>`).join("")}</div>`
+      BAS_ALANLARI.map(([, ad]) => `<span>${ad} (mm)</span>`).join("")
+    }<span>${BAS_SERVO_ALANI[1]} (°)</span></div>`
     + sira.map((k) => {
       const b = baslar[k] || {};
       const i = bilgi[k] || {};
@@ -1069,7 +1137,11 @@ function basTablosuCiz(baslar, bilgi) {
           kacisli(i.simge || "")} ${kacisli(i.ad || k)}</span>${
         BAS_ALANLARI.map(([alan, , adim]) =>
           `<input type="number" step="${adim}" data-alan="${alan}"
-             value="${b[alan] == null ? "" : b[alan]}">`).join("")}</div>`;
+             value="${b[alan] == null ? "" : b[alan]}">`).join("")
+        }<input type="number" step="${BAS_SERVO_ALANI[2]}" min="0" max="180"
+             data-alan="${BAS_SERVO_ALANI[0]}" placeholder="ölçülen açı"
+             title="Boş = bu baş servoda yok"
+             value="${b[BAS_SERVO_ALANI[0]] == null ? "" : b[BAS_SERVO_ALANI[0]]}"></div>`;
     }).join("")
     // TOHUM UCUNUN KENDİ EKSENİ yalnız onun satırının altında: öteki iki
     // başın böyle bir ekseni yok ve boş bir kutu göstermek "burada da var
@@ -1084,7 +1156,7 @@ function basTablosuCiz(baslar, bilgi) {
            placeholder="yukarı T (mm)"
            value="${(baslar.tohum || {}).t_yukari_mm == null
                     ? "" : baslar.tohum.t_yukari_mm}">
-         <span></span><span></span>
+         <span></span><span></span><span></span>
        </div>`;
   kap.querySelectorAll("input").forEach((el) => {
     el.oninput = () => { S.ucAyarDuzenleniyor = true; basOrnekYaz(); };
@@ -4455,6 +4527,7 @@ function durumGuncelle(d) {
 
   ucGuncelle(d.uc);
   tohumUcuYaz(d);
+  ucSeciciYaz(d);
   diziGuncelle(d.dizi);
   kalibrasyonCiz(d);
   tanilariCiz(d);
@@ -4900,6 +4973,13 @@ function olaylariBagla() {
       }
       await komutGonder("git", { x: mx, y: my });
     };
+  });
+
+  // UÇ SEÇİCİ. Komut ajana gidiyor; Z kilidi ve açı denetimi ORADA,
+  // panelde ikinci bir kopyası yok — iki yerde iki kural, biri
+  // güncellenmeyince sessizce ayrışır.
+  $$("#uc-secici .uc-sec").forEach((d) => {
+    d.onclick = () => komutGonder("uc_sec", { bas: d.dataset.bas });
   });
 
   // TOHUM UCUNUN KENDİ EKSENİ — elle indir/kaldır.

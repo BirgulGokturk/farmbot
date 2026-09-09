@@ -98,6 +98,9 @@ IZINLI_KOMUTLAR = {
     "kamera_cihazlar",  # {} — sistemdeki /dev/video* düğümleri ve adları
     "kamera_kare",   # {"kamera":"ust"} — TAM çözünürlüklü tek kare (çözümleme)
     "role",          # {"ad": "su_pompasi"|"hava_pompasi", "durum": true}
+    "uc_sec",        # {"bas":"sulama"|"nem"|"tohum"} — uç seçici servo.
+                     #   Açı ayardan (`baslar.<bas>.servo_aci`), Z kilidi
+                     #   ajanda: Z aşağıdayken reddediliyor.
 }
 
 # Basılı tut jog'unda yanıt beklemiyoruz: panel saniyede 3-4 yenileme

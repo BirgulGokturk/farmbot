@@ -84,6 +84,23 @@ class Duzeltici:
     #: tablodan hiç geçmiyor — o ölçüm değil, kesin durum.
     MEDYANSIZ: set[str] = set()
 
+    #: KOMUT EDİLEN DEĞERLER — ölçüm değil, kesin durum. `ADIM` tablosunda
+    #: YOKLAR ve olmamalılar: medyan almak "son beş komutun ortancası"
+    #: demek olurdu, yuvarlamak da kartın söylediğini değiştirmek.
+    #: Rölelerle aynı kategori.
+    #:
+    #: `uc_secili` seçili uç indeksi (0-2) ya da None = BİLİNMİYOR,
+    #: `uc_aci` komut edilen derece (0-180) ya da None, `uc_hareket`
+    #: 1 iken horn hâlâ yolda. Servoda geri besleme yok: kart ne komut
+    #: ettiğini bilir, mekanizmanın nerede olduğunu bilmez.
+    KESIN = {
+        "r_su_pompasi": (0, 1),
+        "r_hava_pompasi": (0, 1),
+        "uc_secili": (0, 2),
+        "uc_aci": (0, 180),
+        "uc_hareket": (0, 1),
+    }
+
     #: DHT11 veri sayfası çalışma aralığı. Bunun dışı ölçüm değil arıza.
     DHT11_ARALIK = {"hava_sicaklik": (0.0, 50.0), "hava_nem": (20.0, 90.0)}
     DHT22_ARALIK = {"hava_sicaklik": (-40.0, 80.0), "hava_nem": (0.0, 100.0)}
@@ -190,6 +207,24 @@ class Duzeltici:
             if len(kuyruk) > self.pencere:
                 del kuyruk[0]
             veri[ad] = self._yuvarla(statistics.median(kuyruk), adim)
+
+        # KESİN DURUM KANALLARI. Yuvarlama ve medyan bunlara HİÇ
+        # dokunmuyor; yalnız aralık denetimi var, çünkü bozuk bir satır
+        # `uc_secili: 7` gösterip panelde olmayan bir ucu seçili
+        # yazdırabilir. Aralık dışıysa None: "bilinmiyor" doğru cevap,
+        # kırpmak uydurma bir değer üretmek olurdu.
+        for ad, (alt, ust) in self.KESIN.items():
+            if ad not in veri:
+                continue
+            deger = veri[ad]
+            if deger is None:
+                continue
+            try:
+                tam = int(deger)
+            except (TypeError, ValueError):
+                veri[ad] = None
+                continue
+            veri[ad] = tam if alt <= tam <= ust else None
 
         veri["ham"] = ham
         return veri
@@ -456,6 +491,9 @@ class SahteArduino(Arduino):
         # Kart iki röle tutuyor; sahte kip de aynısını taklit ediyor ki
         # panel gerçekte göreceğimiz hâliyle denenebilsin.
         self.roleler = {"su_pompasi": False, "hava_pompasi": False}
+        # Sahte kartta da AÇILIŞTA KONUM BİLİNMİYOR: gerçek kartla aynı
+        # davranmazsa panel yalnız sahtede çalışan bir yol izler.
+        self.uc = {"secili": None, "aci": None, "varis": 0.0}
         self._baslangic = time.time()
 
     @property
@@ -518,6 +556,9 @@ class SahteArduino(Arduino):
                         "dht": "DHT11",
                         "r_su_pompasi": 1 if self.roleler["su_pompasi"] else 0,
                         "r_hava_pompasi": 1 if self.roleler["hava_pompasi"] else 0,
+                        "uc_secili": self.uc["secili"],
+                        "uc_aci": self.uc["aci"],
+                        "uc_hareket": 1 if time.time() < self.uc["varis"] else 0,
                         "calisma_sn": int(time.time() - self._baslangic),
                     }
                 )
@@ -525,7 +566,8 @@ class SahteArduino(Arduino):
             time.sleep(self.aralik)
 
     def komut(self, metin: str) -> None:
-        """Kartın anladığı komutlar: ROLE <ad> <0|1> · KAPAT · OKU."""
+        """Kartın anladığı komutlar: ROLE <ad> <0|1> · UC <i> <derece> <ms>
+        · KAPAT · OKU."""
         metin = metin.strip()
         buyuk = metin.upper()
         if buyuk == "KAPAT":
@@ -541,6 +583,24 @@ class SahteArduino(Arduino):
             if ad not in self.roleler:
                 raise RuntimeError(f"Bilinmeyen röle: {ad}")
             self.roleler[ad] = parca[2] != "0"
+        elif buyuk.startswith("UC "):
+            # Gerçek kartla AYNI doğrulama: sahte kartın hoşgörülü olması,
+            # sahada reddedilecek bir komutu geliştirmede kabul etmek olur.
+            parca = metin.split()
+            if len(parca) != 4:
+                raise RuntimeError("UC <indeks> <derece> <sure_ms>")
+            try:
+                indeks, derece, sure = (int(parca[1]), int(parca[2]), int(parca[3]))
+            except ValueError:
+                raise RuntimeError("UC <indeks> <derece> <sure_ms>") from None
+            if not 0 <= indeks <= 2:
+                raise RuntimeError("UC indeksi 0-2 olmalı")
+            if not 0 <= derece <= 180:
+                raise RuntimeError("UC derecesi 0-180 olmalı")
+            if not 0 < sure <= 10000:
+                raise RuntimeError("UC sure_ms 1-10000 olmalı")
+            self.uc = {"secili": indeks, "aci": derece,
+                       "varis": time.time() + sure / 1000.0}
         else:
             raise RuntimeError(f"Bilinmeyen komut: {metin}")
         logger.info("Sahte Arduino komutu: %s", metin)

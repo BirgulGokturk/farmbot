@@ -205,6 +205,12 @@ class Ajan:
                 geri_cagir=self._olcum_geldi,
                 medyan_pencere=pencere,
             )
+        # UÇ SEÇİCİ. Kart hiç veri göndermeden önce de bir cevabımız
+        # olmalı ve o cevap "bilinmiyor" — sıfır değil.
+        self._uc_secili: Any = None
+        self._uc_aci: Any = None
+        self._uc_harekette = False
+
         # Program dizisi ajanda yürüyor: panel kapansa da acil durdurma
         # diziyi kesebilsin diye.
         self.dizi = dizi_modulu.Dizi(self.plc, self.uclar,
@@ -315,8 +321,88 @@ class Ajan:
             pass
         return veri
 
+    # ------------------------------------------------------------------ #
+    # UÇ SEÇİCİ — kilit ve kapılar
+    #
+    # Servo Arduino'da, Z ise PLC'de. İkisini birden gören tek yer ajan;
+    # kilit bu yüzden burada. `plc.t_yatay_engel` ile aynı aile: engel
+    # varsa SEBEBİ metin olarak dönüyor, boş metin "engel yok" demek.
+    # ------------------------------------------------------------------ #
+    def uc_secim_engel(self) -> str:
+        """Uç değiştirmeyi engelleyen sebep varsa metni, yoksak ''.
+
+        Z AŞAĞIDAYKEN UÇ DEĞİŞMEZ. Mekanizmayı döndürmek, başlığı
+        toprağın içinden sürüklemek olur: başı da eğer, bitkiyi de.
+        `plc.z_guvenli_mi` okunamıyorsa "güvenli değil" diyor — hata
+        anında serbest bırakmak, çarpmanın en kolay yolu.
+        """
+        try:
+            guvenli = self.plc.z_guvenli_mi()
+        except Exception:
+            guvenli = False
+        if guvenli:
+            return ""
+        return (f"Z aşağıda — uç değiştirilmiyor. Mekanizmayı bu hâlde "
+                f"döndürmek başlığı toprağın içinden sürüklemek olur. "
+                f"Önce Z'yi güvenli yüksekliğe (≥ {self.plc.guvenli_z:.0f} mm) "
+                f"kaldırın.")
+
+    def uc_is_engel(self, kimlik: str) -> str:
+        """Bu iş için doğru uç seçili mi — değilse sebebi.
+
+        SEÇİLİ UÇ BİLİNMİYORSA DA İŞ BAŞLAMIYOR. Servoda geri besleme
+        yok: kart açılışta ya da sıfırlandıktan sonra ne komut edildiğini
+        bilmiyor ve "herhâlde doğrudur" demek, sulamayı tohum ucuyla
+        yapmaya kalkmak olurdu.
+        """
+        kimlik = str(kimlik or "")
+        istenen = self.uclar.bas_indeksi(kimlik)
+        if istenen < 0:
+            return ""                      # iş bir başa bağlı değil
+        ad = (uc_modulu.BAS_BILGI.get(kimlik) or {}).get("ad", kimlik)
+        if self._uc_secili is None:
+            return (f"Uç konumu bilinmiyor — bu iş {ad} ile yapılıyor. "
+                    f"Sür sekmesinden ucu seçin. (Servoda geri besleme yok; "
+                    f"kart açılışta ve her sıfırlanmada konumu unutuyor.)")
+        if self._uc_harekette:
+            return f"Uç değişimi sürüyor — {ad} yerine oturmadan iş başlamıyor."
+        if int(self._uc_secili) != istenen:
+            simdiki = uc_modulu.BASLAR[int(self._uc_secili)] \
+                if 0 <= int(self._uc_secili) < len(uc_modulu.BASLAR) else "?"
+            simdiki_ad = (uc_modulu.BAS_BILGI.get(simdiki) or {}).get("ad", simdiki)
+            return (f"Seçili uç {simdiki_ad}, bu iş {ad} ile yapılıyor. "
+                    f"Önce {ad} ucunu seçin.")
+        return ""
+
+    @staticmethod
+    def _dizi_basi(adimlar: list[dict[str, Any]]) -> str:
+        """Bu dizi hangi başı kullanıyor — ADIMLARDAN, addan değil.
+
+        Dizinin adı kullanıcı metni ve değişebiliyor; adımlar ise işin
+        kendisi. Su pompası rölesini açan bir dizi sulama başlığıyla,
+        tohum ucunun kendi eksenini süren ya da tohumluk gözü işaretleyen
+        bir dizi tohum ucuyla yapılıyor. Hiçbiri yoksa '' dönüyor ve
+        kapı hiç kurulmuyor — bilmediğimiz bir iş için uç dayatmak,
+        çalışan bir diziyi durdurmak olurdu.
+        """
+        for adim in adimlar or []:
+            tip = str(adim.get("tip", ""))
+            if tip == "role" and str(adim.get("ad", "")) == "su_pompasi":
+                return "sulama"
+            if tip in ("uc_dikey", "goz"):
+                return "tohum"
+        return ""
+
     def _olcum_geldi(self, veri: dict[str, Any]) -> None:
         """Seri port iş parçacığından çağrılır — asyncio'ya güvenli aktarım."""
+        # SEÇİLİ UÇ KARTTAN GELİYOR, BURADA TAHMİN EDİLMİYOR. `uc_sec`
+        # komutu gönderdikten sonra "artık şu uç seçili" diye yazsaydık,
+        # kart sıfırlandığında panel hâlâ eski ucu gösterirdi. Kartın
+        # bildirdiği değer tek kaynak; kart bilmiyorsa (açılış, sıfırlama)
+        # None kalıyor ve iş başlatma kapısı da bunu görüyor.
+        self._uc_secili = veri.get("uc_secili")
+        self._uc_aci = veri.get("uc_aci")
+        self._uc_harekette = bool(veri.get("uc_hareket"))
         self._kuyruga_at({"tip": "olcum", "ts": time.time(), "veri": self._konum_ekle(veri)})
 
     def _kare_geldi(self, kam_ad: str, b64: str, ts: float) -> None:
@@ -515,6 +601,17 @@ class Ajan:
                 return {"ok": True, "mesaj": mesaj_metni}
 
             if ad == "dizi_baslat":
+                # DOĞRU UÇ SEÇİLİ Mİ. Sulama sulama başlığıyla, ekim tohum
+                # ucuyla yapılıyor; yanlış uçla ya da uç bilinmiyorken
+                # başlamak, suyu tohum ucundan akıtmak demek. Hangi başın
+                # gerektiği ADIMLARDAN çıkıyor (bkz. `_dizi_basi`);
+                # çağıran açıkça `bas` verirse o geçerli.
+                gereken = str(arg.get("bas") or "") \
+                    or self._dizi_basi(arg.get("adimlar") or [])
+                if gereken:
+                    engel = self.uc_is_engel(gereken)
+                    if engel:
+                        return {"ok": False, "mesaj": engel}
                 try:
                     mesaj_metni = self.dizi.baslat(
                         str(arg.get("ad", "dizi")), arg.get("adimlar") or [],
@@ -674,6 +771,29 @@ class Ajan:
                 await asyncio.to_thread(self.arduino.komut, f"ROLE {role_adi} {durum}")
                 return {"ok": True, "mesaj": f"{ROLELER[role_adi]} {'açık' if durum else 'kapalı'}"}
 
+            if ad == "uc_sec":
+                kimlik = str(arg.get("bas", "") or "")
+                if self.uclar.bas_indeksi(kimlik) < 0:
+                    return {"ok": False, "mesaj": f"Bilinmeyen baş: '{kimlik}'"}
+                # SIRA ÖNEMLİ: önce Z kilidi. Açı girilmemişse de komut
+                # gitmiyor ama kullanıcıya önce asıl engeli söylemek
+                # gerekiyor — Z aşağıdayken açı girmek işe yaramaz.
+                engel = self.uc_secim_engel()
+                if engel:
+                    return {"ok": False, "mesaj": engel}
+                komut, sebep = self.uclar.servo_komutu(kimlik)
+                if sebep:
+                    return {"ok": False, "mesaj": sebep}
+                await asyncio.to_thread(self.arduino.komut, komut)
+                bilgi = uc_modulu.BAS_BILGI.get(kimlik) or {}
+                sure = self.uclar.servo_sure_ms()
+                # "Seçildi" DEMİYORUZ: kart süre dolana kadar "gidiyor"
+                # diyor ve seçili ucu kartın kendisi bildiriyor. Panel
+                # onayı komuttan değil durum paketinden alıyor.
+                return {"ok": True,
+                        "mesaj": f"{bilgi.get('ad', kimlik)} seçiliyor — "
+                                 f"servo {sure} ms içinde yerine oturuyor"}
+
             return {"ok": False, "mesaj": f"Bilinmeyen komut: {ad}"}
 
         except plc_modulu.PLCHatasi as hata:
@@ -754,7 +874,22 @@ class Ajan:
                 # okuyor; içerik `baslar.sulama`dan geliyor.
                 "sulama_basligi": self.uclar.sulama_basligi(),
                 "z_safe_reg": int(self.uclar.ayar.get("z_safe_reg", 0) or 0),
-                "ayar": {"safe_z": self.uclar.ayar.get("safe_z")},
+                "ayar": {"safe_z": self.uclar.ayar.get("safe_z"),
+                         "servo_sure_ms": self.uclar.servo_sure_ms()},
+                # UÇ SEÇİCİ — KOMUT EDİLEN DEĞER, ÖLÇÜM DEĞİL. `secili`
+                # None = kart hiç komut almamış ya da sıfırlanmış; panel
+                # bunu "bilinmiyor" diye yazıyor, sıfırıncı uç diye değil.
+                # `engel` doluysa uç düğmeleri kapalı ve sebebi ekranda.
+                "secici": {
+                    "secili": self._uc_secili,
+                    "secili_bas": (uc_modulu.BASLAR[int(self._uc_secili)]
+                                   if self._uc_secili is not None
+                                   and 0 <= int(self._uc_secili) < len(uc_modulu.BASLAR)
+                                   else None),
+                    "aci": self._uc_aci,
+                    "hareket": self._uc_harekette,
+                    "engel": self.uc_secim_engel(),
+                },
             }
 
             if durum != self._son_durum and self.ws is not None:
