@@ -747,10 +747,22 @@
     const BAGLANTI_BOY = P * 1.6;
     ucKafa.add(kutu(THREE, [P * 1.2, BAGLANTI_BOY, P * 1.2],
                     [0, BAGLANTI_BOY / 2, 0], baski));
-    if (Math.hypot(taretX, taretZ) > 1e-6) {
-      const kol = kutu(THREE, [Math.abs(taretX) + P * 0.6, P * 0.4,
-                               Math.abs(taretZ) + P * 0.6],
+    /* BAĞLANTI KOLU — KÖŞEGEN BİR ÇUBUK, KARE BİR PLAKA DEĞİL.
+     * Kol kılavuzun altındaki (0, 0) noktasından taret eksenine gidiyor;
+     * yolu bir DOĞRU, uzunluğu hypot(taretX, taretZ). Eksene hizalı
+     * |taretX| x |taretZ| bir kutu ise o doğrunun değil, ikisinin
+     * gerdiği KARENİN tamamını kaplıyordu: 60/60 kaymada 72x72 mm'lik
+     * bir tabla, taretin tam üstünde. Ölçüm bunu gösterdi — yer
+     * seviyesindeki 24 azimutun 14'ünde kümeyi örten şey bu tablaydı.
+     * Parça değişmedi, aynı kol; yalnız gerçek doğrultusunda çiziliyor.
+     * Kayma sıfırken kol yok: bağlanacak bir mesafe de yok. */
+    const kolBoy = Math.hypot(taretX, taretZ);
+    if (kolBoy > 1e-6) {
+      const kol = kutu(THREE, [kolBoy + P * 0.6, P * 0.4, P * 0.6],
                        [taretX / 2, P * 0.2, taretZ / 2], baski);
+      /* Yerel +x'i (taretX, taretZ) yönüne çeviren açı: y ekseni
+       * çevresinde dönmede yerel +x → (cos a, 0, -sin a). */
+      kol.rotation.y = Math.atan2(-taretZ, taretX);
       ucKafa.add(kol);
     }
 
