@@ -2431,11 +2431,18 @@ window.Bahce = (function () {
     var k = vurusKutusu(b, 0);
     var l = halkaEylemleri(b), n = l.length, i, a;
     var rb = kis(G.tw * 0.22, 13, 18);
+    var a0 = -Math.PI * 0.97, a1 = -Math.PI * 0.03;
+    /* YARIÇAP DÜĞME SAYISINDAN: komşu iki düğmenin kirişi hem düğme
+       çapından hem de altındaki etiketten geniş olmalı — yoksa dört düğme
+       üst üste biniyor ve "nem" ile "git" birbirine giriyor. En uzun
+       etiket "hasat", 9 piksellik yazıda ~28 piksel. */
+    var da = n > 1 ? (a1 - a0) / (n - 1) : Math.PI;
+    var enAzKiris = Math.max(rb * 2.5, 28) + 8;
     var rx = Math.max(sp.en * 0.5 + rb + 6, rb * 2.6);
-    var ry = Math.max(sp.boy * 0.5 + rb + 6, rb * 1.7);
-    var a0 = -Math.PI * 0.88, a1 = -Math.PI * 0.12;
+    if (n > 1) rx = Math.max(rx, enAzKiris / (2 * Math.sin(da / 2)));
+    var ry = Math.max(sp.boy * 0.5 + rb + 10, rb * 1.9);
     for (i = 0; i < n; i++) {
-      a = n === 1 ? -Math.PI / 2 : a0 + (a1 - a0) * (i / (n - 1));
+      a = n === 1 ? -Math.PI / 2 : a0 + da * i;
       l[i].x = k.x + Math.cos(a) * rx;
       l[i].y = k.gy + Math.sin(a) * ry;
       l[i].r = rb;
@@ -2510,9 +2517,17 @@ window.Bahce = (function () {
       c.lineWidth = 2; c.stroke();
       simgeCiz(c, d.ad, d.x, d.y - 1, d.r,
         d.kapali ? "rgba(168,158,142,.6)" : "rgba(252,238,204,.98)");
+      /* Etiketin altında koyu bir yastık: sahne kalabalık, düz yazı
+         yapraklara ve komşu düğmeye karışıyordu. */
       c.font = "600 9px system-ui,sans-serif"; c.textAlign = "center";
-      c.fillStyle = d.kapali ? "rgba(168,158,142,.65)" : "rgba(248,232,198,.95)";
-      c.fillText(d.etiket, d.x, d.y + d.r + 9);
+      var ew = c.measureText(d.etiket).width, ey2 = d.y + d.r + 11;
+      c.fillStyle = "rgba(10,7,3,.72)";
+      c.beginPath();
+      if (c.roundRect) c.roundRect(d.x - ew / 2 - 3, ey2 - 8, ew + 6, 11, 4);
+      else c.rect(d.x - ew / 2 - 3, ey2 - 8, ew + 6, 11);
+      c.fill();
+      c.fillStyle = d.kapali ? "rgba(178,168,152,.8)" : "rgba(250,236,204,.98)";
+      c.fillText(d.etiket, d.x, d.y + d.r + 11);
     }
     /* KAPALIYSA SEBEBİ YAZILI. */
     if (e.engel) {
@@ -3406,7 +3421,8 @@ window.Bahce = (function () {
                  y1: +k.y1.toFixed(1), y2: +k.y2.toFixed(1),
                  en: +(k.x2 - k.x1).toFixed(1), boy: +(k.y2 - k.y1).toFixed(1),
                  derinlik: +k.derinlik.toFixed(3), R: +sp.R.toFixed(1),
-                 eskiBoy: +(2 * Math.max(6, sp.R * ISO_ORAN)).toFixed(1) };
+                 eskiBoy: +(2 * Math.max(6, sp.R * ISO_ORAN)).toFixed(1),
+                 eskiEn: +(2 * Math.max(10, sp.R)).toFixed(1) };
       });
     },
     /** Kare süresi ölçümü. */
