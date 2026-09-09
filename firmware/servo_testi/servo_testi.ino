@@ -25,7 +25,8 @@
  *   A / D    -100 / +100 µs  kaba ayar
  *   q w e     o anki değeri 1., 2., 3. uca KAYDET
  *   1 2 3     kayıtlı uca git
- *   t         kayıtlı uçlar arasında tur at (2 sn bekleyerek)
+ *   t         kayıtlı uçlar arasında tur at (durakta 5 sn bekleyerek)
+ *   + / -     durak süresini 1 sn artır / azalt
  *   x         turu durdur
  *   p         kayıtlı değerleri yazdır
  *   m         ortaya dön (1500 µs)
@@ -43,7 +44,10 @@
  * kullanmıyor olabilir — zaten aradığımız şey nereye kadar gittiği. */
 #define US_MIN  500
 #define US_MAX  2500
-#define TUR_MS  2000        /* turda her durakta bekleme */
+/* Turda her durakta bekleme. Uzun: uca bakip olcmek icin duragin
+ * yeterince surmesi gerekiyor. Seri ekrandan '+' ve '-' ile
+ * degistirilebiliyor, yeniden yukleme gerekmiyor. */
+int turMs = 5000;
 
 Servo servo;
 int us = 1500;
@@ -90,7 +94,7 @@ void setup() {
   servo.attach(SERVO_PIN, US_MIN, US_MAX);
   git(1500, "acilis - orta");
   Serial.println("a/d = -+25us | A/D = -+100us | q w e = kaydet 1/2/3 | 1 2 3 = git");
-  Serial.println("t = tur | x = dur | p = yazdir | m = orta");
+  Serial.println("t = tur | x = dur | p = yazdir | m = orta | + - = durak suresi");
   Serial.println("UYARI: servo vizildarsa ya da kimildamiyorsa durdurucuya dayanmistir, geri gelin.");
 }
 
@@ -112,6 +116,8 @@ void loop() {
       else { Serial.print("uc"); Serial.print(i + 1); Serial.println(" kaydedilmedi"); }
     }
     else if (c == 'p') yazdir();
+    else if (c == '+') { turMs = min(20000, turMs + 1000); Serial.print("durak = "); Serial.print(turMs); Serial.println(" ms"); }
+    else if (c == '-') { turMs = max(500,   turMs - 1000); Serial.print("durak = "); Serial.print(turMs); Serial.println(" ms"); }
     else if (c == 'x') { turAtiyor = false; Serial.println("tur durdu"); }
     else if (c == 't') {
       if (uc[0] && uc[1] && uc[2]) { turAtiyor = true; Serial.println("tur basladi"); }
@@ -119,7 +125,7 @@ void loop() {
     }
   }
 
-  if (turAtiyor && millis() - sonAdim >= TUR_MS) {
+  if (turAtiyor && millis() - sonAdim >= (unsigned long)turMs) {
     sonAdim = millis();
     git(uc[adim], "tur");
     adim = (adim + 1) % 3;
