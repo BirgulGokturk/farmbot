@@ -1,0 +1,103 @@
+/* Bahçe oyunu — KENDİ SAYFASI.
+ *
+ * Panelin hiçbir parçası yok: bölüm başlığı yok, yan panel yok, alt şerit
+ * yok, sekme çubuğu yok. Ekranın tamamı tarla. Yazıya ihtiyaç duyan üç
+ * şey DOM'da duruyor (jeton kilidi, hata satırı, madalyon kartı); geri
+ * kalan her şey tuvalin içinde çiziliyor.
+ *
+ * stil.css'e bağlı DEĞİL — bu sayfa panelden bağımsız açılıyor.
+ */
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0; padding: 0; height: 100%; overflow: hidden;
+  background: #cfd9e0;
+  font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  color: #21262b;
+  -webkit-text-size-adjust: 100%;
+}
+
+#oy-tuval {
+  position: fixed; inset: 0; display: block; width: 100%; height: 100%;
+  touch-action: none;            /* kaydırma ve iki parmak bize ait */
+  user-select: none; -webkit-user-select: none;
+  cursor: default;
+}
+
+/* --------------------------------------------------------- jeton kilidi
+ * Jeton yoksa oyun sessizce boş sahne çizmiyor: ne olduğunu söylüyor ve
+ * panele yönlendiriyor. */
+#oy-kilit {
+  position: fixed; inset: 0; z-index: 40;
+  display: flex; align-items: center; justify-content: center;
+  padding: 24px;
+  background: linear-gradient(160deg, #e7edf1, #c3ced6);
+}
+#oy-kilit[hidden] { display: none; }
+#oy-kilit .kutu {
+  max-width: 380px; width: 100%;
+  background: #fff; border-radius: 18px; padding: 22px 22px 18px;
+  box-shadow: 0 18px 46px rgba(24, 34, 44, .22);
+}
+#oy-kilit h1 { margin: 0 0 8px; font-size: 19px; font-weight: 700; }
+#oy-kilit p { margin: 0 0 14px; color: #4d565e; }
+#oy-kilit a {
+  display: inline-block; text-decoration: none; font-weight: 600;
+  background: #2f7d4f; color: #fff; padding: 9px 15px; border-radius: 10px;
+}
+#oy-kilit code {
+  background: #eef2f5; padding: 1px 5px; border-radius: 5px; font-size: 12px;
+}
+
+/* ------------------------------------------------------------ hata satırı
+ * SESSİZ BAŞARISIZLIK YOK: okunamayan her şeyin sebebi burada. */
+#oy-hata {
+  position: fixed; left: 12px; bottom: 12px; z-index: 30;
+  max-width: min(520px, calc(100vw - 24px));
+  display: flex; flex-direction: column; gap: 6px;
+  pointer-events: none;
+}
+#oy-hata div {
+  background: rgba(150, 40, 32, .94); color: #fff;
+  padding: 7px 11px; border-radius: 10px; font-size: 12.5px;
+  box-shadow: 0 6px 18px rgba(24, 34, 44, .2);
+}
+
+/* --------------------------------------------------------- madalyon kartı
+ * İki madalyonun (makine, bugün) açılan kartı. Sabit bir yan panel değil:
+ * yalnız dokununca açılıyor, madalyonun altına yapışıyor. */
+#oy-kart {
+  position: fixed; z-index: 32; width: min(300px, calc(100vw - 24px));
+  background: rgba(255, 255, 255, .96);
+  border-radius: 14px; padding: 12px 13px;
+  box-shadow: 0 14px 38px rgba(20, 30, 40, .26);
+  font-size: 13px;
+}
+#oy-kart[hidden] { display: none; }
+#oy-kart h2 {
+  margin: 0 0 8px; font-size: 12px; font-weight: 700;
+  letter-spacing: .07em; text-transform: uppercase; color: #6a747c;
+}
+#oy-kart ul { margin: 0; padding: 0; list-style: none; }
+#oy-kart li { padding: 3px 0; }
+#oy-kart li + li { border-top: 1px solid #eceff2; }
+#oy-kart .sonuk { color: #79838b; }
+#oy-kart .dip {
+  margin-top: 8px; padding-top: 7px; border-top: 1px solid #e6eaee;
+  font-size: 11.5px; color: #79838b;
+}
+#oy-kart .kritik { color: #a8332a; font-weight: 600; }
+#oy-kart .iyi { color: #2f7d4f; }
+#oy-kart button {
+  font: inherit; font-size: 12.5px; text-align: left; width: 100%;
+  border: 0; background: transparent; color: inherit; cursor: pointer;
+  padding: 5px 6px; border-radius: 8px;
+}
+#oy-kart button:hover { background: #eef3f7; }
+#oy-kart button b { color: #21262b; }
+#oy-kart button span { color: #6a747c; }
+#oy-kart .kapat {
+  width: auto; float: right; margin: -4px -4px 0 0; color: #79838b;
+  font-size: 16px; line-height: 1; padding: 2px 6px;
+}

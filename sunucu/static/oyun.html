@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#cfd9e0">
+<title>Bahçe — FarmBot</title>
+<!-- Panelin stil.css'i BİLEREK yüklenmiyor: oyun panelin kalıbına girmesin. -->
+<link rel="stylesheet" href="/statik/oyun.css">
+</head>
+<body>
+
+<!-- Ekranın tamamı tarla. Yazıya ihtiyaç duyan üç şey dışında her şey
+     tuvalin içinde. -->
+<canvas id="oy-tuval"></canvas>
+
+<!-- Madalyonların açılan kartı (makine durumu / bugün). -->
+<div id="oy-kart" hidden></div>
+
+<!-- Olmayan her şeyin sebebi burada yazıyor. -->
+<div id="oy-hata"></div>
+
+<!-- Jeton yoksa oyun boş sahne çizmiyor. -->
+<div id="oy-kilit" hidden>
+  <div class="kutu">
+    <h1>Bahçeye giriş yok</h1>
+    <p>Bu sayfa panelin jetonunu kullanıyor ve tarayıcıda kayıtlı bir jeton
+      bulamadı (<code>farmbot_jeton</code>). Bir kez panele girip parolayı
+      yazman gerekiyor; sonra bu sayfa çalışır.</p>
+    <a href="/">Panele git</a>
+  </div>
+</div>
+
+<script src="/statik/oyun.js"></script>
+</body>
+</html>
