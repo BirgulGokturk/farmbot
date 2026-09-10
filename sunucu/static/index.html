@@ -1625,11 +1625,12 @@
             kullanır</b> — Sür sayfasındaki kaydıraç. Bir dizi ya da uç
             değiştirme kendi hızını açıkça veriyorsa o kazanır; buradaki
             değer yalnızca hız belirtilmeyen hareketler için geçerli.<br><br>
-            Değişiklik <b>o an</b> geçerli olur, ajan yeniden başlayınca
-            sıfırlanır. Kalıcı olması için Pi'de <code>ajan/ayarlar.json</code>
-            içindeki <code>plc</code> bölümüne <code>hiz_x</code>,
-            <code>hiz_y</code>, <code>hiz_z</code>, <code>hiz_t</code>
-            yazın.<br><br>
+            Değişiklik <b>o an</b> geçerli olur ve <b>kalıcıdır</b>:
+            <code>ajan/uclar.json</code>a yazılıp ajan her açıldığında geri
+            yükleniyor. (Bir süre öyle değildi — değer yalnız bellekteydi ve
+            ajan yeniden başlayınca varsayılana dönüyordu; ajan ise firmware
+            yüklerken ve güncellemede yeniden başlıyor. Z hızını düşürüp
+            sonra makinenin eski hızla indiğini görmenin sebebi buydu.)<br><br>
             <b>T</b>, tohum ucunun kendi dikey ekseni — ana Z değil.
             Stroku kısa (0–55 mm) ve toprağa giriyor; varsayılanı
             Z gibi 10 mm/s.

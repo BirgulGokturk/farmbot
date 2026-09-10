@@ -78,10 +78,48 @@ BAS_ISTEGE_BAGLI = ("t_asagi_mm", "t_yukari_mm", "servo_aci")
 #: seri porta elle yazılan komutu da kapsıyor.
 SERVO_ACI_ALT, SERVO_ACI_UST = 0.0, 180.0
 
+#: Hızların geçerli aralığı — panel, ajan ve PLC sürücüsü aynı sınırı
+#: kullanıyor. Üç yerde üç sınır olsaydı biri gevşek kalırdı.
+HIZ_ALT, HIZ_UST = 1.0, 200.0
+
+
+def _hiz_dogrula(deger: Any) -> float | None:
+    """Tek bir hız değeri — geçersizse None ("bu eksende genel hız").
+
+    None SIFIR DEĞİL: boş bırakılan eksen genel hıza düşüyor, durmuyor.
+    """
+    if deger in (None, ""):
+        return None
+    try:
+        sayi = float(deger)
+    except (TypeError, ValueError):
+        return None
+    if not HIZ_ALT <= sayi <= HIZ_UST:
+        return None
+    return sayi
+
+
 VARSAYILAN = {
     # X/Y hareketinin yapılabildiği en düşük Z. Üç baş da bu yükseklikte
     # yatağın üstünden geçiyor.
     "safe_z": 390.0,
+    # HIZLAR BURADA, `ajan/ayar.json`da DEĞİL.
+    #
+    # Eskiden panelden verilen hız yalnız ÇALIŞMA ANINDA geçerliydi ve
+    # ajan her yeniden başladığında varsayılana dönüyordu — ajan ise sık
+    # yeniden başlıyor (`arduino-yukle.sh`, `guncelle.sh`, servis
+    # yenileme). Kullanıcı Z'yi 10'a çekiyor, bir süre sonra makine 20
+    # ile iniyordu ve bunu haber veren hiçbir şey yoktu.
+    #
+    # NEDEN `ayar.json` DEĞİL: o dosyada panel jetonu ve PLC adresi var,
+    # ajanın onu kendi yeniden yazması istenmiyor. `uclar.json` zaten
+    # panelin düzenlediği dosya, içinde sır yok ve `guncelle.sh` onu
+    # Pi'de koruyor — hızların yeri burası.
+    #
+    # None = "girilmemiş", sıfır değil: o eksende `ayar.json`daki değer
+    # (ya da genel hız) geçerli kalıyor.
+    "hiz": None,
+    "hiz_eksen": [None, None, None, None],   # [X, Y, Z, T]
     # PLC'nin "Z güvenli yükseklikte" biti. 0 = bağlı değil, karar
     # milimetre karşılaştırmasına kalıyor.
     "z_safe_reg": 0,
@@ -468,6 +506,17 @@ class Uclar:
                 # diri tutmak ve bir sonraki okumada göçü yeniden
                 # tetiklemek olurdu.
                 temiz.pop("taret", None)
+                # HIZLAR SÜZÜLEREK YAZILIYOR. Panelden gelen sayı zaten
+                # denetleniyor, ama dosya elle de düzenlenebiliyor; aralık
+                # dışı bir Z hızı sessizce yürürlüğe girerse makine
+                # beklenenden hızlı iner.
+                if "hiz" in temiz:
+                    temiz["hiz"] = _hiz_dogrula(temiz["hiz"])
+                if "hiz_eksen" in temiz:
+                    ham = temiz["hiz_eksen"]
+                    ham = list(ham) if isinstance(ham, (list, tuple)) else []
+                    temiz["hiz_eksen"] = [_hiz_dogrula(h)
+                                          for h in (ham + [None] * 4)[:4]]
                 if "baslar" in temiz:
                     # BAŞ BAŞINA BİRLEŞTİRME. Üst düzey birleştirme, tek bir
                     # başın dx'ini yollayan bir isteğin öteki iki başı
@@ -555,6 +604,16 @@ class Uclar:
         except (TypeError, ValueError):
             sure = int(VARSAYILAN["uc_secici"]["sure_ms"])
         return max(1, min(10000, sure))
+
+    def hiz(self) -> float | None:
+        """Genel hız (mm/s) — girilmemişse None, `ayar.json`daki geçerli."""
+        return _hiz_dogrula(self.ayar.get("hiz"))
+
+    def hiz_eksen(self) -> list[float | None]:
+        """[X, Y, Z, T] hızları; her biri None olabilir ("genel hız")."""
+        ham = self.ayar.get("hiz_eksen")
+        ham = list(ham) if isinstance(ham, (list, tuple)) else []
+        return [_hiz_dogrula(h) for h in (ham + [None] * 4)[:4]]
 
     def guvenli_z_ofset(self) -> float:
         """"Z güvenli mi" kıyaslamasının payı (mm) — ajan PLC'ye taşıyor."""

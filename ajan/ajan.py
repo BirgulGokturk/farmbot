@@ -190,6 +190,7 @@ class Ajan:
         self._t_yukari_uygula()
         self._guvenli_z_ofset_uygula()
         self._guvenli_z_uygula()
+        self._hiz_uygula()
         ard = ayar["arduino"]
         # Medyan penceresi: kaç örneğin ortancası gösterilsin. 5 örnek,
         # 2 sn'lik okuma aralığında 10 saniyelik bir pencere demek — tek
@@ -281,6 +282,42 @@ class Ajan:
                     "yeniden ölçün.", kuru, islak, abs(kuru - islak))
             return {"kuru": 1023.0, "islak": 0.0}
         return {"kuru": kuru, "islak": islak}
+
+    def _hiz_uygula(self) -> None:
+        """Kaydedilmiş hızları PLC sürücüsüne taşır — açılışta.
+
+        HIZLAR ESKİDEN KALICI DEĞİLDİ. `hiz` ve `hiz_eksen` komutları
+        yalnız `self.plc` üstünde değişiklik yapıyordu; ajan yeniden
+        başlayınca `ayar.json`daki varsayılanlar geri geliyordu. Ajan da
+        sık yeniden başlıyor — `arduino-yukle.sh` ve `guncelle.sh`
+        servisi durdurup açıyor. Sonuç: kullanıcı Z hızını 10'a çekiyor,
+        bir süre sonra makine 20 ile iniyor ve bunu söyleyen hiçbir şey
+        yok.
+
+        GİRİLMEMİŞ DEĞER (None) ATLANIYOR — `ayar.json`daki hız geçerli
+        kalıyor. Boş bir alanı sıfır sayıp yazmak, o ekseni durdurmak
+        olurdu.
+
+        `_guvenli_z_uygula` ile aynı kalıp.
+        """
+        try:
+            genel = self.uclar.hiz()
+            if genel is not None:
+                self.plc.hiz_ayarla(genel)
+            eksen = self.uclar.hiz_eksen()
+            if any(h is not None for h in eksen):
+                # Kayıtta girilmemiş kalan eksen, sürücünün kendi
+                # değerinde bırakılıyor; hepsini birden ezmek, tek bir
+                # ekseni kaydeden kullanıcının ötekileri silmesi olurdu.
+                simdiki = list(getattr(self.plc, "hiz_eksen", [None] * 4))
+                simdiki = (simdiki + [None] * 4)[:4]
+                self.plc.hiz_eksen = [
+                    yeni if yeni is not None else eski
+                    for yeni, eski in zip(eksen, simdiki)]
+            logger.info("Hızlar ayardan yüklendi: genel=%s eksen=%s",
+                        genel, eksen)
+        except Exception:                                    # noqa: BLE001
+            pass
 
     def _guvenli_z_uygula(self) -> None:
         """`safe_z` ayarını PLC sürücüsünün `guvenli_z`sine taşır.
@@ -811,7 +848,12 @@ class Ajan:
                 return {"ok": True, "mesaj": await asyncio.to_thread(self.dizi.durdur)}
 
             if ad == "hiz":
-                return {"ok": True, "mesaj": await asyncio.to_thread(self.plc.hiz_ayarla, float(arg.get("mm_s", 20)))}
+                mm_s = float(arg.get("mm_s", 20))
+                mesaj = await asyncio.to_thread(self.plc.hiz_ayarla, mm_s)
+                # KALICI OLSUN. Eskiden yalnız bellekteydi ve ajan her
+                # yeniden başladığında varsayılana dönüyordu.
+                await asyncio.to_thread(self.uclar.kaydet, {"hiz": mm_s})
+                return {"ok": True, "mesaj": mesaj}
 
             # --- Arduino tarafı ---
             if ad == "kamera":
@@ -927,9 +969,9 @@ class Ajan:
 
             if ad == "hiz_eksen":
                 # Eksen başına hız. Boş/None gelen eksen genel hıza düşüyor.
-                # Çalışma anında geçerli; kalıcı olması için ayarlar.json
-                # düzenlenir — ajanın o dosyayı kendi yeniden yazması, içinde
-                # jeton ve PLC adresi de olduğu için istenmiyor.
+                # KALICI: `uclar.json`a yazılıyor ve açılışta geri
+                # yükleniyor (`_hiz_uygula`). `ayar.json`a yazılmıyor —
+                # orada jeton ve PLC adresi var.
                 yeni_hiz = []
                 for eksen in ("x", "y", "z", "t"):
                     deger = arg.get(eksen)
@@ -945,6 +987,13 @@ class Ajan:
                                 "mesaj": f"{eksen.upper()} hızı 1-200 mm/s arasında olmalı"}
                     yeni_hiz.append(sayi)
                 self.plc.hiz_eksen = yeni_hiz
+                # KALICI OLSUN — `uclar.json`a. Buradaki yorum bir süre
+                # "kalıcı olması için ayarlar.json düzenlenir" diyordu;
+                # o dosyada jeton ve PLC adresi olduğu için ajan onu
+                # yazmıyor, ama hızların uçucu kalması için sebep değil:
+                # `uclar.json` zaten panelin dosyası ve sır tutmuyor.
+                await asyncio.to_thread(self.uclar.kaydet,
+                                        {"hiz_eksen": yeni_hiz})
                 yazi = " · ".join(
                     f"{ad_}{'genel' if h is None else f'{h:.0f}'}"
                     for ad_, h in zip(("X", "Y", "Z", "T"), yeni_hiz))
