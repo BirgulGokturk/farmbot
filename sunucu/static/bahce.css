@@ -1,0 +1,165 @@
+/* Bahçe — yatağın kendisi.
+ *
+ * DÜZEN: iki ince şerit ve arada TAM ALAN sahne.
+ *   üst şerit  — makine durumu + günün tek iş cümlesi
+ *   sahne      — bahçenin kendisi; bütün eylem burada
+ *   alt şerit  — bağlam: onay, seçili bitki ya da ipucu
+ *
+ * Kenarda dikey kart sütunu, altta yatay kutucuk şeridi ve sahnenin
+ * köşesinde yüzen kutu YOK. Sahnedeki halkalar hızlı yol; alt şeritteki
+ * düğmeler erişilebilir yol — ikisi aynı işi yapıyor.
+ *
+ * `stil.css` kuralları geçerli: tek kademe gölge, 4/8/16/24 boşluk,
+ * üç tipografi kademesi, renk yalnız durum için.
+ */
+
+/* ------------------------------------------------------------------ kabuk */
+body.bahce-acik .yuzen.sol { grid-column: 1 / -1; width: auto; }
+body.bahce-acik #sahne-cubuk,
+body.bahce-acik .sahne-alan { display: none; }
+body.bahce-acik .yuzen-govde { overflow: hidden; padding: 0; }
+body.bahce-acik #sayfa-bahce { height: 100%; }
+
+.bh {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 320px;
+  background: #0b0d0a;
+  border-radius: var(--yaricap);
+  overflow: hidden;
+}
+#bh-kok [hidden] { display: none !important; }
+
+/* -------------------------------------------------------------- üst şerit */
+.bh-ust {
+  display: flex; align-items: center; gap: var(--b2);
+  padding: var(--b2) var(--b3);
+  background: var(--yuzey);
+  border-bottom: 1px solid var(--cizgi);
+  flex: 0 0 auto;
+}
+.bh-orta { flex: 1 1 auto; min-width: 0; }
+.bh-is-metin {
+  font-size: var(--yazi-govde); font-weight: 600; color: var(--metin);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.bh-is-neden {
+  display: flex; flex-wrap: wrap; gap: var(--b2);
+  font-size: var(--yazi-kucuk); color: var(--metin-3); margin-top: 2px;
+}
+.bh-is-neden .bh-ac { color: var(--metin-2); }
+/* ÖLÇÜM İLE TAHMİN AYRI GÖRÜNÜR. */
+.bh-kanit { color: var(--metin-3); }
+.bh-kanit.tahmin { color: var(--uyari); }
+.bh-ert { color: var(--metin-3); }
+.bh-ert button {
+  background: none; border: 0; padding: 0; color: var(--vurgu);
+  font: inherit; cursor: pointer; text-decoration: underline;
+}
+.bh-makine {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: var(--yazi-kucuk); color: var(--metin-3); white-space: nowrap;
+}
+.bh-makine::before {
+  content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--metin-3);
+}
+.bh-makine.hazir::before { background: var(--iyi); }
+.bh-makine.mesgul::before { background: var(--vurgu); }
+.bh-makine.yok::before { background: var(--kritik); }
+.bh-sayac {
+  font-size: var(--yazi-kucuk); color: var(--metin-3);
+  font-variant-numeric: tabular-nums;
+}
+
+.bh-ust button, .bh-alt button {
+  font: inherit; font-size: var(--yazi-kucuk); height: var(--alan-y);
+  padding: 0 var(--b2); border-radius: var(--yaricap-2);
+  border: 1px solid var(--cizgi-2); background: transparent; color: var(--metin-2);
+  cursor: pointer; white-space: nowrap;
+}
+.bh-ust button:hover, .bh-alt button:hover { border-color: var(--metin-3); color: var(--metin); }
+.bh-ust button:focus-visible, .bh-alt button:focus-visible {
+  outline: 2px solid var(--vurgu); outline-offset: 1px;
+}
+.bh-ok, .bh-ikon { width: var(--alan-y); padding: 0; }
+/* Bölüm başına tek dolu düğme: asıl iş. */
+.bh-evet, .bh-alt button.asil {
+  background: var(--vurgu) !important; border-color: var(--vurgu) !important;
+  color: #fff !important; font-weight: 600;
+}
+.bh-evet:disabled, .bh-alt button.asil:disabled, .bh-alt button:disabled {
+  background: var(--yuzey-2) !important; border-color: var(--cizgi) !important;
+  color: var(--metin-3) !important; cursor: not-allowed;
+}
+.bh-sakin[aria-pressed="true"] { border-color: var(--vurgu); color: var(--vurgu); }
+
+/* ------------------------------------------------------------------ sahne */
+.bh-tuval { position: relative; flex: 1 1 auto; min-height: 200px; overflow: hidden; }
+.bh-tuval canvas {
+  position: absolute; inset: 0; display: block;
+  width: 100%; height: 100%;
+  touch-action: none; user-select: none; -webkit-user-select: none;
+  cursor: pointer;
+}
+
+/* --------------------------------------------------------- hata / not şerit
+ * Köşede yüzen kutu değil: tam genişlikte bir satır, sahnenin dışında. */
+.bh-hata, .bh-not {
+  flex: 0 0 auto; padding: 6px var(--b3);
+  font-size: var(--yazi-kucuk); line-height: 1.4;
+}
+.bh-hata {
+  background: rgba(224, 82, 82, .14); color: #ffb9b9;
+  border-bottom: 1px solid rgba(224, 82, 82, .3);
+}
+.bh-hata span { display: block; }
+.bh-not { background: var(--yuzey-2); color: var(--metin-2); border-top: 1px solid var(--cizgi); }
+
+/* -------------------------------------------------------------- alt şerit */
+.bh-alt {
+  flex: 0 0 auto; display: flex; align-items: center; gap: var(--b3);
+  flex-wrap: wrap; padding: var(--b2) var(--b3);
+  background: var(--yuzey); border-top: 1px solid var(--cizgi);
+  min-height: 56px;
+}
+.bh-a-metin { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
+.bh-a-metin b { color: var(--metin); font-size: var(--yazi-govde); }
+.bh-a-alt { font-size: var(--yazi-kucuk); color: var(--metin-3); }
+.bh-a-alt.vurgu { color: var(--uyari); }
+.bh-a-bas { display: flex; align-items: center; gap: var(--b2); min-width: 0; }
+.bh-a-simge { font-size: 20px; line-height: 1; }
+.bh-a-ad { font-weight: 600; color: var(--metin); font-size: var(--yazi-govde); }
+.bh-a-tur { color: var(--metin-3); font-size: var(--yazi-kucuk); }
+.bh-a-olcu {
+  flex: 1 1 auto; display: flex; flex-wrap: wrap; gap: var(--b2);
+  font-size: var(--yazi-kucuk); color: var(--metin-2);
+  font-variant-numeric: tabular-nums;
+}
+.bh-ol b { color: var(--metin); }
+/* Nemin künyesi renkte de ayrışıyor: hiçbiri "ölçülmüş" gibi durmuyor. */
+.bh-ol.nem.olculdu { color: var(--metin); }
+.bh-ol.nem.odunc, .bh-ol.nem.bayat { color: var(--uyari); }
+.bh-ol.nem.yok, .bh-ol.yok { color: var(--metin-3); font-style: italic; }
+.bh-ol.susadi { color: var(--uyari); font-weight: 600; }
+.bh-ol.hasat { color: var(--iyi); }
+.bh-a-dugme { display: flex; gap: var(--b2); margin-left: auto; }
+.bh-alt button.sade { border-color: transparent; color: var(--metin-3); }
+
+/* -------------------------------------------------------------- dar ekran */
+@media (max-width: 720px) {
+  .bh-ust { flex-wrap: wrap; }
+  .bh-orta { order: -1; flex-basis: 100%; }
+  .bh-a-dugme { margin-left: 0; }
+}
+@media (max-height: 520px) {
+  /* Sahnenin yüksekliği bu ekranda en kıt kaynak: şeritler tek satır. */
+  .bh-ust, .bh-alt { padding-top: var(--b1); padding-bottom: var(--b1); }
+  .bh-alt { min-height: 44px; flex-wrap: nowrap; overflow: hidden; }
+  .bh-a-bas, .bh-a-olcu { min-width: 0; flex-wrap: nowrap; overflow: hidden; }
+  .bh-a-ad, .bh-a-tur, .bh-a-olcu > * { white-space: nowrap; }
+  .bh-a-olcu > *:nth-child(n+3) { display: none; }
+  .bh-is-neden { flex-wrap: nowrap; overflow: hidden; }
+  .bh-is-neden > * { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+}
