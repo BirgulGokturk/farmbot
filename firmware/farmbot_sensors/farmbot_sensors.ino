@@ -4,6 +4,29 @@
 #include <DHT.h>
 #include <Servo.h>
 
+/* --------------------------------------------------------- SRAM NOTU ----
+ * SERIAL'A YAZILAN HER DÜZ METİN `F(...)` İÇİNDE. Bu süs değil.
+ *
+ * AVR'de düz metinler varsayılan olarak açılışta flash'tan SRAM'e
+ * KOPYALANIYOR ve orada kalıyorlar — kullanılsalar da kullanılmasalar da.
+ * Uno'da toplam SRAM 2048 bayt; bu sketch'te yardım satırı, VERI alan
+ * adları ve onlarca KOMUT/HATA mesajı bir araya gelince derleyici şunu
+ * yazıyordu:
+ *     Global variables use 1678 bytes (81%), leaving 370 bytes
+ *     Low memory available, stability problems may occur.
+ * Kalan 370 bayt hem yığını (stack) hem de String'lerin öbeğini (heap)
+ * BİRLİKTE besliyor. `komutIsle` bir komut işlerken String kopyaları
+ * üretiyor; ikisi ortada karşılaşırsa bellek sessizce bozuluyor ve kart
+ * ya kilitleniyor ya sıfırlanıyor.
+ *
+ * NEDEN ÖNEMLİ: sahada tam bu görüldü — komut kabul edildi, süpürme
+ * başladı, bir derece adımladı, sonra açılış banner'ı geldi. O sırada bu
+ * "besleme çöküyor" diye okundu. Yetersiz SRAM dışarıdan buna birebir
+ * benziyor ve teşhisi doğrudan güç kaynağına yönlendiriyor.
+ *
+ * `F(...)` metni flash'ta bırakıyor. Yeni bir Serial satırı eklerken
+ * sarmayı unutmayın; unutulan her satır bu payı geri yer. */
+
 // --------------------------------------------------------------- AYARLAR --
 #define DHT_PIN        2
 #define SU_POMPASI_PIN 7
@@ -155,7 +178,7 @@ void dhtSec() {
       if (!isnan(aday->readTemperature())) {
         dht = aday;
         dhtAdi = tip == 0 ? "DHT11" : "DHT22";
-        Serial.print("BILGI: DHT tipi ");
+        Serial.print(F("BILGI: DHT tipi "));
         Serial.println(dhtAdi);
         return;
       }
@@ -163,7 +186,7 @@ void dhtSec() {
   }
   dht = &dht11;
   dhtAdi = "yok";
-  Serial.println("UYARI: DHT okumuyor — kabloyu ve D2'yi kontrol edin");
+  Serial.println(F("UYARI: DHT okumuyor — kabloyu ve D2'yi kontrol edin"));
 }
 
 // --------------------------------------------------------------- KURULUM --
@@ -179,9 +202,9 @@ void setup() {
   Serial.begin(9600);
   dhtSec();
   bmpVar = bmp.begin();
-  if (!bmpVar) Serial.println("UYARI: BMP180 bulunamadi, digerleriyle devam");
+  if (!bmpVar) Serial.println(F("UYARI: BMP180 bulunamadi, digerleriyle devam"));
 
-  Serial.println("Hazir. Komutlar: ROLE <ad> <0|1> | UC <indeks> <derece> <sure_ms> | KAPAT | OKU | TEST <0|1> | ACI <0-180> | US <544-2400>");
+  Serial.println(F("Hazir. Komutlar: ROLE <ad> <0|1> | UC <indeks> <derece> <sure_ms> | KAPAT | OKU | TEST <0|1> | ACI <0-180> | US <544-2400>"));
 #if TEST_ACILISTA
   testBasla();
 #endif
@@ -283,8 +306,8 @@ void testBasla() {
   ucSecili = -1;
   ucAci = currentAngle;
   ucHarekette = false;
-  Serial.println("KOMUT: servo denemesi BASLADI — 90, 180, 0 turu. Durdurmak icin TEST 0");
-  Serial.println("       (deneme acikken kart tur basina ~5,7 sn sessiz kalir)");
+  Serial.println(F("KOMUT: servo denemesi BASLADI — 90, 180, 0 turu. Durdurmak icin TEST 0"));
+  Serial.println(F("       (deneme acikken kart tur basina ~5,7 sn sessiz kalir)"));
   sonOlcum = 0;
 }
 
@@ -300,7 +323,7 @@ void testDurdur() {
    * değer `currentAngle`; rapor da onu söylemeli. SERVOYA BİR ŞEY
    * YAZILMIYOR — horn nerede durduysa orada kalıyor. */
   ucAci = currentAngle;
-  Serial.print("KOMUT: servo denemesi DURDU — son aci ");
+  Serial.print(F("KOMUT: servo denemesi DURDU — son aci "));
   Serial.println(currentAngle);
   sonOlcum = 0;
 }
@@ -314,13 +337,13 @@ void testDurdur() {
  *  sonra açılış banner'ı geldi. Böyle bir olayı ayırt etmenin tek yolu,
  *  turun iki ucuna zaman damgası koymak. */
 void turYaz(const char *durum) {
-  Serial.print("TUR: ");
+  Serial.print(F("TUR: "));
   Serial.print(turNo);
   Serial.print(' ');
   Serial.print(durum);
-  Serial.print(" t=");
+  Serial.print(F(" t="));
   Serial.print(millis());
-  Serial.print(" aci=");
+  Serial.print(F(" aci="));
   Serial.println(currentAngle);
 }
 
@@ -351,11 +374,11 @@ void aciyaSur(int derece) {
   ucSecili = -1;
   ucAci = derece;
   ucHarekette = false;
-  Serial.print("KOMUT: aci ");
+  Serial.print(F("KOMUT: aci "));
   Serial.print(derece);
-  Serial.print(" (");
+  Serial.print(F(" ("));
   Serial.print(usDeger(derece));
-  Serial.println(" us)");
+  Serial.println(F(" us)"));
   sonOlcum = 0;
 }
 
@@ -371,9 +394,9 @@ void usYaz(int mikro) {
   ucSecili = -1;
   ucAci = -1;
   ucHarekette = false;
-  Serial.print("KOMUT: ");
+  Serial.print(F("KOMUT: "));
   Serial.print(mikro);
-  Serial.println(" us");
+  Serial.println(F(" us"));
   sonOlcum = 0;
 }
 
@@ -388,7 +411,7 @@ void komutIsle(String komut) {
   if (buyuk == "KAPAT") {
     roleYaz(SU_POMPASI_PIN, false);
     roleYaz(HAVA_POMPASI_PIN, false);
-    Serial.println("KOMUT: hepsi kapatildi");
+    Serial.println(F("KOMUT: hepsi kapatildi"));
     sonOlcum = 0;
     return;
   }
@@ -417,8 +440,8 @@ void komutIsle(String komut) {
     }
     bool istenen = komut.substring(komut.indexOf(' ') + 1).toInt() != 0;
     if (istenen == testAcik) {
-      Serial.print("KOMUT: servo denemesi zaten ");
-      Serial.println(testAcik ? "ACIK" : "KAPALI");
+      Serial.print(F("KOMUT: servo denemesi zaten "));
+      Serial.println(testAcik ? F("ACIK") : F("KAPALI"));
       return;
     }
     if (istenen) testBasla(); else testDurdur();
@@ -431,7 +454,7 @@ void komutIsle(String komut) {
     /* Servo kütüphanesinin kendi aralığı 544-2400. Dışına yazmak sessizce
      * kırpılır; kırpıldığını söylemek, olmayan bir değeri denediğini
      * sanmaktan iyi. */
-    if (mikro < 544 || mikro > 2400) { Serial.println("HATA: US 544-2400"); return; }
+    if (mikro < 544 || mikro > 2400) { Serial.println(F("HATA: US 544-2400")); return; }
     usYaz(mikro);
     return;
   }
@@ -442,10 +465,10 @@ void komutIsle(String komut) {
    * değiştiğini söylüyoruz. */
   if (buyuk.startsWith("ACI ") || buyuk.startsWith("HIZ ")) {
     if (buyuk.startsWith("HIZ ")) {
-      Serial.println("BILGI: komut artik ACI (derece), HIZ degil");
+      Serial.println(F("BILGI: komut artik ACI (derece), HIZ degil"));
     }
     int derece = komut.substring(komut.indexOf(' ') + 1).toInt();
-    if (derece < 0 || derece > 180) { Serial.println("HATA: ACI 0-180"); return; }
+    if (derece < 0 || derece > 180) { Serial.println(F("HATA: ACI 0-180")); return; }
     aciyaSur(derece);
     return;
   }
@@ -454,18 +477,18 @@ void komutIsle(String komut) {
     // "ROLE su_pompasi 1"
     int b1 = komut.indexOf(' ');
     int b2 = komut.indexOf(' ', b1 + 1);
-    if (b2 < 0) { Serial.println("HATA: ROLE <ad> <0|1>"); return; }
+    if (b2 < 0) { Serial.println(F("HATA: ROLE <ad> <0|1>")); return; }
 
     String ad = komut.substring(b1 + 1, b2);
     bool durum = komut.substring(b2 + 1).toInt() != 0;
 
     if (ad == "su_pompasi")        roleYaz(SU_POMPASI_PIN, durum);
     else if (ad == "hava_pompasi") roleYaz(HAVA_POMPASI_PIN, durum);
-    else { Serial.println("HATA: ad su_pompasi ya da hava_pompasi olmali"); return; }
+    else { Serial.println(F("HATA: ad su_pompasi ya da hava_pompasi olmali")); return; }
 
-    Serial.print("KOMUT: ");
+    Serial.print(F("KOMUT: "));
     Serial.print(ad);
-    Serial.println(durum ? " ACIK" : " KAPALI");
+    Serial.println(durum ? F(" ACIK") : F(" KAPALI"));
     sonOlcum = 0;
     return;
   }
@@ -476,7 +499,7 @@ void komutIsle(String komut) {
     int b2 = komut.indexOf(' ', b1 + 1);
     int b3 = b2 < 0 ? -1 : komut.indexOf(' ', b2 + 1);
     if (b2 < 0 || b3 < 0) {
-      Serial.println("HATA: UC <indeks> <derece> <sure_ms>");
+      Serial.println(F("HATA: UC <indeks> <derece> <sure_ms>"));
       return;
     }
     int indeks  = komut.substring(b1 + 1, b2).toInt();
@@ -485,23 +508,23 @@ void komutIsle(String komut) {
     /* SINIRLAR BURADA DA DENETLENİYOR: kart seri porta elle yazılan bir
      * komutu da alıyor ve servoyu mekanik sınırının dışına sürmek dişliyi
      * zorlar. */
-    if (indeks < 0 || indeks > 2) { Serial.println("HATA: UC indeksi 0-2"); return; }
-    if (derece < 0 || derece > 180) { Serial.println("HATA: UC derecesi 0-180"); return; }
+    if (indeks < 0 || indeks > 2) { Serial.println(F("HATA: UC indeksi 0-2")); return; }
+    if (derece < 0 || derece > 180) { Serial.println(F("HATA: UC derecesi 0-180")); return; }
     if (sureMs <= 0 || sureMs > 10000) {
-      Serial.println("HATA: UC sure_ms 1-10000");
+      Serial.println(F("HATA: UC sure_ms 1-10000"));
       return;
     }
     ucKomut(indeks, derece, sureMs);
-    Serial.print("KOMUT: uc ");
+    Serial.print(F("KOMUT: uc "));
     Serial.print(indeks);
-    Serial.print(" -> ");
+    Serial.print(F(" -> "));
     Serial.print(derece);
-    Serial.println(" derece (gidiyor)");
+    Serial.println(F(" derece (gidiyor)"));
     sonOlcum = 0;
     return;
   }
 
-  Serial.println("HATA: bilinmeyen komut");
+  Serial.println(F("HATA: bilinmeyen komut"));
 }
 
 void seriOku() {
@@ -520,7 +543,7 @@ void seriOku() {
  * yazmak "ölçtüm, sıfır çıktı" demek olurdu ve grafikte gerçek bir
  * uçurum gibi görünürdü. */
 void sayiYaz(float d) {
-  if (isnan(d)) Serial.print("null");
+  if (isnan(d)) Serial.print(F("null"));
   else Serial.print(d, 1);
 }
 
@@ -535,35 +558,35 @@ void olcVeYaz() {
     rakim       = bmp.readAltitude();
   }
 
-  Serial.print("VERI:{\"hava_sicaklik\":");   sayiYaz(sicaklik);
-  Serial.print(",\"hava_nem\":");             sayiYaz(nem);
-  Serial.print(",\"bmp_sicaklik\":");         sayiYaz(bmpSicaklik);
-  Serial.print(",\"basinc\":");               sayiYaz(basinc);
-  Serial.print(",\"rakim\":");                sayiYaz(rakim);
+  Serial.print(F("VERI:{\"hava_sicaklik\":"));   sayiYaz(sicaklik);
+  Serial.print(F(",\"hava_nem\":"));             sayiYaz(nem);
+  Serial.print(F(",\"bmp_sicaklik\":"));         sayiYaz(bmpSicaklik);
+  Serial.print(F(",\"basinc\":"));               sayiYaz(basinc);
+  Serial.print(F(",\"rakim\":"));                sayiYaz(rakim);
   /* Hangi DHT bulundu — ajan makul aralığı buna göre seçiyor. */
-  Serial.print(",\"dht\":\"");                Serial.print(dhtAdi);
-  Serial.print("\",\"toprak_nem\":");         Serial.print(analogRead(TOPRAK_PIN));
-  Serial.print(",\"r_su_pompasi\":");         Serial.print(suPompasiAcik ? 1 : 0);
-  Serial.print(",\"r_hava_pompasi\":");       Serial.print(havaPompasiAcik ? 1 : 0);
+  Serial.print(F(",\"dht\":\""));                Serial.print(dhtAdi);
+  Serial.print(F("\",\"toprak_nem\":"));         Serial.print(analogRead(TOPRAK_PIN));
+  Serial.print(F(",\"r_su_pompasi\":"));         Serial.print(suPompasiAcik ? 1 : 0);
+  Serial.print(F(",\"r_hava_pompasi\":"));       Serial.print(havaPompasiAcik ? 1 : 0);
   /* UÇ SEÇİCİ — KOMUT EDİLEN DEĞER, ÖLÇÜM DEĞİL. Hiç komut verilmediyse
    * ikisi de null gidiyor: sıfır yazmak "0 numaralı uç seçili" demek
    * olurdu ve bu, bilinmeyeni bilinen gibi göstermenin ta kendisi. */
-  Serial.print(",\"uc_secili\":");
-  if (ucSecili < 0) Serial.print("null"); else Serial.print(ucSecili);
-  Serial.print(",\"uc_aci\":");
-  if (ucAci < 0) Serial.print("null"); else Serial.print(ucAci);
+  Serial.print(F(",\"uc_secili\":"));
+  if (ucSecili < 0) Serial.print(F("null")); else Serial.print(ucSecili);
+  Serial.print(F(",\"uc_aci\":"));
+  if (ucAci < 0) Serial.print(F("null")); else Serial.print(ucAci);
   // 1 = komut verildi ama hareket süresi dolmadı; horn hâlâ yolda.
-  Serial.print(",\"uc_hareket\":");           Serial.print(ucHarekette ? 1 : 0);
+  Serial.print(F(",\"uc_hareket\":"));           Serial.print(ucHarekette ? 1 : 0);
   /* SERVO DENEMESİ AÇIK MI. Panelde düğme bunu okuyor: düğmenin kendi
    * hafızasına güvenmek, kart sıfırlandığında (pompa çekişinde oluyor)
    * panelin "çalışıyor" demeye devam etmesi demekti. Doğruyu kart
    * söylüyor. */
-  Serial.print(",\"servo_test\":");           Serial.print(testAcik ? 1 : 0);
+  Serial.print(F(",\"servo_test\":"));           Serial.print(testAcik ? 1 : 0);
   /* Kartın açık kaldığı süre. Geriye giderse kart yeniden başlamıştır ve
    * röleler kapanmıştır — pompa çekişinde besleme çökerse tam bunu
    * görüyoruz. */
-  Serial.print(",\"calisma_sn\":");           Serial.print(millis() / 1000UL);
-  Serial.println("}");
+  Serial.print(F(",\"calisma_sn\":"));           Serial.print(millis() / 1000UL);
+  Serial.println(F("}"));
 }
 
 // --------------------------------------------------------------- DÖNGÜ ----

@@ -46,10 +46,36 @@ AJAN_DURDU=0
 geri_ac() { [ "$AJAN_DURDU" = "1" ] && sudo systemctl start farmbot-ajan || true; }
 trap geri_ac EXIT
 
-if systemctl is-active --quiet farmbot-ajan; then
-    sudo -n systemctl stop farmbot-ajan 2>/dev/null || sudo systemctl stop farmbot-ajan
-    AJAN_DURDU=1
-    sleep 1
+# "ACTIVE" YETMIYOR, "ACTIVATING" DE SAYILIR. Burada `is-active --quiet`
+# vardi ve o, unit daha ayaga kalkarken FALSE donuyor. Sonucu su oldu:
+#     bash arduino-yukle.sh && bash seri-komut.sh "TEST 1" 15
+# zincirinde yukleyici cikarken ajani baslatiyor, hemen ardindan bu betik
+# "ajan calismiyor" deyip onu DURDURMUYOR, ajan portu aciyor ve karttan
+# gelen her baytI O yiyor. Ekranda "karttan gelen" bombos ciktI -- yani
+# betik, kart susuyor gibi gosterdi. Olcumu betigin kendisi bozmasin.
+DURUM="$(systemctl is-active farmbot-ajan 2>/dev/null || true)"
+case "$DURUM" in
+    active|activating|reloading|deactivating)
+        sudo -n systemctl stop farmbot-ajan 2>/dev/null || sudo systemctl stop farmbot-ajan
+        AJAN_DURDU=1
+        ;;
+esac
+
+# PORT GERCEKTEN BOSALDI MI. `systemctl stop` unit'i durdurdugunda surec
+# henuz dosya tanimlayicisini birakmamis olabiliyor; sabit bir `sleep 1`
+# bunu bazen isKalIyor, bazen isKalamIyor. Bekleyip ONAYLIYORUZ.
+port_bos_mu() {
+    # fuser her Pi'de kurulu degil; yoksa beklemekten baska yapacak sey yok.
+    command -v fuser >/dev/null 2>&1 || return 0
+    ! fuser "$PORT" >/dev/null 2>&1
+}
+for _ in $(seq 20); do
+    port_bos_mu && break
+    sleep 0.25
+done
+if ! port_bos_mu; then
+    echo "UYARI: $PORT hala baska bir surecte acik. Olcum eksik cikabilir." >&2
+    echo "       Kim tuttuguna bakin:  fuser -v $PORT" >&2
 fi
 
 # -hupcl: son dosya tanimlayici kapaninca DTR DUSMESIN. Asagida komutu
