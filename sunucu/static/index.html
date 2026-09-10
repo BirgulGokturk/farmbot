@@ -500,25 +500,29 @@
             </div>
           </div>
 
-          <!-- TARETİ BİR NOKTAYA GÖTÜR. Üç başlık tek parçada ve aynı
-               noktada olduğu için "hangi başı götüreyim" diye bir soru
-               kalmadı: kayma üçü için de aynı. Tek düğme. -->
+          <!-- HER BAŞLIK İÇİN AYRI: "bu başlığı şu noktaya götür".
+               Üç başlık üç ayrı noktada ve kaymaları farklı; tek düğme
+               ikisini yanlış yere götürürdü. Kaymayı ölçmenin de yolu
+               burası: bilinen bir koordinata sür, gerçekte nereye denk
+               geldiğine bak. -->
           <div class="bas-git" id="bas-git">
-            <span class="alt-not"><b>Aşağı bakan başlığı</b> bu noktaya götür</span>
+            <span class="alt-not"><b>Seçtiğiniz başlığı</b> bu noktaya götür</span>
             <div class="satir-8 alt-hizali">
               <div class="alan"><label for="bg-x">X</label>
                 <input type="number" id="bg-x" step="1"></div>
               <div class="alan"><label for="bg-y">Y</label>
                 <input type="number" id="bg-y" step="1"></div>
-              <button class="dugme" id="d-bas-git">Taret bu noktaya</button>
+              <button class="dugme" data-bas="sulama">💧 Sulama başlığı</button>
+              <button class="dugme" data-bas="nem">🌡️ Nem probu</button>
+              <button class="dugme" data-bas="tohum">🌱 Tohum ucu</button>
             </div>
-            <p class="alt-not"><b>Konuma git</b> makineyi X/Y'ye götürüyor —
-              taretin dönme ekseni o zaman X/Y'de değil, kayması kadar ötede
-              oluyor. Bu düğme kaymayı ekleyip <b>aşağı bakan başlığın</b>
-              hedefe denk gelmesini sağlıyor. Üç başlık aynı noktada, o yüzden
-              hangisinin seçili olduğu buradaki hesabı değiştirmiyor — yalnız
-              hangi işin yapılacağını değiştiriyor. Bir bitkinin ya da filizin
-              koordinatını teyit ederken kullanılacak yer burası.</p>
+            <p class="alt-not">Üç başlık aynı yerde değil; her birinin kendi
+              kayması var. <b>Konuma git</b> makineyi X/Y'ye götürüyor — o
+              zaman tohum ucu X/Y'de değil, kayması kadar ötede oluyor.
+              Buradaki düğmeler kaymayı ekleyip <b>o başlığın</b> hedefe denk
+              gelmesini sağlıyor. Kaymayı ölçerken de burası kullanılıyor:
+              bilinen bir koordinata sürün, başlığın gerçekte nereye denk
+              geldiğini okuyun.</p>
             <p class="alt-not" id="bas-git-not"></p>
           </div>
 
@@ -1190,78 +1194,84 @@
           <button class="bolum-bas" aria-expanded="false">
             <svg class="ikon ok"><use href="#i-ok"/></svg>
             <span class="bolum-ad">Başlar ve tohumluk</span>
-            <span class="bolum-not">Taret, başlık açıları, hazneler</span>
+            <span class="bolum-not">Üç başlık, kaymalar, uç seçici</span>
           </button>
           <button class="yardim" type="button" aria-expanded="false"
                   aria-controls="yardim-uc" aria-label="Açıklama">?</button>
         </div>
         <div class="bolum-govde">
           <p class="yardim-metin gizli" id="yardim-uc">
-            Üç başlık <b>tek bir parçada</b> toplandı: sulama başlığı,
-            toprak nemi probu ve tohum alma ucu. Bu parçayı <b>bir servo
-            çeviriyor</b> ve döndüğü açı hangi başlığın iş göreceğini
-            belirliyor — hangi açıya dönerse o başlık aşağı bakıyor ve
-            çalışmaya hazır oluyor. Yani başlık seçmek artık bir yere
-            gitmek değil, <b>bir açıya dönmek</b>.<br><br>
-            Parça Z ekseninin ucunda duruyor ve Z'nin işi değişmedi:
-            <b>önce servo doğru başlığı seçiyor, sonra Z onu toprağa
-            indiriyor</b>.<br><br>
-            Bunun ayarlara yansıması şu: <b>başlık başına X/Y kayması
-            yok</b>. Üçü de aynı noktada; kayma <b>taretin dönme
-            ekseninin</b> yeri ve tek bir yerde giriliyor. Başlık başına
-            kalan üç şey var — hangi <b>açıda</b> olduğu, kendi <b>Z
-            tabanı</b> ve kendi <b>iniş derinliği</b>.<br><br>
+            Üç başlık <b>tek bir parçada</b> birleştirildi ama
+            <b>dönmüyorlar</b>: sulama başlığı, toprak nemi probu ve
+            tohum alma ucu, her biri kendi sabit yerinde, yan yana
+            duruyor. Servo hiçbir şeyi bir yerden başka yere taşımıyor;
+            yalnız <b>sırası gelen başlığı aşağı indiriyor</b>. Servo
+            açısı = hangi başlığın indirileceği.<br><br>
+            Grup Z ekseninin ucunda duruyor ve Z'nin işi değişmedi:
+            <b>önce servo doğru başlığı indiriyor, sonra Z bütün grubu
+            toprağa götürüyor</b>.<br><br>
+            Üç başlık üç <b>ayrı noktada</b> olduğu için her birinin
+            kendi <b>X/Y kayması</b> var. Makine bir işi yaparken o
+            başlığın kaymasını ekliyor: bir noktaya "sula" dediğinizde
+            makine o noktaya + sulama kayması kadar gidiyor, "ek"
+            dediğinizde tohum ucunun kayması kadar. Kayma yanlışsa iş
+            yanlış yere yapılır — sulamada birkaç mm önemsiz, tohum
+            ucunda tohum yanlış deliğe gider.<br><br>
+            <b>Kaymayı nasıl ölçersiniz:</b> makineyi bilinen bir
+            koordinata sürün, o başlığın yatakta <i>gerçekte</i> nereye
+            denk geldiğini okuyun. <b>Kayma = komut edilen − gerçek.</b>
+            Makine <code>hedef + kayma</code> noktasına gittiği için
+            kayma, başlığın referansa göre yerinin tersidir.<br><br>
             <b>Servo nerede olduğunu geri bildirmiyor.</b> Panelde
             "seçili" yazan şey ölçülmüş değil, <b>komut edilmiş</b> bir
             değer. Makine kapanıp açılırsa servonun nerede kaldığı
             bilinmiyor; panel o hâlde "bilinmiyor" diyor ve iş
             başlatmıyor.<br><br>
-            <b>Z aşağıdayken taret dönmüyor</b>: aşağı bakan başlık
-            toprağın içindeyken parçayı çevirmek onu toprakta sürüklemek
-            olur. Eşik aşağıda giriliyor.<br><br>
+            <b>Z aşağıdayken başka başlık indirilmiyor</b>: inmiş bir
+            başlık toprağın içindeyken ikincisini indirmek onu da
+            toprağa sokar. Eşik aşağıda giriliyor. Bir başlığın hareketi
+            bitmeden ikincisi de indirilmiyor.<br><br>
             <b>Tohum ucunun kendi dikey ekseni var</b> (PLC'de j4). Ana Z
             bütün parçayı indiriyor; tohum ucu bunun üstüne bir de kendi
             başına iniyor — yalnız tohum alırken ve tohumu toprağa
             bırakırken. Aşağıdayken X/Y hareketi yapılmıyor.
           </p>
 
-          <!-- TARET — üç başlığın toplandığı, servonun çevirdiği parça.
-               Kayma ARTIK BURADA: üç başlık aynı noktada olduğu için tek
-               bir kayma var. Baş başına kayma tutmak, aynı fiziksel
-               noktayı üç kez yazmak ve birinin ötekilerden ayrışmasına
-               izin vermek olurdu. -->
+          <!-- UÇ SEÇİCİ MEKANİZMASI. Buradaki iki sayı da başlığa değil
+               MEKANİZMAYA ait; kaymalar başlık bloklarında, çünkü üç
+               başlık üç ayrı noktada duruyor. -->
           <div class="alan-izgara bas-alanlar">
-            <div class="alan" title="Taretin dönme ekseni makine referansına göre nerede (mm).">
-              <label for="taret-dx">Taret X kayması (mm)</label>
-              <input type="number" id="taret-dx" step="0.1"></div>
-            <div class="alan" title="Taretin dönme ekseni makine referansına göre nerede (mm).">
-              <label for="taret-dy">Taret Y kayması (mm)</label>
-              <input type="number" id="taret-dy" step="0.1"></div>
-            <div class="alan" title="Servonun dönebilmesi için gereken en düşük Z. Boş = genel Z güvenlik kuralı geçerli.">
-              <label for="taret-z">Dönüş Z'si (mm)</label>
-              <input type="number" id="taret-z" step="1" placeholder="boş = genel kural"></div>
-            <div class="alan" title="Servonun bir açıdan ötekine dönme süresi.">
-              <label for="taret-sure">Dönüş süresi (ms)</label>
-              <input type="number" id="taret-sure" step="10" min="1" max="10000"></div>
+            <div class="alan" title="Bir başlığı indirmek ya da kaldırmak ne kadar sürüyor. İş bu süre dolmadan başlamıyor.">
+              <label for="us-sure">Servo hareket süresi (ms)</label>
+              <input type="number" id="us-sure" step="10" min="1" max="10000"></div>
+            <div class="alan" title="Başka bir başlığı indirmeden önce inen başlığın çekilmiş olması için gereken yükseklik. Boş = genel Z güvenlik kuralı geçerli.">
+              <label for="us-guvenli-z">Güvenli yükseklik (mm)</label>
+              <input type="number" id="us-guvenli-z" step="1" placeholder="boş = genel kural"></div>
           </div>
-          <p class="alt-not"><b>Taret kayması:</b> dönme ekseni makine
-            referansına göre nerede. Makine <b>hedef + kayma</b> noktasına
-            gidiyor. <b>Dönüş Z'si:</b> servonun dönebilmesi için Z en az
-            bu kadar yukarıda olmalı — altındayken aşağı bakan başlık
-            toprağın içinde olur ve çevirmek onu sürükler. Boş
-            bırakılırsa genel Z güvenlik kuralı geçerli. <b>Dönüş
-            süresi:</b> kart bu süre dolana kadar "gidiyor" diyor; iş bu
-            süre dolmadan başlamıyor.</p>
+          <p class="alt-not"><b>Servo hareket süresi:</b> kart bu süre
+            dolana kadar "gidiyor" diyor; iş süre dolmadan başlamıyor ve
+            bir başlığın hareketi bitmeden ikincisi indirilmiyor.
+            <b>Güvenli yükseklik:</b> başka bir başlığı indirmeden önce
+            inen başlığın çekilmiş sayılabilmesi için Z en az bu kadar
+            yukarıda olmalı — altındayken inmiş başlık toprağın içinde
+            olabiliyor ve ikincisini indirmek onu da toprağa sokar. Boş
+            bırakılırsa genel Z güvenlik kuralı geçerli.</p>
 
-          <!-- ÜÇ BAŞLIK. Kayma yok; açı, Z tabanı, derinlik. -->
+          <!-- ÜÇ BAŞLIK, ÜÇ AYRI NOKTA: kendi kayması, açısı, Z tabanı,
+               derinliği. -->
           <div class="bas-tablo" id="bas-tablo"></div>
-          <p class="alt-not"><b>Servo açısı:</b> bu başlık aşağı bakarken
-            servonun açısı — <b>ölçerek</b> girin, horn dişlisi hiçbir
-            zaman tam 0/90/180'e hizalanmıyor. Boş bırakılırsa o başlık
-            seçilemiyor. <b>Z tabanı:</b> o başlığın inebileceği en alçak
-            mutlak Z — çarpma sınırı. <b>Derinlik:</b> işini yaparken
-            toprak yüzeyinin ne kadar altına indiği (nem probu toprağa
-            dalıyor, sulama başlığı dalmıyor).</p>
+          <p class="alt-not"><b>X/Y kayması:</b> o başlığın makine
+            referansına göre yeri. Makine <b>hedef + kayma</b> noktasına
+            gidiyor, yani kayma başlığın yerinin <b>tersi</b>. Ölçmek
+            için bilinen bir koordinata sürüp başlığın yatakta gerçekte
+            nereye denk geldiğini okuyun: <b>kayma = komut edilen −
+            gerçek</b>. <b>Servo açısı:</b> bu başlığı <b>indiren</b>
+            açı — ölçerek girin, horn dişlisi hiçbir zaman tam
+            0/90/180'e hizalanmıyor; boş bırakılırsa o başlık
+            seçilemiyor. <b>Z tabanı:</b> o başlığın inebileceği en
+            alçak mutlak Z — çarpma sınırı. <b>Derinlik:</b> işini
+            yaparken toprak yüzeyinin ne kadar altına indiği (nem probu
+            toprağa dalıyor, sulama başlığı dalmıyor).</p>
           <p class="alt-not" id="bas-ornek"></p>
           <div class="satir-8">
             <button class="dugme birincil" id="d-bas-kaydet">Başları kaydet</button>
@@ -1314,7 +1324,7 @@
               <div class="alan"><label for="ua-z_safe_reg">z_safe_reg</label><input type="number" id="ua-z_safe_reg" step="1"></div>
             </div>
             <p class="alt-not"><b>safe_z</b>: X/Y hareketinin yapılabildiği
-              en düşük Z — taret bu yükseklikte yatağın üstünden geçiyor.
+              en düşük Z — başlık grubu bu yükseklikte yatağın üstünden geçiyor.
               <b>Güvenli Z payı</b>: "Z güvenli yükseklikte mi"
               kıyaslamasının toleransı. Koda gömülü 1 mm'ydi ve
               değiştirilemiyordu; encoder gürültüsü ve duruş sapması

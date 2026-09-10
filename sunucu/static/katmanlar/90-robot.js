@@ -101,16 +101,17 @@ Tarla.katman({
     p.sutun.scale.y = boy;
     p.sutun.position.set(0, kafaUst + boy / 2, 0);
 
-    /* AŞAĞI BAKAN BAŞLIK — TEK TANE ÇİZİLİYOR.
+    /* ÜÇ BAŞLIK ÇİZİLİ, YALNIZ SIRASI GELEN İNİYOR.
      *
-     * Üç başlık tek parçada; servo hangi açıya dönerse o başlık aşağı
-     * bakıyor. Model de tek başlık çiziyor (bkz. makine.js "TARET").
+     * Üç başlık tek parçada BİRLEŞTİRİLDİ ama DÖNMÜYORLAR: her biri
+     * kendi sabit yerinde, yan yana. Servo hiçbir şeyi taşımıyor, yalnız
+     * sırası gelen başlığı AŞAĞI İNDİRİYOR (bkz. makine.js "UÇ KAFASI").
+     * Üçü de çizili çünkü üçü de orada; iş gören, İNMİŞ olandan belli.
      *
-     * SEÇİLİ UÇ BİLİNMİYORSA BAŞLIK HİÇ ÇİZİLMİYOR. Servoda geri
-     * besleme yok ve kart açılışta/sıfırlandıktan sonra ne komut
-     * edildiğini bilmiyor; birini çizmek, bilinmeyeni bilinen gibi
-     * göstermek olurdu. Boş gövde "üç başlık burada, hangisinin aşağı
-     * baktığını bilmiyoruz" diyor.
+     * SEÇİLİ UÇ BİLİNMİYORSA HİÇBİRİ İNMİYOR. Servoda geri besleme yok
+     * ve kart açılışta/sıfırlandıktan sonra ne komut edildiğini
+     * bilmiyor; birini indirmek, bilinmeyeni bilinen gibi göstermek
+     * olurdu. Üçü de dinlenme yüksekliğinde duruyor.
      *
      * İNİŞ. Üç kaynak, üçü de ayrı:
      *   - tohum ucu: KENDİ EKSENİ (PLC j4) ve ölçülen mm.
@@ -124,20 +125,25 @@ Tarla.katman({
     const secici = ((o.veri.durum.uc || {}).secici) || {};
     const secili = secici.secili_bas || null;
     const dinlenme = Number(u.basY || 0);
-    if (u.aktifBas) {
-      u.aktifBas.visible = !!secili;
-      let dus = 0;
-      if (secili === "tohum") {
-        const t = o.veri.durum.tohum_ucu || {};
-        dus = (t.kalibre && Number.isFinite(Number(t.mm)))
-          ? Math.abs(Number(t.mm) - Number(t.yukari_mm || 0)) * MM : 0;
-      } else if (secili === "sulama") {
-        const PN = window.Panel;
-        const akiyor = !!(PN && PN.S && PN.S.roleDurum && PN.S.roleDurum.su_pompasi);
-        dus = akiyor ? Number(u.aktifDusme || 0) : 0;
-      }
-      u.aktifBas.position.y = dinlenme - dus;
+    const basGrup = u.basGrup || {};
+    let inisMm = 0;
+    if (secili === "tohum") {
+      const t = o.veri.durum.tohum_ucu || {};
+      inisMm = (t.kalibre && Number.isFinite(Number(t.mm)))
+        ? Math.abs(Number(t.mm) - Number(t.yukari_mm || 0)) * MM : 0;
+    } else if (secili === "sulama") {
+      const PN = window.Panel;
+      const akiyor = !!(PN && PN.S && PN.S.roleDurum && PN.S.roleDurum.su_pompasi);
+      inisMm = akiyor ? Number(u.aktifDusme || 0) : 0;
     }
+    /* İnişi YALNIZ seçili başlığa uyguluyoruz. Ötekilerin y'sini de her
+     * karede dinlenmeye yazıyoruz: seçim değişince eski başlık kendi
+     * başına geri çıkmaz, aşağıda kalırdı ve sahnede iki inmiş başlık
+     * görünürdü — ajan bir başlık inmişken ikincisini indirmeye izin
+     * vermiyor, model de öyle göstermeyecek. */
+    Object.keys(basGrup).forEach((ad) => {
+      basGrup[ad].position.y = dinlenme - (ad === secili ? inisMm : 0);
+    });
 
     /* SU HUZMESİ. Kaynak tek: kartın bildirdiği röle durumu (`r_su_pompasi`).
      * Panel kendi tahminini tutmuyor — "sulama komutu gönderdim, demek ki
@@ -170,11 +176,12 @@ Tarla.katman({
         /* Huzme başlığın UCUNDAN başlıyor. Başlık pompa açıkken indiği
          * için ofset sabit değil: grubun O ANKİ y'si + ucun grup içi
          * ofseti. Sabit yazsaydık su, inmiş başlığın içinden çıkardı. */
-        /* Huzme aşağı bakan başlığın AĞZINDAN çıkıyor. Başlık pompa
-         * açıkken indiği için ofset sabit değil: grubun O ANKİ y'si +
-         * ağzın grup içi ofseti. Sabit yazsaydık su, inmiş başlığın
-         * içinden çıkardı. */
-        const agizY = (u.aktifBas ? u.aktifBas.position.y : Number(u.basY || 0))
+        /* Huzme SULAMA başlığının ağzından çıkıyor — hortum o başlığa
+         * bağlı. Başlık pompa açıkken indiği için ofset sabit değil:
+         * grubun O ANKİ y'si + ağzın grup içi ofseti. Sabit yazsaydık
+         * su, inmiş başlığın içinden çıkardı. */
+        const sulamaG = (u.basGrup || {}).sulama;
+        const agizY = (sulamaG ? sulamaG.position.y : Number(u.basY || 0))
           + Number(u.basUcY || 0);            // kafa yerelinde ağzın y'si
         // Ağzın SAHNEDEKİ yüksekliği; toprak yüzeyi y = 0.
         const yer = Math.max(0.01, p.ucKafa.position.y + agizY);
@@ -195,37 +202,50 @@ Tarla.katman({
   suDurumu() {
     const p = this._p;
     if (!p || !p.su) return { kuruldu: false };
-    /* TARET TANISI. Üç ayrı başlık yerine tek parça çizildiği için eski
-     * alanlar (prob nerede, başlık nerede, hangi baş inmiş) anlamını
-     * yitirdi: üçü aynı noktada ve sahnede yalnız aşağı bakan çiziliyor.
-     * Yerlerine, "neden görünmüyor" sorusunu cevaplayan sayılar geldi. */
+    /* UÇ KAFASI TANISI. Üç başlık üç ayrı noktada (dönme yok), üçü de
+     * çizili; sorulacak şey "hangisi nerede ve hangisi inmiş". Kaymayı
+     * panelden değiştirince buradaki mm'ler onunla değişiyor — sahnedeki
+     * yer ile ayardaki sayının tuttuğunu gözle değil sayıyla doğrulamak
+     * için. */
     const u = (p.ucKafa && p.ucKafa.userData) || {};
-    const t = u.taret || {};
-    const ab = u.aktifBas;
+    const yer = u.basYer || {};
+    const grup = u.basGrup || {};
+    const pl = u.plaka || {};
+    const inmisMm = {};
+    Object.keys(grup).forEach((ad) => {
+      inmisMm[ad] = +(((Number(u.basY) || 0) - grup[ad].position.y) * 1000)
+        .toFixed(1);
+    });
     return {
       kuruldu: true,
-      // Taretin dönme ekseni ve gövde ölçüsü (mm) — kayma doğru mu.
-      taretMm: t.x == null ? null
-        : { x: +(t.x * 1000).toFixed(1), z: +(t.z * 1000).toFixed(1),
-            cap: +(t.r * 2000).toFixed(1), boy: +(t.boy * 1000).toFixed(1) },
-      /* AŞAĞI BAKAN BAŞLIK ÇİZİLİ Mİ. `false` iki ayrı şey OLABİLİR ve
-       * ikisi de doğru davranış: seçili uç bilinmiyor (kart açılışta ya
-       * da sıfırlandıktan sonra) ya da katman henüz güncellenmedi.
-       * Bilinmiyorken çizmemek bilerek: birini çizmek, bilinmeyeni
-       * bilinen gibi göstermek olurdu. */
-      aktifBasCizili: !!(ab && ab.visible),
-      aktifBasDusmusMm: ab
-        ? +(((Number(u.basY) || 0) - ab.position.y) * 1000).toFixed(1) : null,
+      /* BAŞLARIN YERİ (mm, kızak yerelinde). Kayma sözleşme (4) gereği
+       * ters işaretle giriyor: baş, makine noktasının dx/dy kadar
+       * TERSİNDE. Panelde 60/-40 girilmişse burada (-60, +40) görünür. */
+      basYerMm: Object.keys(yer).reduce((a, ad) => {
+        a[ad] = { x: +(yer[ad].x * 1000).toFixed(1),
+                  z: +(yer[ad].z * 1000).toFixed(1) };
+        return a;
+      }, {}),
+      // Üçünü birleştiren taşıyıcı plaka (mm) — başlar plakaya sığıyor mu.
+      plakaMm: pl.x1 == null ? null
+        : { en: +((pl.x2 - pl.x1) * 1000).toFixed(1),
+            boy: +((pl.z2 - pl.z1) * 1000).toFixed(1),
+            kal: +(pl.kal * 1000).toFixed(1) },
+      /* HANGİ BAŞ NE KADAR İNMİŞ (mm). Hepsi 0 ise ya seçili uç
+       * bilinmiyor (kart açılışta ya da sıfırlandıktan sonra) ya da iniş
+       * sinyali yok. İkisi de doğru davranış; bilinmiyorken indirmemek
+       * bilerek, birini indirmek bilinmeyeni bilinen gibi göstermek
+       * olurdu. Aynı anda BİRDEN ÇOK sıfırdan büyük değer çıkmamalı. */
+      inmisMm: inmisMm,
       aktifDusmeMm: u.aktifDusme == null
         ? null : +(u.aktifDusme * 1000).toFixed(1),
       /* NEM PROBUNUN KENDİ SİNYALİ YOK. Probun ayrı bir ekseni yok ve
        * durum paketinde "prob ölçüyor" diye bir bayrak geçmiyor; ölçüm
        * ana Z ile daldırılarak yapılıyor. Prob bu yüzden sabit duruyor. */
       nemSinyali: "yok — probun kendi ekseni ve durum bayrağı yok",
-      /* DÖNME EKSENİNİN YÖNÜ BİLİNMİYOR: taretin makine X'i mi Y'si mi
-       * etrafında döndüğü söylenmedi, o yüzden öteki iki başlık gövdenin
-       * içinde ve çizilmiyor. Yön öğrenilince gövde açılabilir. */
-      donmeEkseni: "bilinmiyor — öteki iki başlık çizilmiyor",
+      /* DÖNME YOK. Servo başlıkları taşımıyor, yalnız sırası geleni
+       * indiriyor; üçü de kendi sabit yerinde çizili. */
+      donme: "yok — servo yalnız sırası gelen başlığı indiriyor",
       gorunur: p.su.visible,
       boy: +p.su.scale.y.toFixed(4),
       y: +p.su.position.y.toFixed(4),

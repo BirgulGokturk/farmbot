@@ -342,47 +342,52 @@ class Ajan:
     # varsa SEBEBİ metin olarak dönüyor, boş metin "engel yok" demek.
     # ------------------------------------------------------------------ #
     def uc_secim_engel(self) -> str:
-        """Taretin dönmesini engelleyen sebep varsa metni, yoksa ''.
+        """Başka bir başlığı indirmeyi engelleyen sebep varsa metni, yoksa ''.
 
-        Z AŞAĞIDAYKEN TARET DÖNMEZ. Üç başlık tek parçada ve aşağı bakan
-        başlık toprağın içindeyken parçayı çevirmek, o başlığı toprakta
-        sürüklemek demek: başlığı da eğer, bitkiyi de.
+        MEKANİZMA: üç başlık tek parçada birleştirilmiş ama DÖNMÜYORLAR;
+        her biri kendi sabit yerinde duruyor ve servo yalnız sırası
+        geleni AŞAĞI İNDİRİYOR. Dolayısıyla kural "dönerken sürükleme"
+        değil: inmiş bir başlık toprağın içindeyken ikinci bir başlığı
+        indirmek, onu da toprağa sokar ve inen ilkini çekmeden ikinciyi
+        indirmek mekanizmayı zorlar.
 
-        İKİ KURAL, SIRAYLA. Taretin kendi eşiği (`taret.z_min`) girilmişse
-        o geçerli — mekanizmanın kendi sayısı, ölçülerek giriliyor.
-        Girilmemişse karar genel Z güvenlik kuralına (`plc.z_guvenli_mi`)
-        kalıyor. Hangi kuralın uygulandığı metinde yazılı; "neden
-        dönmüyor" sorusu iki ayrı sayıdan hangisine bakılacağını da
-        söylemeli.
+        İKİ KURAL, SIRAYLA. Mekanizmanın kendi eşiği
+        (`uc_secici.guvenli_z`) girilmişse o geçerli — inen başlığın
+        çekilmiş sayılabilmesi için gereken yükseklik, ölçülerek
+        giriliyor. Girilmemişse karar genel Z güvenlik kuralına
+        (`plc.z_guvenli_mi`) kalıyor. Hangi kuralın uygulandığı metinde
+        yazılı; "neden inmiyor" sorusu iki ayrı sayıdan hangisine
+        bakılacağını da söylemeli.
 
         Konum okunamıyorsa engel VAR diyoruz: hata anında serbest
-        bırakmak, başlığı toprakta sürüklemenin en kolay yolu.
+        bırakmak, ikinci bir başlığı toprağa sokmanın en kolay yolu.
         """
-        z_min = (self.uclar.taret() or {}).get("z_min")
-        if z_min is not None:
+        guvenli_z = (self.uclar.uc_secici() or {}).get("guvenli_z")
+        if guvenli_z is not None:
             try:
                 simdiki = self.plc.konum_mm()[2]
             except Exception:
-                return ("Z konumu okunamıyor — taret döndürülmüyor. "
+                return ("Z konumu okunamıyor — başlık indirilmiyor. "
                         "Robot bağlantısını denetleyin.")
-            if simdiki >= float(z_min):
+            if simdiki >= float(guvenli_z):
                 return ""
-            return (f"Z {simdiki:.0f} mm — taret {float(z_min):.0f} mm'nin "
-                    f"altında döndürülmüyor. Aşağı bakan başlık toprağın "
-                    f"içindeyken parçayı çevirmek onu toprakta sürüklemek "
-                    f"olur. Önce Z'yi kaldırın. (Eşik: Ayarlar → Başlar → "
-                    f"taret dönüş Z'si.)")
+            return (f"Z {simdiki:.0f} mm — başlık {float(guvenli_z):.0f} mm'nin "
+                    f"altında indirilmiyor. İnmiş bir başlık toprağın "
+                    f"içindeyken ikincisini indirmek onu da toprağa sokar. "
+                    f"Önce Z'yi kaldırın. (Eşik: Ayarlar → Başlar → uç "
+                    f"seçici güvenli yüksekliği.)")
         try:
             guvenli = self.plc.z_guvenli_mi()
         except Exception:
             guvenli = False
         if guvenli:
             return ""
-        return (f"Z aşağıda — taret döndürülmüyor. Aşağı bakan başlığı "
-                f"toprakta sürüklemek olur. Önce Z'yi güvenli yüksekliğe "
-                f"(≥ {self.plc.guvenli_z:.0f} mm) kaldırın. Taretin kendi "
-                f"eşiği girilmemiş; girilirse genel kural yerine o geçerli "
-                f"olur (Ayarlar → Başlar → taret dönüş Z'si).")
+        return (f"Z aşağıda — başlık indirilmiyor. İnmiş bir başlık toprağın "
+                f"içindeyken ikincisini indirmek onu da toprağa sokar. Önce "
+                f"Z'yi güvenli yüksekliğe (≥ {self.plc.guvenli_z:.0f} mm) "
+                f"kaldırın. Mekanizmanın kendi eşiği girilmemiş; girilirse "
+                f"genel kural yerine o geçerli olur (Ayarlar → Başlar → uç "
+                f"seçici güvenli yüksekliği).")
 
     def uc_is_engel(self, kimlik: str) -> str:
         """Bu iş için doğru uç seçili mi — değilse sebebi.
@@ -813,7 +818,16 @@ class Ajan:
                 kimlik = str(arg.get("bas", "") or "")
                 if self.uclar.bas_indeksi(kimlik) < 0:
                     return {"ok": False, "mesaj": f"Bilinmeyen baş: '{kimlik}'"}
-                # SIRA ÖNEMLİ: önce Z kilidi. Açı girilmemişse de komut
+                # BİR BAŞLIK İNERKEN İKİNCİSİ İNMEZ. Tek servo var ve
+                # yeni bir açı komutu, inen başlığı çekip ötekini
+                # indiriyor; hareket sürerken üstüne ikinci bir komut
+                # yollamak, mekanizmayı yarı yoldan geri döndürmek olur.
+                # Kart hareketin bittiğini `uc_hareket` ile söylüyor.
+                if self._uc_harekette:
+                    return {"ok": False,
+                            "mesaj": "Önceki başlık hareketi bitmedi — "
+                                     "yerine oturmasını bekleyin."}
+                # SIRA ÖNEMLİ: sonra Z kilidi. Açı girilmemişse de komut
                 # gitmiyor ama kullanıcıya önce asıl engeli söylemek
                 # gerekiyor — Z aşağıdayken açı girmek işe yaramaz.
                 engel = self.uc_secim_engel()
@@ -915,8 +929,10 @@ class Ajan:
                 "ayar": {"safe_z": self.uclar.ayar.get("safe_z"),
                          "guvenli_z_ofset": self.uclar.guvenli_z_ofset(),
                          "servo_sure_ms": self.uclar.servo_sure_ms()},
-                # TARET — üç başlığın toplandığı, servonun çevirdiği parça.
-                "taret": self.uclar.taret(),
+                # UÇ SEÇİCİ MEKANİZMASI — başlığa değil mekanizmaya ait
+                # ayarlar: hareket süresi ve güvenli yükseklik. Kayma
+                # BURADA YOK, baş başına (`baslar`).
+                "uc_secici": self.uclar.uc_secici(),
                 # UÇ SEÇİCİ — KOMUT EDİLEN DEĞER, ÖLÇÜM DEĞİL. `secili`
                 # None = kart hiç komut almamış ya da sıfırlanmış; panel
                 # bunu "bilinmiyor" diye yazıyor, sıfırıncı uç diye değil.

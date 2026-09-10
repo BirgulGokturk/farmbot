@@ -987,7 +987,7 @@ function ucGuncelle(u) {
     izgaraTurYaz();
   }
 
-  // TARET VE ÜÇ BAŞLIK. Kullanıcı düzenlerken üzerine yazmıyoruz.
+  // UÇ SEÇİCİ VE ÜÇ BAŞLIK. Kullanıcı düzenlerken üzerine yazmıyoruz.
   if (!S.ucAyarDuzenleniyor) {
     basTablosuCiz(u.baslar || {}, u.bas_bilgi || {});
     const yaz = (sec, deger) => {
@@ -996,11 +996,9 @@ function ucGuncelle(u) {
         el.value = deger == null ? "" : deger;
       }
     };
-    const t = u.taret || {};
-    yaz("#taret-dx", t.dx);
-    yaz("#taret-dy", t.dy);
-    yaz("#taret-z", t.z_min);
-    yaz("#taret-sure", t.sure_ms);
+    const us = u.uc_secici || {};
+    yaz("#us-guvenli-z", us.guvenli_z);
+    yaz("#us-sure", us.sure_ms);
     if (u.ayar) {
       yaz("#ua-safe_z", u.ayar.safe_z);
       yaz("#ua-guvenli_z_ofset", u.ayar.guvenli_z_ofset);
@@ -1114,23 +1112,34 @@ function ucSeciciYaz(d) {
  * BİRBİRİNE GÖRE nerede olduğu: "sulama sağda 60, tohum solda 55" bir
  * bakışta okunuyor, üç ayrı kutuda okunmuyor.
  */
-/* ÜÇ BAŞLIK ARTIK TEK PARÇADA — TARET.
+/* ÜÇ BAŞLIK TEK PARÇADA AMA DÖNMÜYORLAR.
  *
- * Eskiden üç başlık üç ayrı yerde duruyordu ve her birinin kendi X/Y
- * kayması vardı. Mekanizma değişti: üçü tek bir parçada toplandı, o
- * parça Z ekseninin ucunda ve servo onu çeviriyor. Hangi açıya dönerse
- * o başlık aşağı bakıyor. Yani başlık seçmek bir yere gitmek değil, bir
- * açıya dönmek.
+ * Her başlık kendi sabit yerinde, yan yana duruyor. Servo hiçbir şeyi
+ * bir yerden başka yere taşımıyor; yalnız sırası gelen başlığı AŞAĞI
+ * İNDİRİYOR. Servo açısı = hangi başlığın indirileceği. Z ekseni de
+ * eskisi gibi bütün grubu aşağı yukarı taşıyor.
  *
- * KAYMA ARTIK BAŞ BAŞINA DEĞİL. Üç başlık aynı noktada; kayma taretin
- * dönme ekseninin yeri ve tek bir yerde giriliyor (aşağıdaki taret
- * bloğu). Baş başına kalan: hangi açıda olduğu, kendi Z tabanı ve
- * kendi iniş derinliği.
+ * KAYMA BAŞ BAŞINA. Bir ara bu mekanizma taret sanılmış ("üç başlık
+ * dönüp aynı noktaya geliyor") ve baş başına kayma kaldırılıp tek bir
+ * taret kayması konmuştu. Dönme olmadığı için o varsayım geçersiz: üç
+ * başlık üç AYRI noktada ve tek kayma ikisini yanlış yere koyar.
+ * Sulama başlığında birkaç mm önemsiz, tohum ucunda tohum yanlış
+ * deliğe gider.
  */
 const BAS_ALANLARI = [
+  ["dx", "X kayması", "mm", 0.1,
+   "Bu başlığın makine referansına göre yeri. Makine hedef + kayma "
+   + "noktasına gidiyor, yani kayma başlığın yerinin TERSİ. Ölçmek için: "
+   + "bilinen bir koordinata sürün, başlığın yatakta gerçekte nereye denk "
+   + "geldiğini okuyun; kayma = komut edilen − gerçek."],
+  ["dy", "Y kayması", "mm", 0.1,
+   "Bu başlığın makine referansına göre yeri. Makine hedef + kayma "
+   + "noktasına gidiyor, yani kayma başlığın yerinin TERSİ. Ölçmek için: "
+   + "bilinen bir koordinata sürün, başlığın yatakta gerçekte nereye denk "
+   + "geldiğini okuyun; kayma = komut edilen − gerçek."],
   ["servo_aci", "Servo açısı", "°", 1,
-   "Bu başlık aşağı bakarken servonun açısı. Ölçerek girin: horn dişlisi "
-   + "hiçbir zaman tam 0/90/180'e hizalanmıyor. Boş = bu başlık serviste yok."],
+   "Bu başlığı İNDİREN servo açısı. Ölçerek girin: horn dişlisi hiçbir "
+   + "zaman tam 0/90/180'e hizalanmıyor. Boş = bu başlık serviste yok."],
   ["z_min", "Z tabanı", "mm", 1,
    "Bu başlığın inebileceği en alçak mutlak Z — çarpma sınırı."],
   ["derinlik_mm", "Derinlik", "mm", 1,
@@ -1189,30 +1198,37 @@ function basTablosuTopla() {
   return cikti;
 }
 
-/** Taret alanlarını topla — kayma, dönüş Z'si, dönüş süresi. */
-function taretTopla() {
+/** Uç seçici MEKANİZMASININ alanları — kayma yok, o baş başına.
+ *  Buradaki iki sayı da başlığa değil mekanizmaya ait. */
+function ucSeciciTopla() {
   const oku = (sec) => {
     const el = $(sec);
     return !el || el.value === "" ? null : Number(el.value);
   };
-  return { dx: oku("#taret-dx"), dy: oku("#taret-dy"),
-           z_min: oku("#taret-z"), sure_ms: oku("#taret-sure") };
+  return { guvenli_z: oku("#us-guvenli-z"), sure_ms: oku("#us-sure") };
 }
 
-/** Sayının NE YAPTIĞI, yazıldığı anda. Kayma artık ÜÇÜ İÇİN AYNI: taret
- *  tek bir noktada dönüyor ve hangi başlık aşağı bakarsa orada bakıyor. */
+/** Sayının NE YAPTIĞI, yazıldığı anda. İşaretin yönünü anlatan bir
+ *  cümle okumak yerine örneği görmek daha hızlı. Üç başlık üç ayrı
+ *  noktada olduğu için üç ayrı satır. */
 function basOrnekYaz() {
   const el = $("#bas-ornek");
   if (!el) return;
-  const t = taretTopla();
-  const dx = Number(t.dx) || 0, dy = Number(t.dy) || 0;
-  el.innerHTML = `Örnek — X300 Y150 hedefine makine <b>X${(300 + dx).toFixed(0)} `
-    + `Y${(150 + dy).toFixed(0)}</b>'ye gider; hangi başlık seçiliyse o, `
-    + `orada aşağı bakar. Üç başlık aynı noktada — aralarındaki fark açı.`;
+  const b = basTablosuTopla();
+  const bilgi = ((S.ucDurum || {}).bas_bilgi) || {};
+  const satir = (k, yedek) => {
+    const o = b[k] || {};
+    const dx = Number(o.dx) || 0, dy = Number(o.dy) || 0;
+    const ad = (bilgi[k] || {}).ad || yedek;
+    return `${kacisli(ad)}: X300 Y150 hedefine makine `
+         + `<b>X${(300 + dx).toFixed(0)} Y${(150 + dy).toFixed(0)}</b>'ye gider`;
+  };
+  el.innerHTML = "Örnek — " + [satir("sulama", "Sulama"), satir("nem", "Nem"),
+    satir("tohum", "Tohum")].join(" · ");
 }
 
 async function basKaydet() {
-  const ayar = { baslar: basTablosuTopla(), taret: taretTopla() };
+  const ayar = { baslar: basTablosuTopla(), uc_secici: ucSeciciTopla() };
   const sz = $("#ua-safe_z");
   if (sz && sz.value !== "") ayar.safe_z = Number(sz.value);
   const zr = $("#ua-z_safe_reg");
@@ -1224,7 +1240,7 @@ async function basKaydet() {
   const sonuc = await komutGonder("uc_kaydet", { ayar });
   if (sonuc && sonuc.ok) {
     S.ucAyarDuzenleniyor = false;
-    gunluk("✓ Taret ve başlık ayarları kaydedildi", "ok");
+    gunluk("✓ Başlık kaymaları ve uç seçici ayarları kaydedildi", "ok");
   }
 }
 
@@ -4976,13 +4992,12 @@ function olaylariBagla() {
   // ÜÇ BAŞ İÇİN "BU BAŞI ŞU NOKTAYA GÖTÜR". Kaymanın ne yaptığını
   // okumak yerine görmenin en kısa yolu: aynı X/Y'ye üç düğme, üç
   // ayrı makine koordinatı.
-  /* TARETİ BİR NOKTAYA GÖTÜR. Kayma üç başlık için de aynı (taretin
-     dönme ekseni), o yüzden tek düğme — eskiden üç düğme vardı ve üçü
-     de aynı noktayı verirdi. Kayma `S.ucDurum.taret`ten geliyor;
-     `baslar[*].dx/dy` da aynı sayıyı taşıyor ama tek kaynak taret. */
-  const basGit = $("#d-bas-git");
-  if (basGit) {
-    basGit.onclick = async () => {
+  /* BİR BAŞLIĞI BİR NOKTAYA GÖTÜR — HER BAŞLIK İÇİN AYRI DÜĞME.
+     Üç başlık üç ayrı noktada duruyor ve kaymaları farklı; tek düğme
+     ikisini yanlış yere götürürdü. (Bir ara taret sanılıp tek düğmeye
+     indirilmişti — dönme olmadığı için o varsayım geçersizdi.) */
+  $$("#bas-git [data-bas]").forEach((d) => {
+    d.onclick = async () => {
       const x = Number(($("#bg-x") || {}).value);
       const y = Number(($("#bg-y") || {}).value);
       const not = $("#bas-git-not");
@@ -4990,17 +5005,17 @@ function olaylariBagla() {
         if (not) not.textContent = "Önce X ve Y yazın.";
         return;
       }
-      const t = (S.ucDurum || {}).taret || {};
-      const dx = Number(t.dx) || 0, dy = Number(t.dy) || 0;
+      const b = ((S.ucDurum || {}).baslar || {})[d.dataset.bas] || {};
+      const dx = Number(b.dx) || 0, dy = Number(b.dy) || 0;
       const mx = x + dx, my = y + dy;
       if (not) {
-        not.innerHTML = `Hedef <b>X${x} Y${y}</b> → makine `
-          + `<b>X${mx.toFixed(1)} Y${my.toFixed(1)}</b> `
-          + `(taret kayması ${dx.toFixed(0)}/${dy.toFixed(0)})`;
+        not.innerHTML = `${kacisli(d.textContent.trim())}: hedef `
+          + `<b>X${x} Y${y}</b> → makine <b>X${mx.toFixed(1)} `
+          + `Y${my.toFixed(1)}</b> (kayma ${dx.toFixed(0)}/${dy.toFixed(0)})`;
       }
       await komutGonder("git", { x: mx, y: my });
     };
-  }
+  });
 
   // UÇ SEÇİCİ. Komut ajana gidiyor; Z kilidi ve açı denetimi ORADA,
   // panelde ikinci bir kopyası yok — iki yerde iki kural, biri

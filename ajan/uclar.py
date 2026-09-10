@@ -86,82 +86,80 @@ VARSAYILAN = {
     # milimetre karşılaştırmasına kalıyor.
     "z_safe_reg": 0,
     # ================================================================
-    # TARET — ÜÇ BAŞLIK TEK PARÇADA, SERVO ONU ÇEVİRİYOR
+    # UÇ SEÇİCİ — SERVO BAŞLIK TAŞIMIYOR, SIRASI GELENİ İNDİRİYOR
     #
-    # Mekanizma değişti: üç başlık artık üç ayrı yerde DEĞİL. Hepsi tek
-    # bir parçada ve o parça Z ekseninin ucunda duruyor; servo hangi
-    # açıya dönerse o başlık aşağı bakıyor. Yani başlık seçmek bir yere
-    # gitmek değil, bir açıya dönmek.
+    # Üç başlık tek bir parçada BİRLEŞTİRİLDİ ama DÖNMÜYORLAR: her
+    # başlık kendi sabit yerinde, yan yana duruyor. Servo hiçbir şeyi
+    # bir yerden başka yere taşımıyor; yalnız sırası gelen başlığı AŞAĞI
+    # İNDİRİYOR. Servo açısı = hangi başlığın indirileceği. Z ekseni de
+    # eskisi gibi bütün grubu aşağı yukarı taşıyor.
     #
-    # SONUCU: üç başın AYRI dx/dy'si yok. Kayma taretin dönme ekseninin
-    # makine referansına göre yeri ve üçü için de AYNI. Baş başına kayma
-    # tutmak, aynı fiziksel noktayı üç kez, üç farklı sayıyla yazmak ve
-    # birinin ötekilerden ayrışmasına izin vermek olurdu.
+    # BURADA NEDEN KAYMA YOK. Bir süre bu mekanizma TARET sanıldı
+    # ("üç başlık dönüp aynı çalışma noktasına geliyor") ve baş başına
+    # `dx/dy` kaldırılıp tek bir `taret.dx/dy` konmuştu. Dönme olmadığı
+    # için o varsayım geçersiz: üç başlık üç AYRI noktada duruyor ve tek
+    # bir kayma ikisini yanlış yere koyar. Sulama başlığında birkaç mm
+    # önemsiz, tohum ucunda tohum yanlış deliğe gider. Kaymalar bu
+    # yüzden `baslar.<kimlik>.dx/dy`de, burada değil.
     #
-    # `dx`/`dy` — dönme ekseninin makine referansına göre kayması (mm).
-    #   İşaret `sunucu/baslar.py` `kaydir()` ile aynı: makine
-    #   `hedef + (dx, dy)`ye gidiyor, yani taret ekseni noktanın dx/dy
-    #   kadar TERSİNDE duruyor.
-    # `z_min` — SERVONUN DÖNEBİLMESİ İÇİN gereken en düşük Z (mm).
-    #   Z bunun altındayken dönmek, aşağı bakan başlığı toprağın içinden
-    #   sürüklemek demek. Girilmemişse (None) karar `plc.z_guvenli_mi`ye
-    #   kalıyor — o da bir kural, ama bu mekanizmanın kendi sayısı değil.
-    # `sure_ms` — servonun bir açıdan ötekine dönme süresi.
-    # Açılar baş başına: `baslar.<kimlik>.servo_aci`.
-    "taret": {"dx": 0.0, "dy": 0.0, "z_min": None, "sure_ms": 900},
+    # Burada kalan iki şey de başlığa değil MEKANİZMAYA ait:
+    # `sure_ms`  — servo hareketinin süresi: bir başlığı indirmek ya da
+    #   kaldırmak ne kadar sürüyor. Kart bu süre dolana kadar "gidiyor"
+    #   diyor (bkz. firmware `UC`) ve iş süre dolmadan başlamıyor.
+    #   Karta gömülmüyor: servonun hızına ve mekanizmanın yüküne bağlı,
+    #   yani bir kurulum özelliği. Buradaki 900 servo doğrulanmadığı için
+    #   ÖLÇÜLMÜŞ bir değer DEĞİL; tipik SG90/MG996 hız sayfalarından kaba
+    #   bir üst sınır ve doğrulamada ölçülüp güncellenmesi bekleniyor.
+    #   Kısa tutmaktansa uzun tutuluyor: erken "vardı" demek, başlık
+    #   yoldayken iş başlatmak olurdu.
+    # `guvenli_z` — BAŞKA BİR BAŞLIĞI İNDİRMEDEN ÖNCE inen başlığın
+    #   çekilmiş olması için gereken yükseklik (mm). Z bunun altındayken
+    #   inen başlık toprağın içinde olabiliyor; ikinci bir başlığı
+    #   indirmek onu da toprağa sokar. Girilmemişse (None) karar genel
+    #   Z güvenlik kuralına (`plc.z_guvenli_mi`) kalıyor — o da bir
+    #   kural, ama bu mekanizmanın kendi ölçülmüş sayısı değil.
+    # Hangi açının hangi başlığı indirdiği baş başına:
+    # `baslar.<kimlik>.servo_aci`.
+    "uc_secici": {"guvenli_z": None, "sure_ms": 900},
     # "Z güvenli yükseklikte mi" kıyaslamasının PAYI (mm). Koda gömülü
     # 1,0 mm'ydi; kuruluma göre değişiyor ve panelden giriliyor.
     "guvenli_z_ofset": 1.0,
-    # ÜÇ BAŞLIK. Kaymaları artık burada DEĞİL (bkz. `taret`); burada
-    # kalan, her başlığın kendi derinliği ve kendi Z tabanı — taret
-    # döndüğünde aşağı bakan başlığın boyu ötekilerden farklı olabiliyor.
+    # ÜÇ BAŞLIK, ÜÇ AYRI NOKTA. `dx`/`dy` her başlığın makine
+    # referansına göre yeri; işaret `sunucu/baslar.py` `kaydir()` ile
+    # aynı: makine `hedef + (dx, dy)`ye gidiyor, yani başlık noktanın
+    # dx/dy kadar TERSİNDE duruyor. Sulamanın +60/+60 değeri sahada
+    # ölçüldü; ötekiler ölçülene kadar sıfır ve sıfır "kayma yok" demek.
     "baslar": {
         "sulama": {"dx": 60.0, "dy": 60.0, "z_min": 230.0, "derinlik_mm": 0.0},
         "nem": {"dx": 0.0, "dy": 0.0, "z_min": 0.0, "derinlik_mm": 20.0},
         "tohum": {"dx": 0.0, "dy": 0.0, "z_min": 0.0, "derinlik_mm": 0.0},
     },
-    # UÇ SEÇİCİ SERVONUN HAREKET SÜRESİ (ms). Karta gömülmüyor: süre
-    # servonun hızına, horn'un yüküne ve iki açı arasındaki mesafeye
-    # bağlı, yani bir kurulum özelliği. Kart bu süre dolana kadar
-    # "gidiyor" diyor (bkz. firmware `UC`). Buradaki 900, servo
-    # doğrulanmadığı için ÖLÇÜLMÜŞ bir değer DEĞİL; en geniş dönüşün
-    # tipik SG90/MG996 hız sayfalarına göre kabaca üst sınırı ve
-    # doğrulama sırasında ölçülüp güncellenmesi bekleniyor. Kısa
-    # tutmaktansa uzun tutuluyor: erken "vardı" demek, horn yoldayken iş
-    # başlatmak olurdu.
-    # ESKİ ANAHTAR. `taret.sure_ms` geldi; okurken ikisi de kabul
-    # ediliyor (bkz. `servo_sure_ms()`), yazarken yalnız `taret` — iki
-    # yerde iki farklı süre, hangisinin geçerli olduğunu belirsiz yapar.
-    "servo_sure_ms": 900,
     # Tohumluk gözleri: koordinatı, içindeki tür ve dolu/boş hâli.
     # Liste boşken tohumluk tanımsız sayılıyor ve çizilmiyor.
     "tohumluk": {"gozler": []},
 }
 
 
-def _taret_dogrula(ham: Any) -> dict[str, Any]:
-    """Taret ayarını sayıya çevirir. `z_min` boş kalabilir, ötekiler kalamaz.
+def _uc_secici_dogrula(ham: Any) -> dict[str, Any]:
+    """Uç seçici ayarını sayıya çevirir. `guvenli_z` boş kalabilir.
 
-    `z_min` için sıfır GEÇERLİ bir Z ve "girilmedi" ile karıştırmak,
-    servoyu her yükseklikte döndürmeye izin vermek olurdu — aşağı bakan
-    başlığı toprağın içinden sürüklemenin en kolay yolu.
+    `guvenli_z` için sıfır GEÇERLİ bir Z ve "girilmedi" ile karıştırmak,
+    her yükseklikte ikinci bir başlığı indirmeye izin vermek olurdu —
+    inen başlık toprağın içindeyken bir tane daha indirmenin en kolay
+    yolu. Kayma alanı YOK: üç başlık üç ayrı noktada ve kayma baş
+    başına (`baslar.<kimlik>.dx/dy`).
     """
     h = ham if isinstance(ham, dict) else {}
-    v = VARSAYILAN["taret"]
+    v = VARSAYILAN["uc_secici"]
     cikti: dict[str, Any] = {}
-    for alan in ("dx", "dy"):
-        try:
-            cikti[alan] = round(float(h.get(alan, v[alan])), 2)
-        except (TypeError, ValueError):
-            cikti[alan] = float(v[alan])
-    z = h.get("z_min", v["z_min"])
+    z = h.get("guvenli_z", v["guvenli_z"])
     if z in (None, ""):
-        cikti["z_min"] = None
+        cikti["guvenli_z"] = None
     else:
         try:
-            cikti["z_min"] = round(float(z), 2)
+            cikti["guvenli_z"] = round(float(z), 2)
         except (TypeError, ValueError):
-            cikti["z_min"] = None
+            cikti["guvenli_z"] = None
     try:
         sure = int(h.get("sure_ms", v["sure_ms"]))
     except (TypeError, ValueError):
@@ -363,17 +361,23 @@ class Uclar:
     # --- dosya -----------------------------------------------------------
     def yukle(self) -> None:
         with self._kilit:
-            # DOSYADA taret var mıydı — birleştirmeden ÖNCE bakılıyor.
-            # `VARSAYILAN`da artık bir taret bloğu var; birleşmiş sözlüğe
-            # bakmak "her zaman var" cevabını verir ve eski dosyadan
-            # taşıma hiç çalışmazdı.
-            dosyada_taret = False
+            # DOSYADAKİ HÂLİ — birleştirmeden ÖNCE. `VARSAYILAN`da hem
+            # `uc_secici` hem baş başına `dx/dy` var; birleşmiş sözlüğe
+            # bakmak her soruya "var" cevabını verir ve göç hiç
+            # çalışmazdı. Taret göçünde tam bu tuzağa düşülmüştü.
+            dosyada_taret = None
+            dosyada_baslar = None
+            dosyada_secici = None
             if os.path.exists(self.yol):
                 try:
                     with open(self.yol, encoding="utf-8") as dosya:
                         ham = json.load(dosya)
-                    dosyada_taret = isinstance(ham, dict) and "taret" in ham
+                    if isinstance(ham, dict):
+                        dosyada_taret = ham.get("taret")
+                        dosyada_baslar = ham.get("baslar")
+                        dosyada_secici = ham.get("uc_secici")
                     self.ayar = {**VARSAYILAN, **ham}
+                    self.ayar.pop("taret", None)      # karşılığı olmayan blok
                 except (json.JSONDecodeError, OSError) as hata:
                     self.gunluk_cb(
                         f"Kafa ayarları okunamadı ({hata}) — varsayılanlar "
@@ -384,18 +388,70 @@ class Uclar:
             self.ayar["tohumluk"] = _tohumluk_dogrula(self.ayar.get("tohumluk"))
             self.ayar["baslar"] = _baslar_dogrula(
                 self.ayar.get("baslar"), self.ayar.get("sulama_basligi"))
-            # TARET KAYMASI ESKİ DOSYADAN GELEBİLİR. Mekanizma değişmeden
-            # önce kayma baş başına yazılıyordu ve sahada ölçülmüş tek
-            # gerçek değer sulamanınkiydi (+60/+60). Taret girilmemişse
-            # onu başlangıç değeri sayıyoruz: kullanıcının ölçtüğü sayıyı
-            # sıfırlamak, çalışan bir kurulumu bozmak olurdu. Panelden
-            # yeni değer girilince burası bir daha devreye girmiyor.
-            if not dosyada_taret:
-                eski = (self.ayar.get("baslar") or {}).get("sulama") or {}
-                self.ayar["taret"] = {**VARSAYILAN["taret"],
-                                      "dx": eski.get("dx", 0.0),
-                                      "dy": eski.get("dy", 0.0)}
-            self.ayar["taret"] = _taret_dogrula(self.ayar.get("taret"))
+            # ================================================================
+            # GÖÇ — TARET KAYMASI ÜÇ BAŞLIĞA DAĞILIYOR
+            #
+            # Mekanizma bir süre TARET sanıldı ve baş başına `dx/dy`
+            # kaldırılıp tek bir `taret.dx/dy` konmuştu. Dönme olmadığı
+            # için o blok kalkıyor; ama içindeki sayı KULLANICININ ÖLÇTÜĞÜ
+            # sayı ve kaybolmamalı. Üç başlığa da başlangıç değeri olarak
+            # yazılıyor; kullanıcı sonra tek tek ölçüp düzeltecek.
+            #
+            # BİR KEZ ÇALIŞIYOR: koşul dosyada bir `taret` bloğu bulunması
+            # ve içinde sıfırdan farklı bir kayma olması. Kaydettikten
+            # sonra `taret` dosyadan düşüyor, dolayısıyla koşul bir daha
+            # sağlanamıyor.
+            #
+            # BAŞ BAŞINA ÖLÇÜLMÜŞ BİR SAYI VARSA DOKUNULMUYOR: taret
+            # sürümünde panel kayma göndermediği için baş başına değerler
+            # sıfıra düşmüştü; sıfır olmayan bir değer varsa o, taretin
+            # sayısından daha yenidir ve üstüne yazmak ölçümü silmek olur.
+            eski_taret = dosyada_taret if isinstance(dosyada_taret, dict) else {}
+            try:
+                t_dx = float(eski_taret.get("dx") or 0.0)
+                t_dy = float(eski_taret.get("dy") or 0.0)
+            except (TypeError, ValueError):
+                t_dx = t_dy = 0.0
+            if t_dx or t_dy:
+                dosya_baslar = dosyada_baslar if isinstance(dosyada_baslar, dict) else {}
+                bas_kaymasi_var = False
+                for kimlik in BASLAR:
+                    b = dosya_baslar.get(kimlik)
+                    if not isinstance(b, dict):
+                        continue
+                    try:
+                        if float(b.get("dx") or 0.0) or float(b.get("dy") or 0.0):
+                            bas_kaymasi_var = True
+                    except (TypeError, ValueError):
+                        pass
+                if not bas_kaymasi_var:
+                    for kimlik in BASLAR:
+                        self.ayar["baslar"][kimlik]["dx"] = round(t_dx, 2)
+                        self.ayar["baslar"][kimlik]["dy"] = round(t_dy, 2)
+                    self.gunluk_cb(
+                        f"Uç kaymaları taşındı: taret kayması {t_dx:+.1f}/"
+                        f"{t_dy:+.1f} mm üç başlığa da başlangıç değeri olarak "
+                        f"yazıldı. Üç başlık ayrı noktalarda duruyor — her "
+                        f"birini ölçüp Ayarlar → Başlar bölümünde düzeltin.",
+                        "bilgi")
+            # SÜRE DE ESKİ ANAHTARLARDAN GELEBİLİR. Sırasıyla:
+            # `uc_secici.sure_ms`, `taret.sure_ms` (kalkan blok), üst
+            # düzey `servo_sure_ms` (ondan da eski). Dosyada hangisi
+            # varsa yeni bloğa taşınıyor; okuma yolunda üç anahtarı
+            # birden yoklamak, hangisinin geçerli olduğunu her çağrıda
+            # yeniden sormak olurdu.
+            # DOSYADAKİ blok — birleşmiş sözlükte `VARSAYILAN`ın süresi
+            # duruyor ve ona bakmak "her zaman var" der; göç tuzağının
+            # aynısı.
+            secici = dict(dosyada_secici) if isinstance(dosyada_secici, dict) else {}
+            if secici.get("sure_ms") in (None, ""):
+                eski_sure = (eski_taret.get("sure_ms")
+                             if isinstance(dosyada_taret, dict) else None)
+                if eski_sure in (None, ""):
+                    eski_sure = self.ayar.get("servo_sure_ms")
+                if eski_sure not in (None, ""):
+                    secici["sure_ms"] = eski_sure
+            self.ayar["uc_secici"] = _uc_secici_dogrula(secici)
 
     def kaydet(self, yeni: dict[str, Any] | None = None) -> dict[str, Any]:
         with self._kilit:
@@ -403,10 +459,15 @@ class Uclar:
                 temiz = dict(yeni)
                 if "tohumluk" in temiz:
                     temiz["tohumluk"] = _tohumluk_dogrula(temiz["tohumluk"])
-                if "taret" in temiz:
-                    temiz["taret"] = _taret_dogrula({
-                        **(self.ayar.get("taret") or {}),
-                        **(temiz["taret"] or {})})
+                if "uc_secici" in temiz:
+                    temiz["uc_secici"] = _uc_secici_dogrula({
+                        **(self.ayar.get("uc_secici") or {}),
+                        **(temiz["uc_secici"] or {})})
+                # KARŞILIĞI OLMAYAN BLOK YAZILMIYOR. Eski panel `taret`
+                # gönderiyor olabilir; dosyada tutmak, kalkmış bir kavramı
+                # diri tutmak ve bir sonraki okumada göçü yeniden
+                # tetiklemek olurdu.
+                temiz.pop("taret", None)
                 if "baslar" in temiz:
                     # BAŞ BAŞINA BİRLEŞTİRME. Üst düzey birleştirme, tek bir
                     # başın dx'ini yollayan bir isteğin öteki iki başı
@@ -436,28 +497,27 @@ class Uclar:
         return self.ayar
 
     # --- başlar ----------------------------------------------------------
-    def taret(self) -> dict[str, Any]:
-        """Taretin kayması, dönme için gereken Z ve dönüş süresi."""
-        return _taret_dogrula(self.ayar.get("taret"))
+    def uc_secici(self) -> dict[str, Any]:
+        """Mekanizmanın kendi ayarları: hareket süresi ve güvenli yükseklik.
+
+        Kayma BURADA YOK — üç başlık üç ayrı noktada ve her birinin
+        kendi `dx/dy`si var (`baslar()`).
+        """
+        return _uc_secici_dogrula(self.ayar.get("uc_secici"))
 
     def baslar(self) -> dict[str, dict[str, Any]]:
         """Üç başlığın ayarları — sunucu ve panel buradan okuyor.
 
-        KAYMA ÜÇÜ İÇİN DE AYNI ve taretten geliyor. Üç başlık tek bir
-        parçada; hangisi aşağı bakarsa aynı noktada bakıyor, aralarındaki
-        fark yalnız servo açısı. `dx`/`dy` alanları duruyor çünkü
-        `sunucu/baslar.py` `kaydir()` ve ekim/sulama akışları bu adla
-        okuyor — üçüne de taretin sayısını yazmak, o zinciri hiç
-        değiştirmeden tek kaynağa bağlamanın yolu. Baş başına farklı bir
-        kayma YAZILAMIYOR: aynı fiziksel noktanın üç kopyası ayrışırdı.
+        KAYMA BAŞ BAŞINA. Üç başlık tek parçada birleştirilmiş ama
+        dönmüyorlar: her biri kendi sabit yerinde, yan yana duruyor.
+        Servo yalnız sırası geleni indiriyor, hiçbir şeyi bir yerden
+        başka yere taşımıyor — dolayısıyla üç ayrı nokta ve üç ayrı
+        kayma var. Bir ara buraya taretin tek kayması yazılıyordu; o
+        ara katman kalktı ve `sunucu/baslar.py` `kaydir()` / `geri_al()`
+        / `erisim()` yine doğrudan başın kendi `dx/dy`sini okuyor.
         """
-        baslar = _baslar_dogrula(self.ayar.get("baslar"),
-                                 self.ayar.get("sulama_basligi"))
-        t = self.taret()
-        for bas in baslar.values():
-            bas["dx"] = t["dx"]
-            bas["dy"] = t["dy"]
-        return baslar
+        return _baslar_dogrula(self.ayar.get("baslar"),
+                               self.ayar.get("sulama_basligi"))
 
     def bas(self, kimlik: str) -> dict[str, Any]:
         """Tek bir baş. Bilinmeyen kimlik için kaymasız baş dönüyor.
@@ -484,17 +544,16 @@ class Uclar:
     def servo_sure_ms(self) -> int:
         """Servonun dönüş süresi (ms) — ayardan, koda gömülü değil.
 
-        Önce `taret.sure_ms`; eski dosyalarda üst düzey `servo_sure_ms`
-        olabiliyor ve okurken o da kabul ediliyor. Yazma yalnız `taret`e
-        gidiyor, iki yerde iki farklı süre kalmasın diye.
+        Tek kaynak `uc_secici.sure_ms`. Eski anahtarlar (`taret.sure_ms`,
+        üst düzey `servo_sure_ms`) YÜKLEME sırasında buraya taşınıyor;
+        her çağrıda üç anahtarı yoklamak, hangisinin geçerli olduğunu
+        her seferinde yeniden sormak olurdu.
         """
-        ham = (self.ayar.get("taret") or {}).get("sure_ms")
-        if ham in (None, ""):
-            ham = self.ayar.get("servo_sure_ms")
+        ham = (self.ayar.get("uc_secici") or {}).get("sure_ms")
         try:
-            sure = int(ham or VARSAYILAN["taret"]["sure_ms"])
+            sure = int(ham or VARSAYILAN["uc_secici"]["sure_ms"])
         except (TypeError, ValueError):
-            sure = int(VARSAYILAN["taret"]["sure_ms"])
+            sure = int(VARSAYILAN["uc_secici"]["sure_ms"])
         return max(1, min(10000, sure))
 
     def guvenli_z_ofset(self) -> float:
