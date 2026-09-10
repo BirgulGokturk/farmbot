@@ -3529,6 +3529,62 @@ function kamMaskeAlSat(ad) {
 // gözden kaybolup geri gelir, panel titrer.
 const KANAL_VAR = {};
 
+/* ------------------------------------------------- kanal başına SON OKUMA
+ * Kart "—" gösterirken grafiğin dolu olması BU yüzdendi: grafik geçmişin
+ * tamamını çiziyor, kart ise yalnız EN SON pakete bakıyordu. DHT11 iki
+ * okumadan birini düşürüyor (sağlama hatası, veri sayfası aralığı dışı,
+ * 0xFF) ve o paketlerde `hava_nem` null geliyor. Ajan bunu doğru yapıyor —
+ * uydurma sayı üretmiyor — ama kart, on saniye önce ölçülmüş gerçek bir
+ * değeri "hiç ölçülmemiş" gibi gösteriyordu.
+ *
+ * Artık her kanalın son GERÇEK okuması saklanıyor. Kart onu yazıyor ve
+ * paketin gerisinde kaldıysa kaç zaman önce alındığını söylüyor. Toprak
+ * nemi için bu ayrıca gerekli: prob yalnız daldığında ölçüyor, aradaki
+ * bütün paketlerde null — ama iki saat önceki okuma hâlâ bildiğimiz şey.
+ *
+ * YAŞ, DUVAR SAATİYLE DEĞİL, EN SON PAKETLE ölçülüyor: tarayıcının saati
+ * Pi'ninkiyle tutmayabilir, aradaki fark yaşa karışmasın. Ajan tamamen
+ * susarsa yaş donar — o durumu üst çubuktaki Raspberry Pi ışığı söylüyor,
+ * burada ikinci kez söylemiyoruz. */
+const SON_OKUMA = {};
+
+/** Yaşı okunur yapar: "12 sn", "4 dk", "2 sa". */
+function yasKisa(sn) {
+  if (sn < 90) return `${Math.round(sn)} sn`;
+  if (sn < 5400) return `${Math.round(sn / 60)} dk`;
+  if (sn < 172800) return `${Math.round(sn / 3600)} sa`;
+  return `${Math.round(sn / 86400)} gün`;
+}
+
+/** Pakette değeri OLAN kanalları saklar. Null yazmıyor: null "ölçüm yok"
+ *  demek, "ölçüm sıfır" değil — eskisini silmek bilgiyi yok etmek olurdu. */
+function okumalariSakla(o) {
+  if (!o) return;
+  const ts = Number(o.ts) || SON_PAKET.ts || 0;
+  const ham = o.ham || {};
+  for (const ad of OLCUM_KANALLARI) {
+    const deger = o[ad];
+    if (deger === null || deger === undefined) continue;
+    SON_OKUMA[ad] = { deger, ts, ham: ham[ad] == null ? null : ham[ad] };
+  }
+  if (o.dht && o.dht !== "yok") SON_PAKET.dht = o.dht;
+  if (ts > SON_PAKET.ts) SON_PAKET.ts = ts;
+}
+
+//: Kartlarda gösterilen ve yaşı izlenen kanallar.
+const OLCUM_KANALLARI = ["hava_sicaklik", "hava_nem", "toprak_nem",
+                         "basinc", "bmp_sicaklik", "rakim"];
+
+//: En son görülen paketin zamanı ve o paketin bildirdiği DHT modeli.
+const SON_PAKET = { ts: 0, dht: "" };
+
+/** Bir kanalın son okuması: {deger, ham, yas} ya da hiç ölçülmediyse null. */
+function okuma(ad) {
+  const o = SON_OKUMA[ad];
+  if (!o) return null;
+  return { deger: o.deger, ham: o.ham, yas: Math.max(0, SON_PAKET.ts - o.ts) };
+}
+
 function kanallariTara(kaynak) {
   let yeni = false;
   for (const [ad, deger] of Object.entries(kaynak || {})) {
@@ -4323,6 +4379,33 @@ async function gecmisYukle() {
   })).slice(-SATIR_SINIRI);
   grafikleriYaz();
   S.sonZaman = v.ts.length ? v.ts[v.ts.length - 1] : 0;
+
+  /* KARTLARI DA GEÇMİŞTEN DOLDUR. Kartlar yalnız canlı paketle
+   * güncelleniyordu; sunucu yeni başladıysa ya da ajan o an susuyorsa
+   * panel açılışta grafiği dolu, kartları boş gösteriyordu. Aynı veri,
+   * iki farklı cevap. Geçmişteki son gerçek okuma da bir ölçüm — yaşıyla
+   * birlikte kartta durması gerekiyor.
+   *
+   * Canlı paket sonra gelirse zaten üstüne yazar: `okumalariSakla` yalnız
+   * DEĞERİ OLAN kanalı güncelliyor, bu tohumlama onu bozmuyor. */
+  if (v.ts.length) {
+    if (v.ts[v.ts.length - 1] > SON_PAKET.ts) SON_PAKET.ts = v.ts[v.ts.length - 1];
+    for (const ad of OLCUM_KANALLARI) {
+      const dizi = v[ad];
+      if (!Array.isArray(dizi)) continue;
+      for (let i = dizi.length - 1; i >= 0; i--) {
+        if (dizi[i] === null || dizi[i] === undefined) continue;
+        // Ham değer geçmişte saklanmıyor (depo yalnız düzeltilmişi yazıyor);
+        // ham yerine null geçiyoruz — "bilmiyoruz" doğru cevap.
+        if (!SON_OKUMA[ad] || v.ts[i] > SON_OKUMA[ad].ts) {
+          SON_OKUMA[ad] = { deger: dizi[i], ts: v.ts[i], ham: null };
+        }
+        break;
+      }
+    }
+    kartlariGuncelle({});
+  }
+
   gorunurlukGuncelle();
 }
 
@@ -4371,41 +4454,90 @@ function grafikleriYaz() {
  * grafik onları çiziyor, `S.satirlar` de yerinde. */
 
 /* ----------------------------------------------------------------- kartlar */
+
+//: Bir okumanın "gerideki paketten" sayılması için gereken yaş (sn).
+//  Paketler ~2 sn'de bir geliyor; 15 sn, arada bir düşen okumayı değil
+//  ÜST ÜSTE düşenleri yakalar — yoksa kart iki saniyede bir yanıp söner.
+const ESKI_OKUMA_SN = 15;
+
+/** Bir ölçüm kartını yazar.
+ *
+ *  `bicim` sayıyı metne çeviriyor (toprak nemi ham ADC'den yüzdeye
+ *  dönüyor, ötekiler doğrudan). `not` sensörün adını veriyor. Yaş notu
+ *  ve soluklaştırma burada, tek yerde. */
+function olcumKarti(kimlik, kanal, birim, bicim, not_) {
+  const kutu = $(kimlik);
+  if (!kutu) return;
+  const kart = kutu.closest(".olcum");
+  const r = okuma(kanal);
+  const eski = !!r && r.yas >= ESKI_OKUMA_SN;
+
+  kutu.innerHTML = `${r ? bicim(r.deger) : "—"}<span class="birim">${birim}</span>`;
+  if (kart) kart.classList.toggle("eski", eski);
+  return { r, eski, yasNotu: eski ? ` · ${yasKisa(r.yas)} önce` : "" };
+}
+
 function kartlariGuncelle(o) {
   if (!o) return;
   roleDurumSenkron(o);
+  okumalariSakla(o);
   if (kanallariTara(o)) gorunurlukGuncelle();
-  $("#d-sicaklik").innerHTML = `${sayiCoz(o.hava_sicaklik)}<span class="birim">°C</span>`;
-  $("#d-nem").innerHTML = `${sayiCoz(o.hava_nem)}<span class="birim">%</span>`;
-  $("#d-toprak").innerHTML = `${sayi(toprakYuzde(o.toprak_nem), 0)}<span class="birim">%</span>`;
-  $("#d-basinc").innerHTML = `${sayi(o.basinc)}<span class="birim">hPa</span>`;
 
   // Sensör adı sabit yazılmıyor: Arduino hangi DHT'yi bulduysa onu bildiriyor.
   // "DHT11" yazan bir kartın altında DHT22 durması, ölçüm tutmadığında yanlış
   // yerde hata aramaya yol açıyordu.
-  const dhtAd = o.dht && o.dht !== "yok" ? o.dht : "DHT";
+  const dhtAd = SON_PAKET.dht || "DHT";
   /* HAM DEĞER. Kartta gösterilen sayı düzeltilmiş: sensörün çözünürlüğüne
    * yuvarlanmış ve son birkaç örneğin medyanı alınmış (ajan/arduino.py,
    * Duzeltici). Sensörün o an ne dediği kaybolmasın diye ham okuma alttaki
    * küçük yazıda duruyor — düzeltilmiş değerle ham arasında sürekli fark
-   * varsa sensörde bir sorun var demektir, bunu görebilmek gerekiyor. */
-  const ham = o.ham || {};
+   * varsa sensörde bir sorun var demektir, bunu görebilmek gerekiyor.
+   * Ham, değerin KENDİ okumasından geliyor: gösterilen sayı 40 sn önceki
+   * okumadan ise ham da o okumanın hamı olmalı, yoksa ikisi farklı anları
+   * anlatır. */
   // Birim tekrar edilmiyor: kartın büyük sayısında zaten yazıyor. Küçük
   // yazı tek satıra sığmalı — iki satıra taşan bir kart, ızgaradaki bütün
   // satırı uzatıp kartları eşitsiz gösteriyor.
-  const hamEk = (ad, basamak = 0) =>
-    ham[ad] == null ? "" : ` ham ${sayi(ham[ad], basamak)}`;
-  $("#a-nem").textContent = dhtAd + hamEk("hava_nem");
+  const hamEk = (r, basamak = 0) =>
+    !r || r.ham == null ? "" : ` ham ${sayi(r.ham, basamak)}`;
+
+  const sic = olcumKarti("#d-sicaklik", "hava_sicaklik", "°C", (d) => sayiCoz(d));
+  const nem = olcumKarti("#d-nem", "hava_nem", "%", (d) => sayiCoz(d));
+  const top = olcumKarti("#d-toprak", "toprak_nem", "%",
+                         (d) => sayi(toprakYuzde(d), 0));
+  const bas = olcumKarti("#d-basinc", "basinc", "hPa", (d) => sayi(d));
+
+  const bmpSic = okuma("bmp_sicaklik");
+  const rakim = okuma("rakim");
+
+  $("#a-nem").textContent = dhtAd + hamEk(nem.r) + nem.yasNotu;
   // Ham değer BURADA görünmeli: kalibrasyon ham ölçekte tanımlı ve
   // "yüzde saçma" derken bakılacak ilk sayı bu.
-  $("#a-toprak").textContent = o.toprak_nem == null ? "Uca takılı prob"
-    : `Prob${hamEk("toprak_nem")}`;
+  $("#a-toprak").textContent = !top.r ? "Uca takılı prob"
+    : `Prob${hamEk(top.r)}${top.yasNotu}`;
   // "BMP180" yerine "BMP": sıcaklık kartında da öyle kısaltılıyor ve
   // satır tek satırda kalıyor.
-  $("#a-rakim").textContent = o.rakim == null ? "BMP180"
-    : `BMP${hamEk("basinc", 2)} · ${sayi(o.rakim, 0)} m`;
-  $("#a-sicaklik").textContent = o.bmp_sicaklik == null ? dhtAd + hamEk("hava_sicaklik")
-    : `${dhtAd}${hamEk("hava_sicaklik")} · BMP ${sayi(o.bmp_sicaklik)}`;
+  $("#a-rakim").textContent = !rakim ? "BMP180"
+    : `BMP${hamEk(bas.r, 2)} · ${sayi(rakim.deger, 0)} m${bas.yasNotu}`;
+  $("#a-sicaklik").textContent = !bmpSic
+    ? dhtAd + hamEk(sic.r) + sic.yasNotu
+    : `${dhtAd}${hamEk(sic.r)} · BMP ${sayi(bmpSic.deger)}${sic.yasNotu}`;
+
+  olcumOzetiYaz();
+}
+
+/* Bölüm başlığındaki not: veri hâlâ geliyor mu, geliyorsa hangi kanal
+ * geride kalmış. Kartlardaki yaş notu tek tek doğruyu söylüyor ama bölüm
+ * kapalıyken görünmüyor — özet kapalıyken de görünen tek satır. */
+function olcumOzetiYaz() {
+  const kutu = $("#olcum-ozet");
+  if (!kutu) return;
+  const geride = ["hava_sicaklik", "hava_nem", "toprak_nem", "basinc"]
+    .filter((ad) => KANAL_VAR[ad])
+    .filter((ad) => { const r = okuma(ad); return !r || r.yas >= ESKI_OKUMA_SN; });
+  if (!SON_PAKET.ts) { kutu.textContent = ""; return; }
+  kutu.textContent = geride.length
+    ? `${geride.length} okuma geride` : saatEtiketi(SON_PAKET.ts, false);
 }
 
 /* ------------------------------------------------- rölelerin gerçek durumu
@@ -4415,6 +4547,19 @@ function kartlariGuncelle(o) {
  * ve hiçbir şey olmuyor — düğme bozuk sanılıyordu. Artık doğruyu kart
  * söylüyor, panel yalnızca ona uyuyor.
  */
+//: Arduino'nun sürdüğü röleler. Panelin komut adları da bunlar; kart
+//  durumu `r_<ad>` alanlarıyla geliyor.
+//
+//  BURADA DURUYOR, çünkü tek kullanıcısı aşağıdaki senkron. Eskiden program
+//  düzenleyicisinin yanındaydı; düzenleyici silinince bu sabit de gitti ve
+//  `roleDurumSenkron` tanımsız bir ada başvurur oldu. Sonucu sessiz
+//  değildi ama görünmezdi: senkron `kartlariGuncelle`nin İLK satırı, o
+//  yüzden her ölçüm paketinde kartları yazan kod ReferenceError'a düşüp
+//  duruyordu — ölçüm kartları "—"de donuyor, canlı nokta grafiğe
+//  eklenmiyordu. Grafik yine de dolu görünüyordu: onu açılışta geçmiş
+//  besliyor. "Grafik gösteriyor ama üstte yazmıyor" tam olarak buydu.
+const ROLELER = ["su_pompasi", "hava_pompasi"];
+
 function roleDurumSenkron(o) {
   // Kart yeniden başladıysa çalışma süresi geriye gider. Sessizce
   // düzeltmek yetmez: röleler kendiliğinden kapandı, sebebini söylemek

@@ -1005,6 +1005,15 @@ button.dugme.kip-dugme.secili span { color: rgba(255, 255, 255, .85); }
             overflow: hidden; text-overflow: ellipsis; }
 .ikincil { font-size: var(--yazi-kucuk); color: var(--metin-3); }
 
+/* GERİDE KALMIŞ OKUMA. Sayı gerçek, sadece en son paketten değil: DHT11
+   okumasını düşürdüğünde ya da toprak probu saatlerdir dalmadığında
+   olan bu. Silmek yanlış (bildiğimiz şeyi atmak olur), tazeymiş gibi
+   göstermek de yanlış — sayı soluyor, altındaki küçük yazı kaç zaman
+   önce alındığını söylüyor. Gizlemiyoruz: solmuş bir sayı hâlâ okunur,
+   panelin başka hiçbir yerinde bu tonda bir sayı yok. */
+.olcum.eski .deger { color: var(--metin-3); font-weight: 500; }
+.olcum.eski .ikincil { font-style: italic; }
+
 .grafik-izgara { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--b4); }
 .grafik { min-width: 0; display: flex; flex-direction: column; gap: var(--b2); }
 .grafik-bas { font-size: var(--yazi-baslik); font-weight: 600; color: var(--metin-2); }
