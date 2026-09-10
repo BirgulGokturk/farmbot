@@ -4494,6 +4494,7 @@ function olcumKarti(kimlik, kanal, birim, bicim, not_) {
 function kartlariGuncelle(o) {
   if (!o) return;
   roleDurumSenkron(o);
+  servoTestSenkron(o);
   okumalariSakla(o);
   if (kanallariTara(o)) gorunurlukGuncelle();
 
@@ -4561,6 +4562,35 @@ function olcumOzetiYaz() {
  * ve hiçbir şey olmuyor — düğme bozuk sanılıyordu. Artık doğruyu kart
  * söylüyor, panel yalnızca ona uyuyor.
  */
+/* SERVO DENEME DÜĞMESİ. Düğmenin hâli KARTTAN geliyor.
+ *
+ * Panelin kendi tahminini tutmak, röle düğmelerinde bir kez yanlışa
+ * düşünce düzelmeyen bir duruma yol açmıştı (bkz. `roleDurumSenkron`).
+ * Burada aynısı daha kolay olurdu: kart pompa çekişinde sıfırlanıyor,
+ * sıfırlanınca deneme duruyor ama panel "çalışıyor" demeye devam
+ * ederdi. Kart `servo_test` alanını her pakette gönderiyor.
+ *
+ * Alan HİÇ gelmiyorsa (karttaki yazılım eski) düğme kapalı kalıyor ve
+ * sebebi yazıyor — "başlat"a basıp hiçbir şey olmamasından iyi. */
+function servoTestSenkron(o) {
+  const dugme = $("#d-servo-test");
+  const durum = $("#servo-test-durum");
+  if (!dugme || !durum) return;
+  const deger = o.servo_test;
+  if (deger === undefined || deger === null) {
+    dugme.disabled = true;
+    durum.textContent = "kart bildirmiyor — firmware güncel mi?";
+    return;
+  }
+  const acik = Number(deger) === 1;
+  dugme.disabled = false;
+  dugme.classList.toggle("acik", acik);
+  dugme.textContent = acik ? "■ Durdur" : "▶ Başlat";
+  durum.textContent = acik
+    ? "açıları süpürüyor — uç konumu bilinmez oluyor"
+    : "kapalı";
+}
+
 //: Arduino'nun sürdüğü röleler. Panelin komut adları da bunlar; kart
 //  durumu `r_<ad>` alanlarıyla geliyor.
 //
@@ -5182,6 +5212,16 @@ function olaylariBagla() {
   $$("#uc-secici .uc-sec").forEach((d) => {
     d.onclick = () => komutGonder("uc_sec", { bas: d.dataset.bas });
   });
+
+  /* SERVO DENEMESİ. İSTENEN DURUM gönderiliyor, "değiştir" değil:
+   * düğmenin gördüğü hâl kartınkinden bir an geride olabilir ve
+   * "değiştir" o anda ters yöne çalışırdı. Kart `TEST 1`/`TEST 0` ile
+   * durumu kesin kuruyor; zaten o hâldeyse hiçbir şey yapmıyor. */
+  const servoTest = $("#d-servo-test");
+  if (servoTest) {
+    servoTest.onclick = () => komutGonder(
+      "servo_test", { acik: !servoTest.classList.contains("acik") });
+  }
 
   // TOHUM UCUNUN KENDİ EKSENİ — elle indir/kaldır.
   const tIn = $("#d-t-in");

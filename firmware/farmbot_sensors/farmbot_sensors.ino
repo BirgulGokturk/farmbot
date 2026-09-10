@@ -39,31 +39,41 @@
  * Seri porttan "TEST" yazınca başlıyor, tekrar yazınca duruyor. */
 #define TEST_ACILISTA 0
 
-/* SERVO SÜREKLİ DÖNÜŞLÜ MÜ? 1 = evet (şu anki donanım), 0 = konumlu.
+/* SERVO SÜREKLİ DÖNÜŞLÜ MÜ? 0 = konumlu (varsayılan), 1 = sürekli dönüşlü.
  *
  * NEDEN ANAHTAR GEREKİYOR: `UC` komutu servoya `write(derece)` yazıyor.
- * KONUMLU servoda bu "o açıya git ve orada dur" demek — süre dolunca
- * yapılacak bir şey yok, servo horn'u tutmaya devam ediyor.
- * SÜREKLİ DÖNÜŞLÜ servoda ise aynı yazma "şu hızda dön" demek ve
- * KENDİLİĞİNDEN DURMUYOR. Kart süre dolunca "vardım" diyor, ajan işe
- * başlıyor, servo hâlâ dönüyor.
+ * KONUMLU servoda bu "o açıya git ve orada dur" demek; süre dolunca
+ * yapılacak bir şey yok. SÜREKLİ DÖNÜŞLÜ servoda aynı yazma "şu hızda
+ * dön" demek ve KENDİLİĞİNDEN DURMUYOR: kart "vardım" der, servo döner.
+ * Anahtar 1 iken süre dolduğunda durma darbesi yazılıyor.
  *
- * Sahada görüldü: ajan `UC 0 0 900` gönderdi. Konumlu servoda 0 derece
- * demek; sürekli dönüşlüde TAM HIZDA GERİ demek ve kimse durdurmuyor.
+ * HANGİSİ OLDUĞUNU TEST KİPİ SÖYLÜYOR — tahmin etmeyin, bakın:
+ *   · TEST açıkken horn bir açıya gidip DURUYOR, bekliyor, sonra
+ *     ötekine gidiyorsa → KONUMLU, burası 0 kalsın.
+ *   · Horn hiç durmuyor, sürekli dönüyorsa → SÜREKLİ DÖNÜŞLÜ, 1 yapın.
  *
- * 1 iken süre dolduğunda durma darbesi yazılıyor. Konumlu servoya
- * geçtiğinizde burayı 0 yapın — yoksa her hareketten sonra horn 90
- * dereceye sürülür. */
-#define SERVO_SUREKLI_DONUSLU 1
+ * YANLIŞ SEÇİMİN İKİ AYRI ZARARI VAR, o yüzden varsayılana güvenmeyin:
+ * konumlu servoda 1 bırakmak her hareketten sonra horn'u 90 dereceye
+ * sürer (uç seçimini bozar); sürekli dönüşlüde 0 bırakmak servoyu
+ * durdurmaz (kaçak hareket). */
+#define SERVO_SUREKLI_DONUSLU 0
 //: Sürekli dönüşlü servoda motorun durduğu değer. `write` ölçeğinde.
 #define SERVO_DURMA_DEGERI 90
 
-/* ⚙️ DEĞİŞTİREBİLECEĞİNİZ İNCE AYARLAR — hepsi burada, başka yerde yok. */
-const int durmaHizi          = 90;   // motorun durduğu değer
-const int yavasIleriHizi     = 93;   // çok yavaş ileri (91, 92, 94 deneyin)
-const int yavasGeriHizi      = 87;   // çok yavaş geri  (89, 88, 86 deneyin)
-const int doksanDereceSuresi = 800;  // 90 derece dönmesi kaç ms sürüyor
-const int duraklardaBekleme  = 3000; // her durakta kaç ms beklesin
+/* ⚙️ DEĞİŞTİREBİLECEĞİNİZ İNCE AYARLAR — hepsi burada, başka yerde yok.
+ *
+ * DENEME DÖNGÜSÜ, SAHADA ÇALIŞTIĞI DOĞRULANAN KODUN AYNISI: hedefe tek
+ * hamlede atlamıyor, 1 derecelik adımlarla süpürüyor. Fark önemli —
+ * `write(180)` bir hamlede yazılınca servo kendi azami hızıyla gidiyor;
+ * adımlayınca hız `adimGecikmesi` ile belirleniyor.
+ *
+ * `durmaHizi` ve `yavasIleriHizi` gibi HIZ ayarları kalktı: onlar servoyu
+ * sürekli dönüşlü varsayıyordu ve bu döngüde karşılıkları yok. */
+const int testAcilari[]     = {90, 180, 0}; // sırayla gidilecek açılar
+const int adimGecikmesi     = 5;    // derece başına ms — BÜYÜK = YAVAŞ
+const int duraklardaBekleme = 1000; // her açıya varınca kaç ms beklesin
+
+const int TEST_ACI_SAYISI = sizeof(testAcilari) / sizeof(testAcilari[0]);
 
 #define OLCUM_ARALIGI_MS 2000
 
@@ -107,8 +117,10 @@ bool testAcik = false;
 void testDurdur();
 int  usDeger(int derece);   // testBasla bunu kendinden ONCE cagiriyor
 void testBasla();   // setup, TEST_ACILISTA 1 iken bunu çağırıyor
-int  testAdim = 0;              // 0..5 — aşağıdaki testGozet'e bakın
-unsigned long testAdimMs = 0;   // bu adım ne zaman başladı
+int  testSirasi = 0;            // `testAcilari` içinde neredeyiz
+int  testAci = 0;               // horn'un ŞU AN yazılmış açısı
+bool testGidiyor = false;       // true: adımlıyor, false: durakta bekliyor
+unsigned long testAdimMs = 0;   // son adımın/durağın başlangıcı
 
 // --------------------------------------------------------------- RÖLE -----
 /* Pine kapalı seviyeyi YAZIP sonra OUTPUT yapıyoruz. Ters sırada pin bir
@@ -166,7 +178,7 @@ void setup() {
   bmpVar = bmp.begin();
   if (!bmpVar) Serial.println("UYARI: BMP180 bulunamadi, digerleriyle devam");
 
-  Serial.println("Hazir. Komutlar: ROLE <ad> <0|1> | UC <indeks> <derece> <sure_ms> | KAPAT | OKU | TEST | HIZ <0-180> | US <544-2400>");
+  Serial.println("Hazir. Komutlar: ROLE <ad> <0|1> | UC <indeks> <derece> <sure_ms> | KAPAT | OKU | TEST <0|1> | ACI <0-180> | US <544-2400>");
 #if TEST_ACILISTA
   testBasla();
 #endif
@@ -207,130 +219,131 @@ void ucGozet() {
 }
 
 // ---------------------------------------------------- SERVO DENEME KİPİ --
-/* Altı adımlı döngü. Sizin kodunuzdaki sıranın aynısı:
- *   0  ileri, 90 derecelik süre        3  bekle
- *   1  bekle                           4  geri, iki katı süre (180 geri)
- *   2  ileri, 90 derecelik süre        5  bekle, sonra başa
- * `delay` yok: her adım "başlangıç anı + süre" ile bitiyor. */
+/* `testAcilari` listesini sırayla geziyor; her hedefe 1 derecelik
+ * adımlarla gidiyor, varınca bekliyor, sonrakine geçiyor.
+ *
+ * `delay` YOK, `millis` VAR. Sizin denediğiniz kod `delay(adimGecikmesi)`
+ * kullanıyordu; burada olmaz — servo süpürürken kart 3-4 saniye sağır
+ * kalır, sensör okunmaz, seri komut işlenmez ve panel "Arduino sustu"
+ * der. Adım zamanlaması aynı, bekleme yolu farklı.
+ *
+ * ADIM ADIM SÜPÜRMEK BİLEREK: hedefi tek hamlede yazmak servoyu kendi
+ * azami hızıyla götürür ve hız ayarlanamaz. Adımlayınca hızı
+ * `adimGecikmesi` belirliyor — 5 ms/derece, 180 dereceyi ~0,9 sn'de. */
 void testAdimUygula() {
   if (!ucTakili) { ucServo.attach(SERVO_PIN); ucTakili = true; }
-  switch (testAdim) {
-    case 0: case 2: ucServo.write(yavasIleriHizi); break;
-    case 4:         ucServo.write(yavasGeriHizi);  break;
-    default:        ucServo.write(durmaHizi);      break;
-  }
+  ucServo.write(testAci);
+  /* Kartın bildirdiği açı gerçekten yazılan açı olsun: panel deneme
+   * sırasında horn'un nerede olduğunu görebilsin. `uc_secili` null
+   * kalıyor — deneme listesi uçların açıları değil. */
+  ucAci = testAci;
   testAdimMs = millis();
-}
-
-unsigned long testAdimSuresi() {
-  switch (testAdim) {
-    case 0: case 2: return (unsigned long)doksanDereceSuresi;
-    // 180 derece geri dönecek, o yüzden iki katı.
-    case 4:         return (unsigned long)doksanDereceSuresi * 2UL;
-    default:        return (unsigned long)duraklardaBekleme;
-  }
 }
 
 void testBasla() {
   testAcik = true;
-  testAdim = 0;
-  /* UÇ BİLGİSİ ARTIK GEÇERSİZ. Deneme horn'u serbestçe döndürüyor; kartın
-   * "şu uç seçili" kaydı bu andan sonra horn'un gerçek yerini anlatmıyor. */
+  testSirasi = 0;
+  testGidiyor = true;
+  /* HANGİ UÇ SEÇİLİ BİLİNMİYOR. Deneme horn'u uçlarla eşleşmeyen
+   * açılara götürüyor; eski kaydı bırakmak bilinmeyeni bilinen gibi
+   * göstermek olurdu. */
   ucSecili = -1;
-  ucAci = -1;
   ucHarekette = false;
   testAdimUygula();
-  Serial.print("KOMUT: servo denemesi BASLADI — ileri ");
-  Serial.print(yavasIleriHizi);
-  Serial.print(" (");
-  Serial.print(usDeger(yavasIleriHizi));
-  Serial.print(" us), geri ");
-  Serial.print(yavasGeriHizi);
-  Serial.print(" (");
-  Serial.print(usDeger(yavasGeriHizi));
-  Serial.println(" us). Durdurmak icin tekrar TEST");
-  /* 1500 us servonun durma noktası. Bu ikisi ona çok yakınsa servo
-   * komutu alır ama kımıldamaz — ölü bant. Sessizce beklememek için
-   * kartın kendisi söylüyor. */
-  if (usDeger(yavasIleriHizi) > 1460 && usDeger(yavasIleriHizi) < 1540) {
-    Serial.println("UYARI: ileri hizi 1500 us'e cok yakin — olu bantta olabilir, HIZ ile deneyin");
+  Serial.print("KOMUT: servo denemesi BASLADI — aci listesi:");
+  for (int i = 0; i < TEST_ACI_SAYISI; i++) {
+    Serial.print(' ');
+    Serial.print(testAcilari[i]);
   }
+  Serial.print(", adim ");
+  Serial.print(adimGecikmesi);
+  Serial.println(" ms/derece. Durdurmak icin TEST 0");
   sonOlcum = 0;
 }
 
 void testDurdur() {
   testAcik = false;
-  if (ucTakili) ucServo.write(durmaHizi);
-  Serial.println("KOMUT: servo denemesi DURDU");
+  /* SERVOYU BIRAKMIYORUZ (detach yok) ve son açıyı DEĞİŞTİRMİYORUZ:
+   * nerede durduysa orada kalsın. Durdurma anında başka bir açı yazmak,
+   * "dur" komutuna hareketle cevap vermek olurdu. */
+  Serial.print("KOMUT: servo denemesi DURDU — son aci ");
+  Serial.println(testAci);
   sonOlcum = 0;
 }
 
-/* Bir `write(derece)` değerinin kaç mikrosaniyelik darbeye karşılık
- * geldiği. Arduino'nun Servo kütüphanesi 0..180'i 544..2400 us'e
- * eşliyor — yani `write(90)` 1500 DEĞİL, 1472 us.
- *
- * BUNU YAZDIRIYORUZ çünkü sürekli dönüşlü servoda karar veren şey
- * derece değil darbe genişliği: durma noktası 1500 us ve etrafında
- * ölü bant var. "93 yazdım ama dönmedi"nin cevabı bu sayıda görünüyor,
- * derecede görünmüyor. */
+/** Bir `write(derece)` değerinin kaç mikrosaniyelik darbeye karşılık
+ *  geldiği. Arduino'nun Servo kütüphanesi 0..180'i 544..2400 us'e
+ *  eşliyor — yani `write(90)` 1500 DEĞİL, 1472 us. Servo beklenmedik
+ *  yerde duruyorsa bakılacak sayı bu; derece bunu göstermiyor. */
 int usDeger(int derece) {
   return 544 + (int)((long)derece * (2400L - 544L) / 180L);
 }
 
-/** Servoyu doğrudan bir değerde tutar — ölü bandı elle bulmak için.
+/** Servoyu doğrudan bir açıya sürer — mekanizmayı elle yoklamak için.
  *
- * NEDEN VAR: hız sabitleri derleme zamanında sabit; her denemede yeniden
- * yüklemek gerekiyordu. Ölü bandın kenarı servodan servoya değişiyor ve
- * ancak deneyerek bulunuyor. Bu komutla seri porttan süpürüp bulabilir,
- * sonra bulduğunuz sayıyı yukarıdaki sabitlere yazabilirsiniz. */
-/** Servoyu doğrudan MİKROSANİYE ile sürer.
+ *  NEDEN VAR: uç açıları ayar dosyasında ve panelden geliyor; ama makine
+ *  başındayken "şu açıda hangi uç iniyor" sorusunu yeniden yükleme
+ *  yapmadan cevaplamak gerekiyor. Ölçüp panele gireceğiniz sayıları
+ *  burada buluyorsunuz.
  *
- *  NEDEN GEREKİYOR: `write(derece)` bir dereceyi ~10,3 us'ye eşliyor, yani
- *  en küçük adım 10 us. Ölçüm şunu gösterdi: bu servoda ölü bandın
- *  kenarını geçer geçmez hız neredeyse tam hıza çıkıyor — "hangi değeri
- *  girsem aynı" bunun sonucu. Orantılı bant o kadar dar ki 10 us'lik adım
- *  onu tamamen atlıyor.
+ *  TEK HAMLEDE yazıyor, adımlamıyor: elle yoklarken hedefin neresi
+ *  olduğu önemli, oraya nasıl gidildiği değil. */
+void aciyaSur(int derece) {
+  if (testAcik) testDurdur();
+  if (!ucTakili) { ucServo.attach(SERVO_PIN); ucTakili = true; }
+  ucServo.write(derece);
+  testAci = derece;               // deneme buradan devam edebilsin
+  /* UÇ BİLGİSİ GEÇERSİZ: elle sürmek horn'u bir uçla eşleşmeyen açıya
+   * götürebilir, "şu uç seçili" kaydı artık doğruyu anlatmaz. */
+  ucSecili = -1;
+  ucAci = derece;
+  ucHarekette = false;
+  Serial.print("KOMUT: aci ");
+  Serial.print(derece);
+  Serial.print(" (");
+  Serial.print(usDeger(derece));
+  Serial.println(" us)");
+  sonOlcum = 0;
+}
+
+/** Servoyu doğrudan MİKROSANİYE ile sürer — 1 us çözünürlük.
  *
- *  1 us çözünürlükle sürmek, yavaş bir bandın VAR OLUP OLMADIĞINI
- *  gösterecek tek yol. 1500 civarını tek tek tarayın: 1520, 1525, 1530...
- *  Hiçbirinde yavaş dönmüyorsa bu servoda yavaş kip yok demektir ve bunu
- *  bilmek de bir sonuç. */
+ *  `write(derece)` bir dereceyi ~10,3 us'ye eşliyor, yani en küçük adım
+ *  10 us. Servonun tam olarak nerede durduğunu ya da nerede kımıldamaya
+ *  başladığını aramak gerektiğinde o adım fazla kaba kalıyor. */
 void usYaz(int mikro) {
   if (testAcik) testDurdur();
   if (!ucTakili) { ucServo.attach(SERVO_PIN); ucTakili = true; }
   ucServo.writeMicroseconds(mikro);
-  /* UÇ BİLGİSİ GEÇERSİZ — sürekli dönüşlü servoda zaten konum diye bir
-   * kayıt tutulamıyor; elle sürmek onu büsbütün anlamsız kılıyor. */
   ucSecili = -1;
   ucAci = -1;
   ucHarekette = false;
   Serial.print("KOMUT: ");
   Serial.print(mikro);
-  Serial.println(" us — durdurmak icin US 1500");
-  sonOlcum = 0;
-}
-
-void hizYaz(int deger) {
-  if (testAcik) testDurdur();
-  if (!ucTakili) { ucServo.attach(SERVO_PIN); ucTakili = true; }
-  ucServo.write(deger);
-  /* UÇ BİLGİSİ GEÇERSİZ — elle sürmek horn'u bilinmeyen bir yere
-   * götürüyor, "şu uç seçili" kaydı artık doğruyu anlatmaz. */
-  ucSecili = -1;
-  ucAci = -1;
-  ucHarekette = false;
-  Serial.print("KOMUT: hiz ");
-  Serial.print(deger);
-  Serial.print(" (");
-  Serial.print(usDeger(deger));
-  Serial.println(" us) — durdurmak icin HIZ 90");
+  Serial.println(" us");
   sonOlcum = 0;
 }
 
 void testGozet() {
   if (!testAcik) return;
-  if (millis() - testAdimMs < testAdimSuresi()) return;
-  testAdim = (testAdim + 1) % 6;
+
+  if (!testGidiyor) {                       // durakta bekliyoruz
+    if (millis() - testAdimMs < (unsigned long)duraklardaBekleme) return;
+    testSirasi = (testSirasi + 1) % TEST_ACI_SAYISI;
+    testGidiyor = true;
+    testAdimMs = millis();
+    return;
+  }
+
+  if (millis() - testAdimMs < (unsigned long)adimGecikmesi) return;
+
+  int hedef = testAcilari[testSirasi];
+  if (testAci == hedef) {                   // vardık, durağa geç
+    testGidiyor = false;
+    testAdimMs = millis();
+    return;
+  }
+  testAci += (hedef > testAci) ? 1 : -1;
   testAdimUygula();
 }
 
@@ -369,11 +382,17 @@ void komutIsle(String komut) {
     return;
   }
 
-  if (buyuk.startsWith("HIZ ")) {
-    // "HIZ 105" — servoyu o değerde tut. 90 = dur. Ölü bandı bulmak için.
-    int deger = komut.substring(komut.indexOf(' ') + 1).toInt();
-    if (deger < 0 || deger > 180) { Serial.println("HATA: HIZ 0-180"); return; }
-    hizYaz(deger);
+  /* "ACI 120" — servoyu o açıya sürer. "HIZ" da kabul ediliyor ama adı
+   * düzeltilerek: servo sürekli dönüşlü sanılırken komut HIZ'dı; ezber
+   * hâline gelmiş bir komutu sessizce "bilinmeyen" yapmak yerine ne
+   * değiştiğini söylüyoruz. */
+  if (buyuk.startsWith("ACI ") || buyuk.startsWith("HIZ ")) {
+    if (buyuk.startsWith("HIZ ")) {
+      Serial.println("BILGI: komut artik ACI (derece), HIZ degil");
+    }
+    int derece = komut.substring(komut.indexOf(' ') + 1).toInt();
+    if (derece < 0 || derece > 180) { Serial.println("HATA: ACI 0-180"); return; }
+    aciyaSur(derece);
     return;
   }
 
@@ -481,6 +500,11 @@ void olcVeYaz() {
   if (ucAci < 0) Serial.print("null"); else Serial.print(ucAci);
   // 1 = komut verildi ama hareket süresi dolmadı; horn hâlâ yolda.
   Serial.print(",\"uc_hareket\":");           Serial.print(ucHarekette ? 1 : 0);
+  /* SERVO DENEMESİ AÇIK MI. Panelde düğme bunu okuyor: düğmenin kendi
+   * hafızasına güvenmek, kart sıfırlandığında (pompa çekişinde oluyor)
+   * panelin "çalışıyor" demeye devam etmesi demekti. Doğruyu kart
+   * söylüyor. */
+  Serial.print(",\"servo_test\":");           Serial.print(testAcik ? 1 : 0);
   /* Kartın açık kaldığı süre. Geriye giderse kart yeniden başlamıştır ve
    * röleler kapanmıştır — pompa çekişinde besleme çökerse tam bunu
    * görüyoruz. */

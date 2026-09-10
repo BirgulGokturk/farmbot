@@ -939,6 +939,25 @@ class Ajan:
                         "mesaj": f"{bilgi.get('ad', kimlik)} seçiliyor — "
                                  f"servo {sure} ms içinde yerine oturuyor"}
 
+            if ad == "servo_test":
+                acik = bool(arg.get("acik"))
+                # BAŞLATIRKEN Z KİLİDİ, DURDURURKEN YOK. Deneme horn'u
+                # döndürüyor; inmiş bir başlık toprağın içinden
+                # sürüklenmesin diye başlatmak `uc_sec` ile aynı engele
+                # tabi. Durdurmak her koşulda serbest olmalı: kilit
+                # yüzünden duramayan bir "dur" düğmesi, düğme olmaktan
+                # çıkar.
+                if acik:
+                    engel = self.uc_secim_engel()
+                    if engel:
+                        return {"ok": False, "mesaj": engel}
+                await asyncio.to_thread(self.arduino.komut,
+                                        f"TEST {1 if acik else 0}")
+                return {"ok": True,
+                        "mesaj": ("Servo denemesi başlıyor — horn açıları "
+                                  "süpürüyor, uç konumu bilinmez oluyor."
+                                  if acik else "Servo denemesi durduruldu.")}
+
             return {"ok": False, "mesaj": f"Bilinmeyen komut: {ad}"}
 
         except plc_modulu.PLCHatasi as hata:

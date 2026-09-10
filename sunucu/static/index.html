@@ -532,6 +532,19 @@
           </div>
           <p class="alt-not" id="uc-secici-not"></p>
 
+          <!-- SERVO DENEME DÖNGÜSÜ. Mekanizmayı ayarlarken kart açıları
+               süpürüyor: 90 → 180 → 0, her açıda duraklayarak. Uç
+               seçmiyor — bittiğinde horn hangi uçla hizalı, bilinmiyor;
+               durum yazısı bunu söylüyor.
+               Düğmenin AÇIK/KAPALI hâli kartın bildirdiği `servo_test`
+               alanından geliyor, panelin kendi tahmininden değil: kart
+               sıfırlanınca deneme durur ve panel bunu görmeli. -->
+          <div class="satir-8 alt-hizali" id="servo-deneme">
+            <span class="alt-not">Servo denemesi</span>
+            <button class="dugme" id="d-servo-test">▶ Başlat</button>
+            <span class="alt-not" id="servo-test-durum">kart bildirmedi</span>
+          </div>
+
           <div class="satir-8">
             <span class="alt-not">Home konumu</span>
             <button class="dugme" data-home="x" title="Yalnız X">⌂ X</button>

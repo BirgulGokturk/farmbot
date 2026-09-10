@@ -101,6 +101,10 @@ IZINLI_KOMUTLAR = {
     "uc_sec",        # {"bas":"sulama"|"nem"|"tohum"} — uç seçici servo.
                      #   Açı ayardan (`baslar.<bas>.servo_aci`), Z kilidi
                      #   ajanda: Z aşağıdayken reddediliyor.
+    "servo_test",    # {"acik": true|false} — servo deneme döngüsü. Kart
+                     #   açıları süpürüyor; mekanizmayı ayarlarken
+                     #   kullanılıyor. Başlatmak Z kilidine tabi,
+                     #   durdurmak değil.
 }
 
 # Basılı tut jog'unda yanıt beklemiyoruz: panel saniyede 3-4 yenileme
