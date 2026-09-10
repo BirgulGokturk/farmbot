@@ -1330,15 +1330,37 @@ class Gantry:
         düzeltmiyor, yalnız kayıtlı koordinata gidiyor. Gerçek referans
         için PLC tarafındaki rutin kurulmalı.
 
-        Sıra yine Z → X → Y: Z yukarı çıkmadan yatay hareket, uç aşağıdayken
-        sürmek demek.
+        Sıra Z → T → X → Y: Z yukarı çıkmadan yatay hareket, uç
+        aşağıdayken sürmek demek; T de X/Y'den önce çekiliyor, çünkü tohum
+        ucu aşağıdayken yatay hareket zaten reddediliyor.
         """
         if self.acil_mandal["acik"]:
             raise PLCHatasi("ACİL DURDURMA mandallı — önce temizleyin")
         self._surucu_dogrula()
         self._onceki_isi_kes("home hareketi")
 
-        sira = [EKSEN_INDEKS[eksen]] if eksen else [2, 0, 1]   # Z, X, Y
+        # SIRA: Z → T → X → Y.
+        #
+        # T BİR SÜRE BU LİSTEDE HİÇ YOKTU. Ortak ⌂ yalnız Z, X, Y'ye
+        # gidiyordu; tohum ucu kendi ekseninde nerede kaldıysa orada
+        # kalıyordu. Tek başına `⌂ T` çalıştığı için eksiklik göze
+        # çarpmıyordu — kullanıcı "hepsi" deyip T'nin gitmediğini
+        # sonradan fark ediyordu.
+        #
+        # YERİ DE ÖNEMLİ, sona eklenemez: `t_yatay_engel()` tohum ucu
+        # aşağıdayken X/Y hareketini reddediyor. T listenin sonunda
+        # olsaydı ortak ⌂, uç aşağıdayken X adımında "tohum ucu aşağıda"
+        # diye düşerdi — yani düzeltmesi gereken durumun kurbanı olurdu.
+        # Önce Z kalkıyor, sonra T çekiliyor, sonra yatay eksenler.
+        #
+        # KALİBRE DEĞİLSE ATLANIYOR: `eksen_git_dogrula` kalibre olmayan
+        # T'de istisna atıyor ve `_home_isci` istisnada SIRAYI KESİYOR.
+        # Atlamasaydık, T'si kalibre edilmemiş bir makinede ortak ⌂
+        # tamamen çalışmaz olurdu.
+        if eksen:
+            sira = [EKSEN_INDEKS[eksen]]
+        else:
+            sira = [2, 3, 0, 1] if self.t_kalibre_mi() else [2, 0, 1]
 
         # Tek eksen istendiginde Z korumasi elle konmali. "Hepsi" sirasi
         # (Z, X, Y) Z'yi once referansladigi icin guvenli; ama panelden
@@ -1367,6 +1389,33 @@ class Gantry:
                 hedef = self.home_hedefi(i)
                 ad = EKSENLER[i]["ad"]
                 self.gunluk_cb(f"{ad} → home {hedef:.2f} mm", "bilgi")
+                # HİÇ KIMILDAMAYAN EKSEN SESSİZ KALMASIN.
+                #
+                # `eksen_git_dogrula` hedefe 0,2 mm'den yakınsa hareket
+                # ETMEDEN dönüyor. Sıradan bir gidişte makul bir kısayol,
+                # home'da yanıltıcı: sayaç kaymışsa kayıt hedefi okuyor,
+                # eksen başka yerde duruyor ve "home'a gidildi" satırı
+                # hiçbir şey olmadan yazılıyor.
+                #
+                # SAHADA GÖRÜLEN BUYDU: X ve Y yarı yolda durdu, panelde
+                # bütün değerler home değerleriyle eşitti. Eksenler elle
+                # oynatılmıştı; sayaç elle harekette takip etmiyor.
+                #
+                # DURUMU DÜZELTEMİYORUZ — referans anahtarı okunmadan
+                # doğrusunu bilmenin yolu yok ve bu hareket gerçek
+                # referanslama değil (bkz. `home` açıklaması). Ama
+                # SÖYLEYEBİLİRİZ; sessizce başarı bildirmek, kullanıcının
+                # makineyi home'da sanması demekti.
+                simdi = self.konum_mm()
+                onceki_mm = (simdi[i] if i < len(simdi)
+                             else self.eksen_konum_mm(i))
+                if abs(onceki_mm - hedef) < 0.2:
+                    self.gunluk_cb(
+                        f"⚠ {ad} zaten {onceki_mm:.2f} mm okuyor — hiç "
+                        f"hareket etmeyecek. Eksen elle oynatıldıysa sayaç "
+                        f"kaymıştır: makine home'da olmadığı hâlde home'da "
+                        f"sanılır. Bu hareket gerçek referanslama değil.",
+                        "uyari")
                 try:
                     # Doğrulamalı gidiş: varmadıysa istisna atıyor, yani
                     # "gitti" denip geçilmiyor. Bölge denetimi de burada.
