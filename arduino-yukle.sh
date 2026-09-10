@@ -54,9 +54,17 @@ echo "== çekirdek ve kütüphaneler"
 arduino-cli core update-index
 arduino-cli core install arduino:avr
 # Sketch'in kullandıkları. Zaten kuruluysa arduino-cli atlıyor.
-# Wire çekirdekten geliyor, o listede değil. Servo da yok: sketch'te artık
-# servo kullanılmıyor, kartta öyle bir donanım da yok.
-arduino-cli lib install "DHT sensor library" "Adafruit Unified Sensor"                        "Adafruit BMP085 Library"
+#
+# Wire ÇEKİRDEKTEN geliyor, o yüzden listede yok. Servo GELMİYOR: IDE onu
+# paketli kütüphane olarak taşıyor ama `arduino-cli core install
+# arduino:avr` kurmuyor, ayrıca istemek gerekiyor.
+#
+# BURADA "servo kullanılmıyor" YAZIYORDU ve yanlıştı: sketch uç seçici
+# servoyu süreli, `#include <Servo.h>` satırı 5. satırda duruyor. Servo
+# listede olmadığı için derleme "Servo.h: No such file or directory" ile
+# düşüyordu — yani bu betik, tam da firmware'i yenilemek gerektiğinde
+# çalışmıyordu.
+arduino-cli lib install "DHT sensor library" "Adafruit Unified Sensor"                         "Adafruit BMP085 Library" "Servo"
 
 echo "== derleniyor ($FQBN)"
 arduino-cli compile --fqbn "$FQBN" "$ESKIZ"
