@@ -39,6 +39,25 @@
  * Seri porttan "TEST" yazınca başlıyor, tekrar yazınca duruyor. */
 #define TEST_ACILISTA 0
 
+/* SERVO SÜREKLİ DÖNÜŞLÜ MÜ? 1 = evet (şu anki donanım), 0 = konumlu.
+ *
+ * NEDEN ANAHTAR GEREKİYOR: `UC` komutu servoya `write(derece)` yazıyor.
+ * KONUMLU servoda bu "o açıya git ve orada dur" demek — süre dolunca
+ * yapılacak bir şey yok, servo horn'u tutmaya devam ediyor.
+ * SÜREKLİ DÖNÜŞLÜ servoda ise aynı yazma "şu hızda dön" demek ve
+ * KENDİLİĞİNDEN DURMUYOR. Kart süre dolunca "vardım" diyor, ajan işe
+ * başlıyor, servo hâlâ dönüyor.
+ *
+ * Sahada görüldü: ajan `UC 0 0 900` gönderdi. Konumlu servoda 0 derece
+ * demek; sürekli dönüşlüde TAM HIZDA GERİ demek ve kimse durdurmuyor.
+ *
+ * 1 iken süre dolduğunda durma darbesi yazılıyor. Konumlu servoya
+ * geçtiğinizde burayı 0 yapın — yoksa her hareketten sonra horn 90
+ * dereceye sürülür. */
+#define SERVO_SUREKLI_DONUSLU 1
+//: Sürekli dönüşlü servoda motorun durduğu değer. `write` ölçeğinde.
+#define SERVO_DURMA_DEGERI 90
+
 /* ⚙️ DEĞİŞTİREBİLECEĞİNİZ İNCE AYARLAR — hepsi burada, başka yerde yok. */
 const int durmaHizi          = 90;   // motorun durduğu değer
 const int yavasIleriHizi     = 93;   // çok yavaş ileri (91, 92, 94 deneyin)
@@ -174,6 +193,14 @@ void ucKomut(int indeks, int derece, long sureMs) {
 
 void ucGozet() {
   if (ucHarekette && millis() - ucKomutMs >= ucSureMs) {
+#if SERVO_SUREKLI_DONUSLU
+    /* DURDURMA ŞART. Sürekli dönüşlü servoda `write(derece)` hız
+     * veriyor ve süre dolduğunda kendiliğinden durmuyor: kart "vardım"
+     * derken servo dönmeye devam eder. Konumlu servoda bu satır
+     * yanlış olurdu — horn'u 90 dereceye sürerdi — o yüzden anahtarın
+     * arkasında. */
+    ucServo.write(SERVO_DURMA_DEGERI);
+#endif
     ucHarekette = false;
     sonOlcum = 0;                   // "vardı" bilgisi beklemeden gitsin
   }
