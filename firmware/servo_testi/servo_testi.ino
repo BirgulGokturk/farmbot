@@ -51,7 +51,7 @@ void loop() {
   delay(1000);
 
   // Move to 180 degrees with a 50ms step delay (slower speed)
-  moveToAngle(180, 50); 
+  moveToAngle(180, 5); 
   delay(1000);
 
   // Return to 0 degrees quickly with a 5ms step delay
