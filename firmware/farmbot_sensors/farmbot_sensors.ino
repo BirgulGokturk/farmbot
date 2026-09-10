@@ -230,6 +230,15 @@ void ucKomut(int indeks, int derece, long sureMs) {
   if (testAcik) testDurdur();
   if (!ucTakili) { ucServo.attach(SERVO_PIN); ucTakili = true; }
   ucServo.write(derece);
+  /* DENEMENİN BAŞLANGIÇ NOKTASI DA GÜNCELLENİYOR. `currentAngle` horn'un
+   * nerede olduğuna dair kartın tek kaydı ve `moveToAngle` adım yönünü
+   * ondan hesaplıyor. Burada güncellenmediği sürece şu oluyordu: panelden
+   * bir baş seçilip horn 140 dereceye gidiyor, sonra deneme başlatılıyor,
+   * `moveToAngle(85, 5)` hâlâ 0'dan başladığını sanıyor ve ilk yazdığı
+   * değer 1 oluyor — yani horn 140'tan 1'e TEK HAMLEDE çarpıyor, sonra
+   * 85'e yürüyor. Adımlı süpürmenin bütün amacı o çarpmayı önlemekti.
+   * `aciyaSur` bunu zaten yapıyordu; `UC` yolunda unutulmuştu. */
+  currentAngle = derece;
   ucSecili = indeks;
   ucAci = derece;
   ucSureMs = (unsigned long)sureMs;
@@ -409,7 +418,16 @@ void usYaz(int mikro) {
   if (testAcik) testDurdur();
   if (!ucTakili) { ucServo.attach(SERVO_PIN); ucTakili = true; }
   ucServo.writeMicroseconds(mikro);
+  /* Mikrosaniyeden dereceye GERİ çeviriyoruz: `usDeger`in tersi. Tahmin
+   * değil, aynı doğrusal eşlemenin tersi — yalnız yuvarlama payı var.
+   * Yapılmazsa `currentAngle` bu komuttan sonra eskimiş kalır ve deneme
+   * yanlış yerden başlar (bkz. `ucKomut`). */
+  currentAngle = (int)(((long)(mikro - 544) * 180L + 928L) / 1856L);
   ucSecili = -1;
+  /* `ucAci` YİNE -1: derece raporu "hangi baş seçili" sorusuna hizmet
+   * ediyor ve `US` komutu horn'u hiçbir başla eşleşmeyen bir yere
+   * götürmüş olabilir. `currentAngle` kartın iç kaydı, `ucAci` dışarıya
+   * verilen cevap; ikisi ayrı sorulara bakıyor. */
   ucAci = -1;
   ucHarekette = false;
   Serial.print(F("KOMUT: "));
