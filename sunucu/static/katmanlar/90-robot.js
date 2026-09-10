@@ -101,31 +101,31 @@ Tarla.katman({
     p.sutun.scale.y = boy;
     p.sutun.position.set(0, kafaUst + boy / 2, 0);
 
-    /* ÜÇ BAŞLIK ÇİZİLİ, YALNIZ SIRASI GELEN İNİYOR.
+    /* TEK BAŞLIK İNİP ÇIKIYOR. EFEKT YALNIZ SULAMADA.
      *
-     * Üç başlık tek parçada BİRLEŞTİRİLDİ ama DÖNMÜYORLAR: her biri
-     * kendi sabit yerinde, yan yana. Servo hiçbir şeyi taşımıyor, yalnız
-     * sırası gelen başlığı AŞAĞI İNDİRİYOR (bkz. makine.js "UÇ KAFASI").
-     * Üçü de çizili çünkü üçü de orada; iş gören, İNMİŞ olandan belli.
+     * Uçta tek bir başlık çizili (bkz. makine.js "UÇ KAFASI"). İşi
+     * hangisi görüyorsa inen o; üçünün biçimi aynı olduğu için ayrı ayrı
+     * çizmenin bir karşılığı yok. Sulamada ayrıca su huzmesi çıkıyor,
+     * tohum ve nem işlerinde başlık yalnız inip çıkıyor.
      *
-     * SEÇİLİ UÇ BİLİNMİYORSA HİÇBİRİ İNMİYOR. Servoda geri besleme yok
-     * ve kart açılışta/sıfırlandıktan sonra ne komut edildiğini
-     * bilmiyor; birini indirmek, bilinmeyeni bilinen gibi göstermek
-     * olurdu. Üçü de dinlenme yüksekliğinde duruyor.
+     * SEÇİLİ UÇ BİLİNMİYORSA BAŞLIK İNMİYOR. Uç seçicide geri besleme
+     * yok ve kart açılışta/sıfırlandıktan sonra ne komut edildiğini
+     * bilmiyor; indirmek, bilinmeyeni bilinen gibi göstermek olurdu.
      *
-     * İNİŞ. Üç kaynak, üçü de ayrı:
-     *   - tohum ucu: KENDİ EKSENİ (PLC j4) ve ölçülen mm.
+     * İNİŞİN KAYNAĞI SEÇİLİ İŞE GÖRE DEĞİŞİYOR, üçü de ayrı:
+     *   - tohum ucu: KENDİ EKSENİ (PLC j4) ve ÖLÇÜLEN mm. Tek gerçek
+     *     mesafe bu.
      *   - sulama başlığı: pompa rölesi (`r_su_pompasi`). Röle yalnız
-     *     "akıyor / akmıyor" diyor; ayrı ekseni yok, düşme miktarı
-     *     ölçüm değil gösterim kuralı (makine.js).
-     *   - nem probu: SİNYAL YOK. Kendi ekseni yok ve durum paketinde
-     *     "prob ölçüyor" bayrağı geçmiyor (ajan/plc.py'de yalnız
-     *     X, Y, Z, T var). Uydurma bir durum üretmek yerine sabit
-     *     duruyor; `suDurumu().nemSinyali` bunu söylüyor. */
+     *     "akıyor / akmıyor" diyor; ayrı ekseni yok, iniş miktarı ölçüm
+     *     değil gösterim kuralı (makine.js `aktifDusme`).
+     *   - nem probu: SİNYAL YOK — ne kendi ekseni var ne de durum
+     *     paketinde "prob ölçüyor" bayrağı (ajan/plc.py'de yalnız
+     *     X, Y, Z, T). Uydurma bir durum üretmek yerine inmiyor;
+     *     `suDurumu().nemSinyali` bunu söylüyor. */
     const secici = ((o.veri.durum.uc || {}).secici) || {};
     const secili = secici.secili_bas || null;
     const dinlenme = Number(u.basY || 0);
-    const basGrup = u.basGrup || {};
+    const bas = u.bas || null;
     let inisMm = 0;
     if (secili === "tohum") {
       const t = o.veri.durum.tohum_ucu || {};
@@ -136,14 +136,10 @@ Tarla.katman({
       const akiyor = !!(PN && PN.S && PN.S.roleDurum && PN.S.roleDurum.su_pompasi);
       inisMm = akiyor ? Number(u.aktifDusme || 0) : 0;
     }
-    /* İnişi YALNIZ seçili başlığa uyguluyoruz. Ötekilerin y'sini de her
-     * karede dinlenmeye yazıyoruz: seçim değişince eski başlık kendi
-     * başına geri çıkmaz, aşağıda kalırdı ve sahnede iki inmiş başlık
-     * görünürdü — ajan bir başlık inmişken ikincisini indirmeye izin
-     * vermiyor, model de öyle göstermeyecek. */
-    Object.keys(basGrup).forEach((ad) => {
-      basGrup[ad].position.y = dinlenme - (ad === secili ? inisMm : 0);
-    });
+    /* Her karede yazılıyor, yalnız iniş anında değil: iş bitince başlık
+     * kendi başına geri çıkmaz, aşağıda kalır ve sahnede sürekli inmiş
+     * bir uç görünürdü. */
+    if (bas) bas.position.y = dinlenme - inisMm;
 
     /* SU HUZMESİ. Kaynak tek: kartın bildirdiği röle durumu (`r_su_pompasi`).
      * Panel kendi tahminini tutmuyor — "sulama komutu gönderdim, demek ki
@@ -176,12 +172,8 @@ Tarla.katman({
         /* Huzme başlığın UCUNDAN başlıyor. Başlık pompa açıkken indiği
          * için ofset sabit değil: grubun O ANKİ y'si + ucun grup içi
          * ofseti. Sabit yazsaydık su, inmiş başlığın içinden çıkardı. */
-        /* Huzme SULAMA başlığının ağzından çıkıyor — hortum o başlığa
-         * bağlı. Başlık pompa açıkken indiği için ofset sabit değil:
-         * grubun O ANKİ y'si + ağzın grup içi ofseti. Sabit yazsaydık
-         * su, inmiş başlığın içinden çıkardı. */
-        const sulamaG = (u.basGrup || {}).sulama;
-        const agizY = (sulamaG ? sulamaG.position.y : Number(u.basY || 0))
+        const basG = u.bas;
+        const agizY = (basG ? basG.position.y : Number(u.basY || 0))
           + Number(u.basUcY || 0);            // kafa yerelinde ağzın y'si
         // Ağzın SAHNEDEKİ yüksekliği; toprak yüzeyi y = 0.
         const yer = Math.max(0.01, p.ucKafa.position.y + agizY);
@@ -202,40 +194,19 @@ Tarla.katman({
   suDurumu() {
     const p = this._p;
     if (!p || !p.su) return { kuruldu: false };
-    /* UÇ KAFASI TANISI. Üç başlık üç ayrı noktada (dönme yok), üçü de
-     * çizili; sorulacak şey "hangisi nerede ve hangisi inmiş". Kaymayı
-     * panelden değiştirince buradaki mm'ler onunla değişiyor — sahnedeki
-     * yer ile ayardaki sayının tuttuğunu gözle değil sayıyla doğrulamak
-     * için. */
+    /* UÇ KAFASI TANISI. Uçta tek başlık var; sorulacak şey "ne kadar
+     * inmiş ve su akıyor mu". Sayı olarak soruyoruz çünkü ekran
+     * görüntüsünde ince bir huzme ile Z kılavuzu ayırt edilemiyor. */
     const u = (p.ucKafa && p.ucKafa.userData) || {};
-    const yer = u.basYer || {};
-    const grup = u.basGrup || {};
-    const pl = u.plaka || {};
-    const inmisMm = {};
-    Object.keys(grup).forEach((ad) => {
-      inmisMm[ad] = +(((Number(u.basY) || 0) - grup[ad].position.y) * 1000)
-        .toFixed(1);
-    });
+    const bas = u.bas || null;
+    const inmisMm = bas
+      ? +(((Number(u.basY) || 0) - bas.position.y) * 1000).toFixed(1) : null;
     return {
       kuruldu: true,
-      /* BAŞLARIN YERİ (mm, kızak yerelinde). Kayma sözleşme (4) gereği
-       * ters işaretle giriyor: baş, makine noktasının dx/dy kadar
-       * TERSİNDE. Panelde 60/-40 girilmişse burada (-60, +40) görünür. */
-      basYerMm: Object.keys(yer).reduce((a, ad) => {
-        a[ad] = { x: +(yer[ad].x * 1000).toFixed(1),
-                  z: +(yer[ad].z * 1000).toFixed(1) };
-        return a;
-      }, {}),
-      // Üçünü birleştiren taşıyıcı plaka (mm) — başlar plakaya sığıyor mu.
-      plakaMm: pl.x1 == null ? null
-        : { en: +((pl.x2 - pl.x1) * 1000).toFixed(1),
-            boy: +((pl.z2 - pl.z1) * 1000).toFixed(1),
-            kal: +(pl.kal * 1000).toFixed(1) },
-      /* HANGİ BAŞ NE KADAR İNMİŞ (mm). Hepsi 0 ise ya seçili uç
-       * bilinmiyor (kart açılışta ya da sıfırlandıktan sonra) ya da iniş
-       * sinyali yok. İkisi de doğru davranış; bilinmiyorken indirmemek
-       * bilerek, birini indirmek bilinmeyeni bilinen gibi göstermek
-       * olurdu. Aynı anda BİRDEN ÇOK sıfırdan büyük değer çıkmamalı. */
+      /* BAŞLIK NE KADAR İNMİŞ (mm). 0 ise ya seçili uç bilinmiyor (kart
+       * açılışta ya da sıfırlandıktan sonra) ya da o iş için iniş
+       * sinyali yok. İkisi de doğru davranış: bilinmiyorken indirmemek
+       * bilerek; indirmek, bilinmeyeni bilinen gibi göstermek olurdu. */
       inmisMm: inmisMm,
       aktifDusmeMm: u.aktifDusme == null
         ? null : +(u.aktifDusme * 1000).toFixed(1),
@@ -243,9 +214,9 @@ Tarla.katman({
        * durum paketinde "prob ölçüyor" diye bir bayrak geçmiyor; ölçüm
        * ana Z ile daldırılarak yapılıyor. Prob bu yüzden sabit duruyor. */
       nemSinyali: "yok — probun kendi ekseni ve durum bayrağı yok",
-      /* DÖNME YOK. Servo başlıkları taşımıyor, yalnız sırası geleni
-       * indiriyor; üçü de kendi sabit yerinde çizili. */
-      donme: "yok — servo yalnız sırası gelen başlığı indiriyor",
+      /* TEK BAŞLIK. Dönme de yok, üç ayrı başlık da: uçta tek bir başlık
+       * çizili ve iş gören hangisiyse inen o. */
+      basSayisi: 1,
       gorunur: p.su.visible,
       boy: +p.su.scale.y.toFixed(4),
       y: +p.su.position.y.toFixed(4),

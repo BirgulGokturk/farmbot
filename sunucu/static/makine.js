@@ -672,127 +672,92 @@
     kizak.add(sutun);
 
     /* ======================================================================
-     * UÇ KAFASI — ÜÇ BAŞLIK + UÇ SEÇİCİ
+     * UÇ KAFASI — TEK BAŞLIK
      *
-     * MEKANİZMA (kullanıcının tarifi, doğrudan): üç başlık tek bir
-     * parçada BİRLEŞTİRİLDİ ama DÖNMÜYORLAR. Her başlık kendi sabit
-     * yerinde, yan yana duruyor. Servo hiçbir şeyi bir yerden başka bir
-     * yere taşımıyor; yalnız SIRASI GELEN BAŞLIĞI AŞAĞI İNDİRİYOR.
-     * Servo açısı = hangi başlığın indirileceği. Z ekseni de eskisi gibi
-     * bütün grubu aşağı yukarı taşıyor.
+     * MEKANİZMA (kullanıcının tarifi, doğrudan): uçta TEK bir başlık
+     * çiziliyor. İşi hangisi görüyorsa — tohum alma, nem ölçme, sulama —
+     * aşağı inip geri çıkan o başlık; biçim üçünde de aynı. SULAMADA, ve
+     * yalnız sulamada, ağzından su huzmesi çıkıyor. Ötekilerde efekt yok:
+     * başlık sadece inip çıkıyor.
      *
-     * BURADA ÖNCE TARET ÇİZİLİYORDU VE YANLIŞTI. Üç başlığın dönüp aynı
-     * çalışma noktasına geldiği varsayılmış, üçünün kayması tek sayıya
-     * indirilmişti. Dönme yok: üç başlık üç AYRI noktada duruyor. Tek
-     * kaymayla ikisi yanlış yere düşer — sulama başlığında birkaç mm
-     * önemsiz, tohum ucunda tohum yanlış deliğe gider.
-     *
-     * NE ÇİZİLİYOR: üçünü birleştiren TAŞIYICI PLAKA + ÜÇ BAŞLIK, her
-     * biri kendi dx/dy'sinden çıkan yerinde. Üçü de görünür, çünkü üçü
-     * de fiziksel olarak orada; hangisinin iş gördüğü biçimden değil
-     * İNMİŞ OLMASINDAN belli. Seçili uç bilinmiyorsa hiçbiri inmiyor
-     * (90-robot.js) — servoda geri besleme yok, kart açılışta ne komut
-     * edildiğini bilmiyor, birini indirmek bilinmeyeni bilinen gibi
-     * göstermek olurdu.
+     * ÖNCE ÜÇ BAŞLIK ÇİZİLİYORDU VE EKRANDA İKİ GÖRÜNÜYORDU. Sahada
+     * ölçülmüş tek kayma sulamanınki (60/60); nem ve tohum ikisi de 0/0,
+     * yani ölçülmemişler. Üçünü kendi kaymasına koyunca ikisi tam üst
+     * üste biniyordu. Tek başlıkta o sorun yok ve gösterilen şey daha
+     * doğru: makine `sunucu/baslar.py` `kaydir()` ile `hedef + (dx, dy)`
+     * noktasına gidiyor (sözleşme 4), yani iş gören başlık HER ZAMAN
+     * makinenin durduğu noktada. Tek başlığı oraya koymak, üç başlığı
+     * ölçülmemiş sayılarla üç yere dağıtmaktan daha az varsayım.
      *
      * SÖZLEŞMEDEN GELENLER (yukarıdaki KOORDİNAT SÖZLEŞMESİ):
-     *   (3) Kızak yerelindeki (0, 0) makinenin (X, Y) koordinatı.
-     *   (4) Bir başın yeri  x = -dx*mmP , z = -dy*mmP.
-     *   (2) Kafa yalnız sahne y'sinde hareket ediyor; x/z'yi köprüden ve
-     *       kızaktan miras alıyor.
+     *   (3) Kızak yerelindeki (0, 0) makinenin (X, Y) koordinatı; başlık
+     *       tam orada duruyor. Kafanın kendi x/z ötelemesi YOK.
+     *   (2) Kafa yalnız sahne y'sinde hareket ediyor; x'i köprüden,
+     *       z'yi kızaktan miras alıyor.
      *   (1) Sahne y = 0 toprak yüzeyi; kafa EN ALT noktasından
-     *       oturtuluyor (`userData.altY`).
+     *       oturtuluyor (`userData.altY`), yani makine Z'si toprak
+     *       yüzeyindeyken başlığın ucu tam y = 0'da.
      * ==================================================================== */
     const ucKafa = new THREE.Group();
     const baski = { color: "#1e2124", metalness: 0.04, roughness: 0.72 };
     const basMal = { color: "#23272a", metalness: 0.25, roughness: 0.6 };
-    const bslr = opt.baslar || {};
-    const mmP = opt.mmP || 1;
-    const SIRA = ["sulama", "nem", "tohum"];
-
-    /* BAŞLARIN YERİ — HER BİRİ KENDİ KAYMASINDAN. İşaret sözleşme (4):
-     * makine `hedef + (dx, dy)` noktasına gittiği için baş, o noktanın
-     * dx/dy KADAR TERSİNDE duruyor. Ayarı panelden değiştirince sahnede
-     * de kayıyorlar (90-robot.js imzası dx/dy'yi içeriyor). */
-    const yerler = SIRA.map((ad) => {
-      const b = bslr[ad] || {};
-      return { ad: ad,
-               x: -(Number(b.dx) || 0) * mmP,
-               z: -(Number(b.dy) || 0) * mmP };
-    });
 
     /* Ölçüler P'ye (sigma profil kenarı) oranlı: profil değişirse kafa da
-     * onunla ölçekleniyor. */
-    const BAS_R = P * 0.2;             // başlık yarıçapı
-    const PLAKA_KAL = P * 0.5;         // taşıyıcı plaka kalınlığı
-    const PLAKA_PAY = P * 0.9;         // plakanın baştan taşan payı
+     * onunla ölçekleniyor. Sabit milimetre yazmak, profil ayarı
+     * değiştiğinde kafayı makinenin geri kalanıyla orantısız bırakırdı. */
+    const BAS_R = P * 0.22;            // başlığın yarıçapı
+    const GOVDE_EN = P * 1.1;          // başlığı taşıyan blok
+    const GOVDE_KAL = P * 0.5;
+    const BAGLANTI_BOY = P * 1.6;      // kılavuza bağlanan boyun
 
-    /* TAŞIYICI PLAKANIN SINIRLARI. Üç başı ve kılavuz bağlantısını
-     * (kızak yerelinde 0, 0) birlikte kapsıyor: plaka üçünü BİRLEŞTİREN
-     * parça, gövdesi kılavuza oradan bağlanıyor. Sabit ölçü yazılamaz —
-     * kaymalar değişince başlar birbirinden uzaklaşıyor ve plakanın
-     * onlara yetişmesi gerekiyor. */
-    const xs = yerler.map((y) => y.x).concat([0]);
-    const zs = yerler.map((y) => y.z).concat([0]);
-    const px1 = Math.min.apply(null, xs) - PLAKA_PAY;
-    const px2 = Math.max.apply(null, xs) + PLAKA_PAY;
-    const pz1 = Math.min.apply(null, zs) - PLAKA_PAY;
-    const pz2 = Math.max.apply(null, zs) + PLAKA_PAY;
-
-    /* --- BAŞLIK BOYU — plakanın altından çıkacak kadar --------------------
-     * ÖLÇÜLEN ENGEL PLAKANIN KENDİSİ. Başlığın ucundan kameraya giden
-     * ışın her 1 mm yatay yolda tan(36°) = 0,7265 mm yükseliyor
-     * (varsayılan bakış: tarla.js `kam.phi = 0,30π`, yani ufkun 36°
-     * üstü). Işın plakanın alt yüzü hizasına `sarkma / 0,7265` kadar
-     * yatay yol sonra ulaşıyor; plaka o mesafeden uzağa taşıyorsa ışın
-     * plakaya çarpıyor ve başlık görünmüyor. Belirleyici mesafe, bir
-     * başın plaka köşelerine olan EN BÜYÜK yatay uzaklığı: kamera azimutu
-     * serbest, en kötü azimut o köşeye bakan. Sabit boy yazılmıyor:
-     * plaka kaymalarla büyüyünce boy da onunla gidiyor. */
+    /* --- BAŞLIK BOYU — gövdenin altından ÇIKACAK kadar --------------------
+     * Başlığın ucundan kameraya giden ışın her 1 mm yatay yolda
+     * tan(36°) = 0,7265 mm yükseliyor (varsayılan bakış: tarla.js
+     * `kam.phi = 0,30π`, yani ufkun 36° üstü). Işın gövdenin alt yüzü
+     * hizasına `sarkma / 0,7265` kadar yatay yol sonra ulaşıyor; gövde o
+     * mesafeden uzağa taşıyorsa ışın gövdeye çarpar ve başlık görünmez.
+     * Belirleyici mesafe gövdenin köşesi. Sabit boy yazılmıyor: gövde
+     * değişirse boy da onunla gidiyor. */
     const BAKIS_TAN = Math.tan(Math.PI * 0.20);
-    const engelUzak = Math.max.apply(null, yerler.map((y) => Math.max(
-      Math.hypot(y.x - px1, y.z - pz1), Math.hypot(y.x - px2, y.z - pz1),
-      Math.hypot(y.x - px1, y.z - pz2), Math.hypot(y.x - px2, y.z - pz2))));
-    const BAS_BOY = Math.max(P * 1.2, engelUzak * BAKIS_TAN * 1.06 + PLAKA_KAL);
-    const BAS_UC_ORAN = 0.36;
+    const engelUzak = Math.hypot(GOVDE_EN / 2, GOVDE_EN / 2);
+    const BAS_BOY = Math.max(P * 1.2, engelUzak * BAKIS_TAN * 1.06 + GOVDE_KAL);
+    const BAS_UC_ORAN = 0.36;          // sivri ucun toplam boya oranı
 
-    // Taşıyıcı plaka — üç başlığı tek parça yapan şey. Üst yüzü y = 0.
-    ucKafa.add(kutu(THREE, [px2 - px1, PLAKA_KAL, pz2 - pz1],
-                    [(px1 + px2) / 2, -PLAKA_KAL / 2, (pz1 + pz2) / 2], baski));
-    // Kılavuza bağlanan blok: kızağın sıfırında, yani Z kılavuzunun altında.
-    const BAGLANTI_BOY = P * 1.6;
+    // Gövde: başlığı kılavuzun altına bağlayan blok. Üst yüzü y = 0.
+    ucKafa.add(kutu(THREE, [GOVDE_EN, GOVDE_KAL, GOVDE_EN],
+                    [0, -GOVDE_KAL / 2, 0], baski));
+    // Kılavuza bağlanan boyun — kızağın sıfırında, Z kılavuzunun altında.
     ucKafa.add(kutu(THREE, [P * 1.2, BAGLANTI_BOY, P * 1.2],
                     [0, BAGLANTI_BOY / 2, 0], baski));
 
-    /* ÜÇ BAŞLIK. Üçü de aynı biçimde: hangisi olduğu biçimden değil
-     * YERİNDEN belli (panel aynı kaymaları gösteriyor). Her biri kendi
-     * grubu, çünkü 90-robot.js yalnız SEÇİLİ olanın y'sini indiriyor —
-     * ötekiler dinlenme yüksekliğinde kalıyor. Dinlenme yüksekliği
-     * plakanın alt yüzü. */
-    const BAS_DINLENME = -PLAKA_KAL;
-    const basGrup = {};
-    yerler.forEach((yer) => {
-      const g = new THREE.Group();
+    /* TEK BAŞLIK — KENDİ GRUBU. İnip çıkan yalnız o; gövde ve boyun
+     * yerinde kalıyor, çünkü inen parça Z ekseni değil (Z bütün kafayı
+     * taşıyor, bkz. 90-robot.js). Dinlenme yüksekliği gövdenin alt yüzü. */
+    const BAS_DINLENME = -GOVDE_KAL;
+    const bas = new THREE.Group();
+    {
       const ucBoy = BAS_BOY * BAS_UC_ORAN, govdeBoy = BAS_BOY - ucBoy;
-      const govde = new THREE.Mesh(
+      const g = new THREE.Mesh(
         new THREE.CylinderGeometry(BAS_R, BAS_R, govdeBoy, 12), mal(THREE, basMal));
-      govde.position.y = -govdeBoy / 2;
-      g.add(govde);
+      g.position.y = -govdeBoy / 2;
+      bas.add(g);
       const sivri = new THREE.Mesh(
         new THREE.ConeGeometry(BAS_R * 0.82, ucBoy, 12), mal(THREE, basMal));
       sivri.position.y = -govdeBoy - ucBoy / 2;
       sivri.rotation.x = Math.PI;
-      g.add(sivri);
-      g.position.set(yer.x, BAS_DINLENME, yer.z);
-      ucKafa.add(g);
-      basGrup[yer.ad] = g;
-    });
+      bas.add(sivri);
+    }
+    bas.position.set(0, BAS_DINLENME, 0);
+    ucKafa.add(bas);
 
-    /* --- SU HUZMESİ -------------------------------------------------------
-     * Pompa açıkken görünüyor; kaynağı 90-robot.js'teki röle durumu.
-     * SULAMA BAŞLIĞININ ağzından çıkıyor — hortum o başlığa bağlı,
-     * başka bir başlık inmişken pompa açılsa da su yine oradan akar. */
-    const suYer = yerler[SIRA.indexOf("sulama")];
+    /* --- SU HUZMESİ — YALNIZ SULAMADA -------------------------------------
+     * Görünürlüğü tek bir kaynaktan: kartın bildirdiği pompa rölesi
+     * (90-robot.js). Tohum ve nem işlerinde hiç görünmüyor — o işlerde
+     * başlık sadece inip çıkıyor.
+     *
+     * Huzme başlığın AĞZINDAN çıkıp toprağa uzanıyor. Başlangıcı sabit
+     * değil: başlık indiğinde ağız da iniyor ve sabit yazsaydık su,
+     * inmiş başlığın içinden çıkardı (boyu 90-robot.js'te veriliyor). */
     const suMal = new THREE.MeshStandardMaterial({
       color: "#8fd4ee", transparent: true, opacity: 0.42,
       roughness: 0.12, metalness: 0.0, depthWrite: false,
@@ -800,7 +765,7 @@
     });
     const su = new THREE.Mesh(
       new THREE.CylinderGeometry(BAS_R * 0.5, BAS_R * 1.4, 1, 12, 1, true), suMal);
-    su.position.set(suYer.x, BAS_DINLENME - BAS_BOY, suYer.z);
+    su.position.set(0, BAS_DINLENME - BAS_BOY, 0);
     su.visible = false;
     su.raycast = () => {};
     su.userData.golgeAtma = true;
@@ -809,29 +774,24 @@
 
     /* --- DIŞARIYA VERİLEN ÖLÇÜLER ---------------------------------------- */
     ucKafa.userData.su = su;
-    ucKafa.userData.basGrup = basGrup;          // ad → grup, inişi süren bu
-    ucKafa.userData.basYer = {};                // ad → kızak yerelinde x/z
-    yerler.forEach((y) => {
-      ucKafa.userData.basYer[y.ad] = { x: y.x, z: y.z };
-    });
-    ucKafa.userData.plaka = { x1: px1, x2: px2, z1: pz1, z2: pz2,
-                              kal: PLAKA_KAL };
-    ucKafa.userData.basY = BAS_DINLENME;        // başlığın dinlenme yüksekliği
-    ucKafa.userData.basUcY = -BAS_BOY;          // ağzı, kendi grubuna göre
+    ucKafa.userData.bas = bas;                 // inip çıkan tek başlık
+    ucKafa.userData.basY = BAS_DINLENME;       // başlığın dinlenme yüksekliği
+    ucKafa.userData.basUcY = -BAS_BOY;         // ağzı, kendi grubuna göre
     ucKafa.userData.altY = BAS_DINLENME - BAS_BOY;    // kafanın en alt noktası
     ucKafa.userData.ustY = BAGLANTI_BOY;              // en üst noktası
-    /* İNMİŞ BAŞIN DÜŞMESİ — GÖSTERİM KURALI, ÖLÇÜM DEĞİL. Yalnız tohum
-     * ucunun kendi dikey ekseni var (PLC j4) ve inişi ölçülen mm'den
-     * geliyor. Sulama başlığının ayrı ekseni yok; pompa rölesi yalnız
-     * "akıyor / akmıyor" diyor. Uç seçici servosu da geri bildirmiyor. */
+    /* İNİŞ MİKTARI — GÖSTERİM KURALI, ÖLÇÜM DEĞİL. Yalnız tohum ucunun
+     * kendi dikey ekseni var (PLC j4) ve inişi ölçülen mm'den geliyor.
+     * Sulamanın ayrı ekseni yok, pompa rölesi yalnız "akıyor / akmıyor"
+     * diyor; nem probunun ise hiçbir sinyali yok. O ikisi bu kadar
+     * iniyor, çünkü gerçek sayıyı hiçbir yer söylemiyor. */
     ucKafa.userData.aktifDusme = BAS_BOY / 3;
     if (OLCUM) {
       const mm = (v) => (v * 1000).toFixed(1);
-      console.log("[makine] uç kafası: "
-        + yerler.map((y) => `${y.ad} (${mm(y.x)}, ${mm(y.z)})`).join(" · ")
-        + ` mm · plaka ${mm(px2 - px1)} x ${mm(pz2 - pz1)} mm · `
+      console.log("[makine] uç kafası: tek başlık · "
+        + `gövde ${mm(GOVDE_EN)} x ${mm(GOVDE_KAL)} mm · `
         + `başlık boyu ${mm(BAS_BOY)} mm (engel uzaklığı ${mm(engelUzak)} mm) · `
-        + `dönme yok, üçü de kendi yerinde çizili`);
+        + `iniş ${mm(ucKafa.userData.aktifDusme)} mm (gösterim kuralı) · `
+        + "su yalnız sulamada");
     }
     kizak.add(ucKafa);
 
