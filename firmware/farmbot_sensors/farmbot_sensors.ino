@@ -1,43 +1,3 @@
-/*
- * FarmBot — sensör okuma, röle ve uç seçici servo
- * -----------------------------------------------
- * Arduino Uno. Yaptığı üç şey var:
- *   1. Sensörleri okuyup 2 saniyede bir tek satır JSON basmak.
- *   2. Pi'den gelen ROLE komutuyla iki röleyi açıp kapatmak.
- *   3. Pi'den gelen UC komutuyla uç seçici servoyu bir açıya sürmek.
- *   4. TEST komutuyla servoyu tek başına döndürüp ayar yapmak — sensör
- *      okuması bu sırada da devam ediyor, ayrı sketch yüklemek gerekmiyor.
- *
- * Başka bir şey yapmıyor. Karar vermiyor, eşik tutmuyor, HİÇBİR ŞEYİ
- * HATIRLAMIYOR. Sulama kararı Pi'de; kart yalnızca dediğini yapıyor ve
- * ne yaptığını geri söylüyor. Uç açıları da kartta DEĞİL: hangi ucun
- * hangi açıda olduğu ayar dosyasında (`ajan/uclar.json`) duruyor ve her
- * komutla birlikte geliyor — gerekçesi UC komutunun başlığında.
- *
- * TESİSAT
- *   D2   DHT11 veri
- *   D7   su pompası rölesi
- *   D8   hava pompası rölesi
- *   D9   uç seçici servo (sinyal)
- *
- * RÖLE KONTAĞI: pompalar şu an NC ucunda ve bu bilerek böyle bırakıldı —
- * kutuplama aşağıda ona göre ayarlı. Bilinmesi gereken sonucu var:
- * bobin enerjisizken COM–NC kapalı olduğu için kart kapalıyken,
- * sıfırlandığında, USB çıktığında ve açılışta önyükleyicinin beklediği
- * 1-2 saniye boyunca POMPA ÇALIŞIR. Yazılım bu anlarda çalışmıyor, yani
- * engelleyemiyor. Makineyi başıboş bırakmayın; su hattını uzun süre
- * gözetimsiz açık tutacaksanız pompa kablosunu NO ucuna alın, sonra
- * aşağıdaki satırı 1 yapın.
- *   A1   toprak nemi probu — iki uçlu, tool ucuna takılı, toprağa daldırılır
- *   A4/A5 GY-68 / BMP180 (I2C)
- *
- * Pi'ye giden satır:  VERI:{...}
- * Pi'den gelen komut: ROLE <su_pompasi|hava_pompasi> <0|1>
- *                     UC <indeks> <derece> <sure_ms>
- *                     KAPAT        — ikisini birden kapat
- *                     OKU          — beklemeden hemen ölç
- *                     TEST         — servo denemesini başlat/durdur
- */
 
 #include <Wire.h>
 #include <Adafruit_BMP085.h>
@@ -48,61 +8,43 @@
 #define DHT_PIN        2
 #define SU_POMPASI_PIN 7
 #define HAVA_POMPASI_PIN 8
+
 /* Tek toprak sensörü var ve tool ucunda: makine nereye giderse ölçüm
- * oradan geliyor. Eskiden yatağa sabit ikinci bir sensör varsayılıyordu
- * (A0); yok. Boş bir pini okumak, panelde gerçek veri gibi görünen
- * anlamsız sayı üretmek demekti.
- *
- * Ölçek: kuru toprakta değer YÜKSEK, ıslakta düşük. Yüzdeye çevirmek
- * panelin işi, ham değer olduğu gibi gidiyor. */
+ * oradan geliyor. Ölçek: kuru toprakta değer YÜKSEK, ıslakta düşük.
+ * Yüzdeye çevirmek panelin işi, ham değer olduğu gibi gidiyor. */
 #define TOPRAK_PIN     A1
 
-/* 0 = "aç" dediğimizde pine HIGH gidiyor. Bu, kartın kutuplamasıyla değil
- * KONTAKLA ilgili bir seçim: pompalar NC ucunda olduğu için pompayı
- * çalıştırmak bobini BIRAKMAK demek, çekmek değil. Yukarıdaki nota bakın.
- *
- * Pompa kablosunu NO ucuna alırsanız burayı 1 yapın. */
+/* 0 = "aç" dediğimizde pine HIGH gidiyor. Pompalar NC ucunda olduğu için
+ * pompayı çalıştırmak bobini BIRAKMAK demek, çekmek değil. */
 #define ROLE_AKTIF_LOW 0
 
 #define SERVO_PIN      9
 
 /* ---------------------------------------------------- SERVO DENEME KİPİ --
- * Servoyu tek başına çalıştırıp ayarlamak için. Sensör okuması, röleler ve
- * UC komutu bu kip açıkken de çalışmaya devam eder — deneme için ayrı bir
- * sketch yükleyip sonra geri dönmek gerekmiyor.
- *
  * SÜREKLİ DÖNÜŞLÜ SERVO İÇİN. Normal servoda `write(derece)` KONUM verir;
  * sürekli dönüşlüde HIZ verir. 90 dur, 90'dan uzaklaştıkça hızlanır ve
- * yön değiştirir. Açı diye bir şey yok: açı = hız × süre. Bu yüzden
- * aşağıda hız ve süre var, hedef derece yok.
+ * yön değiştirir. Açı diye bir şey yok: açı = hız × süre.
  *
  * BUNUN BEDELİ: konum AÇIK DÖNGÜ. Her turda birkaç derece kayar ve kayma
- * birikir; kart sıfırlanırsa horn'un nerede kaldığı hiçbir yerden
- * bilinemez. Uç seçici olarak güvenilir çalışması için ya konum geri
- * bildirimi (her uçta bir mikro switch) ya da normal (konumlu) bir servo
- * gerekiyor. Bu kip o kararı vermek için ölçüm yapmanızı sağlıyor. */
+ * birikir; kart sıfırlanırsa horn'un nerede kaldığı bilinemez. */
 
-/* AÇILIŞTA BAŞLASIN MI? Varsayılan 0 — kart her sıfırlandığında (pompa
- * çekişinde besleme çöküyor, röle notuna bakın) servonun kendiliğinden
- * dönmeye başlaması, uçlar takılıyken istenmeyecek bir şey. Seri porttan
- * "TEST" yazınca başlıyor, tekrar yazınca duruyor. Elle yazmak
- * istemiyorsanız burayı 1 yapın. */
+/* AÇILIŞTA BAŞLASIN MI? Varsayılan 0 — kart pompa çekişinde sıfırlanıyor
+ * ve açılışta kendiliğinden dönen bir servo, uçlar takılıyken istenmez.
+ * Seri porttan "TEST" yazınca başlıyor, tekrar yazınca duruyor. */
 #define TEST_ACILISTA 0
 
 /* ⚙️ DEĞİŞTİREBİLECEĞİNİZ İNCE AYARLAR — hepsi burada, başka yerde yok. */
-const int durmaHizi        = 90;    // motorun durduğu değer
-const int yavasIleriHizi   = 93;    // çok yavaş ileri (91, 92, 94 deneyin)
-const int yavasGeriHizi    = 87;    // çok yavaş geri  (89, 88, 86 deneyin)
-const int doksanDereceSuresi = 800; // 90 derece dönmesi kaç ms sürüyor
-const int duraklardaBekleme  = 3000;// her durakta kaç ms beklesin
+const int durmaHizi          = 90;   // motorun durduğu değer
+const int yavasIleriHizi     = 93;   // çok yavaş ileri (91, 92, 94 deneyin)
+const int yavasGeriHizi      = 87;   // çok yavaş geri  (89, 88, 86 deneyin)
+const int doksanDereceSuresi = 800;  // 90 derece dönmesi kaç ms sürüyor
+const int duraklardaBekleme  = 3000; // her durakta kaç ms beklesin
 
 #define OLCUM_ARALIGI_MS 2000
 
 // --------------------------------------------------------------- DURUM ----
 /* DHT tipi ELLE SEÇİLMİYOR. Yanlış tip seçilince kütüphane sessizce NaN
- * döndürüyor: panelde sıcaklık ve nem kartları hiç görünmüyor ve sensör
- * bozuk sanılıyor. Açılışta ikisi de deneniyor, hangisi okuma veriyorsa o
- * kullanılıyor ve adı panele bildiriliyor. */
+ * döndürüyor ve sensör bozuk sanılıyor. Açılışta ikisi de deneniyor. */
 DHT dht11(DHT_PIN, DHT11);
 DHT dht22(DHT_PIN, DHT22);
 DHT *dht = &dht11;
@@ -115,49 +57,37 @@ bool suPompasiAcik = false;
 bool havaPompasiAcik = false;
 
 /* ------------------------------------------------------------ UÇ SEÇİCİ --
- * SERVODA GERİ BESLEME YOK. Bu kart ne KOMUT ETTİĞİNİ bilir, horn'un
- * gerçekte nerede olduğunu bilmez. Aşağıdaki iki alan da o yüzden
- * "ölçüm" değil "komut edilen değer" ve VERI satırında da öyle
- * okunmalı; Pi tarafı bunları medyan/yuvarlama tablosuna sokmuyor.
+ * SERVODA GERİ BESLEME YOK. Kart ne KOMUT ETTİĞİNİ bilir, horn'un gerçekte
+ * nerede olduğunu bilmez. -1 "hiç komut verilmedi" demek.
  *
- * AÇILIŞTA KONUM BİLİNMİYOR ve sıfır VARSAYILMIYOR: -1 "hiç komut
- * verilmedi" demek. Kart sıfırlanırsa buraya geri düşüyor — `calisma_sn`
- * geriye gittiğinde Pi bunu zaten görüyor.
- *
- * SERVO AÇILIŞTA TAKILMIYOR (attach). Arduino'nun Servo kütüphanesinde
- * `attach()` darbe genişliğini DEFAULT_PULSE_WIDTH'e (1500 us, yaklaşık
- * 90 derece) kuruyor ve sinyali hemen üretmeye başlıyor; yani açılışta
- * attach etmek, horn'u komut vermeden 90 dereceye SÜRMEK demek. Konumun
- * bilinmediğini söyleyip aynı anda ortaya sürmek kendi kendini yalanlar.
- * İlk UC komutunda takılıyor. */
+ * SERVO AÇILIŞTA TAKILMIYOR (attach): `attach()` darbe genişliğini 1500 us'e
+ * kurup sinyali hemen üretmeye başlıyor, yani açılışta attach etmek horn'u
+ * komut vermeden 90 dereceye SÜRMEK demek. İlk komutta takılıyor. */
 Servo ucServo;
 bool ucTakili = false;
 int ucSecili = -1;              // komut edilen uç indeksi; -1 = bilinmiyor
 int ucAci = -1;                 // komut edilen derece; -1 = bilinmiyor
 bool ucHarekette = false;
 unsigned long ucKomutMs = 0;
-unsigned long ucSureMs = 0;     // hareket süresi — KOMUTLA geliyor, ayardan
+unsigned long ucSureMs = 0;     // hareket süresi — KOMUTLA geliyor
 
 unsigned long sonOlcum = 0;
 String girisTamponu = "";
 
 /* Deneme kipinin durumu. Sizin kodunuzdaki döngünün aynısı, ama `delay`
  * yerine `millis` ile: `delay` bu sketch'te olmaz — servo dönerken sensör
- * okuması ve seri komutlar da durur, yani 3 saniye boyunca kart sağır
- * kalır ve panel "Arduino sustu" der. */
+ * okuması ve seri komutlar da durur, kart 3 saniye sağır kalır. */
 bool testAcik = false;
-/* İleri bildirim: `ucKomut` bu dosyada `testDurdur`dan ÖNCE tanımlı ve onu
- * çağırıyor. Arduino IDE prototipleri kendi üretiyor ama buna güvenmek
- * gerekmiyor — bir satır yazmak, derleyiciye bağlı kalmaktan iyi. */
+/* İleri bildirim: `ucKomut` bu dosyada `testDurdur`dan ÖNCE tanımlı. */
 void testDurdur();
+int  usDeger(int derece);   // testBasla bunu kendinden ONCE cagiriyor
 void testBasla();   // setup, TEST_ACILISTA 1 iken bunu çağırıyor
 int  testAdim = 0;              // 0..5 — aşağıdaki testGozet'e bakın
 unsigned long testAdimMs = 0;   // bu adım ne zaman başladı
 
 // --------------------------------------------------------------- RÖLE -----
 /* Pine kapalı seviyeyi YAZIP sonra OUTPUT yapıyoruz. Ters sırada pin bir
- * an LOW kalıyor ve aktif-LOW kartta röle çekiyor: her açılışta pompaya
- * kısa bir darbe demek. */
+ * an LOW kalıyor ve aktif-LOW kartta röle çekiyor. */
 void roleHazirla(int pin) {
   digitalWrite(pin, ROLE_AKTIF_LOW ? HIGH : LOW);
   pinMode(pin, OUTPUT);
@@ -173,19 +103,14 @@ void roleYaz(int pin, bool acik) {
   else if (pin == HAVA_POMPASI_PIN) havaPompasiAcik = acik;
 }
 
-/** Hangi DHT takılı? Okuma verene karar veriyoruz.
- *
- * DHT11 önce deneniyor çünkü sahadaki kart o. İlk okuma kütüphane
- * ısınırken NaN dönebiliyor, o yüzden iki deneme yapılıyor. */
+/** Hangi DHT takılı? Okuma verene karar veriyoruz. */
 void dhtSec() {
   for (int tip = 0; tip < 2; tip++) {
     DHT *aday = tip == 0 ? &dht11 : &dht22;
     aday->begin();
     for (int deneme = 0; deneme < 2; deneme++) {
       /* 2 saniye: DHT11 veri sayfası açılıştan sonra 1 sn kararlılık
-       * istiyor, klonlar daha uzun sürebiliyor ve iki okuma arası da en az
-       * 2 sn olmalı. 1,2 sn ile ilk deneme sınırda kalıyordu — sağlam bir
-       * sensörü "yok" saymak, olmayan bir arızayı aratır. */
+       * istiyor, klonlar daha uzun sürebiliyor. */
       delay(2000);
       if (!isnan(aday->readTemperature())) {
         dht = aday;
@@ -196,8 +121,6 @@ void dhtSec() {
       }
     }
   }
-  // İkisi de okumadı: sensör bağlı değil ya da bozuk. Sıcaklık/nem null
-  // gidecek, geri kalan ölçümler çalışmaya devam edecek.
   dht = &dht11;
   dhtAdi = "yok";
   Serial.println("UYARI: DHT okumuyor — kabloyu ve D2'yi kontrol edin");
@@ -206,17 +129,8 @@ void dhtSec() {
 // --------------------------------------------------------------- KURULUM --
 void setup() {
   /* İLK İŞ BU. Serial.begin bile sonra geliyor: sıfırlamadan bu satıra
-   * kadar geçen her milisaniyede pinler GİRİŞ ve boşta duruyor, aktif-LOW
-   * röle kartında boşta giriş "röle çeksin" demek.
-   *
-   * Ama bu, sorunu tamamen çözmüyor ve çözemez: Uno'nun önyükleyicisi
-   * setup'tan ÖNCE ~1-2 saniye bekliyor ve o sürede hiçbir komut
-   * çalışmıyor. Yani kart her sıfırlandığında pompa bir-iki saniye
-   * çalışıyor. Bunun tek gerçek çözümü donanımda: her röle girişinden
-   * 5V'a 10K direnç (pin boştayken girişi YÜKSEK, yani röleyi kapalı
-   * tutar). Pompanın çekişi kartı sıfırlıyorsa bu kendini besleyen bir
-   * döngüye dönüşüyor — röle kartını ve pompaları Arduino'nun 5V'undan
-   * değil ayrı bir kaynaktan besleyin. */
+   * kadar pinler GİRİŞ ve boşta duruyor, aktif-LOW röle kartında boşta
+   * giriş "röle çeksin" demek. */
   roleHazirla(SU_POMPASI_PIN);
   roleHazirla(HAVA_POMPASI_PIN);
   roleYaz(SU_POMPASI_PIN, false);
@@ -227,43 +141,19 @@ void setup() {
   bmpVar = bmp.begin();
   if (!bmpVar) Serial.println("UYARI: BMP180 bulunamadi, digerleriyle devam");
 
-  Serial.println("Hazir. Komutlar: ROLE <ad> <0|1> | UC <indeks> <derece> <sure_ms> | KAPAT | OKU | TEST");
+  Serial.println("Hazir. Komutlar: ROLE <ad> <0|1> | UC <indeks> <derece> <sure_ms> | KAPAT | OKU | TEST | HIZ <0-180>");
 #if TEST_ACILISTA
   testBasla();
 #endif
 }
 
 // ------------------------------------------------------------- UÇ SEÇİCİ --
-/* NEDEN AÇI KOMUTLA GELİYOR, ÖNCEDEN KAYDEDİLMİYOR
- *
- * İki biçim vardı: (a) `UC_ACI <indeks> <derece>` ile açıları önceden
- * karta bildirmek ve sonra `UC <indeks>` demek, (b) açıyı her komutta
- * taşımak. (b) seçildi, üç gerekçeyle:
- *
- * 1. KART SIFIRLANIYOR ve bu varsayım değil, ölçülen bir olgu: röle
- *    notunda yazılı olduğu gibi pompa çekişinde besleme çöküyor ve
- *    `calisma_sn` geriye gidiyor. (a) ile sıfırlama açı tablosunu
- *    sessizce siler; sonraki `UC 1` ya hiçbir şey yapmaz ya da eski bir
- *    açıya gider. Servoda geri besleme olmadığı için bunu yakalayacak
- *    hiçbir yol yok. Açı komutun içindeyse sıfırlama tabloyu
- *    bozamaz — bozulacak tablo yok.
- * 2. Kartın kendi ilkesi: "karar vermiyor, hiçbir şeyi hatırlamıyor".
- *    Açı tablosu tutmak kartı yapılandırma taşıyan bir cihaza çevirir ve
- *    "Pi'deki ayar ile karttaki tablo ayrışmış olabilir mi" diye yeni
- *    bir soru doğurur.
- * 3. Ayar değişince "tabloyu karta yeniden gönder" diye bir adım
- *    kalmıyor; unutulacak bir adım da kalmıyor.
- *
- * Bedeli komut başına birkaç bayt. Uç seçimi saatte birkaç kez oluyor.
- *
- * HAREKET SÜRESİ DE KOMUTLA. Aynı gerekçe: süre servonun ve mekanizmanın
- * özelliği, yani bir AYAR. Karta gömmek uydurma bir sabit yazmak olurdu.
- * Eksikse komut reddediliyor — sessizce bir varsayılana düşmek, panelde
- * "vardı" yazarken horn'un hâlâ yolda olması demekti. */
+/* Açı ve süre KOMUTLA geliyor, kartta saklanmıyor: kart pompa çekişinde
+ * sıfırlanıyor ve saklanan bir tablo sessizce silinirdi. Servoda geri
+ * besleme olmadığı için bunu yakalayacak hiçbir yol yok. */
 void ucKomut(int indeks, int derece, long sureMs) {
   /* Deneme kipi açıkken gelen gerçek bir uç komutu denemeyi kapatıyor:
-   * ikisi aynı servoyu sürüyor, açık bırakmak komutun üstüne deneme
-   * darbesi yazmak demekti. */
+   * ikisi aynı servoyu sürüyor. */
   if (testAcik) testDurdur();
   if (!ucTakili) { ucServo.attach(SERVO_PIN); ucTakili = true; }
   ucServo.write(derece);
@@ -271,9 +161,8 @@ void ucKomut(int indeks, int derece, long sureMs) {
   ucAci = derece;
   ucSureMs = (unsigned long)sureMs;
   ucKomutMs = millis();
-  /* VARIŞ ANINDA DEĞİL. Servo 90 dereceyi anında dönmüyor; komut yazıldığı
-   * anda "vardı" demek, Pi'nin ucu daha yoldayken iş başlatmasına izin
-   * verirdi. Süre dolana kadar `uc_hareket` 1 kalıyor. */
+  /* VARIŞ ANINDA DEĞİL. Komut yazıldığı anda "vardı" demek, Pi'nin ucu
+   * daha yoldayken iş başlatmasına izin verirdi. */
   ucHarekette = true;
 }
 
@@ -289,8 +178,7 @@ void ucGozet() {
  *   0  ileri, 90 derecelik süre        3  bekle
  *   1  bekle                           4  geri, iki katı süre (180 geri)
  *   2  ileri, 90 derecelik süre        5  bekle, sonra başa
- * `delay` yok: her adım "başlangıç anı + süre" ile bitiyor, aradaki her
- * turda sensör okuması ve seri komut işleme çalışmaya devam ediyor. */
+ * `delay` yok: her adım "başlangıç anı + süre" ile bitiyor. */
 void testAdimUygula() {
   if (!ucTakili) { ucServo.attach(SERVO_PIN); ucTakili = true; }
   switch (testAdim) {
@@ -314,14 +202,26 @@ void testBasla() {
   testAcik = true;
   testAdim = 0;
   /* UÇ BİLGİSİ ARTIK GEÇERSİZ. Deneme horn'u serbestçe döndürüyor; kartın
-   * "şu uç seçili" kaydı bu andan sonra horn'un gerçek yerini anlatmıyor.
-   * Eski değeri bırakmak, bilinmeyeni bilinen gibi göstermek olurdu —
-   * VERI satırında ikisi de null'a dönüyor. */
+   * "şu uç seçili" kaydı bu andan sonra horn'un gerçek yerini anlatmıyor. */
   ucSecili = -1;
   ucAci = -1;
   ucHarekette = false;
   testAdimUygula();
-  Serial.println("KOMUT: servo denemesi BASLADI (durdurmak icin tekrar TEST)");
+  Serial.print("KOMUT: servo denemesi BASLADI — ileri ");
+  Serial.print(yavasIleriHizi);
+  Serial.print(" (");
+  Serial.print(usDeger(yavasIleriHizi));
+  Serial.print(" us), geri ");
+  Serial.print(yavasGeriHizi);
+  Serial.print(" (");
+  Serial.print(usDeger(yavasGeriHizi));
+  Serial.println(" us). Durdurmak icin tekrar TEST");
+  /* 1500 us servonun durma noktası. Bu ikisi ona çok yakınsa servo
+   * komutu alır ama kımıldamaz — ölü bant. Sessizce beklememek için
+   * kartın kendisi söylüyor. */
+  if (usDeger(yavasIleriHizi) > 1460 && usDeger(yavasIleriHizi) < 1540) {
+    Serial.println("UYARI: ileri hizi 1500 us'e cok yakin — olu bantta olabilir, HIZ ile deneyin");
+  }
   sonOlcum = 0;
 }
 
@@ -329,6 +229,41 @@ void testDurdur() {
   testAcik = false;
   if (ucTakili) ucServo.write(durmaHizi);
   Serial.println("KOMUT: servo denemesi DURDU");
+  sonOlcum = 0;
+}
+
+/* Bir `write(derece)` değerinin kaç mikrosaniyelik darbeye karşılık
+ * geldiği. Arduino'nun Servo kütüphanesi 0..180'i 544..2400 us'e
+ * eşliyor — yani `write(90)` 1500 DEĞİL, 1472 us.
+ *
+ * BUNU YAZDIRIYORUZ çünkü sürekli dönüşlü servoda karar veren şey
+ * derece değil darbe genişliği: durma noktası 1500 us ve etrafında
+ * ölü bant var. "93 yazdım ama dönmedi"nin cevabı bu sayıda görünüyor,
+ * derecede görünmüyor. */
+int usDeger(int derece) {
+  return 544 + (int)((long)derece * (2400L - 544L) / 180L);
+}
+
+/** Servoyu doğrudan bir değerde tutar — ölü bandı elle bulmak için.
+ *
+ * NEDEN VAR: hız sabitleri derleme zamanında sabit; her denemede yeniden
+ * yüklemek gerekiyordu. Ölü bandın kenarı servodan servoya değişiyor ve
+ * ancak deneyerek bulunuyor. Bu komutla seri porttan süpürüp bulabilir,
+ * sonra bulduğunuz sayıyı yukarıdaki sabitlere yazabilirsiniz. */
+void hizYaz(int deger) {
+  if (testAcik) testDurdur();
+  if (!ucTakili) { ucServo.attach(SERVO_PIN); ucTakili = true; }
+  ucServo.write(deger);
+  /* UÇ BİLGİSİ GEÇERSİZ — elle sürmek horn'u bilinmeyen bir yere
+   * götürüyor, "şu uç seçili" kaydı artık doğruyu anlatmaz. */
+  ucSecili = -1;
+  ucAci = -1;
+  ucHarekette = false;
+  Serial.print("KOMUT: hiz ");
+  Serial.print(deger);
+  Serial.print(" (");
+  Serial.print(usDeger(deger));
+  Serial.println(" us) — durdurmak icin HIZ 90");
   sonOlcum = 0;
 }
 
@@ -351,7 +286,7 @@ void komutIsle(String komut) {
     roleYaz(SU_POMPASI_PIN, false);
     roleYaz(HAVA_POMPASI_PIN, false);
     Serial.println("KOMUT: hepsi kapatildi");
-    sonOlcum = 0;                 // yeni durum hemen bildirilsin
+    sonOlcum = 0;
     return;
   }
 
@@ -360,6 +295,14 @@ void komutIsle(String komut) {
   // Servo denemesini başlat/durdur. Ayarlar dosyanın başındaki blokta.
   if (buyuk == "TEST") {
     if (testAcik) testDurdur(); else testBasla();
+    return;
+  }
+
+  if (buyuk.startsWith("HIZ ")) {
+    // "HIZ 105" — servoyu o değerde tut. 90 = dur. Ölü bandı bulmak için.
+    int deger = komut.substring(komut.indexOf(' ') + 1).toInt();
+    if (deger < 0 || deger > 180) { Serial.println("HATA: HIZ 0-180"); return; }
+    hizYaz(deger);
     return;
   }
 
@@ -379,7 +322,6 @@ void komutIsle(String komut) {
     Serial.print("KOMUT: ");
     Serial.print(ad);
     Serial.println(durum ? " ACIK" : " KAPALI");
-    // Panelin düğmeyi beklemeden güncelleyebilmesi için hemen bildir.
     sonOlcum = 0;
     return;
   }
@@ -396,9 +338,9 @@ void komutIsle(String komut) {
     int indeks  = komut.substring(b1 + 1, b2).toInt();
     int derece  = komut.substring(b2 + 1, b3).toInt();
     long sureMs = komut.substring(b3 + 1).toInt();
-    /* SINIRLAR BURADA DA DENETLENİYOR. Pi zaten deniyor ama kart, seri
-     * porta elle yazılan bir komutu da alıyor (bring-up böyle yapılıyor)
-     * ve servoyu mekanik sınırının dışına sürmek dişliyi zorlar. */
+    /* SINIRLAR BURADA DA DENETLENİYOR: kart seri porta elle yazılan bir
+     * komutu da alıyor ve servoyu mekanik sınırının dışına sürmek dişliyi
+     * zorlar. */
     if (indeks < 0 || indeks > 2) { Serial.println("HATA: UC indeksi 0-2"); return; }
     if (derece < 0 || derece > 180) { Serial.println("HATA: UC derecesi 0-180"); return; }
     if (sureMs <= 0 || sureMs > 10000) {
@@ -411,7 +353,7 @@ void komutIsle(String komut) {
     Serial.print(" -> ");
     Serial.print(derece);
     Serial.println(" derece (gidiyor)");
-    sonOlcum = 0;                   // panel beklemeden görsün
+    sonOlcum = 0;
     return;
   }
 
@@ -454,26 +396,23 @@ void olcVeYaz() {
   Serial.print(",\"bmp_sicaklik\":");         sayiYaz(bmpSicaklik);
   Serial.print(",\"basinc\":");               sayiYaz(basinc);
   Serial.print(",\"rakim\":");                sayiYaz(rakim);
-  /* Hangi DHT bulundu — ajan makul aralığı buna göre seçiyor (DHT11 ile
-   * DHT22'nin çalışma aralıkları farklı) ve panel kartın altına yazıyor. */
-  Serial.print(",\"dht\":\"");                 Serial.print(dhtAdi);
-  Serial.print("\",\"toprak_nem\":");           Serial.print(analogRead(TOPRAK_PIN));
+  /* Hangi DHT bulundu — ajan makul aralığı buna göre seçiyor. */
+  Serial.print(",\"dht\":\"");                Serial.print(dhtAdi);
+  Serial.print("\",\"toprak_nem\":");         Serial.print(analogRead(TOPRAK_PIN));
   Serial.print(",\"r_su_pompasi\":");         Serial.print(suPompasiAcik ? 1 : 0);
   Serial.print(",\"r_hava_pompasi\":");       Serial.print(havaPompasiAcik ? 1 : 0);
-  /* UÇ SEÇİCİ — KOMUT EDİLEN DEĞER, ÖLÇÜM DEĞİL. Servoda geri besleme
-   * yok; bunlar kartın ne yazdığı, horn'un nerede olduğu değil. Hiç
-   * komut verilmediyse (açılış ya da sıfırlama) ikisi de null gidiyor:
-   * sıfır yazmak "0 numaralı uç seçili" demek olurdu ve bu, bilinmeyeni
-   * bilinen gibi göstermenin ta kendisi. */
+  /* UÇ SEÇİCİ — KOMUT EDİLEN DEĞER, ÖLÇÜM DEĞİL. Hiç komut verilmediyse
+   * ikisi de null gidiyor: sıfır yazmak "0 numaralı uç seçili" demek
+   * olurdu ve bu, bilinmeyeni bilinen gibi göstermenin ta kendisi. */
   Serial.print(",\"uc_secili\":");
   if (ucSecili < 0) Serial.print("null"); else Serial.print(ucSecili);
   Serial.print(",\"uc_aci\":");
   if (ucAci < 0) Serial.print("null"); else Serial.print(ucAci);
   // 1 = komut verildi ama hareket süresi dolmadı; horn hâlâ yolda.
-  Serial.print(",\"uc_hareket\":");          Serial.print(ucHarekette ? 1 : 0);
+  Serial.print(",\"uc_hareket\":");           Serial.print(ucHarekette ? 1 : 0);
   /* Kartın açık kaldığı süre. Geriye giderse kart yeniden başlamıştır ve
    * röleler kapanmıştır — pompa çekişinde besleme çökerse tam bunu
-   * görüyoruz. Panel sebebi adıyla söyleyebilsin diye gönderiliyor. */
+   * görüyoruz. */
   Serial.print(",\"calisma_sn\":");           Serial.print(millis() / 1000UL);
   Serial.println("}");
 }
