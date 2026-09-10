@@ -5630,15 +5630,40 @@ function kalibrasyonCiz(d) {
       `<td><input type="text" inputmode="decimal" class="kalib-girdi" `
       + `data-eksen="${e}" data-alan="${alan}" `
       + `value="${deger == null ? "" : deger}"></td>`;
+    /* YÖN AÇILIR LİSTE, metin kutusu DEĞİL.
+     *
+     * İki sebep. Birincisi: tabloda yön "−1" diye yazılıyordu ve o
+     * karakter eksi işareti (U+2212), ASCII tire değil — kullanıcı onu
+     * kopyalayıp yapıştırsa `Number("−1")` NaN veriyor ve alan sessizce
+     * boş sayılıyordu. İkincisi: yönün yalnız iki geçerli değeri var,
+     * serbest metin kutusu olmayan bir üçüncüyü yazmayı davet ediyor.
+     *
+     * `kalib-girdi` sınıfı duruyor: toplayıcı ve "elle girilen" izi
+     * `.value` okuyor, `select` de aynı arayüzü veriyor. */
+    const yonKutu = (eks, deger) => {
+      const eksi = Number(deger) < 0;
+      return `<td><select class="kalib-girdi" data-eksen="${eks}" `
+        + `data-alan="dir" title="Sayacın arttığı yön">`
+        + `<option value="1"${eksi ? "" : " selected"}>+1</option>`
+        + `<option value="-1"${eksi ? " selected" : ""}>−1</option>`
+        + `</select></td>`;
+    };
     // T KURULMAMIŞSA SATIR YİNE DURUYOR ve "kurulmadı" diyor: gizlemek,
     // dördüncü eksenin varlığını saklamak olurdu.
     const kurulmamis = !(sayi(c.cpm, 4) > 0);
     // Etiket TEK HARF: ilk sütun dar ve "T tohum ucu" cpm sütununun
     // üstüne biniyordu. Ne olduğu `title`da ve yardım metninde.
-    return `<tr${kurulmamis ? ' class="etkisiz"' : ""}><td${
+    /* KURULMAMIŞ SATIR SOLUK AMA DÜZENLENEBİLİR.
+     *
+     * Burada genel `etkisiz` sınıfı vardı ve o sınıf `pointer-events:
+     * none` uyguluyor — satır tıklanamıyordu. cpm/dir salt metinken
+     * zararsızdı; ikisi hücre olunca tam ters etki yapardı: kalibre
+     * EDİLMEMİŞ ekseni kurmanın yeri o satır, ve orası kilitliyse eksen
+     * panelden hiç kurulamaz. Kendi sınıfı yalnız soluklaştırıyor. */
+    return `<tr${kurulmamis ? ' class="kalib-kurulmamis"' : ""}><td${
       e === "t" ? ' title="Tohum ucunun kendi dikey ekseni (PLC\'de j4)"' : ""
     }><b>${e.toUpperCase()}</b></td>
-      <td>${sayi(c.cpm, 4)}</td><td>${c.dir > 0 ? "+1" : "−1"}</td>
+      ${kutu("cpm", c.cpm == null ? "" : sayi(c.cpm, 4))}${yonKutu(e, c.dir)}
       ${kutu("home", c.home)}${kutu("min", s.min)}${kutu("max", s.max)}</tr>`;
   }).join("");
   // Elle girilmiş kutuları geri koy ve yenilerini izlemeye al.
@@ -5688,7 +5713,8 @@ async function eksenKalibGonder() {
         const s = Number(v);
         return Number.isFinite(s) ? s : null;
       };
-      return { home: al("home"), min: al("min"), max: al("max") };
+      return { cpm: al("cpm"), dir: al("dir"),
+               home: al("home"), min: al("min"), max: al("max") };
     });
     const uyariKutu = $("#kalib-hata");
     if (uyariKutu) { uyariKutu.textContent = ""; uyariKutu.classList.add("gizli"); }

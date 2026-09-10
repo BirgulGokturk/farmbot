@@ -2368,6 +2368,15 @@ input.hatali {
   pointer-events: none;
 }
 
+/* KALİBRE EDİLMEMİŞ EKSEN SATIRI — soluk, ama TIKLANABİLİR.
+   Genel `.etkisiz` burada kullanılamaz: o `pointer-events: none` veriyor
+   ve satırı tamamen kilitliyor. Oysa kurulmamış eksenin kurulacağı yer
+   tam da o satır; kilitlemek, kullanıcıyı Pi'de `gantry_calib.json`
+   düzenlemeye mecbur bırakırdı. Girdiler tam opaklıkta: soluk olan
+   "henüz kurulmadı" bilgisi, yazacağınız sayı değil. */
+.kalib-kurulmamis { opacity: .62; }
+.kalib-kurulmamis .kalib-girdi { opacity: 1; }
+
 /* ===================================================== KAMERA SEKMESİ
    İki kamera YAN YANA ve ikisi de canlı. Sol yarı sabit üst kamera, sağ
    yarı uç kamerası.

@@ -1510,7 +1510,14 @@ class Gantry:
     #: MESAFE gitmek demek ve panelden yanlışlıkla değiştirilmesi çok
     #: pahalı. Onlar Gantry Studio ölçümünden geliyor ve dosyadan
     #: düzenleniyor.
-    DUZENLENEBILIR_KALIB = ("home", "min", "max")
+    #: Panelden düzenlenebilen kalibrasyon alanları.
+    #:
+    #: `cpm` ve `dir` BİR SÜRE BURADA YOKTU: panel ikisini salt metin
+    #: gösteriyordu, değiştirmek için Pi'de `gantry_calib.json` elle
+    #: düzenlenip ajan yeniden başlatılıyordu. Oysa ikisi de sahada
+    #: ölçülen sayılar — `cpm` bir tur ölçümüyle, `dir` ise ekseni
+    #: sürüp hangi yöne gittiğine bakarak bulunuyor.
+    DUZENLENEBILIR_KALIB = ("cpm", "dir", "home", "min", "max")
 
     def kalibrasyon_kaydet(self, yeni: list[dict[str, Any]]) -> str:
         """Panelden gelen home/min/max değerlerini doğrular ve uygular.
@@ -1535,6 +1542,26 @@ class Gantry:
                     deger = float(gelen[alan])
                 except (TypeError, ValueError):
                     raise PLCHatasi(f"{EKSENLER[i]['ad']} {alan} sayı olmalı") from None
+                # HER ALANIN KENDİ ARALIĞI VAR. Genel -10000..10000
+                # kuralı `home/min/max` için doğru, ötekiler için değil:
+                # `cpm` sıfır ya da negatif olamaz (konum `sayaç / cpm`
+                # ile hesaplanıyor — sıfır sıfıra bölme, negatif ise
+                # ekseni ters okumak demek), `dir` ise yalnız +1 ya da
+                # -1 olabilir.
+                if alan == "cpm":
+                    if not 0.0001 <= deger <= 100000.0:
+                        raise PLCHatasi(
+                            f"{EKSENLER[i]['ad']} cpm sıfırdan büyük olmalı "
+                            f"(sayım/mm). Konum sayacı buna bölünüyor.")
+                    temiz[i][alan] = round(deger, 4)
+                    continue
+                if alan == "dir":
+                    if deger not in (1.0, -1.0):
+                        raise PLCHatasi(
+                            f"{EKSENLER[i]['ad']} dir yalnız +1 ya da -1 "
+                            f"olabilir (eksenin sayaç yönü).")
+                    temiz[i][alan] = int(deger)
+                    continue
                 if not -10000.0 <= deger <= 10000.0:
                     raise PLCHatasi(f"{EKSENLER[i]['ad']} {alan} makul aralıkta değil")
                 temiz[i][alan] = round(deger, 2)
@@ -1557,8 +1584,15 @@ class Gantry:
             # eksen sürülür, zaman aşımına kadar beklenir ve "ulaşamadı"
             # denir. Sahada tam bu yaşandı — Z'nin max'ı 550 yazıyordu ama
             # home 414.23 olduğu için 135 mm'lik bölge ulaşılamazdı.
-            k = self.kalib[i]
-            yon = float(k.get("dir", 1))
+            # YÖN `temiz`TEN OKUNUYOR, `self.kalib`ten DEĞİL.
+            #
+            # Burada eski kalibrasyon okunuyordu ve `dir` düzenlenemez
+            # olduğu sürece ikisi hep aynıydı. `dir` panele açılınca bu
+            # satır sessizce yanlışa dönüyordu: kullanıcı yönü ve
+            # sınırları aynı kaydeta değiştirdiğinde denetim ESKİ yöne
+            # göre çalışıp doğru bir kaydı reddeder ya da yanlış bir
+            # kaydı geçirirdi.
+            yon = float(temiz[i].get("dir", 1))
             ev = float(temiz[i]["home"])
             if yon < 0 and float(temiz[i]["max"]) > ev + 0.01:
                 raise PLCHatasi(
