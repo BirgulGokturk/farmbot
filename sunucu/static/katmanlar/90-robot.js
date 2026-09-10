@@ -38,6 +38,10 @@ Tarla.katman({
     // boşsa imza aynı olsa da yeniden kurmak gerekiyor.
     if (imza !== this._imza || !o.grup.children.length) {
       this._imza = imza;
+      /* Dalış döngüsü ESKİ gruba yazıyor. Grup atılınca döngü sahnede
+       * olmayan bir nesnenin y'sini sürer ve prob yeni geometride
+       * dinlenmede kalırdı; iptal ediliyor. */
+      if (this._dalis) { cancelAnimationFrame(this._dalis); this._dalis = null; }
       o.bosalt(o.grup);
       // Sulama başlığının ofseti uclar.json'dan; sulama hesabıyla AYNI
       // sayı. Ayrı yazsaydık sahnede su bir yere, gerçekte başka yere
@@ -118,10 +122,24 @@ Tarla.katman({
      *   - sulama başlığı: pompa rölesi (`r_su_pompasi`). Röle yalnız
      *     "akıyor / akmıyor" diyor; ayrı ekseni yok, düşme miktarı
      *     ölçüm değil gösterim kuralı (makine.js).
-     *   - nem probu: SİNYAL YOK. Kendi ekseni yok ve durum paketinde
-     *     "prob ölçüyor" bayrağı geçmiyor (ajan/plc.py'de yalnız
-     *     X, Y, Z, T var). Uydurma bir durum üretmek yerine sabit
-     *     duruyor; `suDurumu().nemSinyali` bunu söylüyor. */
+     *   - nem probu: KENDİ EKSENİ YOK, ama ölçümün KENDİSİ bir kayıt
+     *     bırakıyor. `ajan/plc.py`de yalnız X/Y/Z/T var, "prob
+     *     ölçüyor" diye bir bayrak yok; buna karşılık sunucu her nem
+     *     ölçümünü `nem_ts` damgasıyla deftere yazıyor
+     *     (`main.py` `_nem_olc_baslat` → prob daldırılıp okunuyor) ve
+     *     panel bunları `VERI.okumalar` listesinde tutuyor. Yeni bir
+     *     damga göründüğünde prob kısa bir dalış oynatıyor: hareket
+     *     GERÇEKTEN OLMUŞ bir ölçümün karşılığı, uydurma bir durum
+     *     değil. İki sınırı açıkça yazıyoruz, çünkü ikisi de gösterimi
+     *     ölçüm sanmaya yol açar:
+     *       · GECİKMELİ. `tarla.js` `yanVeriTazele` bu listeyi 20
+     *         saniyede bir çekiyor, yani dalış ölçümün üstünden 20
+     *         saniyeye kadar sonra oynayabiliyor. Canlı bir gösterge
+     *         değil, olmuş bir ölçümün tekrarı.
+     *       · DERİNLİK ÖLÇÜM DEĞİL. Ne kadar indiği `aktifDusme`
+     *         gösterim kuralından geliyor; probun gerçekte kaç mm
+     *         daldığını hiçbir yer söylemiyor.
+     *     `suDurumu().nemSinyali` ikisini de yazıyor. */
     const secici = ((o.veri.durum.uc || {}).secici) || {};
     const secili = secici.secili_bas || null;
     const dinlenme = Number(u.basY || 0);
@@ -141,7 +159,32 @@ Tarla.katman({
      * başına geri çıkmaz, aşağıda kalırdı ve sahnede iki inmiş başlık
      * görünürdü — ajan bir başlık inmişken ikincisini indirmeye izin
      * vermiyor, model de öyle göstermeyecek. */
+    /* YENİ NEM ÖLÇÜMÜ GELDİ Mİ. Ölçüt en yeni damga: liste 24 saatlik
+     * pencereyi taşıyor, uzunluğuna bakmak eski kayıtlar düştüğünde de
+     * değişir ve olmamış bir ölçümü olmuş gösterirdi. */
+    const nemTs = (o.veri.okumalar || []).reduce(
+      (e, k) => Math.max(e, Number(k.ts) || 0), 0);
+    if (this._nemTs == null) {
+      /* İLK PAKET YALNIZ KAYDEDİLİYOR. Sayfa açılır açılmaz dünkü bir
+       * okumayla dalış oynatmak, o an olmayan bir hareketi göstermek
+       * olurdu. */
+      this._nemTs = nemTs;
+    } else if (nemTs > this._nemTs) {
+      this._nemTs = nemTs;
+      this._nemDalisBasla(o);
+    }
+    /* İnişi YALNIZ seçili başlığa uyguluyoruz. Ötekilerin y'sini de her
+     * karede dinlenmeye yazıyoruz: seçim değişince eski başlık kendi
+     * başına geri çıkmaz, aşağıda kalırdı ve sahnede iki inmiş başlık
+     * görünürdü — ajan bir başlık inmişken ikincisini indirmeye izin
+     * vermiyor, model de öyle göstermeyecek.
+     *
+     * DALIŞ SÜRERKEN NEM PROBUNA DOKUNULMUYOR: onu `_nemDalisBasla`
+     * döngüsü sürüyor ve durum paketi araya girip probu dinlenmeye
+     * çekerse dalış görünmez olurdu (paketler saniyede birkaç kez
+     * geliyor, dalış 900 ms). */
     Object.keys(basGrup).forEach((ad) => {
+      if (ad === "nem" && this._dalis) return;
       basGrup[ad].position.y = dinlenme - (ad === secili ? inisMm : 0);
     });
 
@@ -226,6 +269,26 @@ Tarla.katman({
                   z: +(yer[ad].z * 1000).toFixed(1) };
         return a;
       }, {}),
+      /* AYNI NOKTAYA DÜŞEN BAŞLAR. Üç başlık üç AYRI yerde duruyor;
+       * ikisinin dx/dy'si aynıysa modelde üst üste biniyorlar ve
+       * sahnede iki başlık yerine bir başlık görünüyor. Bu bir çizim
+       * hatası DEĞİL, ayarın söylediği şey — sahadaki `uclar.json`da
+       * ölçülmüş tek kayma sulamanınki (60/60); nem ve tohum ikisi de
+       * 0/0 duruyor, yani ölçülmemişler. Sayıyı burada düzeltmek
+       * (makineye ait olan) ayarı uydurmak olurdu; onun yerine
+       * söylüyoruz. Boş liste = üçü ayrı yerde. */
+      cakisanBaslar: (() => {
+        const adlar = Object.keys(yer), ciftler = [];
+        for (let i = 0; i < adlar.length; i++) {
+          for (let j = i + 1; j < adlar.length; j++) {
+            const a = yer[adlar[i]], b = yer[adlar[j]];
+            if (Math.hypot(a.x - b.x, a.z - b.z) < 1e-6) {
+              ciftler.push(adlar[i] + "+" + adlar[j]);
+            }
+          }
+        }
+        return ciftler;
+      })(),
       // Üçünü birleştiren taşıyıcı plaka (mm) — başlar plakaya sığıyor mu.
       plakaMm: pl.x1 == null ? null
         : { en: +((pl.x2 - pl.x1) * 1000).toFixed(1),
@@ -239,10 +302,14 @@ Tarla.katman({
       inmisMm: inmisMm,
       aktifDusmeMm: u.aktifDusme == null
         ? null : +(u.aktifDusme * 1000).toFixed(1),
-      /* NEM PROBUNUN KENDİ SİNYALİ YOK. Probun ayrı bir ekseni yok ve
-       * durum paketinde "prob ölçüyor" diye bir bayrak geçmiyor; ölçüm
-       * ana Z ile daldırılarak yapılıyor. Prob bu yüzden sabit duruyor. */
-      nemSinyali: "yok — probun kendi ekseni ve durum bayrağı yok",
+      /* NEM PROBU — KAYITTAN TETİKLENEN GÖSTERİM. Probun ayrı bir ekseni
+       * ve durum bayrağı yok; dalış, sunucunun yazdığı `nem_ts`
+       * damgasından tetikleniyor. Denemede bu üç alan ölçümün kendisiyle
+       * karıştırılmasın diye ayrı ayrı duruyor. */
+      nemSinyali: "dolaylı — ölçüm kaydının nem_ts damgası "
+        + "(20 sn'de bir çekiliyor; derinlik gösterim kuralı)",
+      nemSonTs: this._nemTs == null ? null : this._nemTs,
+      nemDalisiSuruyor: !!this._dalis,
       /* DÖNME YOK. Servo başlıkları taşımıyor, yalnız sırası geleni
        * indiriyor; üçü de kendi sabit yerinde çizili. */
       donme: "yok — servo yalnız sırası gelen başlığı indiriyor",
@@ -252,6 +319,51 @@ Tarla.katman({
       saydamlik: +p.su.material.opacity.toFixed(3),
       dongu: !!this._akis,
     };
+  },
+
+  /** Nem probunun kısa dalışı — bir ölçüm KAYDEDİLDİĞİNDE oynuyor.
+   *
+   * Su akışıyla aynı gerekçeyle kendi döngüsü var: `guncelle` yalnız
+   * durum paketi geldiğinde koşuyor ve dalış 900 ms'lik bir hareket;
+   * paketlere bırakılırsa prob ya hiç kıpırdamaz ya da zıplar.
+   *
+   * Döngü kendini kapatıyor ve bitince probu DİNLENMEYE geri yazıyor:
+   * yarıda kalan bir dalış, inmiş bir prob gibi görünür ve "şu an
+   * ölçüyor" diye okunurdu.
+   */
+  _nemDalisBasla(o) {
+    const p = this._p;
+    if (!p || !p.ucKafa) return;
+    const u = p.ucKafa.userData || {};
+    const g = (u.basGrup || {}).nem;
+    if (!g) return;
+    if (this._dalis) cancelAnimationFrame(this._dalis);
+    const dinlenme = Number(u.basY || 0);
+    /* DERİNLİK ÖLÇÜM DEĞİL — inmiş başın gösterim düşmesiyle aynı sayı
+     * (makine.js `aktifDusme`). Probun gerçekte kaç mm daldığını
+     * hiçbir yer söylemiyor; ayrı bir sayı uydurmak, iki farklı
+     * uydurma sayı tutmak olurdu. */
+    const derin = Number(u.aktifDusme || 0);
+    const SURE = 900;                  // in → bekle → çık, ms
+    const basla = (typeof performance !== "undefined" ? performance : Date).now();
+    const kare = () => {
+      const t = ((typeof performance !== "undefined" ? performance : Date).now()
+                 - basla) / SURE;
+      if (t >= 1) {
+        g.position.y = dinlenme;
+        this._dalis = null;
+        o.kirlet && o.kirlet("nem-dalisi-bitti");
+        return;
+      }
+      // 0…0,30 iniyor · 0,30…0,70 toprakta bekliyor · 0,70…1 çıkıyor.
+      // Bekleme boşuna değil: gerçek ölçüm de probun oturmasını bekliyor
+      // (sunucu `nem_bekleme_sn`).
+      const f = t < 0.3 ? t / 0.3 : (t < 0.7 ? 1 : (1 - t) / 0.3);
+      g.position.y = dinlenme - derin * Math.max(0, Math.min(1, f));
+      o.kirlet && o.kirlet("nem-dalisi");
+      this._dalis = requestAnimationFrame(kare);
+    };
+    this._dalis = requestAnimationFrame(kare);
   },
 
   /** Huzmeyi akar gösteren döngü.
