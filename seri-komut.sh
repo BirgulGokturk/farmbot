@@ -52,7 +52,12 @@ if systemctl is-active --quiet farmbot-ajan; then
     sleep 1
 fi
 
-stty -F "$PORT" 9600 raw -echo
+# -hupcl: son dosya tanimlayici kapaninca DTR DUSMESIN. Asagida komutu
+# yazarken port ikinci kez acilip kapaniyor; DTR duserse Uno SIFIRLANIR ve
+# gonderdigimiz komut daha etkisini gostermeden kart bastan baslar. Boyle
+# bir sifirlanmayi "servo cekince besleme cokuyor" saniriz -- olcumu
+# betigin kendisi bozmasin.
+stty -F "$PORT" 9600 raw -echo -hupcl
 
 CIKTI="$(mktemp)"
 temizle() { rm -f "$CIKTI"; }
