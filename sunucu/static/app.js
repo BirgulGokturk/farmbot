@@ -1059,7 +1059,7 @@ function tohumUcuYaz(d) {
   $$('.jog[data-eksen="t"]').forEach((b) => { b.disabled = kilit; });
 }
 
-/* ================================================== UÇ SEÇİCİ SERVO (D9)
+/* ================================================= UÇ SEÇİCİ SERVO (D12)
  *
  * BURADA GÖRÜNEN ŞEY KOMUT EDİLEN DEĞER, ÖLÇÜM DEĞİL. Servoda geri
  * besleme yok: kart ne yazdığını bilir, horn'un nerede olduğunu bilmez.

@@ -41,11 +41,21 @@
  * pompayı çalıştırmak bobini BIRAKMAK demek, çekmek değil. */
 #define ROLE_AKTIF_LOW 0
 
-/* SERVO SİNYALİ D10'DA. D9'dan alındı — o hatta ara ara kopan bir bağlantı
- * vardı. Servo kütüphanesi Uno'da Timer1 kullanıyor ve zaten hem D9 hem
- * D10'daki `analogWrite` PWM'ini devre dışı bırakıyor; ikisi de eşit
- * derecede uygun, taşımanın yan etkisi yok. */
-#define SERVO_PIN      10
+/* SERVO SİNYALİ D12'DE. Sırasıyla D9 -> D10 -> D12 diye taşındı; her
+ * taşımada kablo gitti, YAZILIM BİR ADIM GERİDE KALDI ve belirtisi hep aynı
+ * oldu: kart komutu kabul ediyor, süpürmeyi başlatıyor, servo kımıldamıyor.
+ * Çünkü kart o sırada BOŞ BİR PİNİ sürüyordu.
+ *
+ * BU SAYI KABLONUN NEREDE OLDUĞUNU SÖYLER, BAŞKA HİÇBİR ŞEYİ. Servo
+ * kütüphanesi Uno'da herhangi bir dijital pini sürebiliyor (zamanlamayı
+ * Timer1'den alıyor, pinin donanım PWM'inden değil), o yüzden 12'nin
+ * seçilmesinin bir bedeli yok. D12 burada başka hiçbir şeye bağlı değil.
+ *
+ * DEĞİŞTİRİRKEN: `firmware/servo_testi/servo_testi.ino` içindeki SERVO_PIN
+ * de aynı anda değişmeli. İkisi ayrı düşerse deneme sketch'i kopuk hattı
+ * sürer ve "kullanıcının kendi kodunda da dönmedi, demek donanım bozuk"
+ * gibi YANLIŞ bir sonuç üretir. */
+#define SERVO_PIN      12
 
 /* ---------------------------------------------------- SERVO DENEME KİPİ --
  * KONUMLU SERVO. `write(derece)` horn'u o açıya sürer ve orada tutar;
@@ -252,30 +262,38 @@ void ucGozet() {
  * "acaba çevirirken mi bozdum" sorusunu doğurdu. Artık o soru yok.
  *
  * BEDELİ BİLEREK KABUL EDİLDİ: `delay` kullanıyor. Deneme AÇIKKEN kart bir
- * tur boyunca (~5,7 sn) başka hiçbir şey yapmaz — sensör satırı gelmez,
+ * tur boyunca (~10,1 sn) başka hiçbir şey yapmaz — sensör satırı gelmez,
  * seri komut işlenmez, dolayısıyla `TEST 0` ancak turun sonunda görülür.
  * Deneme KAPALIYKEN hiçbir etkisi yok; bu yüzden döngü ana `loop`a
- * gömülmedi, `testAcik` kapısının arkasında duruyor. */
+ * gömülmedi, `testAcik` kapısının arkasında duruyor.
+ *
+ * TUR SÜRESİ AŞAĞIDAKİ SATIRLARDAN ÇIKIYOR, sabit değil:
+ *     0->85 @5ms = 425 ms   +  delay(1000)
+ *    85->180 @50ms = 4750 ms +  delay(1000)
+ *   180->0 @5ms = 900 ms     +  delay(2000)
+ *   toplam ~10.075 ms
+ * Açıları ya da adım gecikmesini değiştirirseniz bu sayı da değişir ve
+ * dosyadaki "~10,1 sn" ifadeleri eskir. */
 
 // ---- kullanıcının kodu: BAŞLANGIÇ -----------------------------------
 void testDongusu() {
   // Move to 90 degrees with a 20ms step delay (medium speed)
-  moveToAngle(90, 5);
+  moveToAngle(85, 5); 
   delay(1000);
 
   // Move to 180 degrees with a 50ms step delay (slower speed)
-  moveToAngle(180, 5);
+  moveToAngle(180, 50); 
   delay(1000);
 
   // Return to 0 degrees quickly with a 5ms step delay
-  moveToAngle(0, 5);
+  moveToAngle(0, 5); 
   delay(2000);
 }
 
 // Function to move to target angle with speed control
 void moveToAngle(int targetAngle, int stepDelay) {
   int step = (targetAngle > currentAngle) ? 1 : -1;
-
+  
   while (currentAngle != targetAngle) {
     currentAngle += step;
     myServo.write(currentAngle);
@@ -307,7 +325,7 @@ void testBasla() {
   ucAci = currentAngle;
   ucHarekette = false;
   Serial.println(F("KOMUT: servo denemesi BASLADI — 90, 180, 0 turu. Durdurmak icin TEST 0"));
-  Serial.println(F("       (deneme acikken kart tur basina ~5,7 sn sessiz kalir)"));
+  Serial.println(F("       (deneme acikken kart tur basina ~10,1 sn sessiz kalir)"));
   sonOlcum = 0;
 }
 
@@ -330,7 +348,7 @@ void testDurdur() {
 
 /** Turun başına ve sonuna birer imza atar — deneme kipinin tek penceresi.
  *
- *  Deneme açıkken kart bir tur boyunca (~5,7 sn) susuyor ve o sessizlikte
+ *  Deneme açıkken kart bir tur boyunca (~10,1 sn) susuyor ve o sessizlikte
  *  birbirinden çok farklı üç durum aynı görünüyordu: tur hiç başlamadı,
  *  tur döndü ama horn kımıldamadı, tur ortasında kart sıfırlandı. Sahada
  *  tam üçüncüsü bir kez yaşandı — süpürme başladı, bir derece adımladı,
@@ -593,7 +611,7 @@ void olcVeYaz() {
 void loop() {
   seriOku();
   ucGozet();
-  /* DENEME AÇIKSA KULLANICININ TURU ÇALIŞIR. Bir tur ~5,7 sn sürüyor ve
+  /* DENEME AÇIKSA KULLANICININ TURU ÇALIŞIR. Bir tur ~10,1 sn sürüyor ve
    * `delay` içerdiği için o sürede `seriOku` ile ölçüm çalışmıyor; tur
    * bitince sıra onlara geliyor. Deneme kapalıyken maliyeti bir
    * karşılaştırma. */
@@ -606,10 +624,10 @@ void loop() {
      * ÇIKTININ OKUNUŞU:
      *   "basliyor" var, "bitti" yok, ardından açılış banner'ı
      *       -> kart tur ORTASINDA SIFIRLANDI: besleme çöküyor.
-     *   "basliyor" ve "bitti" var, arada ~5700 ms
+     *   "basliyor" ve "bitti" var, arada ~10100 ms
      *       -> döngü sonuna kadar çalıştı, kart darbeyi üretiyor.
      *          Horn buna rağmen kımıldamıyorsa arıza kartın ÇIKIŞINDAN
-     *          sonrasında: D10 hattı, GND ortaklığı, servo.
+     *          sonrasında: D12 hattı, GND ortaklığı, servo.
      *   hiç "TUR:" yok
      *       -> `testAcik` kurulmadı; komut karta ulaşmamış demektir. */
     turNo++;
