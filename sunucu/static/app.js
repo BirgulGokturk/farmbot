@@ -4600,9 +4600,23 @@ function servoTestSenkron(o) {
   dugme.disabled = false;
   dugme.classList.toggle("acik", acik);
   dugme.textContent = acik ? "■ Durdur" : "▶ Başlat";
-  durum.textContent = acik
+  /* GÜÇ DURUMU DA YAZILIYOR. Servo hedefe varınca kart sinyali kesiyor
+   * (`detach`) — 0 dışındaki açılarda sürekli tork uygulanması, ısınma
+   * ve titreme bu yüzdendi. Ama güç kesikken TUTMA TORKU DA YOK: horn'a
+   * dışarıdan bir kuvvet binerse kayar ve kart bunu göremez, `uc_aci`
+   * komut edilen değeri göstermeye devam eder. Kullanıcının bu ikisini
+   * ayırt edebilmesi için hâl yazılı.
+   *
+   * Alan hiç gelmiyorsa (kartta eski firmware) hiçbir şey yazmıyoruz:
+   * "güç açık" diye varsaymak, bilmediğimizi bilinen gibi göstermek. */
+  const guc = o.servo_guc;
+  const gucYazi = guc === undefined || guc === null
+    ? ""
+    : (Number(guc) === 1 ? " · güç açık (horn tutuluyor)"
+                         : " · güç kesik (horn serbest)");
+  durum.textContent = (acik
     ? "açıları süpürüyor — uç konumu bilinmez oluyor"
-    : "kapalı";
+    : "kapalı") + gucYazi;
 }
 
 //: Arduino'nun sürdüğü röleler. Panelin komut adları da bunlar; kart

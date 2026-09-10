@@ -102,6 +102,36 @@
  * Değerleri buraya sabit olarak çıkarmak kodu "aynen" olmaktan
  * çıkarırdı; iki yerde iki gerçek olmasındansa tek yerde duruyorlar. */
 
+/* ------------------------------------------------ SERVO GÜCÜ KESİLİYOR --
+ * SERVO HEDEFE VARINCA SİNYAL DURUYOR (`detach`), yani horn'a tork
+ * uygulanmıyor.
+ *
+ * NEDEN: `attach` bir kez yapılıp hiç bırakılmıyordu. Konumlu servo,
+ * darbe geldiği sürece hedefi TUTMAYA çalışır — mekanik olarak zaten
+ * oradaysa bile. Sonucu 0 dışındaki her açıda sürekli akım, ısınma ve
+ * titreme oluyordu. Kullanıcının gözlemi buydu.
+ *
+ * BEDELİ: güç kesilince TUTMA TORKU DA KALKIYOR. Horn'a yay ya da
+ * ağırlık biniyorsa yerinden kayar ve kart bunu göremez — geri besleme
+ * yok, kart yalnız ne komut ettiğini biliyor. Bu kabul edilerek
+ * yapıldı; mekanizma ağırlık taşımıyorsa sorun değil, taşıyorsa
+ * SERVO_GUC_KES 0 yapılıp eski davranışa dönülür.
+ *
+ * DENEME KİPİ MUAF: `testDongusu` sürekli yeni açı yazıyor ve o
+ * kullanıcının kodu — arasına güç kesmesi giremez. Deneme kapanınca
+ * (`TEST 0`) kesme planlanıyor. */
+#define SERVO_GUC_KES 1
+
+/* Komut edilen hareket süresi dolduktan SONRA ne kadar beklenip
+ * kesileceği. Kart "vardı" derken eksen hâlâ yavaşlıyor olabiliyor;
+ * tam o anda gücü kesmek, horn'u hedefin biraz berisinde bırakırdı. */
+#define SERVO_OTURMA_PAYI_MS 300
+
+/* `ACI` ve `US` komutlarında hareket süresi GELMİYOR (`UC`de geliyor).
+ * En kötü hâl 0'dan 180'e tam yol: mikro servoda ~600 ms. 900 ms o
+ * yolun üstünde kalıyor. */
+#define SERVO_YOL_MS 900
+
 #define OLCUM_ARALIGI_MS 2000
 
 // --------------------------------------------------------------- DURUM ----
@@ -130,6 +160,8 @@ bool ucTakili = false;
 int ucSecili = -1;              // komut edilen uç indeksi; -1 = bilinmiyor
 int ucAci = -1;                 // komut edilen derece; -1 = bilinmiyor
 bool ucHarekette = false;
+/* Gücün kesileceği an (millis). 0 = bekleyen kesme yok. */
+unsigned long servoKesMs = 0;
 unsigned long ucKomutMs = 0;
 unsigned long ucSureMs = 0;     // hareket süresi — KOMUTLA geliyor
 
@@ -149,6 +181,12 @@ void moveToAngle(int targetAngle, int stepDelay);  // testDongusu bundan once ta
 void testDongusu();
 int  usDeger(int derece);   // testBasla bunu kendinden ONCE cagiriyor
 void testBasla();   // setup, TEST_ACILISTA 1 iken bunu çağırıyor
+/* Servo gücü yardımcıları: `ucKomut` bunları kendilerinden ÖNCE
+ * çağırıyor (dosyada aşağıda tanımlılar). */
+void servoTak();
+void servoGucKes();
+void servoKesPlanla(unsigned long bekleme);
+void servoGucGozet();
 /* KULLANICININ DEĞİŞKENİ, AYNEN. `moveToAngle` bunu okuyup yazıyor. */
 int currentAngle = 0; // Tracks current servo position
 
@@ -228,8 +266,12 @@ void ucKomut(int indeks, int derece, long sureMs) {
   /* Deneme kipi açıkken gelen gerçek bir uç komutu denemeyi kapatıyor:
    * ikisi aynı servoyu sürüyor. */
   if (testAcik) testDurdur();
-  if (!ucTakili) { ucServo.attach(SERVO_PIN); ucTakili = true; }
+  servoTak();
   ucServo.write(derece);
+  /* HAREKET SÜRESİ DOLUNCA GÜÇ KESİLECEK. Süre komutla geliyor ve
+   * ajan da işi o süre dolana kadar başlatmıyor; üstüne oturma payı
+   * ekleniyor çünkü kart "vardı" derken eksen hâlâ yavaşlıyor olabilir. */
+  servoKesPlanla((unsigned long)sureMs + SERVO_OTURMA_PAYI_MS);
   /* DENEMENİN BAŞLANGIÇ NOKTASI DA GÜNCELLENİYOR. `currentAngle` horn'un
    * nerede olduğuna dair kartın tek kaydı ve `moveToAngle` adım yönünü
    * ondan hesaplıyor. Burada güncellenmediği sürece şu oluyordu: panelden
@@ -246,6 +288,48 @@ void ucKomut(int indeks, int derece, long sureMs) {
   /* VARIŞ ANINDA DEĞİL. Komut yazıldığı anda "vardı" demek, Pi'nin ucu
    * daha yoldayken iş başlatmasına izin verirdi. */
   ucHarekette = true;
+}
+
+/** Servoyu takar (gerekiyorsa) — her açı yazan yol buradan geçiyor.
+ *
+ *  SIRA ÖNEMLİ: `attach` darbe genişliğini 1500 us'e (yaklaşık 90
+ *  dereceye) kuruyor. Bu yüzden çağıran her yer HEMEN ardından kendi
+ *  açısını yazıyor; kütüphane ilk darbeyi bir sonraki zamanlayıcı
+ *  kesmesinde üretiyor, yani araya 90 derecelik bir sıçrama girmiyor. */
+void servoTak() {
+  if (!ucTakili) { ucServo.attach(SERVO_PIN); ucTakili = true; }
+}
+
+/** Gücü şimdi keser. Horn nerede kaldıysa orada kalır. */
+void servoGucKes() {
+  servoKesMs = 0;
+  if (!ucTakili) return;
+  ucServo.detach();
+  ucTakili = false;
+  Serial.println(F("KOMUT: servo gucu kesildi (tutma torku yok)"));
+  sonOlcum = 0;
+}
+
+/** Gücü `bekleme` ms sonra kesmeyi planlar. */
+void servoKesPlanla(unsigned long bekleme) {
+#if SERVO_GUC_KES
+  servoKesMs = millis() + bekleme;
+  /* 0 "bekleyen yok" demek; taşma tam 0'a denk gelirse kesme kaybolur. */
+  if (servoKesMs == 0) servoKesMs = 1;
+#else
+  (void)bekleme;
+#endif
+}
+
+/** Planlanan kesmenin vakti geldi mi. `loop`tan çağrılıyor.
+ *
+ *  DENEME AÇIKKEN KESİLMİYOR: tur boyunca sürekli yeni açı yazılıyor ve
+ *  arada gücü kesmek süpürmeyi öldürürdü. Zaten tur `delay` içinde
+ *  geçtiği için bu işlev o sırada hiç çalışmıyor; koşul, turlar
+ *  arasındaki kısa aralık için. */
+void servoGucGozet() {
+  if (!servoKesMs || testAcik) return;
+  if ((long)(millis() - servoKesMs) >= 0) servoGucKes();
 }
 
 void ucGozet() {
@@ -322,6 +406,9 @@ void testBasla() {
    * pompa çekişinde sıfırlanıyor; her sıfırlanmada uç kendiliğinden
    * dönerdi. Satırlar silinmedi, denemenin başına alındı: denemenin
    * gördüğü davranış birebir aynı, makinenin açılışı etkilenmiyor. */
+  /* BEKLEYEN KESME İPTAL: deneme boyunca güç sürekli lazım ve tur
+   * `delay` içinde geçtiği için gözetçi o sırada hiç çalışmıyor. */
+  servoKesMs = 0;
   myServo.attach(SERVO_PIN);
   ucTakili = true;
   myServo.write(currentAngle); // Move to 0 degrees initially
@@ -350,6 +437,10 @@ void testDurdur() {
    * değer `currentAngle`; rapor da onu söylemeli. SERVOYA BİR ŞEY
    * YAZILMIYOR — horn nerede durduysa orada kalıyor. */
   ucAci = currentAngle;
+  /* DENEME BİTTİ, HORN OTURUNCA GÜÇ KESİLİYOR. Deneme açıkken
+   * kesilmiyordu (tur sürekli yeni açı yazıyor); burası o muafiyetin
+   * bittiği yer. */
+  servoKesPlanla(SERVO_YOL_MS);
   Serial.print(F("KOMUT: servo denemesi DURDU — son aci "));
   Serial.println(currentAngle);
   sonOlcum = 0;
@@ -393,8 +484,10 @@ int usDeger(int derece) {
  *  olduğu önemli, oraya nasıl gidildiği değil. */
 void aciyaSur(int derece) {
   if (testAcik) testDurdur();
-  if (!ucTakili) { ucServo.attach(SERVO_PIN); ucTakili = true; }
+  servoTak();
   ucServo.write(derece);
+  /* `ACI` süre taşımıyor: en kötü yol (0 -> 180) için sabit pay. */
+  servoKesPlanla(SERVO_YOL_MS);
   currentAngle = derece;          // deneme buradan devam edebilsin
   /* UÇ BİLGİSİ GEÇERSİZ: elle sürmek horn'u bir uçla eşleşmeyen açıya
    * götürebilir, "şu uç seçili" kaydı artık doğruyu anlatmaz. */
@@ -416,8 +509,9 @@ void aciyaSur(int derece) {
  *  başladığını aramak gerektiğinde o adım fazla kaba kalıyor. */
 void usYaz(int mikro) {
   if (testAcik) testDurdur();
-  if (!ucTakili) { ucServo.attach(SERVO_PIN); ucTakili = true; }
+  servoTak();
   ucServo.writeMicroseconds(mikro);
+  servoKesPlanla(SERVO_YOL_MS);
   /* Mikrosaniyeden dereceye GERİ çeviriyoruz: `usDeger`in tersi. Tahmin
    * değil, aynı doğrusal eşlemenin tersi — yalnız yuvarlama payı var.
    * Yapılmazsa `currentAngle` bu komuttan sonra eskimiş kalır ve deneme
@@ -618,6 +712,11 @@ void olcVeYaz() {
    * panelin "çalışıyor" demeye devam etmesi demekti. Doğruyu kart
    * söylüyor. */
   Serial.print(F(",\"servo_test\":"));           Serial.print(testAcik ? 1 : 0);
+  /* SERVOYA GÜÇ GİDİYOR MU. Güç kesikken horn'a tutma torku
+   * uygulanmıyor; dışarıdan bir kuvvet onu kaydırırsa kart bunu
+   * göremez ve `uc_aci` komut edilen değeri göstermeye devam eder.
+   * Panelin bu ikisini ayırt edebilmesi için alan ayrı gidiyor. */
+  Serial.print(F(",\"servo_guc\":"));            Serial.print(ucTakili ? 1 : 0);
   /* Kartın açık kaldığı süre. Geriye giderse kart yeniden başlamıştır ve
    * röleler kapanmıştır — pompa çekişinde besleme çökerse tam bunu
    * görüyoruz. */
@@ -629,6 +728,7 @@ void olcVeYaz() {
 void loop() {
   seriOku();
   ucGozet();
+  servoGucGozet();
   /* DENEME AÇIKSA KULLANICININ TURU ÇALIŞIR. Bir tur ~5,8 sn sürüyor ve
    * `delay` içerdiği için o sürede `seriOku` ile ölçüm çalışmıyor; tur
    * bitince sıra onlara geliyor. Deneme kapalıyken maliyeti bir
