@@ -25,18 +25,19 @@
 #define SERVO_PIN      10
 
 /* ---------------------------------------------------- SERVO DENEME KİPİ --
- * SÜREKLİ DÖNÜŞLÜ SERVO İÇİN. Normal servoda `write(derece)` KONUM verir;
- * sürekli dönüşlüde HIZ verir. 90 dur, 90'dan uzaklaştıkça hızlanır ve
- * yön değiştirir. Açı diye bir şey yok: açı = hız × süre.
+ * KONUMLU SERVO. `write(derece)` horn'u o açıya sürer ve orada tutar;
+ * açı açıdır. Deneme döngüsü 0-90-180-0 turunu derece derece süpürüyor.
  *
- * ÖLÇÜLDÜ: bu servoda orantılı bant ÇOK DAR. Ölü bandın kenarını geçer
- * geçmez hız neredeyse tam hıza çıkıyor — 150 ile 120 arasında gözle
- * görülür fark yok. `write(derece)` en küçük 10 us'lik adım atabiliyor ve
- * bu, bandı tamamen atlıyor. Yavaş bir kip arayacaksanız `US` komutuyla
- * 1500 civarını 1 us adımlarla taramak gerekiyor.
+ * BURADA BİR SÜRE BUNUN TAM TERSİ YAZIYORDU: "sürekli dönüşlü servo,
+ * `write` hız verir, ölü bant çok dar, açı = hız × süre". O teşhis
+ * YANLIŞTI ve yirmi satır aşağıdaki `SERVO_SUREKLI_DONUSLU 0` ile
+ * çelişiyordu. Aynı dosyada iki gerçek durunca arıza aranırken yanlış
+ * yere bakıldı; takılan servo 0-180 mikro servo, konumlu, anahtar 0
+ * doğrudur. Metin silinmedi ki aynı yanlış yola tekrar girilmesin.
  *
- * BUNUN BEDELİ: konum AÇIK DÖNGÜ. Her turda birkaç derece kayar ve kayma
- * birikir; kart sıfırlanırsa horn'un nerede kaldığı bilinemez. */
+ * KONUM YİNE DE AÇIK DÖNGÜ: servoda geri besleme yok. Kart ne KOMUT
+ * ETTİĞİNİ bilir, horn'un oraya gidip gitmediğini bilmez; kart
+ * sıfırlanırsa (pompa çekişinde oluyor) komut edilen açı da unutulur. */
 
 /* AÇILIŞTA BAŞLASIN MI? Varsayılan 0 — kart pompa çekişinde sıfırlanıyor
  * ve açılışta kendiliğinden dönen bir servo, uçlar takılıyken istenmez.
@@ -106,6 +107,9 @@ String girisTamponu = "";
  * yerine `millis` ile: `delay` bu sketch'te olmaz — servo dönerken sensör
  * okuması ve seri komutlar da durur, kart 3 saniye sağır kalır. */
 bool testAcik = false;
+/* Kaçıncı tur. KULLANICININ KODUNUN DIŞINDA sayılıyor; tek işi turun
+ * gerçekten dönüp dönmediğini ölçülebilir kılmak. */
+unsigned long turNo = 0;
 /* İleri bildirim: `ucKomut` bu dosyada `testDurdur`dan ÖNCE tanımlı. */
 void testDurdur();
 void moveToAngle(int targetAngle, int stepDelay);  // testDongusu bundan once tanimli
@@ -259,6 +263,7 @@ void moveToAngle(int targetAngle, int stepDelay) {
 
 void testBasla() {
   testAcik = true;
+  turNo = 0;
   /* KULLANICININ `setup`'INDAKİ ÜÇ SATIR BURADA.
    *
    * Kendi sketch'inde bunlar `setup`ta duruyordu: kart her açıldığında
@@ -285,12 +290,38 @@ void testBasla() {
 
 void testDurdur() {
   testAcik = false;
-  /* SERVOYU BIRAKMIYORUZ (detach yok) ve son açıyı DEĞİŞTİRMİYORUZ:
-   * nerede durduysa orada kalsın. Durdurma anında başka bir açı yazmak,
-   * "dur" komutuna hareketle cevap vermek olurdu. */
+  /* SERVOYU BIRAKMIYORUZ (detach yok) ve SERVOYA YENİ BİR AÇI YAZMIYORUZ:
+   * horn nerede durduysa orada kalsın. Durdurma anında bir açı yazmak,
+   * "dur" komutuna hareketle cevap vermek olurdu. Aşağıdaki satır servoyu
+   * değil, kartın RAPORUNU düzeltiyor; ikisi ayrı şey. */
+  /* RAPOR EDİLEN AÇI GERÇEĞE ÇEKİLİYOR. `ucAci` denemenin başında bir kez
+   * yazılıp bir daha güncellenmiyordu: deneme boyunca ve bittikten sonra
+   * kart, horn 180'deyken bile "0 derece" bildiriyordu. Komut edilen son
+   * değer `currentAngle`; rapor da onu söylemeli. SERVOYA BİR ŞEY
+   * YAZILMIYOR — horn nerede durduysa orada kalıyor. */
+  ucAci = currentAngle;
   Serial.print("KOMUT: servo denemesi DURDU — son aci ");
   Serial.println(currentAngle);
   sonOlcum = 0;
+}
+
+/** Turun başına ve sonuna birer imza atar — deneme kipinin tek penceresi.
+ *
+ *  Deneme açıkken kart bir tur boyunca (~5,7 sn) susuyor ve o sessizlikte
+ *  birbirinden çok farklı üç durum aynı görünüyordu: tur hiç başlamadı,
+ *  tur döndü ama horn kımıldamadı, tur ortasında kart sıfırlandı. Sahada
+ *  tam üçüncüsü bir kez yaşandı — süpürme başladı, bir derece adımladı,
+ *  sonra açılış banner'ı geldi. Böyle bir olayı ayırt etmenin tek yolu,
+ *  turun iki ucuna zaman damgası koymak. */
+void turYaz(const char *durum) {
+  Serial.print("TUR: ");
+  Serial.print(turNo);
+  Serial.print(' ');
+  Serial.print(durum);
+  Serial.print(" t=");
+  Serial.print(millis());
+  Serial.print(" aci=");
+  Serial.println(currentAngle);
 }
 
 /** Bir `write(derece)` değerinin kaç mikrosaniyelik darbeye karşılık
@@ -543,7 +574,26 @@ void loop() {
    * `delay` içerdiği için o sürede `seriOku` ile ölçüm çalışmıyor; tur
    * bitince sıra onlara geliyor. Deneme kapalıyken maliyeti bir
    * karşılaştırma. */
-  if (testAcik) testDongusu();
+  if (testAcik) {
+    /* İMZALAR KULLANICININ BLOĞUNUN DIŞINDA: satırlar `testDongusu`nun
+     * İÇİNE değil, ÇAĞRISININ iki yanına yazılıyor. Kullanıcının kodu
+     * harfi harfine duruyor, turun zamanlaması değişmiyor (iki satır,
+     * 9600 baud'da ~70 ms, hem de süpürmenin dışında).
+     *
+     * ÇIKTININ OKUNUŞU:
+     *   "basliyor" var, "bitti" yok, ardından açılış banner'ı
+     *       -> kart tur ORTASINDA SIFIRLANDI: besleme çöküyor.
+     *   "basliyor" ve "bitti" var, arada ~5700 ms
+     *       -> döngü sonuna kadar çalıştı, kart darbeyi üretiyor.
+     *          Horn buna rağmen kımıldamıyorsa arıza kartın ÇIKIŞINDAN
+     *          sonrasında: D10 hattı, GND ortaklığı, servo.
+     *   hiç "TUR:" yok
+     *       -> `testAcik` kurulmadı; komut karta ulaşmamış demektir. */
+    turNo++;
+    turYaz("basliyor");
+    testDongusu();
+    turYaz("bitti");
+  }
   if (millis() - sonOlcum >= OLCUM_ARALIGI_MS) {
     sonOlcum = millis();
     olcVeYaz();

@@ -15,18 +15,24 @@
  * bitince ana sketch'i geri yükleyin:
  *     cd ~/farmbot && bash arduino-yukle.sh
  *
- * BESLEME: MG996R hareket hâlinde ~1 A, takılmada 2,5 A'e kadar çekiyor.
- * Arduino'nun 5V pini bunu veremez; besleme çökünce kart sıfırlanır ve
- * hareket bir derecede ölür. Ayrı bir 5-6 V / en az 2 A kaynak kullanın,
- * eksi ucu Arduino GND'siyle ORTAK olsun (ortak şase olmadan sinyal
- * referanssız kalır).
+ * BESLEME: takılan servo 0-180 derecelik bir MİKRO servo ve çekişini
+ * Arduino'nun 5V pini karşılıyor — kullanıcının sahadaki gözlemi bu.
+ * (Burada bir süre "MG996R, ayrı 2 A kaynak şart" yazıyordu; takılan o
+ * değil. Yanlış donanım varsayımı bu arızada iki kez yanlış yere
+ * baktırdı, o yüzden satır silinmedi, düzeltildi.)
  */
 
 #include <Servo.h>
 
 Servo myServo;
 
-const int SERVO_PIN = 9;
+/* D10 — ANA SKETCH'LE AYNI PİN. Burada 9 yazıyordu ve bu, dosyayı tam da
+ * var oluş sebebinin tersine çeviriyordu: sinyal D9'dan D10'a taşındı
+ * (D9'da kopan bağlantı vardı), yani 9 yazan bu sketch KOPUK HATTI
+ * sürüyor. "Kullanıcının kendi kodunda da dönmedi, demek servo/donanım
+ * bozuk" sonucu buradan çıkardı ve YANLIŞ olurdu — ölçülen şey yalnızca
+ * kopuk kablo olurdu. İki dosyadaki pin birlikte değişir. */
+const int SERVO_PIN = 10;
 int currentAngle = 0; // Tracks current servo position
 
 void setup() {
