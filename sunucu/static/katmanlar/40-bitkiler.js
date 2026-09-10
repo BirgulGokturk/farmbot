@@ -641,6 +641,24 @@ Tarla.katman({
   },
 
   sil(o, b) {
+    /* ÖNCE SOR. Silme iki tuşla tetiklenebiliyordu — karttaki "Sil"
+     * düğmesi ve seçili bitkideyken Delete — ve ikisi de hiçbir şey
+     * sormadan siliyordu. Delete bilhassa kolay: haritada bir bitkiye
+     * tıklayıp klavyeye uzanmak yetiyor.
+     *
+     * 30 SANİYELİK GERİ AL YETMİYOR. Geri alma yalnız o pencereyi
+     * yakalarsanız işe yarıyor; sekmeyi değiştiren, başka bir şeye
+     * bakan ya da sildiğini fark etmeyen kullanıcı için yok hükmünde.
+     * Onay kutusu kaybı ÖNLÜYOR, geri alma ise TELAFİ ediyor — ikisi
+     * ayrı iş, biri ötekinin yerine geçmiyor.
+     *
+     * Adı ve türü yazıyoruz: "bu bitki" diye soran bir kutu, yanlış
+     * bitkiyi seçmiş kullanıcıya hatasını göstermez. */
+    const tur = (b.tur && (b.tur.name_tr || b.tur.slug)) || b.nokta.tur || "";
+    const soru = tur
+      ? `'${b.nokta.ad}' (${tur}) silinecek. Onaylıyor musunuz?`
+      : `'${b.nokta.ad}' silinecek. Onaylıyor musunuz?`;
+    if (!confirm(soru)) return;
     o.api(`/api/noktalar?ad=${encodeURIComponent(b.nokta.ad)}`, { method: "DELETE" })
       .then((y) => {
         o.gunluk(`✓ '${b.nokta.ad}' silindi`, "ok");

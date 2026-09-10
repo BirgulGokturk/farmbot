@@ -1619,8 +1619,34 @@
   async function topluIslem(islem) {
     const adlar = [...T.secim];
     if (!adlar.length) return;
-    // Onay penceresi yok: "12 nokta silinecek, emin misiniz?" sorusu hangi 12
-    // olduğunu göstermiyor. Silme uygulanıyor, 30 saniye geri alınabiliyor.
+    /* SİLMEDE ONAY VAR — ve soru HANGİLERİ olduğunu söylüyor.
+     *
+     * Burada bir süre "onay penceresi yok" yazıyordu, gerekçesi de
+     * şuydu: "'12 nokta silinecek, emin misiniz?' sorusu hangi 12
+     * olduğunu göstermiyor." İtiraz doğruydu ama sonucu yanlıştı —
+     * çözüm soruyu kaldırmak değil, adları soruya yazmak.
+     *
+     * TETİKLEYİCİSİ DELETE TUŞU: haritada birkaç bitki seçiliyken
+     * klavyeye uzanmak yetiyor. 30 saniyelik geri alma o pencereyi
+     * yakalarsanız işe yarıyor; sekmeyi değiştiren ya da sildiğini fark
+     * etmeyen kullanıcı için yok hükmünde. Onay kaybı ÖNLÜYOR, geri
+     * alma TELAFİ ediyor — ikisi ayrı iş.
+     *
+     * Uzun listede ilk sekizi yazıp gerisi sayılıyor: yüz adı kutuya
+     * sığdırmak, hiç ad yazmamak kadar okunmaz olurdu. Yalnız SİLME
+     * soruyor — sulamanın kendi önizlemesi var, ötekiler geri
+     * alınabiliyor. */
+    if (islem === "sil") {
+      const GOSTER = 8;
+      const liste = adlar.slice(0, GOSTER).join(", ")
+        + (adlar.length > GOSTER ? ` … (+${adlar.length - GOSTER} tane daha)` : "");
+      const soru = `${adlar.length} nokta silinecek:
+
+${liste}
+
+Onaylıyor musunuz?`;
+      if (!confirm(soru)) return;
+    }
     const govde = { islem, noktalar: adlar };
     if (islem === "sula") {
       /* SÜRE ARTIK GÖNDERİLMİYOR. Panel herkese aynı 3 saniyeyi

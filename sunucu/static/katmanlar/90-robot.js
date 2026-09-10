@@ -155,7 +155,26 @@ Tarla.katman({
        * bir köprü. Panel yoksa (deneme sayfası) su hiç görünmüyor —
        * olmayan bir şeyi varmış gibi göstermektense hiç göstermemek. */
       const P = window.Panel;
-      const akiyor = !!(P && P.S && P.S.roleDurum && P.S.roleDurum.su_pompasi);
+      const pompa = !!(P && P.S && P.S.roleDurum && P.S.roleDurum.su_pompasi);
+      /* SEÇİLİ BAŞ DA SULAMA OLMALI — yukarıdaki iniş kuralıyla AYNI koşul.
+       *
+       * Burada yalnız pompa rölesine bakılıyordu ve sahnede sulama
+       * yokken de su akıyordu. Röle sulama işinden bağımsız olarak
+       * açılabiliyor: Çıkışlar bölümünden elle deneniyor, ve kart her
+       * sıfırlandığında pompa 1-2 saniye kendiliğinden çalışıyor
+       * (pompalar rölenin NC ucunda — bkz. firmware `roleHazirla`).
+       * O anlarda seçili baş nem probu, tohum ucu ya da BİLİNMİYOR
+       * oluyordu; sahne ise inmemiş bir başlıktan su fışkırtıyordu.
+       *
+       * İniş `secili === "sulama"` şartına bağlıydı, huzme değildi:
+       * aynı olayın iki yarısı iki ayrı kurala bakıyordu. Artık ikisi
+       * de aynı soruyu soruyor.
+       *
+       * BAŞ BİLİNMİYORKEN GÖSTERMİYORUZ. Pompa çalışıyorsa su fiziksel
+       * olarak bir yerden akıyor, ama hangi başlıktan aktığını
+       * bilmiyoruz; yanlış başlıktan göstermektense hiç göstermemek —
+       * dosyanın geri kalanıyla aynı kural. */
+      const akiyor = pompa && secili === "sulama";
       p.su.visible = akiyor;
       /* Döngüyü SUYU GİZLEYEN kod kapatıyor.
        *
@@ -241,7 +260,15 @@ Tarla.katman({
        * sonra bir sonraki pakete kadar su akmaya devam eder. Kapanışın
        * gecikmesi, açılışın gecikmesinden daha yanıltıcı. */
       const P = window.Panel;
-      const akiyor = !!(P && P.S && P.S.roleDurum && P.S.roleDurum.su_pompasi);
+      /* KOŞUL `guncelle` İLE AYNI — pompa VE seçili baş sulama.
+       * Burada yalnız pompaya bakılıyordu. `guncelle` huzmeyi seçili
+       * baş sulama değilken gizliyor ama döngü bunu bilmediği için
+       * pompa kapanana kadar boşuna kare istemeye devam ediyordu.
+       * İki yerde iki kural olunca biri eskiyor; ikisi de aynı soruyu
+       * soruyor. */
+      const secili = (((o.veri.durum.uc || {}).secici) || {}).secili_bas || null;
+      const akiyor = !!(P && P.S && P.S.roleDurum && P.S.roleDurum.su_pompasi)
+        && secili === "sulama";
       if (!akiyor) {
         p.su.visible = false;
         if (o.kirlet) o.kirlet("su-akisi-bitti");
