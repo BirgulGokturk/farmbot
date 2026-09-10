@@ -1371,6 +1371,14 @@
             </div>
             <p class="alt-not"><b>safe_z</b>: X/Y hareketinin yapılabildiği
               en düşük Z — başlık grubu bu yükseklikte yatağın üstünden geçiyor.
+              Kaydedince <b>hemen</b> geçerli oluyor: makine X/Y'ye gitmeden
+              önce Z'yi bu yüksekliğe kaldırıyor, "Önce Z'yi kaldırın" retleri
+              ve bölge koşullarındaki <code>safe_z</code> değişkeni de bu
+              sayıyı kullanıyor. Kalibrasyon tablosunun altındaki "Güvenli Z
+              yüksekliği" yazısı yürürlükteki değeri gösterir; kaydettikten
+              sonra ikisi aynı olmalı. (Bir süre olmuyordu: alan kaydediliyor
+              ama hiçbir yere bağlı değildi, makine ise ayrı bir sayıyı
+              kullanmaya devam ediyordu.)
               <b>Güvenli Z payı</b>: "Z güvenli yükseklikte mi"
               kıyaslamasının toleransı. Koda gömülü 1 mm'ydi ve
               değiştirilemiyordu; encoder gürültüsü ve duruş sapması

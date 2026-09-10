@@ -189,6 +189,7 @@ class Ajan:
         # kalibrasyonun `home`u geçerli (bkz. `plc.t_yukari_mm`).
         self._t_yukari_uygula()
         self._guvenli_z_ofset_uygula()
+        self._guvenli_z_uygula()
         ard = ayar["arduino"]
         # Medyan penceresi: kaç örneğin ortancası gösterilsin. 5 örnek,
         # 2 sn'lik okuma aralığında 10 saniyelik bir pencere demek — tek
@@ -280,6 +281,55 @@ class Ajan:
                     "yeniden ölçün.", kuru, islak, abs(kuru - islak))
             return {"kuru": 1023.0, "islak": 0.0}
         return {"kuru": kuru, "islak": islak}
+
+    def _guvenli_z_uygula(self) -> None:
+        """`safe_z` ayarını PLC sürücüsünün `guvenli_z`sine taşır.
+
+        BU BAĞ HİÇ KURULMAMIŞTI ve `safe_z` ÖLÜ BİR AYARDI. `uclar.py`de
+        tek bir yerde geçiyordu: varsayılan tanımının kendisi. Panelde
+        alanı var, ajan onu panele geri bildiriyor, panel kaydediyor —
+        kapalı ve hiçbir şeye dokunmayan bir döngü.
+
+        MAKİNEYİ YÖNETEN SAYI BAŞKAYDI: PLC sürücüsündeki `guvenli_z`.
+        X/Y hareketinden önce Z'nin kaldırıldığı yükseklik, "Önce Z'yi
+        kaldırın" retleri, `z_guvenli` biti ve bölge koşullarındaki
+        `safe_z` DEĞİŞKENİ (evet, aynı ad) hep ondan geliyor. O da yalnız
+        `ajan/ayar.json` içindeki `plc.guvenli_z`den okunuyordu ve
+        panelde hiçbir alanı yoktu.
+
+        Belirtisi: kullanıcı safe_z'yi değiştiriyor, kayıt başarılı
+        diyor, hiçbir şey olmuyor — panelin altındaki "Güvenli Z
+        yüksekliği" yazısı bile eski sayıda kalıyor, çünkü o yazı
+        `guvenli_z`yi gösteriyor. Panelin kendi açıklaması ise safe_z
+        için "X/Y hareketinin yapılabildiği en düşük Z" diyor: metin
+        doğru davranışı anlatıyordu, kod onu yapmıyordu.
+
+        BOŞ BIRAKILIRSA DOKUNULMUYOR — `ayar.json`daki değer geçerli
+        kalıyor. `None`ı sıfır sayıp ezmek, ayarı hiç girmemiş bir
+        kurulumda Z kilidini kaldırmak olurdu.
+
+        `_guvenli_z_ofset_uygula` ile aynı kalıp; çağrıldığı yerler de
+        aynı (kurulum ve `uc_kaydet`).
+        """
+        try:
+            ham = self.uclar.ayar.get("safe_z")
+            if ham is None:
+                return
+            deger = float(ham)
+        except (TypeError, ValueError):
+            return
+        try:
+            eski = float(getattr(self.plc, "guvenli_z", 0.0))
+        except (TypeError, ValueError):
+            eski = 0.0
+        if abs(eski - deger) < 1e-9:
+            return
+        self.plc.guvenli_z = deger
+        # DEĞİŞİKLİK GÜNLÜĞE YAZILIYOR. Güvenli Z bir emniyet sayısı;
+        # sessizce değişmesi "makine neden başka türlü davranıyor"
+        # sorusunu doğurur. İki kaynak ayrı düşmüşse burada görünür.
+        logger.info("Güvenli Z %.1f mm -> %.1f mm (uclar.json safe_z)",
+                    eski, deger)
 
     def _guvenli_z_ofset_uygula(self) -> None:
         """`guvenli_z_ofset` ayarını PLC sürücüsüne taşır.
@@ -653,6 +703,7 @@ class Ajan:
                 yeni = await asyncio.to_thread(self.uclar.kaydet, gelen)
                 self._t_yukari_uygula()
                 self._guvenli_z_ofset_uygula()
+                self._guvenli_z_uygula()
                 return {"ok": True, "mesaj": "Kafa ayarları kaydedildi",
                         "veri": {"ayar": yeni,
                                  "baslar": self.uclar.baslar()}}
