@@ -5,6 +5,8 @@
  *   1. Sensörleri okuyup 2 saniyede bir tek satır JSON basmak.
  *   2. Pi'den gelen ROLE komutuyla iki röleyi açıp kapatmak.
  *   3. Pi'den gelen UC komutuyla uç seçici servoyu bir açıya sürmek.
+ *   4. TEST komutuyla servoyu tek başına döndürüp ayar yapmak — sensör
+ *      okuması bu sırada da devam ediyor, ayrı sketch yüklemek gerekmiyor.
  *
  * Başka bir şey yapmıyor. Karar vermiyor, eşik tutmuyor, HİÇBİR ŞEYİ
  * HATIRLAMIYOR. Sulama kararı Pi'de; kart yalnızca dediğini yapıyor ve
@@ -34,6 +36,7 @@
  *                     UC <indeks> <derece> <sure_ms>
  *                     KAPAT        — ikisini birden kapat
  *                     OKU          — beklemeden hemen ölç
+ *                     TEST         — servo denemesini başlat/durdur
  */
 
 #include <Wire.h>
@@ -62,6 +65,36 @@
 #define ROLE_AKTIF_LOW 0
 
 #define SERVO_PIN      9
+
+/* ---------------------------------------------------- SERVO DENEME KİPİ --
+ * Servoyu tek başına çalıştırıp ayarlamak için. Sensör okuması, röleler ve
+ * UC komutu bu kip açıkken de çalışmaya devam eder — deneme için ayrı bir
+ * sketch yükleyip sonra geri dönmek gerekmiyor.
+ *
+ * SÜREKLİ DÖNÜŞLÜ SERVO İÇİN. Normal servoda `write(derece)` KONUM verir;
+ * sürekli dönüşlüde HIZ verir. 90 dur, 90'dan uzaklaştıkça hızlanır ve
+ * yön değiştirir. Açı diye bir şey yok: açı = hız × süre. Bu yüzden
+ * aşağıda hız ve süre var, hedef derece yok.
+ *
+ * BUNUN BEDELİ: konum AÇIK DÖNGÜ. Her turda birkaç derece kayar ve kayma
+ * birikir; kart sıfırlanırsa horn'un nerede kaldığı hiçbir yerden
+ * bilinemez. Uç seçici olarak güvenilir çalışması için ya konum geri
+ * bildirimi (her uçta bir mikro switch) ya da normal (konumlu) bir servo
+ * gerekiyor. Bu kip o kararı vermek için ölçüm yapmanızı sağlıyor. */
+
+/* AÇILIŞTA BAŞLASIN MI? Varsayılan 0 — kart her sıfırlandığında (pompa
+ * çekişinde besleme çöküyor, röle notuna bakın) servonun kendiliğinden
+ * dönmeye başlaması, uçlar takılıyken istenmeyecek bir şey. Seri porttan
+ * "TEST" yazınca başlıyor, tekrar yazınca duruyor. Elle yazmak
+ * istemiyorsanız burayı 1 yapın. */
+#define TEST_ACILISTA 0
+
+/* ⚙️ DEĞİŞTİREBİLECEĞİNİZ İNCE AYARLAR — hepsi burada, başka yerde yok. */
+const int durmaHizi        = 90;    // motorun durduğu değer
+const int yavasIleriHizi   = 93;    // çok yavaş ileri (91, 92, 94 deneyin)
+const int yavasGeriHizi    = 87;    // çok yavaş geri  (89, 88, 86 deneyin)
+const int doksanDereceSuresi = 800; // 90 derece dönmesi kaç ms sürüyor
+const int duraklardaBekleme  = 3000;// her durakta kaç ms beklesin
 
 #define OLCUM_ARALIGI_MS 2000
 
@@ -107,6 +140,19 @@ unsigned long ucSureMs = 0;     // hareket süresi — KOMUTLA geliyor, ayardan
 
 unsigned long sonOlcum = 0;
 String girisTamponu = "";
+
+/* Deneme kipinin durumu. Sizin kodunuzdaki döngünün aynısı, ama `delay`
+ * yerine `millis` ile: `delay` bu sketch'te olmaz — servo dönerken sensör
+ * okuması ve seri komutlar da durur, yani 3 saniye boyunca kart sağır
+ * kalır ve panel "Arduino sustu" der. */
+bool testAcik = false;
+/* İleri bildirim: `ucKomut` bu dosyada `testDurdur`dan ÖNCE tanımlı ve onu
+ * çağırıyor. Arduino IDE prototipleri kendi üretiyor ama buna güvenmek
+ * gerekmiyor — bir satır yazmak, derleyiciye bağlı kalmaktan iyi. */
+void testDurdur();
+void testBasla();   // setup, TEST_ACILISTA 1 iken bunu çağırıyor
+int  testAdim = 0;              // 0..5 — aşağıdaki testGozet'e bakın
+unsigned long testAdimMs = 0;   // bu adım ne zaman başladı
 
 // --------------------------------------------------------------- RÖLE -----
 /* Pine kapalı seviyeyi YAZIP sonra OUTPUT yapıyoruz. Ters sırada pin bir
@@ -181,7 +227,10 @@ void setup() {
   bmpVar = bmp.begin();
   if (!bmpVar) Serial.println("UYARI: BMP180 bulunamadi, digerleriyle devam");
 
-  Serial.println("Hazir. Komutlar: ROLE <ad> <0|1> | UC <indeks> <derece> <sure_ms> | KAPAT | OKU");
+  Serial.println("Hazir. Komutlar: ROLE <ad> <0|1> | UC <indeks> <derece> <sure_ms> | KAPAT | OKU | TEST");
+#if TEST_ACILISTA
+  testBasla();
+#endif
 }
 
 // ------------------------------------------------------------- UÇ SEÇİCİ --
@@ -212,6 +261,10 @@ void setup() {
  * Eksikse komut reddediliyor — sessizce bir varsayılana düşmek, panelde
  * "vardı" yazarken horn'un hâlâ yolda olması demekti. */
 void ucKomut(int indeks, int derece, long sureMs) {
+  /* Deneme kipi açıkken gelen gerçek bir uç komutu denemeyi kapatıyor:
+   * ikisi aynı servoyu sürüyor, açık bırakmak komutun üstüne deneme
+   * darbesi yazmak demekti. */
+  if (testAcik) testDurdur();
   if (!ucTakili) { ucServo.attach(SERVO_PIN); ucTakili = true; }
   ucServo.write(derece);
   ucSecili = indeks;
@@ -231,6 +284,61 @@ void ucGozet() {
   }
 }
 
+// ---------------------------------------------------- SERVO DENEME KİPİ --
+/* Altı adımlı döngü. Sizin kodunuzdaki sıranın aynısı:
+ *   0  ileri, 90 derecelik süre        3  bekle
+ *   1  bekle                           4  geri, iki katı süre (180 geri)
+ *   2  ileri, 90 derecelik süre        5  bekle, sonra başa
+ * `delay` yok: her adım "başlangıç anı + süre" ile bitiyor, aradaki her
+ * turda sensör okuması ve seri komut işleme çalışmaya devam ediyor. */
+void testAdimUygula() {
+  if (!ucTakili) { ucServo.attach(SERVO_PIN); ucTakili = true; }
+  switch (testAdim) {
+    case 0: case 2: ucServo.write(yavasIleriHizi); break;
+    case 4:         ucServo.write(yavasGeriHizi);  break;
+    default:        ucServo.write(durmaHizi);      break;
+  }
+  testAdimMs = millis();
+}
+
+unsigned long testAdimSuresi() {
+  switch (testAdim) {
+    case 0: case 2: return (unsigned long)doksanDereceSuresi;
+    // 180 derece geri dönecek, o yüzden iki katı.
+    case 4:         return (unsigned long)doksanDereceSuresi * 2UL;
+    default:        return (unsigned long)duraklardaBekleme;
+  }
+}
+
+void testBasla() {
+  testAcik = true;
+  testAdim = 0;
+  /* UÇ BİLGİSİ ARTIK GEÇERSİZ. Deneme horn'u serbestçe döndürüyor; kartın
+   * "şu uç seçili" kaydı bu andan sonra horn'un gerçek yerini anlatmıyor.
+   * Eski değeri bırakmak, bilinmeyeni bilinen gibi göstermek olurdu —
+   * VERI satırında ikisi de null'a dönüyor. */
+  ucSecili = -1;
+  ucAci = -1;
+  ucHarekette = false;
+  testAdimUygula();
+  Serial.println("KOMUT: servo denemesi BASLADI (durdurmak icin tekrar TEST)");
+  sonOlcum = 0;
+}
+
+void testDurdur() {
+  testAcik = false;
+  if (ucTakili) ucServo.write(durmaHizi);
+  Serial.println("KOMUT: servo denemesi DURDU");
+  sonOlcum = 0;
+}
+
+void testGozet() {
+  if (!testAcik) return;
+  if (millis() - testAdimMs < testAdimSuresi()) return;
+  testAdim = (testAdim + 1) % 6;
+  testAdimUygula();
+}
+
 // --------------------------------------------------------------- KOMUT ----
 void komutIsle(String komut) {
   komut.trim();
@@ -248,6 +356,12 @@ void komutIsle(String komut) {
   }
 
   if (buyuk == "OKU") { sonOlcum = 0; return; }
+
+  // Servo denemesini başlat/durdur. Ayarlar dosyanın başındaki blokta.
+  if (buyuk == "TEST") {
+    if (testAcik) testDurdur(); else testBasla();
+    return;
+  }
 
   if (buyuk.startsWith("ROLE ")) {
     // "ROLE su_pompasi 1"
@@ -368,6 +482,7 @@ void olcVeYaz() {
 void loop() {
   seriOku();
   ucGozet();
+  testGozet();
   if (millis() - sonOlcum >= OLCUM_ARALIGI_MS) {
     sonOlcum = millis();
     olcVeYaz();
