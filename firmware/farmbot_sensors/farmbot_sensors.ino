@@ -366,8 +366,32 @@ void komutIsle(String komut) {
   if (buyuk == "OKU") { sonOlcum = 0; return; }
 
   // Servo denemesini başlat/durdur. Ayarlar dosyanın başındaki blokta.
-  if (buyuk == "TEST") {
-    if (testAcik) testDurdur(); else testBasla();
+  /* Servo denemesi. Çıplak "TEST" DEĞİŞTİRİR; "TEST 1" / "TEST 0" ise
+   * DURUMU KESİN KURAR.
+   *
+   * İKİ BİÇİM DE GEREKLİ. Seri porttan elle yazarken "TEST" kısa ve
+   * yeterli. PANEL DÜĞMESİ için değiştirmek yanlış: komut kaybolur ya da
+   * iki kez giderse düğme ile kartın hâli ayrışıyor — düğme "başlat"
+   * derken kart durduruyor. Panel her zaman İSTEDİĞİ durumu yazıyor.
+   *
+   * BU BLOK BİR SÜRE EKSİK KALDI ve belirtisi kafa karıştırıcıydı:
+   * yardım satırı "TEST <0|1>" yazıyordu ama ayrıştırıcı yalnız çıplak
+   * "TEST"i tanıdığı için panelden gelen "TEST 1" komutuna kart
+   * "bilinmeyen komut" diyordu. Panel "başlıyor" yazıyor, servo
+   * kımıldamıyordu. Yardım metniyle ayrıştırıcı ayrı düşerse hata
+   * kullanıcıya YANLIŞ YERİ gösteriyor. */
+  if (buyuk == "TEST" || buyuk.startsWith("TEST ")) {
+    if (buyuk == "TEST") {
+      if (testAcik) testDurdur(); else testBasla();
+      return;
+    }
+    bool istenen = komut.substring(komut.indexOf(' ') + 1).toInt() != 0;
+    if (istenen == testAcik) {
+      Serial.print("KOMUT: servo denemesi zaten ");
+      Serial.println(testAcik ? "ACIK" : "KAPALI");
+      return;
+    }
+    if (istenen) testBasla(); else testDurdur();
     return;
   }
 
