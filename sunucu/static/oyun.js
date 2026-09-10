@@ -234,45 +234,20 @@ window.Oyun = (function () {
    * DURUM OKUMALARI — hepsi gerçek pakete bakıyor.
    * ==================================================================== */
   function D() { return S.durum || {}; }
-  /** Yatağın sınırları — YALNIZ durum paketinden.
-   *
-   *  SINIR GELMEDİYSE UYDURMA YATAK ÇİZİLMİYOR. Önce bir karoluk en küçük
-   *  yatak çiziliyordu; makine kopukken (bu makinede olağan hâl) tek karo
-   *  bütün ekranı kaplayan dev bir tahtaya dönüşüyor, bitkiler kadrajın
-   *  dışında kalıyordu. Artık o hâlde yatak diye bir şey çizilmiyor:
-   *  bitkiler KENDİ GERÇEK koordinatlarında açık toprağın üstünde duruyor,
-   *  yatağın nerede bittiği bilinmediği için kenar ve kontur yok, sebebi
-   *  de ekranda yazılı. Karo ölçüsü (KARO_MM) bir sabit, ölçüm değil —
-   *  o yüzden ızgara dokusu yine çizilebiliyor. */
   function sinirAl() {
     var s = D().sinirlar || {};
     var x = s.x || {}, y = s.y || {};
     var x1 = sayi(x.min, 0), x2 = sayi(x.max, 0), y1 = sayi(y.min, 0), y2 = sayi(y.max, 0);
-    if ((x2 > x1) && (y2 > y1)) {
-      hataYaz("sinir", "");
-      return { x1: Math.min(x1, x2), x2: Math.max(x1, x2),
-               y1: Math.min(y1, y2), y2: Math.max(y1, y2), var: true };
+    /* Sınır gelmediyse UYDURMA YATAK ÇİZMİYORUZ: bir karolu en küçük
+       yatak çizilip sebebi yazılıyor. */
+    if (!(x2 > x1) || !(y2 > y1)) {
+      hataYaz("sinir", "Yumuşak eksen sınırları bildirilmedi — ızgara ölçü "
+        + "taşıyamıyor, yatak en küçük hâlde çizildi.");
+      return { x1: 0, x2: KARO_MM, y1: 0, y2: KARO_MM, var: false };
     }
-    hataYaz("sinir", "Yumuşak eksen sınırları bildirilmedi: yatağın nerede "
-      + "bittiği bilinmiyor. Bitkiler kendi koordinatlarında duruyor, "
-      + "karoya dokunmak komut göndermiyor.");
-    /* Çizim başlangıcı bitkilerin kendi koordinatlarından: bu bir YATAK
-       ÖLÇÜSÜ değil, yalnız dokunun nereden başlayacağı. */
-    var ax = null, ay = null, bx = null, by = null;
-    (S.bitki || []).forEach(function (b2) {
-      if (b2.x == null || b2.y == null) return;
-      var px = sayi(b2.x), py = sayi(b2.y);
-      if (ax == null || px < ax) ax = px;
-      if (bx == null || px > bx) bx = px;
-      if (ay == null || py < ay) ay = py;
-      if (by == null || py > by) by = py;
-    });
-    if (ax == null) { ax = 0; bx = KARO_MM * 6; ay = 0; by = KARO_MM * 6; }
-    var pay = KARO_MM * 2;
-    return { x1: Math.floor((ax - pay) / KARO_MM) * KARO_MM,
-             x2: Math.ceil((bx + pay) / KARO_MM) * KARO_MM,
-             y1: Math.floor((ay - pay) / KARO_MM) * KARO_MM,
-             y2: Math.ceil((by + pay) / KARO_MM) * KARO_MM, var: false };
+    hataYaz("sinir", "");
+    return { x1: Math.min(x1, x2), x2: Math.max(x1, x2),
+             y1: Math.min(y1, y2), y2: Math.max(y1, y2), var: true };
   }
   /** Eksen neden duruyor — düğmeler bunu okuyup kapanıyor. */
   /** Sunucudan haber geliyor mu.
@@ -355,7 +330,7 @@ window.Oyun = (function () {
    * açıyor.
    * ==================================================================== */
   var G = { tw: 44, th: 23, ox: 0, oy: 0, nx: 1, ny: 1, s: null,
-            kam: null, hedef: null, elle: false, kayiyor: false, sinirVar: false };
+            kam: null, hedef: null, elle: false, kayiyor: false };
   var PAY_X = 24, PAY_UST = 74, PAY_ALT = 74;
 
   function Xof(u, v) { return (u - v) / 2; }
@@ -363,19 +338,12 @@ window.Oyun = (function () {
   function serbestEn() { return Math.max(120, S.en - PAY_X * 2); }
   function serbestBoy() { return Math.max(120, S.boy - PAY_UST - PAY_ALT); }
 
-  /* KARO BOYU TAVANI. 50 mm'lik bir karoyu 200 pikselden büyük çizmek
-     hiçbir şey anlatmıyor; tavan olmayınca küçük ızgaralarda tek karo
-     bütün ekranı kaplıyordu. Taban da var: altında siluet okunmuyor. */
-  var TW_TAVAN = 200, TW_TABAN = 11;
   function twEnAz() {
     var dX = Xof(G.nx, 0) - Xof(0, G.ny), dY = Yof(G.nx, G.ny) - Yof(0, 0);
-    var t = Math.min(serbestEn() / Math.max(0.5, dX),
-                     serbestBoy() / Math.max(0.5, dY * ISO));
-    return kis(t, TW_TABAN, TW_TAVAN);
+    return Math.min(serbestEn() / Math.max(0.5, dX),
+                    serbestBoy() / Math.max(0.5, dY * ISO));
   }
-  function twEnCok() {
-    return kis(Math.max(twEnAz() * 1.2, serbestEn() / 3), TW_TABAN, TW_TAVAN);
-  }
+  function twEnCok() { return Math.max(twEnAz() * 1.2, serbestEn() / 3); }
 
   function kadrajHesap() {
     var X1 = 1e9, Y1 = 1e9, X2 = -1e9, Y2 = -1e9, say = 0;
@@ -411,7 +379,6 @@ window.Oyun = (function () {
     var s = sinirAl();
     var eskiN = G.nx + "x" + G.ny;
     G.s = s;
-    G.sinirVar = !!s.var;
     G.nx = Math.max(1, Math.round((s.x2 - s.x1) / KARO_MM));
     G.ny = Math.max(1, Math.round((s.y2 - s.y1) / KARO_MM));
     G.hedef = kadrajHesap();
@@ -447,12 +414,7 @@ window.Oyun = (function () {
     var u = (a + b) / 2, v = (b - a) / 2;
     return { u: u, v: v, x: G.s.x1 + u * KARO_MM, y: G.s.y1 + v * KARO_MM };
   }
-  /** Karo yatağın içinde mi. Sınırlar bildirilmediyse YÜRÜNEBİLİR ALAN
-   *  BİLİNMİYOR demektir: hiçbir karo hedef sayılmıyor. */
-  function icerde(u, v) {
-    if (!G.sinirVar) return false;
-    return u >= 0 && v >= 0 && u <= G.nx && v <= G.ny;
-  }
+  function icerde(u, v) { return u >= 0 && v >= 0 && u <= G.nx && v <= G.ny; }
 
   /** Bir EKRAN noktasını sabit tutarak yakınlaştır. */
   function yakinlastir(carpan, sx, sy) {
@@ -551,54 +513,6 @@ window.Oyun = (function () {
      bir kalınlık. */
   function kenarKal() { return Math.max(3, G.th * 0.38); }
 
-  /** Sınırsız hâlde toprak: aynı karo dokusu, ama kutu yok. Kenarlarda
-   *  göğe karışıyor ki "burada bitiyor" demesin. */
-  function acikToprak(c, padX, padY) {
-    /* SINIR YOKKEN TOPRAK: kenarı olmayan bir yama. Kenar çizgisi, kontur
-       ve düşen gölge "yatak burada bitiyor" demektir; sınır bildirilmediği
-       için hiçbiri çizilmiyor, toprak dışa doğru göğe karışıyor. Yama
-       bitki kümesini saracak kadar büyük — tuvalin tamamını kaplasa çöl
-       gibi görünüyordu, tek karoya sıkışınca (eski hâl) kadraj bitkileri
-       kesiyordu. Dokunun kesildiği yer de belli olmasın diye doku düz
-       toprağın altına gömülerek soluyor. */
-    var cx = ex(G.nx / 2, G.ny / 2), cy = ey(G.nx / 2, G.ny / 2);
-    var R = 0, kose = [[0, 0], [G.nx, 0], [G.nx, G.ny], [0, G.ny]], i, d;
-    for (i = 0; i < 4; i++) {
-      d = Math.hypot(ex(kose[i][0], kose[i][1]) - cx,
-        (ey(kose[i][0], kose[i][1]) - cy) / ISO);
-      if (d > R) R = d;
-    }
-    R += G.tw * 0.5;
-    c.save();
-    c.translate(cx, cy); c.scale(1, ISO); c.translate(-cx, -cy);
-    /* 1) Toprak: ortada tam, dışa doğru soğuyup sönüyor. Dış halka
-          ORTADAN KOYU/DONUK — parlak kalınca bitkilerin çevresinde
-          ışıyan bir halka gibi görünüyor, göze yatak kenarı gibi
-          geliyordu. */
-    var tg = c.createRadialGradient(cx, cy, 0, cx, cy, R);
-    tg.addColorStop(0, P_TOPRAK);
-    tg.addColorStop(0.42, P_TOPRAK);
-    tg.addColorStop(0.72, "rgba(158,128,99,.86)");
-    tg.addColorStop(1, "rgba(150,124,100,0)");
-    c.fillStyle = tg;
-    c.beginPath(); c.arc(cx, cy, R, 0, 6.3); c.fill();
-    /* 2) Doku yamanın içinde. */
-    c.save();
-    c.beginPath(); c.arc(cx, cy, R, 0, 6.3); c.clip();
-    c.translate(cx, cy); c.scale(1, 1 / ISO); c.translate(-cx, -cy);
-    dokuCiz(c, padX, padY, true);
-    c.restore();
-    /* 3) Dokuyu dışa doğru örten toprak; kendisi de sönüyor, yoksa
-          örtünün kenarı yeni bir çember olurdu. */
-    var yg = c.createRadialGradient(cx, cy, R * 0.34, cx, cy, R);
-    yg.addColorStop(0, "rgba(170,138,106,0)");
-    yg.addColorStop(0.5, "rgba(166,135,104,.92)");
-    yg.addColorStop(1, "rgba(160,132,104,0)");
-    c.fillStyle = yg;
-    c.beginPath(); c.arc(cx, cy, R, 0, 6.3); c.fill();
-    c.restore();
-  }
-
   var zeminCiz = guvenli("zemin", function () {
     var c = S.zeminCt;
     if (!c || !G.s) return;
@@ -626,16 +540,6 @@ window.Oyun = (function () {
     }
 
     var kal = kenarKal();
-    /* AÇIK TARLA — sınırlar bildirilmediğinde. Yatak kutusu yok: kenar,
-       kontur ve düşen gölge bir YATAK İDDİASIDIR, sınır bilinmiyorken
-       çizilmez. Toprak tuvalin tamamını kaplıyor ve kenarlarda göğe
-       karışıyor. */
-    if (!G.sinirVar) {
-      c.save();
-      acikToprak(c, padX, padY);
-      c.restore();
-      return;
-    }
     /* UZUN YUMUŞAK GÖLGE — güneş sol üstte, gölge sağ alta. */
     c.save();
     c.globalAlpha = 0.3; c.fillStyle = "#4a5a68";
@@ -664,33 +568,17 @@ window.Oyun = (function () {
     var Dp = { x: ex(0, G.ny), y: ey(0, G.ny) };
     kenar(Cp, Bp); kenar(Dp, Cp);
 
+    /* TOPRAK TEK PARÇA BOYANIYOR, karo karo DEĞİL.
+       Karo karo dolgu denendi ve olmadı: aynı tonu paylaşan komşu elmaslar
+       birleşip düz kenarlı büyük dikdörtgenler oluşturuyor ve yüzey parke
+       döşeme gibi okunuyor. Dalgalanma artık ızgaraya hiç bağlı olmayan
+       yumuşak lekelerden geliyor; karonun payına yalnız karık ve kesek
+       düşüyor. */
+    var r2 = uretec(4242), u, v, q, i2;
     c.save();
     tarlaYol(c); c.clip();
     c.fillStyle = P_TOPRAK;
     c.fillRect(-padX, -padY, S.en * ZEMIN_PAY, S.boy * ZEMIN_PAY);
-    dokuCiz(c, padX, padY, false);
-    c.restore();
-    c.lineJoin = "round";
-    c.strokeStyle = P_CIZGI; c.lineWidth = Math.max(2.2, G.th * 0.13);
-    tarlaYol(c); c.stroke();
-    c.strokeStyle = "rgba(255,240,206,.5)"; c.lineWidth = 1.6;
-    c.beginPath();
-    c.moveTo(Dp.x, Dp.y); c.lineTo(ex(0, 0), ey(0, 0)); c.lineTo(Bp.x, Bp.y);
-    c.stroke();
-    c.strokeStyle = P_CIZGI; c.lineWidth = Math.max(1.8, G.th * 0.1);
-    c.beginPath();
-    c.moveTo(Bp.x, Bp.y + kal); c.lineTo(Cp.x, Cp.y + kal); c.lineTo(Dp.x, Dp.y + kal);
-    c.stroke();
-  });
-
-  /** TOPRAK DOKUSU — tek parça boyanıyor, karo karo DEĞİL.
-   *  Karo karo dolgu denendi ve olmadı: aynı tonu paylaşan komşu elmaslar
-   *  birleşip düz kenarlı büyük dikdörtgenler oluşturuyor ve yüzey parke
-   *  döşeme gibi okunuyor. Dalgalanma artık ızgaraya hiç bağlı olmayan
-   *  yumuşak lekelerden geliyor; karonun payına yalnız karık ve kesek
-   *  düşüyor. Dolgu ve kırpma çağıranın işi. */
-  function dokuCiz(c, padX, padY, acik) {
-    var r2 = uretec(4242), u, v, q, i2;
     /* İki geçiş: geniş yumuşak dalgalar, sonra küçük keskin lekeler.
        Tek geçiş yüzeyi düz bir masa gibi bırakıyordu. */
     var lekeAdet = Math.round(kis(G.nx * G.ny * 3.2, 120, 420));
@@ -756,12 +644,31 @@ window.Oyun = (function () {
     }
     /* Güneş: sol üst aydınlık, sağ alt gölgeli. */
     var ig = c.createLinearGradient(ex(0, 0), ey(0, 0), ex(G.nx, G.ny), ey(G.nx, G.ny));
-    ig.addColorStop(0, "rgba(255,244,214," + (acik ? 0.14 : 0.2) + ")");
+    ig.addColorStop(0, "rgba(255,244,214,.2)");
     ig.addColorStop(0.55, "rgba(255,244,214,0)");
-    ig.addColorStop(1, "rgba(52,28,8," + (acik ? 0.14 : 0.2) + ")");
+    ig.addColorStop(1, "rgba(52,28,8,.2)");
     c.fillStyle = ig;
     c.fillRect(-padX, -padY, S.en * ZEMIN_PAY, S.boy * ZEMIN_PAY);
-  }
+    c.restore();
+
+    c.lineJoin = "round";
+    c.strokeStyle = P_CIZGI; c.lineWidth = Math.max(2.2, G.th * 0.13);
+    tarlaYol(c); c.stroke();
+    c.strokeStyle = "rgba(255,240,206,.5)"; c.lineWidth = 1.6;
+    c.beginPath();
+    c.moveTo(Dp.x, Dp.y); c.lineTo(ex(0, 0), ey(0, 0)); c.lineTo(Bp.x, Bp.y);
+    c.stroke();
+    c.strokeStyle = P_CIZGI; c.lineWidth = Math.max(1.8, G.th * 0.1);
+    c.beginPath();
+    c.moveTo(Bp.x, Bp.y + kal); c.lineTo(Cp.x, Cp.y + kal); c.lineTo(Dp.x, Dp.y + kal);
+    c.stroke();
+    /* Sınır bildirilmediyse yatak UYDURMA: bunu zeminin üstüne yazıyoruz. */
+    if (!G.s.var) {
+      c.font = "600 12px system-ui,sans-serif"; c.textAlign = "center";
+      c.fillStyle = "rgba(150,40,32,.95)";
+      c.fillText("sınırlar bildirilmedi", ex(G.nx / 2, G.ny / 2), ey(G.nx / 2, G.ny / 2));
+    }
+  });
 
   /* ==================================================================== *
    * BİTKİ SİLUETLERİ — havuçsa havuç, rokaysa roka.
@@ -1188,8 +1095,7 @@ window.Oyun = (function () {
   }
   function nemCiz(c) {
     c.save();
-    /* Sınırlar bildirilmediyse kırpılacak bir yatak da yok. */
-    if (G.sinirVar) { tarlaYol(c); c.clip(); }
+    tarlaYol(c); c.clip();
     for (var i = 0; i < S.bitki.length; i++) {
       var b = S.bitki[i];
       var sp = spriteAl(b);
@@ -1407,10 +1313,6 @@ window.Oyun = (function () {
   function rayYuk() { return Math.max(26, G.th * 3.2); }
 
   function makineCiz(c) {
-    /* Köprü kirişi yatağın bir kenarından öbürüne uzanıyor: sınırlar
-       bildirilmediyse o uzunluk uydurma olur, o yüzden portal
-       çizilmiyor. */
-    if (!G.sinirVar) return;
     var e = engel();
     var varMi = S.ciz.x != null;
     var RY = rayYuk();
@@ -1457,11 +1359,12 @@ window.Oyun = (function () {
 
   function ciftciCiz(c) {
     if (S.ciz.x == null) {
-      /* Hiç konum bildirilmedi: uydurma bir yere çiftçi koymuyoruz.
-         Yazı sahnenin ortasına değil altına, çip içinde: bitkilerin
-         üstüne binip ikisini de okunmaz yapıyordu. */
-      etiketCiz(c, "konum bildirilmedi — çiftçi çizilemiyor",
-        S.en / 2, S.boy - 56, "rgba(150,40,32,.9)");
+      /* Hiç konum bildirilmedi: uydurma bir yere çiftçi koymuyoruz. */
+      c.save();
+      c.font = "600 12px system-ui,sans-serif"; c.textAlign = "center";
+      c.fillStyle = "rgba(150,40,32,.95)";
+      c.fillText("konum bildirilmedi — çiftçi çizilemiyor", S.en / 2, S.boy * 0.52);
+      c.restore();
       return;
     }
     var e = engel();
@@ -2283,9 +2186,6 @@ window.Oyun = (function () {
   }
   /** Izgara sürekli görünmüyor: yalnız ekim kipinde ya da imleç yataktayken. */
   function izgaraCiz(c) {
-    /* Sınırlar bildirilmediyse ızgara çizilmiyor: nereye kadar uzandığı
-       bilinmeyen bir yatağın ızgarası uydurma olurdu. */
-    if (!G.sinirVar) return;
     var goster = (S.ekTur || S.tasiKip) ? 0.5 : (S.uzerinde ? 0.28 : 0);
     if (goster <= 0) return;
     var i;
@@ -2808,12 +2708,6 @@ window.Oyun = (function () {
     }
     if (S.halka) { S.halka = ""; S.secili = ""; kirlet(); return; }
     var m = ekranMM(p.x, p.y);
-    if (!G.sinirVar) {
-      S.bayrak = null;
-      mesajYaz("Yumuşak eksen sınırları bildirilmedi — nereye gidilebileceği "
-        + "bilinmiyor. Bitkilere dokunmak çalışıyor.");
-      return;
-    }
     if (!icerde(m.u, m.v)) {
       S.bayrak = null;
       mesajYaz("Orası yatağın dışı — yürünebilir alan yumuşak eksen sınırlarıyla aynı.");
@@ -2928,13 +2822,6 @@ window.Oyun = (function () {
     halkaCiz(c);
     madalyonCiz(c);
     elCiz(c);
-    if (!G.sinirVar) {
-      /* Ne yatak var ne de yatağın yerini bilecek bir yol: bunu söylüyoruz. */
-      etiketCiz(c, S.bitki.length
-        ? "yatağın sınırları bildirilmedi — bitkiler kendi koordinatlarında"
-        : "yatakta bitki yok ve sınırlar bildirilmedi — çizilecek bir şey yok",
-        S.en / 2, 28, "rgba(150,40,32,.9)");
-    }
     mesajCiz(c);
     onayCiz(c);
   });
