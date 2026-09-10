@@ -60,6 +60,24 @@
  * denetliyor; ret gelirse sebebi ekranda.
  *
  * ---------------------------------------------------------------------
+ * SUNUCUDA ZATEN VAR OLAN UÇLAR — ekran onları BAĞLIYOR, yenisini
+ * istemiyor:
+ *   /api/bitki          → nem geçmişi, eğilim, sulama/ölçüm sayaçları.
+ *                         Uç `sunucu/bitki.py` içinde; `main.py` onu
+ *                         `include_router` ile bağlıyor, o yüzden
+ *                         `main.py` içinde aranınca görünmüyor.
+ *   /api/bahce/film     → bu ekimin kareleri; `/api/bahce` her bitkiyle
+ *                         `film_kimlik` ve `film_kare` veriyor, kareler
+ *                         `/api/bahce/film/kare`den geliyor.
+ *   /api/bahce/esik     → sulama nem eşiği. TÜR EZMESİNE yazıyor: aynı
+ *                         türün hepsini etkiliyor, kendi eşiği olan
+ *                         bitkiler etkilenmiyor ve cevapta adlarıyla
+ *                         dönüyorlar — kadran ikisini de söylüyor.
+ *   /api/bahce/is/iptal → kuyruktaki işi düşürüyor; çalışan işi sunucu
+ *                         409 ile geri çeviriyor, o cevap ekrana olduğu
+ *                         gibi yazılıyor.
+ *
+ * ---------------------------------------------------------------------
  * SU
  * ---------------------------------------------------------------------
  * Damla ve ıslaklık yalnız su gerçekten aktığında çiziliyor: önce röle
@@ -111,7 +129,8 @@ window.Bahce = (function () {
     t: 0, sonT: 0, dongu: 0, sonCizim: 0,
     nemKat: null, nemKatCt: null, nemDamga: "",
     islak: [], damla: [], suAkiyor: false, suKanit: "yok",
-    ray: [], sepet: null, tasima: null, tasimaHedef: null,
+    ray: [], sepet: null, tasima: null, tasimaHedef: null, durDugme: null,
+    film: null, esik: null,
     toz: [], ari: null, mesaj: "", mesajT: 0,
     notlar: {}, hatalar: [],
     olcum: { kare: 0, sure: 0, enUzun: 0 }
@@ -980,10 +999,16 @@ window.Bahce = (function () {
     { k: "sula", ad: "Sula", renk: "#5aa6e8" },
     { k: "nem", ad: "Ölç", renk: "#63c46b" },
     { k: "foto", ad: "Çek", renk: "#c8ccc4" },
+    /* Film ve eşik MAKİNE İŞİ DEĞİL: biri arşivi okuyor, öteki ayar
+       yazıyor. Makine kopukken de çalışıyorlar. */
+    { k: "film", ad: "Film", renk: "#d9b26a" },
+    { k: "esik", ad: "Eşik", renk: "#b79ae0" },
     { k: "kapat", ad: "Bırak", renk: "#8d9089" }
   ];
   function eylemCiz(c) {
-    if (!S.secili || S.ekimNokta) return;
+    /* Kadran açıkken eylem halkası çizilmiyor: ikisi aynı yarıçapta üst
+       üste biniyor ve hangi daireye dokunduğun belirsizleşiyordu. */
+    if (!S.secili || S.ekimNokta || S.esik) return;
     var b = S.ix[S.secili];
     if (!b) return;
     var sp = spriteAl(b);
@@ -992,6 +1017,11 @@ window.Bahce = (function () {
     halkaCiz(c, px(b.x), py(b.y), EYLEM, R, S.basiliSula ? "sula" : "", bagli,
       function (e) { return e.ad; },
       function (e) {
+        if (e.k === "film") {
+          var n = sayi(b.film_kare, 0);
+          return n ? n + " kare" : "kare yok";
+        }
+        if (e.k === "esik") return "tür ayarı";
         if (e.k !== "sula") return "";
         if (S.basiliSula) return S.basiliSn.toFixed(1) + " sn";
         return bagli ? "basılı tut" : "kilitli";
@@ -1276,9 +1306,11 @@ window.Bahce = (function () {
     calisanAletCiz(c);
     eylemCiz(c);
     if (S.insaBitti) rayCiz(c);
+    esikCiz(c);
     atmosferCiz(c, dt);
     isikCiz(c);
     tasimaCiz(c);
+    filmCiz(c);
     if (!S.insaBitti) {
       c.fillStyle = "rgba(255,255,255,.5)";
       c.font = "12px ui-monospace,monospace"; c.textAlign = "center";
@@ -1644,6 +1676,7 @@ window.Bahce = (function () {
   }
   /** Çalışan iş ucun üstünde görünüyor: alet makineyle SENKRON. */
   function calisanAletCiz(c) {
+    S.durDugme = null;
     var k = (S.veri && S.veri.kuyruk) || {};
     var ca = k.calisan;
     if (!ca) return;
@@ -1662,7 +1695,292 @@ window.Bahce = (function () {
     c.save(); c.translate(cx, cy); c.scale(0.72, 0.72); c.translate(-cx, -cy);
     aletSimge(c, eslek, cx, cy, al ? al.renk : "#8fd0ff");
     c.restore();
+    /* DUR: çalışan/bekleyen işi iptal (`/api/bahce/is/iptal`). Kuyruktaki
+       iş gerçekten iptal oluyor; ÇALIŞAN işi sunucu 409 ile geri
+       çeviriyor ve o cevabı olduğu gibi yazıyoruz — makineyi durdurmak
+       teknik panelin işi, burada durdurmuş gibi yapmıyoruz. */
+    var dx = cx + 26, dy = cy - 2;
+    c.fillStyle = "rgba(28,20,18,.9)";
+    c.beginPath(); c.arc(dx, dy, 12, 0, 6.3); c.fill();
+    c.strokeStyle = "#e07f6a"; c.lineWidth = 1.4;
+    c.beginPath(); c.arc(dx, dy, 12, 0, 6.3); c.stroke();
+    c.fillStyle = "#e07f6a";
+    c.fillRect(dx - 4, dy - 4, 8, 8);
+    S.durDugme = { x: dx, y: dy, r: 14, kimlik: ca.kimlik, tip: ca.tip,
+                   etiket: ca.etiket || ca.tip };
     c.restore();
+  }
+  /** Kuyruktaki işi iptal et. */
+  var isIptal = guvenli("iptal", function (kimlik, etiket) {
+    onayAc((etiket || "İş") + " iptal edilecek.",
+      "Kuyruktan düşer. Makine o işi çalıştırmaya başladıysa sunucu iptali "
+      + "kabul etmez ve sebebini yazar.", "İptal et",
+      function () {
+        gonder("/api/bahce/is/iptal", { kimlik: String(kimlik) })
+          .then(function () {
+            gunluk("bahçe: iş iptal · " + kimlik);
+            mesajYaz("İş kuyruktan düştü.");
+            notYaz("iptal", "");
+            return veriYukle();
+          })
+          .catch(function (h) {
+            notYaz("iptal", "İptal olmadı — " + ((h && h.message) || h));
+            isteKare();
+          });
+      });
+  });
+
+  /* ==================================================================== *
+   * FİLM — BÜYÜME ARŞİVİ (`/api/bahce/film`)
+   *
+   * Kareler sunucuda zaten var: `/api/bahce` her bitkiyle birlikte
+   * `film_kimlik` ve `film_kare` veriyor, kareler `/api/bahce/film`den,
+   * görüntüler `/api/bahce/film/kare`den geliyor. Ekran yalnız gösteriyor;
+   * yeni kare çekmek "Çek" işi, o ayrı.
+   * ==================================================================== */
+  function jeton() {
+    var p = P();
+    return (p && p.S && p.S.jeton) ? String(p.S.jeton) : "";
+  }
+  var filmAc = guvenli("film", function (b) {
+    var kimlik = String(b.film_kimlik || "");
+    if (!kimlik || !sayi(b.film_kare, 0)) {
+      mesajYaz("Bu ekimin arşivinde kare yok — ilk kareyi 'Çek' ile alabilirsin.");
+      altYaz(); return;
+    }
+    S.film = { ad: b.ad, tur: b.tur_ad || b.ad, kimlik: kimlik, kareler: [],
+               ix: 0, img: null, hata: "", yukleniyor: true };
+    isteKare();
+    api("/api/bahce/film?kimlik=" + encodeURIComponent(kimlik))
+      .then(function (c) {
+        if (!S.film || S.film.kimlik !== kimlik) return;
+        S.film.kareler = (c && c.kareler) || [];
+        S.film.yukleniyor = false;
+        S.film.ix = Math.max(0, S.film.kareler.length - 1);
+        if (!S.film.kareler.length) S.film.hata = "Arşivde kare yok.";
+        filmKareYukle();
+      })
+      .catch(function (h) {
+        if (!S.film) return;
+        S.film.yukleniyor = false;
+        S.film.hata = "Film okunamadı — " + ((h && h.kod ? h.kod + ": " : "")
+          + ((h && h.message) || "sebep bilinmiyor"));
+        isteKare();
+      });
+  });
+  function filmKareYukle() {
+    var f = S.film;
+    if (!f || !f.kareler.length) { isteKare(); return; }
+    var k = f.kareler[kis(f.ix, 0, f.kareler.length - 1)];
+    if (!k) return;
+    var jt = jeton();
+    if (!jt) { f.hata = "Jeton yok — kare istenemiyor."; isteKare(); return; }
+    var im = new Image();
+    im.onload = function () { if (S.film === f) { f.img = im; f.hata = ""; isteKare(); } };
+    im.onerror = function () { if (S.film === f) { f.img = null; f.hata = "Kare okunamadı."; isteKare(); } };
+    im.src = "/api/bahce/film/kare?kimlik=" + encodeURIComponent(f.kimlik)
+      + "&damga=" + encodeURIComponent(k.damga) + "&jeton=" + encodeURIComponent(jt);
+    f.bekleyen = k.damga;
+  }
+  function filmKapat() { S.film = null; altYaz(); isteKare(); }
+  function filmCiz(c) {
+    var f = S.film;
+    if (!f) return;
+    var w = Math.min(S.en - 40, 520), h = Math.min(S.boy - 40, 420);
+    var x = (S.en - w) / 2, y = (S.boy - h) / 2;
+    f.kutu = { x: x, y: y, w: w, h: h };
+    c.save();
+    c.fillStyle = "rgba(8,10,7,.72)";
+    c.fillRect(0, 0, S.en, S.boy);
+    c.fillStyle = "rgba(18,21,16,.98)";
+    c.beginPath();
+    if (c.roundRect) c.roundRect(x, y, w, h, 14); else c.rect(x, y, w, h);
+    c.fill();
+    c.strokeStyle = "#5f6a58"; c.lineWidth = 1.2; c.stroke();
+    c.font = "600 13px system-ui,sans-serif"; c.textAlign = "left";
+    c.fillStyle = "#e6ebe0";
+    c.fillText(f.tur + " · büyüme filmi", x + 16, y + 24);
+    /* Kapat */
+    f.kapat = { x: x + w - 22, y: y + 18, r: 15 };
+    c.strokeStyle = "#c9cec4"; c.lineWidth = 1.6;
+    c.beginPath();
+    c.moveTo(f.kapat.x - 6, f.kapat.y - 6); c.lineTo(f.kapat.x + 6, f.kapat.y + 6);
+    c.moveTo(f.kapat.x + 6, f.kapat.y - 6); c.lineTo(f.kapat.x - 6, f.kapat.y + 6);
+    c.stroke();
+    var ix = y + 38, iy = h - 92;
+    if (f.img) {
+      var o = Math.min((w - 32) / f.img.width, iy / f.img.height);
+      var iw = f.img.width * o, ih = f.img.height * o;
+      c.drawImage(f.img, x + (w - iw) / 2, ix + (iy - ih) / 2, iw, ih);
+    } else {
+      c.font = "12px system-ui,sans-serif"; c.textAlign = "center";
+      c.fillStyle = f.hata ? "#e07f6a" : "#9aa094";
+      c.fillText(f.hata || (f.yukleniyor ? "film okunuyor…" : "kare bekleniyor…"),
+        x + w / 2, ix + iy / 2);
+    }
+    /* Şerit: her kare bir çentik, seçili olan dolu. */
+    var sy = y + h - 44, sx1 = x + 20, sx2 = x + w - 20;
+    f.serit = { x1: sx1, x2: sx2, y: sy, adet: f.kareler.length };
+    c.strokeStyle = "rgba(200,206,196,.35)"; c.lineWidth = 2;
+    c.beginPath(); c.moveTo(sx1, sy); c.lineTo(sx2, sy); c.stroke();
+    if (f.kareler.length) {
+      var i, n = f.kareler.length;
+      for (i = 0; i < n; i++) {
+        var kx = n === 1 ? sx1 : sx1 + (i / (n - 1)) * (sx2 - sx1);
+        c.fillStyle = i === f.ix ? "#d9b26a" : "rgba(200,206,196,.5)";
+        c.beginPath(); c.arc(kx, sy, i === f.ix ? 5 : 2.4, 0, 6.3); c.fill();
+      }
+      var kk = f.kareler[kis(f.ix, 0, n - 1)];
+      c.font = "11px ui-monospace,monospace"; c.textAlign = "center";
+      c.fillStyle = "#c9cec4";
+      c.fillText((f.ix + 1) + " / " + n + "  ·  " + tarih(kk.ts), x + w / 2, y + h - 18);
+    }
+    c.restore();
+  }
+  function filmDokun(p) {
+    var f = S.film;
+    if (!f || !f.kutu) return false;
+    if (f.kapat && Math.hypot(f.kapat.x - p.x, f.kapat.y - p.y) < f.kapat.r) {
+      filmKapat(); return true;
+    }
+    if (p.x < f.kutu.x || p.x > f.kutu.x + f.kutu.w
+      || p.y < f.kutu.y || p.y > f.kutu.y + f.kutu.h) { filmKapat(); return true; }
+    if (f.serit && f.kareler.length && Math.abs(p.y - f.serit.y) < 26) {
+      filmSec(p.x); bas = { tip: "film", x: p.x, y: p.y, surukle: true };
+      return true;
+    }
+    return true;                                  /* kutunun içi — geçirmiyoruz */
+  }
+  function filmSec(sx) {
+    var f = S.film;
+    if (!f || !f.kareler.length) return;
+    var t = kis((sx - f.serit.x1) / Math.max(1, f.serit.x2 - f.serit.x1), 0, 1);
+    var yeni = Math.round(t * (f.kareler.length - 1));
+    if (yeni !== f.ix) { f.ix = yeni; filmKareYukle(); }
+    isteKare();
+  }
+
+  /* ==================================================================== *
+   * EŞİK — SULAMA NEM EŞİĞİ (`/api/bahce/esik`)
+   *
+   * DİKKAT, BU BİR TÜR AYARIDIR. Sunucu eşiği tür ezmesine yazıyor;
+   * aynı türdeki bütün bitkiler etkileniyor ve kendi `ozel` eşiği olan
+   * bitkiler etkilenmiyor. Kadranın üstünde bu yazıyor, cevapta gelen
+   * "kendi eşiği olan" bitkiler de adlarıyla söyleniyor — yoksa kullanıcı
+   * değişmeyen bir sayıyı değişmiş sanırdı.
+   * ==================================================================== */
+  var esikAc = guvenli("eşik", function (b) {
+    var slug = String(b.tur || "");
+    if (!slug) {
+      mesajYaz("Bu bitkinin türü tanınmıyor — tür ayarı yazılamaz.");
+      altYaz(); return;
+    }
+    var n = nemDurum(b);
+    S.esik = { ad: b.ad, slug: slug, tur: b.tur_ad || slug,
+               yuzde: n.esik > 0 ? n.esik : 35, ilk: n.esik > 0 ? n.esik : null };
+    S.secili = b.ad;
+    isteKare();
+  });
+  function esikCiz(c) {
+    var e = S.esik;
+    if (!e) return;
+    var b = S.ix[e.ad];
+    if (!b) { S.esik = null; return; }
+    var cx = px(b.x), cy = py(b.y), R = Math.max(66, spriteAl(b).R + 52);
+    e.merkez = { x: cx, y: cy, r: R };
+    c.save();
+    /* Kadran: yay boyunca %0–%100. */
+    c.strokeStyle = "rgba(20,24,19,.85)"; c.lineWidth = 13;
+    c.beginPath(); c.arc(cx, cy, R, -Math.PI * 0.82, Math.PI * -0.18); c.stroke();
+    var t = kis(e.yuzde / 100, 0, 1);
+    c.strokeStyle = "#b79ae0"; c.lineWidth = 6;
+    c.beginPath();
+    c.arc(cx, cy, R, -Math.PI * 0.82, -Math.PI * 0.82 + t * (Math.PI * 0.64));
+    c.stroke();
+    var a = -Math.PI * 0.82 + t * (Math.PI * 0.64);
+    var hx = cx + Math.cos(a) * R, hy = cy + Math.sin(a) * R;
+    c.fillStyle = "#e6ddf6";
+    c.beginPath(); c.arc(hx, hy, 8, 0, 6.3); c.fill();
+    /* Ölçülen nem varsa kadranın üstünde işaretli: eşiği neye göre
+       koyduğunu görebilesin. */
+    var n = nemDurum(b);
+    if (n.var && n.yuzde != null) {
+      var a2 = -Math.PI * 0.82 + kis(n.yuzde / 100, 0, 1) * (Math.PI * 0.64);
+      c.strokeStyle = "#63c46b"; c.lineWidth = 2.4;
+      c.beginPath();
+      c.moveTo(cx + Math.cos(a2) * (R - 11), cy + Math.sin(a2) * (R - 11));
+      c.lineTo(cx + Math.cos(a2) * (R + 11), cy + Math.sin(a2) * (R + 11));
+      c.stroke();
+    }
+    c.font = "700 15px system-ui,sans-serif"; c.textAlign = "center";
+    c.fillStyle = "#e6ddf6";
+    c.fillText("%" + Math.round(e.yuzde), cx, cy - R - 26);
+    c.font = "600 10px system-ui,sans-serif";
+    c.fillStyle = "rgba(226,222,240,.9)";
+    c.fillText(e.tur + " TÜRÜNÜN eşiği — aynı türün hepsini etkiler", cx, cy - R - 12);
+    c.font = "10px system-ui,sans-serif";
+    c.fillStyle = "rgba(210,214,206,.8)";
+    c.fillText("kadranı sürükle · %100 = sulama kapalı", cx, cy + R + 22);
+    c.restore();
+  }
+  function esikDokun(p) {
+    var e = S.esik;
+    if (!e || !e.merkez) return false;
+    var d = Math.hypot(e.merkez.x - p.x, e.merkez.y - p.y);
+    if (d > e.merkez.r - 26 && d < e.merkez.r + 26) {
+      esikSurukle(p); bas = { tip: "esik", x: p.x, y: p.y, surukle: true };
+      return true;
+    }
+    /* Kadranın dışına dokunmak kadranı KAPATIYOR: açık kalırsa sahnedeki
+       başka her dokunuşu yutuyor (dur düğmesi dâhil). Değer değiştiyse
+       onay şeridi açık kalıyor, o DOM'da ve kadrana bağlı değil. */
+    var kopya = { slug: e.slug, tur: e.tur, yuzde: e.yuzde, ilk: e.ilk };
+    S.esik = null;
+    if (kopya.ilk == null || Math.round(kopya.yuzde) !== Math.round(kopya.ilk)) {
+      esikOnay(kopya);
+    } else { altYaz(); isteKare(); }
+    return true;
+  }
+  function esikSurukle(p) {
+    var e = S.esik;
+    if (!e || !e.merkez) return;
+    var a = Math.atan2(p.y - e.merkez.y, p.x - e.merkez.x);
+    if (a > Math.PI * -0.18) a = a > Math.PI * 0.5 ? -Math.PI * 0.82 : Math.PI * -0.18;
+    if (a < -Math.PI * 0.82) a = -Math.PI * 0.82;
+    e.yuzde = kis(((a + Math.PI * 0.82) / (Math.PI * 0.64)) * 100, 0, 100);
+    isteKare();
+  }
+  function esikOnay(e) {
+    e = e || S.esik;
+    if (!e) return;
+    var y = Math.round(e.yuzde);
+    onayAc(e.tur + " türünün sulama eşiği %" + y + " olacak.",
+      "Bu bir TÜR ayarı: aynı türdeki bütün bitkileri etkiler ve teknik "
+      + "paneldeki tür ezmesiyle aynı yere yazılır. %100 = sulama kapalı.",
+      "Yaz",
+      function () {
+        gonder("/api/bahce/esik", { turler: [e.slug], yuzde: y })
+          .then(function (c) {
+            var kendi = (c && c.kendi_esigi_olan) || [];
+            gunluk("bahçe: eşik · " + e.slug + " %" + y);
+            mesajYaz("Eşik yazıldı: " + e.tur + " %" + y);
+            /* Etkilenmeyen bitkiler NOT alanında kalıyor: geçici bir
+               mesaj olarak yazılsaydı bir sonraki tazelemede silinir ve
+               kullanıcı değişmeyen bitkileri hiç görmezdi. */
+            notYaz("esik", kendi.length
+              ? ("Kendi eşiği olan " + kendi.length + " bitki bu ayardan "
+                 + "etkilenmedi: " + kendi.slice(0, 4).join(", ")
+                 + (kendi.length > 4 ? "…" : ""))
+              : "");
+            S.esik = null;
+            return veriYukle();
+          })
+          .catch(function (h) {
+            notYaz("esik", "Eşik yazılmadı — " + ((h && h.message) || h));
+            isteKare();
+          });
+      },
+      function () { S.esik = null; altYaz(); isteKare(); });
   }
 
   /* ==================================================================== *
@@ -1709,6 +2027,12 @@ window.Bahce = (function () {
     if (!S.insaBitti) { insaAtla(); return; }
     var bagli = !!(S.veri && S.veri.bagli);
 
+    /* Film penceresi açıkken bütün dokunuşlar onun: arkadaki sahneye
+       kazayla iş yaptırmak istemiyoruz. */
+    if (S.film && filmDokun(p)) return;
+    /* Eşik kadranı açıkken de aynısı. */
+    if (S.esik && esikDokun(p)) return;
+
     /* SOL RAY — aleti eline al. Makine kopukken alınmıyor ve sebebi
        söyleniyor: o işi yapan makine. */
     var ray = rayVur(p);
@@ -1749,6 +2073,11 @@ window.Bahce = (function () {
         isteKare(); return;
       }
       S.ekimNokta = null; S.ekimTur = null; onayKapat(); altYaz(); isteKare(); return;
+    }
+    /* dur düğmesi — çalışan işin rozetinin yanında */
+    if (S.durDugme && Math.hypot(S.durDugme.x - p.x, S.durDugme.y - p.y) < S.durDugme.r) {
+      isIptal(S.durDugme.kimlik, S.durDugme.etiket);
+      return;
     }
     /* uç */
     var m = S.robot || S.makine;
@@ -1796,6 +2125,8 @@ window.Bahce = (function () {
       && p.y >= sp.y - 10 && p.y <= sp.y + sp.h + 10;
   }
   var tuvalKaydi = guvenli("gezinme", function (e) {
+    if (bas && bas.tip === "film") { filmSec(konum(e).x); return; }
+    if (bas && bas.tip === "esik") { esikSurukle(konum(e)); return; }
     if (S.tasima) {
       var pt = konum(e);
       S.tasima.x = pt.x; S.tasima.y = pt.y;
@@ -1835,6 +2166,13 @@ window.Bahce = (function () {
 
   var tuvalBirakti = guvenli("bırakma", function () {
     if (uzunSayac) { clearTimeout(uzunSayac); uzunSayac = 0; }
+    if (bas && bas.tip === "film") { bas = null; return; }
+    if (bas && bas.tip === "esik") {
+      bas = null;
+      var ek = S.esik;
+      if (ek) { S.esik = null; esikOnay({ slug: ek.slug, tur: ek.tur, yuzde: ek.yuzde, ilk: ek.ilk }); }
+      return;
+    }
     if (S.tasima) {
       var t = S.tasima, hedef = S.tasimaHedef;
       S.tasima = null; S.tasimaHedef = null;
@@ -1954,6 +2292,8 @@ window.Bahce = (function () {
     var b = S.ix[S.secili];
     if (!b) return;
     if (ey.k === "kapat") { S.secili = ""; onayKapat(); altYaz(); isteKare(); return; }
+    if (ey.k === "film") { filmAc(b); return; }
+    if (ey.k === "esik") { esikAc(b); return; }
     if (!bagli) { mesajYaz("Makine bağlı değil — bu iş başlatılamaz."); return; }
     if (ey.k === "sula") {
       /* BASILI TUT: tuttuğun süre sulama süresi oluyor. Bırakınca ne
@@ -2077,7 +2417,12 @@ window.Bahce = (function () {
     return Object.prototype.hasOwnProperty.call(k, slug) ? k[slug] : null;
   }
 
-  /* Seçili bitkinin nem geçmişi — var olan /api/bitki'den. */
+  /* Seçili bitkinin nem geçmişi — var olan `/api/bitki` ucundan.
+     UCUN YERİ: `sunucu/bitki.py` (`@yon.get("/api/bitki")`), `main.py`
+     onu `app.include_router(bitki.yonlendirici_kur(...))` ile bağlıyor.
+     `ek[<bitki adı>]` içinde `gecmis`, `egilim`, `sula_adet`, `nem_adet`
+     alanları oradan geliyor; `main.py` içinde aranınca bulunamamasının
+     sebebi yönlendiricinin ayrı dosyada olması. */
   var gecmisAl = guvenli("geçmiş", function (ad) {
     if (!ad) return;
     if (S.gecmisAd === ad && Date.now() - S.gecmisT < 20000) return;
@@ -2089,9 +2434,20 @@ window.Bahce = (function () {
                        sula: sayi(e.sula_adet, 0), olcum: sayi(e.nem_adet, 0) }
                    : { adet: 0, egilim: null };
       altYaz();
-    }).catch(function () {
+    }).catch(function (h) {
+      /* NEDEN okunamadığını yazıyoruz. "Okunamadı" tek başına hiçbir şey
+         öğretmiyordu: uç sunucuda yok mu (404), jeton mu düştü (401),
+         sunucu mu patladı (500)? `apiIste` hatanın üstüne durum kodunu
+         `kod` olarak koyuyor, detay da mesajda. Uç `sunucu/bitki.py`
+         içinde tanımlı ve `main.py` onu `include_router` ile bağlıyor;
+         404 görülürse orada bir kopukluk var demektir. */
       S.gecmis = null;
-      notYaz("gecmis", "Nem geçmişi okunamadı.");
+      var kod = h && h.kod ? h.kod : 0;
+      var ek = kod === 404
+        ? "sunucuda /api/bitki yok (sunucu/bitki.py bağlı değil)"
+        : ((h && h.message) || "sebep bilinmiyor");
+      notYaz("gecmis", "Nem geçmişi okunamadı — " + (kod ? kod + ": " : "") + ek);
+      isteKare();
     });
   });
 
@@ -2479,7 +2835,15 @@ window.Bahce = (function () {
         }),
         tasima: S.tasima ? { tip: S.tasima.tip, k: S.tasima.k || S.tasima.ad } : null,
         su: { akiyor: !!S.suAkiyor, kanit: S.suKanit, damla: (S.damla || []).length,
-              islak: S.islak.length }
+              islak: S.islak.length },
+        film: S.film ? { ad: S.film.ad, kare: S.film.kareler.length, ix: S.film.ix,
+                         hata: S.film.hata, resim: !!S.film.img,
+                         serit: S.film.serit || null, kutu: S.film.kutu || null } : null,
+        esik: S.esik ? { slug: S.esik.slug, yuzde: Math.round(S.esik.yuzde) } : null,
+        dur: S.durDugme ? { x: S.durDugme.x, y: S.durDugme.y, kimlik: S.durDugme.kimlik } : null,
+        eylem: EYLEM.map(function (x) {
+          return { k: x.k, x: x._x, y: x._y, r: x._r };
+        })
       };
     },
     /** Kare süresi ölçümü — 24 bitkilik sahnede kaç ms sürdüğünü söyler. */
