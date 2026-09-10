@@ -389,31 +389,120 @@ class Ajan:
                 f"genel kural yerine o geçerli olur (Ayarlar → Başlar → uç "
                 f"seçici güvenli yüksekliği).")
 
-    def uc_is_engel(self, kimlik: str) -> str:
-        """Bu iş için doğru uç seçili mi — değilse sebebi.
+    # KARTIN RAPOR ARASI (saniye). Firmware `OLCUM_ARALIGI_MS = 2000`.
+    # Uç yerine oturunca firmware `sonOlcum = 0` yazıp raporu beklemeden
+    # gönderiyor, yani onay normalde anında geliyor; bu sayı o rapor
+    # kaçarsa bir sonrakini bekleyebilmek için. Firmware'de aralık
+    # büyütülürse burası da büyümeli.
+    OLCUM_ARALIGI_SN = 2.0
+    #: Servo süresine eklenen onay payı — iki rapor fırsatı.
+    UC_ONAY_PAYI_SN = 2 * OLCUM_ARALIGI_SN
+    # BÜTÜN HAZIRLIĞIN ÜST SINIRI. Sunucu bu komutu `KOMUT_ZAMAN_ASIMI`
+    # = 20 sn beklyor (sunucu/main.py); aşarsak panel 504 alıyor ve
+    # ajan işi başlatıp başlatmadığını söyleyemiyor — en kötü sonuç bu.
+    # `sure_ms` panelden 10 000 ms'ye kadar girilebiliyor ve önce süren
+    # bir hareketi, sonra kendi komutumuzu beklersek iki tam süre üst
+    # üste biniyor (10+4 + 10+4 = 28 sn). Bütçe o yüzden burada
+    # kesiliyor: aşarsa panele ZAMAN AŞIMI değil, sebebi yazılı bir RET
+    # gidiyor. Sunucudaki sayı büyürse burası da büyüyebilir.
+    UC_HAZIRLIK_BUTCESI_SN = 15.0
 
-        SEÇİLİ UÇ BİLİNMİYORSA DA İŞ BAŞLAMIYOR. Servoda geri besleme
-        yok: kart açılışta ya da sıfırlandıktan sonra ne komut edildiğini
-        bilmiyor ve "herhâlde doğrudur" demek, sulamayı tohum ucuyla
-        yapmaya kalkmak olurdu.
+    async def _uc_yerine_otursun(self, istenen: int, bitis: float) -> bool:
+        """Kart 'istenen uç seçili ve hareket bitti' diyene kadar bekler.
+
+        BEKLEMEK ŞART. Servo 90 dereceyi anında dönmüyor ve kart süre
+        dolana kadar `uc_hareket` 1 diyor. Komutu yollayıp hemen işe
+        başlamak, başlık daha yoldayken sulamayı açmak olurdu.
+
+        `bitis` `time.monotonic()` ölçeğinde son an — bütçe çağırandan
+        geliyor, çünkü ondan önce süren bir hareketi beklemiş olabiliriz.
+        """
+        while time.monotonic() < bitis:
+            if (not self._uc_harekette and self._uc_secili is not None
+                    and int(self._uc_secili) == istenen):
+                return True
+            await asyncio.sleep(0.1)
+        return False
+
+    async def _uc_hazirla(self, kimlik: str) -> str:
+        """İşin gerektirdiği başlığı indirir; olmuyorsa sebebini döner.
+
+        ESKİDEN REDDEDİYORDU, ARTIK KENDİSİ SEÇİYOR. Uç konumu
+        bilinmiyorken (kart açılışta ve her sıfırlanmada unutuyor) iş
+        reddediliyor ve kullanıcı Sür sekmesine gönderiliyordu. İşin
+        hangi başlığı gerektirdiği zaten adımlardan belli (`_dizi_basi`);
+        bilinen bir şeyi kullanıcıya sordurmak yerine servo komutu
+        buradan gidiyor.
+
+        KENDİLİĞİNDEN HAREKET EDEN BİR MEKANİZMA — kurallar korunuyor:
+          - Z aşağıdayken seçim yapılmıyor (`uc_secim_engel`). İnen
+            başlık toprağın içinden sürüklenmesin diye; engel varsa iş
+            başlamıyor ve sebebi yazılıyor.
+          - Bir başlık hareket hâlindeyken üstüne ikinci komut
+            gitmiyor; önce oturması bekleniyor.
+          - Komut gittikten sonra KARTIN ONAYI bekleniyor. Servoda geri
+            besleme yok, ama kart komut ettiği açıyı ve hareketin bitip
+            bitmediğini bildiriyor; iş ancak o onay gelince başlıyor.
+            Onay gelmezse iş başlamıyor — komut edileni ölçülmüş gibi
+            saymıyoruz.
         """
         kimlik = str(kimlik or "")
         istenen = self.uclar.bas_indeksi(kimlik)
         if istenen < 0:
             return ""                      # iş bir başa bağlı değil
         ad = (uc_modulu.BAS_BILGI.get(kimlik) or {}).get("ad", kimlik)
-        if self._uc_secili is None:
-            return (f"Uç konumu bilinmiyor — bu iş {ad} ile yapılıyor. "
-                    f"Sür sekmesinden ucu seçin. (Servoda geri besleme yok; "
-                    f"kart açılışta ve her sıfırlanmada konumu unutuyor.)")
+        sure_sn = self.uclar.servo_sure_ms() / 1000.0
+        bekleme_sn = sure_sn + self.UC_ONAY_PAYI_SN
+        # Bütçe ÇAĞRININ TAMAMI için; iki bekleme üst üste binerse ikincisi
+        # kalanla yetiniyor.
+        son_an = time.monotonic() + self.UC_HAZIRLIK_BUTCESI_SN
+
+        # Süren bir hareket varsa bitmesini bekliyoruz; hedef zaten bu
+        # başlıksa bekleme bittiğinde iş yapılacak bir şey kalmıyor.
         if self._uc_harekette:
-            return f"Uç değişimi sürüyor — {ad} yerine oturmadan iş başlamıyor."
-        if int(self._uc_secili) != istenen:
-            simdiki = uc_modulu.BASLAR[int(self._uc_secili)] \
+            bitis = min(time.monotonic() + bekleme_sn, son_an)
+            while self._uc_harekette and time.monotonic() < bitis:
+                await asyncio.sleep(0.1)
+            if self._uc_harekette:
+                return (f"Uç değişimi {bekleme_sn:.1f} saniyede bitmedi — "
+                        f"{ad} yerine oturmadan iş başlamıyor.")
+
+        if self._uc_secili is not None and int(self._uc_secili) == istenen:
+            return ""                      # doğru başlık zaten inmiş
+
+        # DEĞİŞTİRMEK GEREKİYOR. Önce Z kilidi: inmiş bir başlık
+        # çekilmeden servo dönemez.
+        engel = self.uc_secim_engel()
+        if engel:
+            return engel
+        komut, sebep = self.uclar.servo_komutu(kimlik)
+        if sebep:
+            return sebep
+
+        # NE OLDUĞU GÜNLÜĞE YAZILIYOR. Makine kendiliğinden hareket
+        # ediyor; kullanıcı basmadığı bir hareketi günlükte görmeli.
+        if self._uc_secili is None:
+            self._gunluk_gonder(
+                f"Uç konumu bilinmiyordu — bu iş {ad} ile yapılıyor, "
+                f"başlık indiriliyor.", "uyari")
+        else:
+            onceki = uc_modulu.BASLAR[int(self._uc_secili)] \
                 if 0 <= int(self._uc_secili) < len(uc_modulu.BASLAR) else "?"
-            simdiki_ad = (uc_modulu.BAS_BILGI.get(simdiki) or {}).get("ad", simdiki)
-            return (f"Seçili uç {simdiki_ad}, bu iş {ad} ile yapılıyor. "
-                    f"Önce {ad} ucunu seçin.")
+            onceki_ad = (uc_modulu.BAS_BILGI.get(onceki) or {}).get("ad", onceki)
+            self._gunluk_gonder(
+                f"Seçili uç {onceki_ad}; bu iş {ad} ile yapılıyor, "
+                f"başlık değiştiriliyor.", "uyari")
+
+        try:
+            await asyncio.to_thread(self.arduino.komut, komut)
+        except RuntimeError as hata:
+            return f"{ad} indirilemedi: {hata}"
+
+        bitis = min(time.monotonic() + bekleme_sn, son_an)
+        if not await self._uc_yerine_otursun(istenen, bitis):
+            return (f"{ad} {bekleme_sn:.1f} saniyede yerine oturduğunu "
+                    f"bildirmedi — iş başlatılmadı. Kart bağlı mı? "
+                    f"Servo hareket süresi Ayarlar → Başlar'da.")
         return ""
 
     @staticmethod
@@ -644,15 +733,19 @@ class Ajan:
                 return {"ok": True, "mesaj": mesaj_metni}
 
             if ad == "dizi_baslat":
-                # DOĞRU UÇ SEÇİLİ Mİ. Sulama sulama başlığıyla, ekim tohum
-                # ucuyla yapılıyor; yanlış uçla ya da uç bilinmiyorken
-                # başlamak, suyu tohum ucundan akıtmak demek. Hangi başın
-                # gerektiği ADIMLARDAN çıkıyor (bkz. `_dizi_basi`);
-                # çağıran açıkça `bas` verirse o geçerli.
+                # GEREKEN BAŞLIK İNDİRİLİYOR. Sulama sulama başlığıyla,
+                # ekim tohum ucuyla yapılıyor; yanlış uçla ya da uç
+                # bilinmiyorken başlamak, suyu tohum ucundan akıtmak
+                # demek. Hangi başın gerektiği ADIMLARDAN çıkıyor (bkz.
+                # `_dizi_basi`); çağıran açıkça `bas` verirse o geçerli.
+                #
+                # BURASI TEK GEÇİT. Sulama, ekim, kayıtlı program,
+                # kuyruk, zamanlanmış görev — hepsi `dizi_baslat`tan
+                # geçiyor, dolayısıyla başlık hazırlığı tek yerde.
                 gereken = str(arg.get("bas") or "") \
                     or self._dizi_basi(arg.get("adimlar") or [])
                 if gereken:
-                    engel = self.uc_is_engel(gereken)
+                    engel = await self._uc_hazirla(gereken)
                     if engel:
                         return {"ok": False, "mesaj": engel}
                 try:

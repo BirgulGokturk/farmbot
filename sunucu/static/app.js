@@ -504,6 +504,16 @@ async function tepsiTopluIslem(islem) {
     const y = await apiIste("/api/toplu", {
       method: "POST", body: JSON.stringify(govde),
     });
+    /* AJANIN REDDİ 200 İLE GELİYOR. Sunucunun `komut_gonder`i ajanın
+     * `{ok:false, mesaj}` yanıtını olduğu gibi döndürüyor; `ok`a
+     * bakmadan "iyi" diye yazmak, başlamamış bir işi başlamış
+     * göstermek oluyordu. Sahada görülen buydu: uç konumu
+     * bilinmiyorken sulama reddedildi ve ret satırı günlükte başarı
+     * satırı gibi, ✕ almadan göründü. */
+    if (y && y.ok === false) {
+      gunluk(`✕ ${y.mesaj || "Başlatılamadı"}`, "hata");
+      return;
+    }
     gunluk(y.mesaj || `${adlar.length} göz için başlatıldı`, "iyi");
     await tepsiYukle();
   } catch (h) {
@@ -1089,7 +1099,11 @@ function ucSeciciYaz(d) {
   const durum = $("#uc-secici-durum");
   if (durum) {
     if (s.secili == null) {
-      durum.textContent = "uç konumu bilinmiyor — bir uç seçin";
+      /* "BİR UÇ SEÇİN" DEMİYORUZ ARTIK. İş başlatıldığında ajan
+       * gereken başlığı kendisi indiriyor (`_uc_hazirla`); kullanıcıyı
+       * yapması gerekmeyen bir adıma yollamak yanlış olurdu. Yazan şey
+       * yalnız kartın bildirdiği hâl. */
+      durum.textContent = "uç konumu bilinmiyor — iş başlarken seçilecek";
     } else {
       const ad = (bilgi[s.secili_bas] || {}).ad || s.secili_bas || "?";
       durum.textContent = `komut edilen: ${ad}`

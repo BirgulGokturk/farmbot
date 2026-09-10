@@ -876,6 +876,9 @@ async def api_toplu(govde: dict[str, Any], jeton: str = Query(default="")):
     # körlemesine güvenilmiyor.
     saniye = _istek_saniye(govde)
 
+    # Sulama damgası alacak bitkiler; gezinti dalında boş kalıyor.
+    damgalanacak: list[str] = []
+
     if islem == "sula":
         cozum = await asyncio.to_thread(_sulama_coz, adlar, saniye)
         if cozum["ret"]:
@@ -884,13 +887,23 @@ async def api_toplu(govde: dict[str, Any], jeton: str = Query(default="")):
             raise HTTPException(
                 status_code=422,
                 detail="Sulama başlatılmadı — " + " · ".join(cozum["ret"]))
-        await _sulama_uygula(cozum)
+        damgalanacak = await _sulama_uygula(cozum)
         adimlar = cozum["adimlar"]
     else:
+        cozum = {}
         adimlar = [{"tip": "nokta", "ad": ad} for ad in adlar]
-    return await _dizi_gonder(
+
+    yanit = await _dizi_gonder(
         "Seçim: " + ("sulama" if islem == "sula" else "gezinti"),
         adimlar, govde.get("hiz"))
+
+    # DAMGA YALNIZ DİZİ GERÇEKTEN BAŞLADIYSA. `komut_gonder` ajanın
+    # reddini de 200 ile döndürüyor (`{"ok": false, "mesaj": …}`);
+    # `ok`a bakmadan damgalamak, reddedilen bir işi yapılmış göstermek
+    # olurdu.
+    if damgalanacak and isinstance(yanit, dict) and yanit.get("ok"):
+        await _sulama_damgala(cozum, damgalanacak)
+    return yanit
 
 
 async def _sulama_uygula(cozum: dict[str, Any]) -> list[str]:
@@ -912,31 +925,52 @@ async def _sulama_uygula(cozum: dict[str, Any]) -> list[str]:
     # neresi, başlık kayması ne, makine nereye gidiyor. Üçü yan yana
     # yazılınca hangi hatanın olduğu bakınca anlaşılıyor.
     await _sulama_gunluk(cozum)
-    # SULAMA DAMGASI. Panelde gözün "sulandı" rengi buradan geliyor.
-    # DÜRÜST OLMAK GEREKİRSE bu "su düştü" demek değil, "sulama
-    # komutu gitti" demek: akış sensörü yok ve dizi ortada kesilirse
-    # sonraki bitkiler yine damgalı kalır. Panel bunu bu şekilde
-    # yazıyor, "sulandı" kelimesinin altına gerekçesiyle.
-    sulanacak = [o["ad"] for o in cozum["ozet"] if o.get("sulanacak", True)]
-    if sulanacak:
-        simdi = time.time()
-        await asyncio.to_thread(
-            noktalar.alanlari_yaz,
-            {ad: {"sulama_ts": simdi} for ad in sulanacak})
-        # OLAY DEFTERI. Nokta deposu yalniz SON damgayi tutuyor; "kac
-        # kez sulandi" ancak her sulamanin bir satir birakmasiyla
-        # bilinebiliyor. Sure bitki basina: desen acikken toplam su
-        # noktalara BOLUNUYOR, o yuzden noktalarin sureleri toplaniyor
-        # -- istekteki `saniye` degil, gercekten gonderilen sure.
-        sureler = {
-            str(o["ad"]): round(sum(_sayi_guvenli(n.get("saniye"))
-                                    for n in (o.get("noktalar") or [])), 2)
-            for o in cozum["ozet"] if o.get("sulanacak", True)}
-        await asyncio.to_thread(
-            bitki.olay_yaz,
-            [(ad, "sula", sureler.get(ad)) for ad in sulanacak], simdi)
-        await merkez.yayinla({"tip": "tepsi"})
-    return sulanacak
+    # DAMGA BURADA YAZILMIYOR. Dizi başlamadan damgalamak, ajan
+    # işi reddettiğinde sulanmamış bitkileri sulanmış gösteriyordu;
+    # damgayı `_sulama_damgala` yazıyor ve onu `api_toplu` ancak
+    # `dizi_baslat` başarılı döndüğünde çağırıyor.
+    return [o["ad"] for o in cozum["ozet"] if o.get("sulanacak", True)]
+
+
+async def _sulama_damgala(cozum: dict[str, Any], sulanacak: list[str]) -> None:
+    """Sulama damgasını yazar — DİZİ GERÇEKTEN BAŞLADIKTAN SONRA çağrılır.
+
+    Panelde gözün "sulandı" rengi buradan geliyor. DÜRÜST OLMAK GEREKİRSE
+    bu "su düştü" demek değil, "sulama komutu gitti" demek: akış sensörü
+    yok ve dizi ortada kesilirse sonraki bitkiler yine damgalı kalır.
+    Panel bunu bu şekilde yazıyor, "sulandı" kelimesinin altına
+    gerekçesiyle.
+
+    AYRI BİR İŞLEV OLMASININ SEBEBİ: damga eskiden `dizi_baslat`tan ÖNCE,
+    hazırlığın içinde yazılıyordu. Ajan işi reddettiğinde — uç konumu
+    bilinmiyor, Z aşağıda, bölge engeli — pompa hiç çalışmadığı hâlde
+    bitkiler damgalı kalıyordu. Sahada görülen buydu: 24 bitki "sulama
+    başlatıldı" damgası aldı, dizi hiç başlamadı. Damganın kendi tanımı
+    "sulama komutu gitti"; komut gitmediyse damga da olmamalı.
+
+    Zararı görünenden büyüktü: `bahce.py` nem okumasını sulama damgasından
+    eskiyse BAYAT sayıyor, yani susuz bir bitkinin kuru okuması görmezden
+    geliniyordu.
+    """
+    if not sulanacak:
+        return
+    simdi = time.time()
+    await asyncio.to_thread(
+        noktalar.alanlari_yaz,
+        {ad: {"sulama_ts": simdi} for ad in sulanacak})
+    # OLAY DEFTERI. Nokta deposu yalniz SON damgayi tutuyor; "kac
+    # kez sulandi" ancak her sulamanin bir satir birakmasiyla
+    # bilinebiliyor. Sure bitki basina: desen acikken toplam su
+    # noktalara BOLUNUYOR, o yuzden noktalarin sureleri toplaniyor
+    # -- istekteki `saniye` degil, gercekten gonderilen sure.
+    sureler = {
+        str(o["ad"]): round(sum(_sayi_guvenli(n.get("saniye"))
+                                for n in (o.get("noktalar") or [])), 2)
+        for o in cozum["ozet"] if o.get("sulanacak", True)}
+    await asyncio.to_thread(
+        bitki.olay_yaz,
+        [(ad, "sula", sureler.get(ad)) for ad in sulanacak], simdi)
+    await merkez.yayinla({"tip": "tepsi"})
 
 
 async def _dizi_gonder(ad: str, adimlar: list[dict[str, Any]],
@@ -4143,7 +4177,14 @@ async def _kuyruk_calistir(is_: dict[str, Any]) -> str:
         # davranis aynen eskisi gibi. `tarla.js`teki toplu sulama ayni
         # karari zaten vermisti; kuyruk yolu geride kalmisti.
         govde["saniye"] = is_["veri"].get("saniye")
-    await api_toplu(govde, jeton=PANEL_PAROLA)
+    yanit = await api_toplu(govde, jeton=PANEL_PAROLA)
+    # AJAN REDDETTİYSE İŞ "BİTTİ" SAYILMIYOR. `api_toplu` ajanın reddini
+    # de 200 ile döndürüyor (`{"ok": false, "mesaj": …}`); yanıta
+    # bakmadan geçmek, kuyruktaki işi "sulandı" diye kapatıp hiç
+    # çalışmamış bir sulamayı yapılmış göstermek olurdu.
+    if isinstance(yanit, dict) and yanit.get("ok") is False:
+        raise HTTPException(status_code=409,
+                            detail=str(yanit.get("mesaj") or "iş başlatılamadı"))
     # Dizi başladı; bitmesini bekliyoruz ki sıradaki iş üstüne binmesin.
     await _dizi_bitmesini_bekle()
     return {"sula": "sulandı", "ek": "ekildi", "gez": "gidildi",

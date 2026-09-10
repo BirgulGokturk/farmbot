@@ -1694,6 +1694,16 @@
       const y = await P().apiIste("/api/toplu", {
         method: "POST", body: JSON.stringify(govde),
       });
+      /* AJANIN REDDİ 200 İLE GELİYOR. Sunucunun `komut_gonder`i ajanın
+       * `{ok:false, mesaj}` yanıtını olduğu gibi döndürüyor; `ok`a
+       * bakmadan "iyi" diye yazmak, başlamamış bir işi başlamış
+       * göstermek oluyordu. Sahada görülen buydu: uç konumu
+       * bilinmiyorken sulama reddedildi ve ret satırı günlükte başarı
+       * satırı gibi, ✕ almadan göründü. */
+      if (y && y.ok === false) {
+        gunluk(`✕ ${y.mesaj || "Toplu işlem başlatılmadı"}`, "hata");
+        return;
+      }
       gunluk(y.mesaj || `Toplu işlem başlatıldı — ${adlar.length} nokta`, "iyi");
       if (islem === "sil") {
         BAGLAM.geriAlGoster(y.geri_al);
