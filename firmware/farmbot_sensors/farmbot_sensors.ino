@@ -18,7 +18,11 @@
  * pompayı çalıştırmak bobini BIRAKMAK demek, çekmek değil. */
 #define ROLE_AKTIF_LOW 0
 
-#define SERVO_PIN      9
+/* SERVO SİNYALİ D10'DA. D9'dan alındı — o hatta ara ara kopan bir bağlantı
+ * vardı. Servo kütüphanesi Uno'da Timer1 kullanıyor ve zaten hem D9 hem
+ * D10'daki `analogWrite` PWM'ini devre dışı bırakıyor; ikisi de eşit
+ * derecede uygun, taşımanın yan etkisi yok. */
+#define SERVO_PIN      10
 
 /* ---------------------------------------------------- SERVO DENEME KİPİ --
  * SÜREKLİ DÖNÜŞLÜ SERVO İÇİN. Normal servoda `write(derece)` KONUM verir;
@@ -39,41 +43,30 @@
  * Seri porttan "TEST" yazınca başlıyor, tekrar yazınca duruyor. */
 #define TEST_ACILISTA 0
 
-/* SERVO SÜREKLİ DÖNÜŞLÜ MÜ? 0 = konumlu (varsayılan), 1 = sürekli dönüşlü.
+/* SERVO SÜREKLİ DÖNÜŞLÜ MÜ? 0 = konumlu, 1 = sürekli dönüşlü.
  *
- * NEDEN ANAHTAR GEREKİYOR: `UC` komutu servoya `write(derece)` yazıyor.
- * KONUMLU servoda bu "o açıya git ve orada dur" demek; süre dolunca
- * yapılacak bir şey yok. SÜREKLİ DÖNÜŞLÜ servoda aynı yazma "şu hızda
- * dön" demek ve KENDİLİĞİNDEN DURMUYOR: kart "vardım" der, servo döner.
- * Anahtar 1 iken süre dolduğunda durma darbesi yazılıyor.
+ * ŞU ANKİ DONANIM: 0-180 derecelik mikro servo, yani KONUMLU. Burası 0.
+ * (Bir ara MG996R konuşuldu; takılan o değil. Mikro servonun çekişini
+ * Arduino'nun 5V pini karşılıyor.)
  *
- * HANGİSİ OLDUĞUNU TEST KİPİ SÖYLÜYOR — tahmin etmeyin, bakın:
- *   · TEST açıkken horn bir açıya gidip DURUYOR, bekliyor, sonra
- *     ötekine gidiyorsa → KONUMLU, burası 0 kalsın.
- *   · Horn hiç durmuyor, sürekli dönüyorsa → SÜREKLİ DÖNÜŞLÜ, 1 yapın.
- *
- * YANLIŞ SEÇİMİN İKİ AYRI ZARARI VAR, o yüzden varsayılana güvenmeyin:
- * konumlu servoda 1 bırakmak her hareketten sonra horn'u 90 dereceye
- * sürer (uç seçimini bozar); sürekli dönüşlüde 0 bırakmak servoyu
- * durdurmaz (kaçak hareket). */
+ * NEDEN ANAHTAR DURUYOR: `UC` komutu servoya `write(derece)` yazıyor.
+ * Konumlu servoda bu "o açıya git ve orada dur" demek. Sürekli dönüşlüde
+ * aynı yazma "şu hızda dön" demek ve kendiliğinden durmuyor; o durumda
+ * süre dolunca durma darbesi gerekiyor. Servo değişirse tek satır. */
 #define SERVO_SUREKLI_DONUSLU 0
 //: Sürekli dönüşlü servoda motorun durduğu değer. `write` ölçeğinde.
 #define SERVO_DURMA_DEGERI 90
 
-/* ⚙️ DEĞİŞTİREBİLECEĞİNİZ İNCE AYARLAR — hepsi burada, başka yerde yok.
+/* ⚙️ DENEME DÖNGÜSÜNÜN AYARLARI ARTIK BU BLOKTA DEĞİL.
  *
- * DENEME DÖNGÜSÜ, SAHADA ÇALIŞTIĞI DOĞRULANAN KODUN AYNISI: hedefe tek
- * hamlede atlamıyor, 1 derecelik adımlarla süpürüyor. Fark önemli —
- * `write(180)` bir hamlede yazılınca servo kendi azami hızıyla gidiyor;
- * adımlayınca hız `adimGecikmesi` ile belirleniyor.
+ * Döngü, kullanıcının yazıp sahada denediği kodun kendisi ve AYNEN
+ * duruyor (aşağıda `testDongusu` ve `moveToAngle`). Açıları, adım
+ * gecikmesini ve bekleme sürelerini oradaki satırlardan değiştirin:
+ *     moveToAngle(90, 5);   <- hedef açı, derece başına ms
+ *     delay(1000);          <- o açıda bekleme
  *
- * `durmaHizi` ve `yavasIleriHizi` gibi HIZ ayarları kalktı: onlar servoyu
- * sürekli dönüşlü varsayıyordu ve bu döngüde karşılıkları yok. */
-const int testAcilari[]     = {90, 180, 0}; // sırayla gidilecek açılar
-const int adimGecikmesi     = 5;    // derece başına ms — BÜYÜK = YAVAŞ
-const int duraklardaBekleme = 1000; // her açıya varınca kaç ms beklesin
-
-const int TEST_ACI_SAYISI = sizeof(testAcilari) / sizeof(testAcilari[0]);
+ * Değerleri buraya sabit olarak çıkarmak kodu "aynen" olmaktan
+ * çıkarırdı; iki yerde iki gerçek olmasındansa tek yerde duruyorlar. */
 
 #define OLCUM_ARALIGI_MS 2000
 
@@ -115,12 +108,18 @@ String girisTamponu = "";
 bool testAcik = false;
 /* İleri bildirim: `ucKomut` bu dosyada `testDurdur`dan ÖNCE tanımlı. */
 void testDurdur();
+void moveToAngle(int targetAngle, int stepDelay);  // testDongusu bundan once tanimli
+void testDongusu();
 int  usDeger(int derece);   // testBasla bunu kendinden ONCE cagiriyor
 void testBasla();   // setup, TEST_ACILISTA 1 iken bunu çağırıyor
-int  testSirasi = 0;            // `testAcilari` içinde neredeyiz
-int  testAci = 0;               // horn'un ŞU AN yazılmış açısı
-bool testGidiyor = false;       // true: adımlıyor, false: durakta bekliyor
-unsigned long testAdimMs = 0;   // son adımın/durağın başlangıcı
+/* KULLANICININ DEĞİŞKENİ, AYNEN. `moveToAngle` bunu okuyup yazıyor. */
+int currentAngle = 0; // Tracks current servo position
+
+/* KULLANICININ KODU `myServo` DİYOR. Aynı pini süren ikinci bir Servo
+ * nesnesi açmak olmaz — tek pin, tek nesne. Bu yüzden yeni nesne değil,
+ * mevcut `ucServo`ya bir TAKMA AD veriliyor: kullanıcının satırları
+ * harfi harfine kalıyor, sürülen nesne yine tek. */
+Servo &myServo = ucServo;
 
 // --------------------------------------------------------------- RÖLE -----
 /* Pine kapalı seviyeyi YAZIP sonra OUTPUT yapıyoruz. Ters sırada pin bir
@@ -219,45 +218,68 @@ void ucGozet() {
 }
 
 // ---------------------------------------------------- SERVO DENEME KİPİ --
-/* `testAcilari` listesini sırayla geziyor; her hedefe 1 derecelik
- * adımlarla gidiyor, varınca bekliyor, sonrakine geçiyor.
+/* AŞAĞIDAKİ İKİ İŞLEV KULLANICININ KODUDUR — HARFİ HARFİNE.
  *
- * `delay` YOK, `millis` VAR. Sizin denediğiniz kod `delay(adimGecikmesi)`
- * kullanıyordu; burada olmaz — servo süpürürken kart 3-4 saniye sağır
- * kalır, sensör okunmaz, seri komut işlenmez ve panel "Arduino sustu"
- * der. Adım zamanlaması aynı, bekleme yolu farklı.
+ * Yorumları dâhil tek karakteri değiştirilmedi. Sebebi: bu kod sahada
+ * denendi ve servonun döndüğü görüldü. Ondan sonraki her uyuşmazlık
+ * "acaba çevirirken mi bozdum" sorusunu doğurdu. Artık o soru yok.
  *
- * ADIM ADIM SÜPÜRMEK BİLEREK: hedefi tek hamlede yazmak servoyu kendi
- * azami hızıyla götürür ve hız ayarlanamaz. Adımlayınca hızı
- * `adimGecikmesi` belirliyor — 5 ms/derece, 180 dereceyi ~0,9 sn'de. */
-void testAdimUygula() {
-  if (!ucTakili) { ucServo.attach(SERVO_PIN); ucTakili = true; }
-  ucServo.write(testAci);
-  /* Kartın bildirdiği açı gerçekten yazılan açı olsun: panel deneme
-   * sırasında horn'un nerede olduğunu görebilsin. `uc_secili` null
-   * kalıyor — deneme listesi uçların açıları değil. */
-  ucAci = testAci;
-  testAdimMs = millis();
+ * BEDELİ BİLEREK KABUL EDİLDİ: `delay` kullanıyor. Deneme AÇIKKEN kart bir
+ * tur boyunca (~5,7 sn) başka hiçbir şey yapmaz — sensör satırı gelmez,
+ * seri komut işlenmez, dolayısıyla `TEST 0` ancak turun sonunda görülür.
+ * Deneme KAPALIYKEN hiçbir etkisi yok; bu yüzden döngü ana `loop`a
+ * gömülmedi, `testAcik` kapısının arkasında duruyor. */
+
+// ---- kullanıcının kodu: BAŞLANGIÇ -----------------------------------
+void testDongusu() {
+  // Move to 90 degrees with a 20ms step delay (medium speed)
+  moveToAngle(90, 5);
+  delay(1000);
+
+  // Move to 180 degrees with a 50ms step delay (slower speed)
+  moveToAngle(180, 5);
+  delay(1000);
+
+  // Return to 0 degrees quickly with a 5ms step delay
+  moveToAngle(0, 5);
+  delay(2000);
 }
+
+// Function to move to target angle with speed control
+void moveToAngle(int targetAngle, int stepDelay) {
+  int step = (targetAngle > currentAngle) ? 1 : -1;
+
+  while (currentAngle != targetAngle) {
+    currentAngle += step;
+    myServo.write(currentAngle);
+    delay(stepDelay); // Larger delay = slower rotation speed
+  }
+}
+// ---- kullanıcının kodu: BİTİŞ ---------------------------------------
 
 void testBasla() {
   testAcik = true;
-  testSirasi = 0;
-  testGidiyor = true;
-  /* HANGİ UÇ SEÇİLİ BİLİNMİYOR. Deneme horn'u uçlarla eşleşmeyen
-   * açılara götürüyor; eski kaydı bırakmak bilinmeyeni bilinen gibi
-   * göstermek olurdu. */
+  /* KULLANICININ `setup`'INDAKİ ÜÇ SATIR BURADA.
+   *
+   * Kendi sketch'inde bunlar `setup`ta duruyordu: kart her açıldığında
+   * servo takılıp 0 dereceye sürülüyordu. Ana sketch'te bu olmaz —
+   * açılışta `attach` etmek horn'u komut verilmeden sürmek demek ve kart
+   * pompa çekişinde sıfırlanıyor; her sıfırlanmada uç kendiliğinden
+   * dönerdi. Satırlar silinmedi, denemenin başına alındı: denemenin
+   * gördüğü davranış birebir aynı, makinenin açılışı etkilenmiyor. */
+  myServo.attach(SERVO_PIN);
+  ucTakili = true;
+  myServo.write(currentAngle); // Move to 0 degrees initially
+  delay(500);
+
+  /* HANGİ UÇ SEÇİLİ BİLİNMİYOR: deneme horn'u uçlarla eşleşmeyen açılara
+   * götürüyor, eski kaydı bırakmak bilinmeyeni bilinen gibi göstermek
+   * olurdu. */
   ucSecili = -1;
+  ucAci = currentAngle;
   ucHarekette = false;
-  testAdimUygula();
-  Serial.print("KOMUT: servo denemesi BASLADI — aci listesi:");
-  for (int i = 0; i < TEST_ACI_SAYISI; i++) {
-    Serial.print(' ');
-    Serial.print(testAcilari[i]);
-  }
-  Serial.print(", adim ");
-  Serial.print(adimGecikmesi);
-  Serial.println(" ms/derece. Durdurmak icin TEST 0");
+  Serial.println("KOMUT: servo denemesi BASLADI — 90, 180, 0 turu. Durdurmak icin TEST 0");
+  Serial.println("       (deneme acikken kart tur basina ~5,7 sn sessiz kalir)");
   sonOlcum = 0;
 }
 
@@ -267,7 +289,7 @@ void testDurdur() {
    * nerede durduysa orada kalsın. Durdurma anında başka bir açı yazmak,
    * "dur" komutuna hareketle cevap vermek olurdu. */
   Serial.print("KOMUT: servo denemesi DURDU — son aci ");
-  Serial.println(testAci);
+  Serial.println(currentAngle);
   sonOlcum = 0;
 }
 
@@ -292,7 +314,7 @@ void aciyaSur(int derece) {
   if (testAcik) testDurdur();
   if (!ucTakili) { ucServo.attach(SERVO_PIN); ucTakili = true; }
   ucServo.write(derece);
-  testAci = derece;               // deneme buradan devam edebilsin
+  currentAngle = derece;          // deneme buradan devam edebilsin
   /* UÇ BİLGİSİ GEÇERSİZ: elle sürmek horn'u bir uçla eşleşmeyen açıya
    * götürebilir, "şu uç seçili" kaydı artık doğruyu anlatmaz. */
   ucSecili = -1;
@@ -322,29 +344,6 @@ void usYaz(int mikro) {
   Serial.print(mikro);
   Serial.println(" us");
   sonOlcum = 0;
-}
-
-void testGozet() {
-  if (!testAcik) return;
-
-  if (!testGidiyor) {                       // durakta bekliyoruz
-    if (millis() - testAdimMs < (unsigned long)duraklardaBekleme) return;
-    testSirasi = (testSirasi + 1) % TEST_ACI_SAYISI;
-    testGidiyor = true;
-    testAdimMs = millis();
-    return;
-  }
-
-  if (millis() - testAdimMs < (unsigned long)adimGecikmesi) return;
-
-  int hedef = testAcilari[testSirasi];
-  if (testAci == hedef) {                   // vardık, durağa geç
-    testGidiyor = false;
-    testAdimMs = millis();
-    return;
-  }
-  testAci += (hedef > testAci) ? 1 : -1;
-  testAdimUygula();
 }
 
 // --------------------------------------------------------------- KOMUT ----
@@ -540,7 +539,11 @@ void olcVeYaz() {
 void loop() {
   seriOku();
   ucGozet();
-  testGozet();
+  /* DENEME AÇIKSA KULLANICININ TURU ÇALIŞIR. Bir tur ~5,7 sn sürüyor ve
+   * `delay` içerdiği için o sürede `seriOku` ile ölçüm çalışmıyor; tur
+   * bitince sıra onlara geliyor. Deneme kapalıyken maliyeti bir
+   * karşılaştırma. */
+  if (testAcik) testDongusu();
   if (millis() - sonOlcum >= OLCUM_ARALIGI_MS) {
     sonOlcum = millis();
     olcVeYaz();
