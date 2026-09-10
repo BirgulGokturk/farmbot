@@ -6,7 +6,7 @@
 <title>Tarım Robotu</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌱</text></svg>">
 <link rel="stylesheet" href="/statik/stil.css">
-<link rel="stylesheet" href="/statik/oyun.css">
+<link rel="stylesheet" href="/statik/bahce.css">
 <link rel="stylesheet" href="/statik/etiket.css">
 <link rel="stylesheet" href="/statik/bitki.css">
 <link rel="stylesheet" href="/statik/zamanli.css">
@@ -223,25 +223,56 @@
          kameranın canlı karesi; bitkiler o gerçek toprağın üstünde duruyor.
          Bütün işaretleme `data-rol` ile: bitki, kart ve film karesi
          şablondan çoğaltılıyor ve id tekrarlanamaz. -->
-    <!-- BAHÇE — OYUN. Kendi sayfasındaki oyunun ta kendisi
-         (`/statik/oyun.html` da çalışmaya devam ediyor): tek dosya, iki
-         bağlam. Panelde `window.Panel` var, o yüzden oyun panelin
-         `apiIste`sini ve zaten açık olan WebSocket akışını kullanıyor,
-         ikinci bir bağlantı açmıyor. Sekme değişimini app.js
-         `window.Bahce.sekme(...)` ile bildiriyor; sekme kapalıyken oyun
-         HİÇ kare çizmiyor (3B sahne de aynı anda çizerse Pi zorlanır).
-    
-         PANEL SÜSÜ YOK: bölüm başlığı, yan panel, alt şerit yok. Oyunun
-         bu çerçeveden çıkarılmasının sebebi tam olarak oydu; geri
-         getirilmiyor. Bölüm oyunun tam alanı kaplayan kabı. -->
+    <!-- BAHÇE — YATAK. Panelin sekmesi olarak duruyor (`bahce.js`).
+         Oyun sürümü geri alındı: kullanıcı bu tasarımı tercih etti.
+         `/statik/oyun.html` kendi sayfasında durmaya devam ediyor,
+         panel onu YÜKLEMİYOR — iki dosya da `window.Bahce` tanımlıyor,
+         ikisi aynı anda yüklenirse biri ötekini eziyor. -->
     <section class="sayfa" id="sayfa-bahce">
-      <div class="oy-kap">
-        <canvas id="oy-tuval"></canvas>
-        <!-- Madalyonların açılan kartı (makine / bugün / künye). -->
-        <div id="oy-kart" hidden></div>
-        <!-- SESSİZ BAŞARISIZLIK YOK: okunamayan her şeyin sebebi burada. -->
-        <div id="oy-hata"></div>
+
+      <!-- BAHÇE — YATAĞIN KENDİSİ.
+           Ekran bir pano değil bir yer: çim, tahta çerçeve, toprak, raylar,
+           uç. Bilgi toprağın kendisine yazılıyor (ölçülenin ıslak lekesi,
+           ölçülmeyenin taraması), eylem yerin kendisinden çıkıyor (uca
+           dokun, bitkiye dokun, toprağa uzun bas, kirişi sürükle).
+           Kenarda kart sütunu, altta kutucuk şeridi, köşede yüzen kutu YOK. -->
+      <div class="bh" id="bh-kok">
+
+        <div class="bh-ust">
+          <span class="bh-makine yok" id="bh-makine">makine bağlı değil</span>
+          <button type="button" class="bh-ok" id="bh-is-geri"
+                  aria-label="önceki iş" hidden>‹</button>
+          <div class="bh-orta">
+            <div class="bh-is-metin" id="bh-is-metin">Bahçe okunuyor…</div>
+            <div class="bh-is-neden" id="bh-is-neden"></div>
+          </div>
+          <span class="bh-sayac" id="bh-is-sayac" hidden></span>
+          <button type="button" class="bh-ok" id="bh-is-ileri"
+                  aria-label="sonraki iş" hidden>›</button>
+          <button type="button" id="bh-is-ertele" hidden>yarın sor</button>
+          <button type="button" class="bh-evet" id="bh-is-evet" hidden>Yap</button>
+          <button type="button" class="bh-ikon" id="bh-kur"
+                  title="Bahçeyi yeniden kur" aria-label="Bahçeyi yeniden kur">⟳</button>
+          <button type="button" class="bh-sakin" id="bh-sakin" aria-pressed="false">sakin mod</button>
+        </div>
+
+        <!-- SESSİZ BAŞARISIZLIK YOK: çizilmeyen bir şeyin sebebi burada. -->
+        <div class="bh-hata" id="bh-hata" hidden></div>
+
+        <div class="bh-tuval" id="bh-tuval">
+          <canvas id="bh-sahne" aria-label="Bahçe yatağı"></canvas>
+        </div>
+
+        <div class="bh-not" id="bh-not" hidden></div>
+
+        <!-- Bağlam şeridi: onay, seçili bitki ya da ipucu. Sahnedeki
+             halkalar hızlı yol, buradaki düğmeler erişilebilir yol. -->
+        <div class="bh-alt" id="bh-alt" data-kip="bos">
+          <div class="bh-a-metin"><span class="bh-a-alt">Bahçe kuruluyor…</span></div>
+        </div>
+
       </div>
+
     </section>
 
     <section class="sayfa etkin" id="sayfa-izle">
@@ -543,6 +574,26 @@
             <span class="alt-not">Servo denemesi</span>
             <button class="dugme" id="d-servo-test">▶ Başlat</button>
             <span class="alt-not" id="servo-test-durum">kart bildirmedi</span>
+          </div>
+
+          <!-- ELLE AÇI — uç açılarını ÖLÇMEK için.
+               Ayarlardaki `servo_aci` alanları ÖLÇÜLEREK dolduruluyor,
+               hesaplanarak değil: horn dişlisi hiçbir zaman tam 0/90/180'e
+               hizalanmıyor. Buradan bir açı sürüp hangi başın indiğine
+               bakıyor, o sayıyı Ayarlar → Başlar bölümüne yazıyorsunuz.
+               ÖNCEDEN BU YALNIZ PI'DE VARDI: `seri-komut.sh "ACI 117"` her
+               çağrıda ajanı durduruyor, kartı sıfırlıyor ve 3 sn bekliyordu
+               — yani bir açı aramak kartı defalarca yeniden başlatmak
+               demekti. Kart `ACI` komutunu zaten tanıyordu; eksik olan
+               zincirin panel ucuydu.
+               Z aşağıdayken kilitli, `uç seçimi` ile aynı sebep. -->
+          <div class="satir-8 alt-hizali" id="servo-aci">
+            <span class="alt-not">Elle açı</span>
+            <div class="alan"><label for="servo-aci-derece">Derece</label>
+              <input type="number" id="servo-aci-derece"
+                     min="0" max="180" step="1" value="90"></div>
+            <button class="dugme" id="d-servo-aci">Sür</button>
+            <span class="alt-not" id="servo-aci-durum"></span>
           </div>
 
           <div class="satir-8">
@@ -1924,7 +1975,7 @@
 <script src="/statik/tarla.js"></script>
 <!-- Profil görüntüleyici: haritanın verisini okuyup Z kesiti çiziyor -->
 <script src="/statik/profil.js"></script>
-<script src="/statik/oyun.js"></script>
+<script src="/statik/bahce.js"></script>
 <script src="/statik/app.js"></script>
 <script src="/statik/etiket.js"></script>
 <script src="/statik/filiz.js"></script>

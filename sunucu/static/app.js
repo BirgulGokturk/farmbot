@@ -1096,6 +1096,20 @@ function ucSeciciYaz(d) {
     if (aciYok) sebepler.push(`${(bilgi[k] || {}).ad || k}: servo açısı girilmemiş.`);
   });
 
+  /* ELLE AÇI DÜĞMESİ AYNI KİLİDE TABİ — ama `aciYok` ONU KİLİTLEMİYOR.
+   * Açının girilmemiş olması bu düğmenin var oluş sebebi: açıyı onunla
+   * buluyorsunuz. Uç düğmeleriyle birlikte kilitlemek, ölçüm aracını tam
+   * ölçüm gerektiği anda kapatmak olurdu.
+   * Bağlantı ve Z engeli ise geçerli: horn dönerken inmiş bir başlık
+   * toprağın içinden sürüklenir ve elle açı ararken horn tam da uçlarla
+   * eşleşmeyen yerlere gidiyor. */
+  const aciDugme = $("#d-servo-aci");
+  if (aciDugme) {
+    aciDugme.disabled = !bagli || !!engel;
+    aciDugme.title = engel
+      || (bagli ? "Servoyu bu açıya sür" : "Robot bağlı değil.");
+  }
+
   const durum = $("#uc-secici-durum");
   if (durum) {
     if (s.secili == null) {
@@ -5221,6 +5235,24 @@ function olaylariBagla() {
   if (servoTest) {
     servoTest.onclick = () => komutGonder(
       "servo_test", { acik: !servoTest.classList.contains("acik") });
+  }
+
+  /* ELLE AÇI. Uç açılarını ölçmenin yolu: bir açı sürüp hangi başın
+   * indiğine bakmak. Doğrulama BURADA DA yapılıyor (ajan ve kart da
+   * yapıyor) çünkü boş bir alanla düğmeye basmak en sık hata ve cevabı
+   * gidiş-dönüş beklemeden vermek gerekiyor. */
+  const aciDugme = $("#d-servo-aci");
+  if (aciDugme) {
+    aciDugme.onclick = () => {
+      const not = $("#servo-aci-durum");
+      const derece = Number((($("#servo-aci-derece") || {}).value));
+      if (!Number.isFinite(derece) || derece < 0 || derece > 180) {
+        if (not) not.textContent = "0 ile 180 arasında bir açı yazın.";
+        return;
+      }
+      if (not) not.textContent = "";
+      komutGonder("servo_aci_sur", { derece: Math.round(derece) });
+    };
   }
 
   // TOHUM UCUNUN KENDİ EKSENİ — elle indir/kaldır.

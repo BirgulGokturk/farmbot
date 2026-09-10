@@ -939,6 +939,44 @@ class Ajan:
                         "mesaj": f"{bilgi.get('ad', kimlik)} seçiliyor — "
                                  f"servo {sure} ms içinde yerine oturuyor"}
 
+            if ad == "servo_aci_sur":
+                # AÇI SAYI OLMAK ZORUNDA. Panelden boş alan gelirse
+                # `int(None)` patlar ve kullanıcı "Beklenmeyen hata"
+                # görür; sebebi gayet belli ve söylenmeye değer.
+                try:
+                    derece = int(round(float(arg.get("derece"))))
+                except (TypeError, ValueError):
+                    return {"ok": False, "mesaj": "Açı sayı olmalı (0-180)."}
+                # SINIR BURADA DA DENETLENİYOR. Kart da denetliyor
+                # (firmware `ACI`), ama oradan dönen ret seri günlükte
+                # kalıyor; panele cevap vermek gerekiyor.
+                if not 0 <= derece <= 180:
+                    return {"ok": False, "mesaj": "Açı 0-180 arasında olmalı."}
+                # Süren bir hareketin üstüne yazmak, mekanizmayı yarı
+                # yoldan geri döndürmek olur — `uc_sec` ile aynı kural.
+                if self._uc_harekette:
+                    return {"ok": False,
+                            "mesaj": "Önceki başlık hareketi bitmedi — "
+                                     "yerine oturmasını bekleyin."}
+                # Z KİLİDİ `uc_sec` İLE AYNI: horn dönerken inmiş bir
+                # başlık toprağın içinden sürüklenir. Elle sürmek bunu
+                # daha az değil, DAHA çok yapıyor — açı aranırken horn
+                # uçlarla eşleşmeyen yerlere gidiyor.
+                engel = self.uc_secim_engel()
+                if engel:
+                    return {"ok": False, "mesaj": engel}
+                await asyncio.to_thread(self.arduino.komut, f"ACI {derece}")
+                # "SEÇİLİ UÇ" KAYDI GEÇERSİZ OLUYOR ve bunu söylüyoruz:
+                # kart `ucSecili`yi -1 yapıyor (elle sürülen açı hiçbir
+                # başla eşleşmeyebilir), yani bu komuttan sonra iş
+                # başlatmak yeniden uç seçimi istiyor. Sessizce olması,
+                # kullanıcının "neden iş başlamıyor" diye aramasıydı.
+                return {"ok": True,
+                        "mesaj": f"Servo {derece} dereceye sürüldü. Hangi baş "
+                                 f"indi? O sayıyı Ayarlar → Başlar bölümündeki "
+                                 f"'Servo açısı' alanına yazın. Seçili uç kaydı "
+                                 f"artık geçersiz."}
+
             if ad == "servo_test":
                 acik = bool(arg.get("acik"))
                 # BAŞLATIRKEN Z KİLİDİ, DURDURURKEN YOK. Deneme horn'u

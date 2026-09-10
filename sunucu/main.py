@@ -101,6 +101,12 @@ IZINLI_KOMUTLAR = {
     "uc_sec",        # {"bas":"sulama"|"nem"|"tohum"} — uç seçici servo.
                      #   Açı ayardan (`baslar.<bas>.servo_aci`), Z kilidi
                      #   ajanda: Z aşağıdayken reddediliyor.
+    "servo_aci_sur", # {"derece": 0-180} — servoyu doğrudan bir açıya sürer.
+                     #   AÇILARI ÖLÇMEK İÇİN: `uc_sec` zaten girilmiş bir
+                     #   açıyı istiyor, ama o açılar ölçülerek bulunuyor.
+                     #   Ölçüm eskiden yalnız Pi'de kabuk açarak yapılabiliyordu
+                     #   (`seri-komut.sh "ACI 117"`) ve her çağrı ajanı
+                     #   durdurup kartı sıfırlıyordu. Z kilidi `uc_sec` ile aynı.
     "servo_test",    # {"acik": true|false} — servo deneme döngüsü. Kart
                      #   açıları süpürüyor; mekanizmayı ayarlarken
                      #   kullanılıyor. Başlatmak Z kilidine tabi,
