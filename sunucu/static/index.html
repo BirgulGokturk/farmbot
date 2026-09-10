@@ -6,7 +6,7 @@
 <title>Tarım Robotu</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌱</text></svg>">
 <link rel="stylesheet" href="/statik/stil.css">
-<link rel="stylesheet" href="/statik/bahce.css">
+<link rel="stylesheet" href="/statik/oyun.css">
 <link rel="stylesheet" href="/statik/etiket.css">
 <link rel="stylesheet" href="/statik/bitki.css">
 <link rel="stylesheet" href="/statik/zamanli.css">
@@ -223,43 +223,25 @@
          kameranın canlı karesi; bitkiler o gerçek toprağın üstünde duruyor.
          Bütün işaretleme `data-rol` ile: bitki, kart ve film karesi
          şablondan çoğaltılıyor ve id tekrarlanamaz. -->
+    <!-- BAHÇE — OYUN. Kendi sayfasındaki oyunun ta kendisi
+         (`/statik/oyun.html` da çalışmaya devam ediyor): tek dosya, iki
+         bağlam. Panelde `window.Panel` var, o yüzden oyun panelin
+         `apiIste`sini ve zaten açık olan WebSocket akışını kullanıyor,
+         ikinci bir bağlantı açmıyor. Sekme değişimini app.js
+         `window.Bahce.sekme(...)` ile bildiriyor; sekme kapalıyken oyun
+         HİÇ kare çizmiyor (3B sahne de aynı anda çizerse Pi zorlanır).
+    
+         PANEL SÜSÜ YOK: bölüm başlığı, yan panel, alt şerit yok. Oyunun
+         bu çerçeveden çıkarılmasının sebebi tam olarak oydu; geri
+         getirilmiyor. Bölüm oyunun tam alanı kaplayan kabı. -->
     <section class="sayfa" id="sayfa-bahce">
-
-      <!-- BAHÇE — OYUN ALANI.
-           Çiftçi, PLC'ye bağlı eksenlerin sahnedeki karşılığı: konumu durum
-           paketinden, hızı eksenin hızı. Karo ızgarası yatağın gerçek
-           koordinat uzayı; karoya dokunmak gerçek `git` komutu.
-           Yatağın ön duvarı kesit: kökler ve nem sütunları orada, ölçülmemiş
-           nem taralı oyuk olarak duruyor. -->
-      <div class="bh" id="bh-kok">
-
-        <div class="bh-ust">
-          <h2>Bahçe</h2>
-          <span class="esnek"></span>
-          <button type="button" class="bh-sakin" id="bh-sakin" aria-pressed="false">sakin mod</button>
-        </div>
-
-        <!-- SESSİZ BAŞARISIZLIK YOK: çizilmeyen, başlamayan, reddedilen
-             her şeyin sebebi burada. -->
-        <div class="bh-hata" id="bh-hata" hidden></div>
-        <div class="bh-not" id="bh-not" hidden></div>
-
-        <div class="bh-tuval" id="bh-tuval">
-          <canvas id="bh-sahne" aria-label="Bahçe yatağı — izometrik"></canvas>
-        </div>
-
-        <!-- Görev paneli: sunucunun kartları ve seçili bitkinin künyesi. -->
-        <div class="bh-panel" id="bh-panel"></div>
-
-        <!-- Tohum tepsisi: gerçek hazne gözleri. Boş göz seçilemiyor. -->
-        <div class="bh-tepsi" id="bh-tepsi"></div>
-
-        <div class="bh-alt" id="bh-alt" data-kip="bos">
-          <div class="bh-a-metin"><span class="bh-a-alt">Bahçe okunuyor…</span></div>
-        </div>
-
+      <div class="oy-kap">
+        <canvas id="oy-tuval"></canvas>
+        <!-- Madalyonların açılan kartı (makine / bugün / künye). -->
+        <div id="oy-kart" hidden></div>
+        <!-- SESSİZ BAŞARISIZLIK YOK: okunamayan her şeyin sebebi burada. -->
+        <div id="oy-hata"></div>
       </div>
-
     </section>
 
     <section class="sayfa etkin" id="sayfa-izle">
@@ -1929,7 +1911,7 @@
 <script src="/statik/tarla.js"></script>
 <!-- Profil görüntüleyici: haritanın verisini okuyup Z kesiti çiziyor -->
 <script src="/statik/profil.js"></script>
-<script src="/statik/bahce.js"></script>
+<script src="/statik/oyun.js"></script>
 <script src="/statik/app.js"></script>
 <script src="/statik/etiket.js"></script>
 <script src="/statik/filiz.js"></script>

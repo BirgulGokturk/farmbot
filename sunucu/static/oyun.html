@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="tr">
+<html lang="tr" class="oy-sayfa">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
@@ -12,9 +12,11 @@
 
 <!-- Ekranın tamamı tarla. Yazıya ihtiyaç duyan üç şey dışında her şey
      tuvalin içinde. -->
+<div class="oy-kap">
+
 <canvas id="oy-tuval"></canvas>
 
-<!-- Madalyonların açılan kartı (makine durumu / bugün). -->
+<!-- Madalyonların açılan kartı (makine durumu / bugün / künye). -->
 <div id="oy-kart" hidden></div>
 
 <!-- Olmayan her şeyin sebebi burada yazıyor. -->
@@ -29,6 +31,8 @@
       yazman gerekiyor; sonra bu sayfa çalışır.</p>
     <a href="/">Panele git</a>
   </div>
+</div>
+
 </div>
 
 <script src="/statik/oyun.js"></script>

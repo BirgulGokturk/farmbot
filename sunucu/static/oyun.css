@@ -8,28 +8,49 @@
  * stil.css'e bağlı DEĞİL — bu sayfa panelden bağımsız açılıyor.
  */
 
-* { box-sizing: border-box; }
-
-html, body {
-  margin: 0; padding: 0; height: 100%; overflow: hidden;
+/* İKİ BAĞLAM, TEK KAP.
+ * Oyun hem kendi sayfasında (tam ekran) hem panelin Bahçe sekmesinde
+ * yaşıyor. İkisinde de aynı kap: `.oy-kap` kendisine ayrılan alanı
+ * doldurur, içindeki her şey ona göre konumlanır. */
+.oy-kap {
+  position: absolute; inset: 0; overflow: hidden;
   background: #cfd9e0;
   font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   color: #21262b;
-  -webkit-text-size-adjust: 100%;
+  box-sizing: border-box;
 }
+.oy-kap * { box-sizing: border-box; }
 
 #oy-tuval {
-  position: fixed; inset: 0; display: block; width: 100%; height: 100%;
+  position: absolute; inset: 0; display: block; width: 100%; height: 100%;
   touch-action: none;            /* kaydırma ve iki parmak bize ait */
   user-select: none; -webkit-user-select: none;
   cursor: default;
 }
 
+/* ------------------------------------------------ kendi sayfası (tam ekran) */
+html.oy-sayfa, html.oy-sayfa body {
+  margin: 0; padding: 0; height: 100%; overflow: hidden;
+  background: #cfd9e0;
+  -webkit-text-size-adjust: 100%;
+}
+
+/* -------------------------------------------------------- panel içindeyken
+ * Oyun sekmede NE KADAR ALAN VARSA HEPSİNİ kullanıyor: bölüm başlığı, yan
+ * panel, alt şerit yok — oyunun bu çerçeveden çıkarılmasının sebebi tam
+ * olarak oydu. Sol yüzen panel tam genişliğe açılıyor, 3B sahne alanı
+ * kapanıyor, gövdenin kaydırması ve iç boşluğu kalkıyor. */
+body.bahce-acik .yuzen.sol { grid-column: 1 / -1; width: auto; }
+body.bahce-acik #sahne-cubuk,
+body.bahce-acik .sahne-alan { display: none; }
+body.bahce-acik .yuzen-govde { overflow: hidden; padding: 0; }
+body.bahce-acik #sayfa-bahce { height: 100%; position: relative; min-height: 320px; }
+
 /* --------------------------------------------------------- jeton kilidi
  * Jeton yoksa oyun sessizce boş sahne çizmiyor: ne olduğunu söylüyor ve
  * panele yönlendiriyor. */
 #oy-kilit {
-  position: fixed; inset: 0; z-index: 40;
+  position: absolute; inset: 0; z-index: 40;
   display: flex; align-items: center; justify-content: center;
   padding: 24px;
   background: linear-gradient(160deg, #e7edf1, #c3ced6);
@@ -53,7 +74,7 @@ html, body {
 /* ------------------------------------------------------------ hata satırı
  * SESSİZ BAŞARISIZLIK YOK: okunamayan her şeyin sebebi burada. */
 #oy-hata {
-  position: fixed; left: 12px; bottom: 12px; z-index: 30;
+  position: absolute; left: 12px; bottom: 12px; z-index: 30;
   max-width: min(520px, calc(100vw - 24px));
   display: flex; flex-direction: column; gap: 6px;
   pointer-events: none;
@@ -68,7 +89,8 @@ html, body {
  * İki madalyonun (makine, bugün) açılan kartı. Sabit bir yan panel değil:
  * yalnız dokununca açılıyor, madalyonun altına yapışıyor. */
 #oy-kart {
-  position: fixed; z-index: 32; width: min(300px, calc(100vw - 24px));
+  position: absolute; z-index: 32; width: min(320px, calc(100% - 24px));
+  max-height: calc(100% - 100px); overflow-y: auto;
   background: rgba(255, 255, 255, .96);
   border-radius: 14px; padding: 12px 13px;
   box-shadow: 0 14px 38px rgba(20, 30, 40, .26);
@@ -82,6 +104,8 @@ html, body {
 #oy-kart ul { margin: 0; padding: 0; list-style: none; }
 #oy-kart li { padding: 3px 0; }
 #oy-kart li + li { border-top: 1px solid #eceff2; }
+#oy-kart li button + button { margin-top: 2px; }
+#oy-kart button[disabled] { opacity: .45; cursor: not-allowed; }
 #oy-kart .sonuk { color: #79838b; }
 #oy-kart .dip {
   margin-top: 8px; padding-top: 7px; border-top: 1px solid #e6eaee;

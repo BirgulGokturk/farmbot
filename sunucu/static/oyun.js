@@ -83,7 +83,9 @@ window.Oyun = (function () {
     zemin: null, zeminCt: null, sprite: {},
     /* veri */
     veri: null, durum: null, olcum: null, bitki: [], ix: {},
-    soket: null, soketAcik: false, yukleniyor: false, veriT: 0,
+    soket: null, soketAcik: false, yukleniyor: false, veriT: 0, durumT: 0,
+    acik: false, sakin: false, katalog: null, katalogT: 0,
+    gecmis: null, gecmisAd: "", egim: null, egimT: 0, tasiKip: "",
     /* makine */
     bildirilen: { x: null, y: null, z: null },
     ciz: { x: null, y: null },
@@ -96,7 +98,8 @@ window.Oyun = (function () {
     ruzgar: { yon: 0, guc: 0.4, hYon: 0, hGuc: 0.4 },
     mesaj: "", mesajT: 0, hatalar: {},
     /* döngü */
-    t: 0, sonT: 0, sonCizim: 0, dongu: 0, kirli: true, sonEtkilesim: Date.now(),
+    t: 0, sonT: 0, sonCizim: 0, dongu: 0, kirli: true, hazir: false,
+    sonEtkilesim: Date.now(),
     olcumKare: { kare: 0, sure: 0, enUzun: 0 }
   };
 
@@ -107,11 +110,32 @@ window.Oyun = (function () {
    * `farmbot_jeton` okunabiliyor. Jeton yoksa oyun başlamıyor: kilit
    * ekranı açılıyor ve panele yönlendiriyor.
    * ==================================================================== */
+  /* İKİ BAĞLAM, TEK DOSYA.
+   *
+   * Oyun hem kendi sayfasında (/statik/oyun.html, tam ekran, panelsiz) hem
+   * de panelin Bahçe sekmesinde barınıyor. Hangisinde olduğu AYRI BİR
+   * BAYRAKTAN değil, `window.Panel`in varlığından anlaşılıyor:
+   *   · panelde  → panelin `apiIste`si (jetonu o ekliyor) ve panelin
+   *                zaten açık olan WebSocket akışı kullanılıyor. İkinci
+   *                bağlantı açılmıyor, jeton ikinci kez ele alınmıyor.
+   *   · kendi sayfasında → jeton localStorage'dan, kendi fetch'i ve kendi
+   *                soketi.
+   * Panelde `window.Bahce` olarak da dışa veriliyor: app.js sekme
+   * değişimini, durum paketini ve kuyruk haberlerini o adla çağırıyor. */
+  function P() { return window.Panel || null; }
+  /* PANELDE GEÇ BELİRLENİYOR: index.html'de oyun.js app.js'ten ÖNCE
+     yükleniyor, yani modül gövdesi çalışırken `window.Panel` henüz yok.
+     Karar `baslat()` anında (DOMContentLoaded) veriliyor; o ana kadar
+     app.js'in gövdesi kesinlikle çalışmış oluyor. Ayrı bir bayrak
+     uydurmuyoruz — ölçüt yine `window.Panel`in varlığı. */
+  var PANELDE = false;
+
   function jetonAl() {
     try { return localStorage.getItem("farmbot_jeton") || ""; }
     catch (h) { return ""; }     /* özel pencerede localStorage atıyor */
   }
   function api(yol, sec) {
+    if (PANELDE) return P().apiIste(yol, sec);
     var ayirac = yol.indexOf("?") >= 0 ? "&" : "?";
     var istek = { headers: { "Content-Type": "application/json" } };
     if (sec) for (var k in sec) istek[k] = sec[k];
@@ -226,9 +250,18 @@ window.Oyun = (function () {
              y1: Math.min(y1, y2), y2: Math.max(y1, y2), var: true };
   }
   /** Eksen neden duruyor — düğmeler bunu okuyup kapanıyor. */
+  /** Sunucudan haber geliyor mu.
+   *  Kendi sayfasında soketin kendi hâli. Panelde soket panelin: sessizliği
+   *  ölçüyoruz — hiç durum paketi gelmediyse ya da 15 saniyedir yeni paket
+   *  yoksa bunu söylüyoruz. Sessiz başarısızlık yok. */
+  function baglantiVar() {
+    if (!PANELDE) return S.soketAcik;
+    if (!S.durumT) return false;
+    return Date.now() - S.durumT < 15000;
+  }
   function engel() {
     var d = D();
-    if (!S.soketAcik) return { engel: true, yazi: "sunucuya bağlı değil", sinif: "yok" };
+    if (!baglantiVar()) return { engel: true, yazi: "sunucudan haber yok", sinif: "yok" };
     if (d.bagli === false || d.plc === undefined) {
       return { engel: true, yazi: "ajan bağlı değil", sinif: "yok" };
     }
@@ -243,8 +276,15 @@ window.Oyun = (function () {
     return { engel: false, yazi: "hazır", sinif: "hazir" };
   }
   function konumVar() { var k = D().konum || {}; return k.x != null && k.y != null; }
-  /** Su akıyor mu — kaynak POMPA RÖLESİ, komut değil. */
+  /** Su akıyor mu — kaynak POMPA RÖLESİ, komut değil.
+   *  Röle DURUM paketinde değil ÖLÇÜM paketinde geliyor. Panelde app.js
+   *  onu zaten her ölçümde `Panel.S.roleDurum`a yazıyor; kendi sayfasında
+   *  ham ölçüm paketinden okunuyor. */
   function suAkiyor() {
+    if (PANELDE) {
+      var p = P();
+      return !!(p && p.S && p.S.roleDurum && p.S.roleDurum.su_pompasi);
+    }
     var o = S.olcum || {};
     return !!(o.r_su_pompasi || (o.role || {}).su_pompasi);
   }
@@ -657,6 +697,28 @@ window.Oyun = (function () {
     cilek: "loblu", patates: "loblu", "tatli-patates": "loblu",
     aycicegi: "cicek", turp: "turp"
   };
+  /* Kök tipi tabloda duruyor ve KÜNYEDE yazıyor. Çizilmiyor: kök
+     derinliği hiçbir yerde ölçülmüyor, sürekli duran bir kök resmi
+     ölçülmüş bir şey gibi okunurdu. */
+  var KOK = {
+    marul: "sacak", lahana: "sacak", ispanak: "sacak", pazi: "kazik",
+    roka: "sacak", kereviz: "sacak", karnabahar: "sacak", brokoli: "sacak",
+    semizotu: "sacak",
+    havuc: "kazik-etli", dereotu: "kazik", maydanoz: "kazik",
+    sogan: "sogan", sarimsak: "sogan", pirasa: "sacak", misir: "derin",
+    feslegen: "sacak", "fesleğen": "sacak", nane: "sacak", kekik: "sacak",
+    biberiye: "derin",
+    domates: "derin", biber: "sacak", patlican: "derin", bamya: "kazik",
+    kabak: "derin", karpuz: "derin", kavun: "derin", salatalik: "sacak",
+    fasulye: "sacak", bezelye: "sacak", nohut: "kazik", uzum: "derin",
+    cilek: "sacak", patates: "yumru", "tatli-patates": "yumru",
+    aycicegi: "kazik", turp: "kazik-etli"
+  };
+  var KOK_ADI = {
+    kazik: "kazık kök", "kazik-etli": "etli kazık kök", sacak: "saçak kök",
+    sogan: "soğan (yumru) kök", yumru: "yumru kök", derin: "derin dallı kök",
+    bilinmiyor: "kök tipi bilinmiyor"
+  };
   var TON = { marul: 0.3, roka: -0.06, semizotu: 0.14, maydanoz: -0.16,
               havuc: 0.32, feslegen: -0.34, "fesleğen": -0.34,
               rozet: 0.16, tuy: 0.26, serit: -0.06, cift: -0.28,
@@ -666,7 +728,7 @@ window.Oyun = (function () {
     var slug = String((b && b.tur) || "").toLowerCase();
     var aile = AILE[slug];
     return { slug: slug, aile: aile || "bilinmiyor", bilinen: !!aile,
-             ozel: !!CIZER[slug] };
+             kok: KOK[slug] || "bilinmiyor", ozel: !!CIZER[slug] };
   }
 
   /* --- yaprak parçaları ------------------------------------------------ */
@@ -1112,10 +1174,11 @@ window.Oyun = (function () {
       var sp = spriteAl(b);
       if (x < -sp.en || x > S.en + sp.en || y < -sp.en || y > S.boy + sp.en) return;
       var faz = tohum(b.ad) * 6.3;
-      var sal = (Math.sin(S.t * 1.2 + faz) * 0.034 + Math.sin(S.t * 2.7 + faz * 1.7) * 0.012)
-        * (0.35 + w.guc * 0.9);
+      var sal = S.sakin ? 0
+        : (Math.sin(S.t * 1.2 + faz) * 0.034 + Math.sin(S.t * 2.7 + faz * 1.7) * 0.012)
+          * (0.35 + w.guc * 0.9);
       var secili = S.secili === b.ad;
-      var nefes = secili ? 1 + Math.sin(S.t * 2.1) * 0.03 : 1;
+      var nefes = (secili && !S.sakin) ? 1 + Math.sin(S.t * 2.1) * 0.03 : 1;
       var gy = y - kalk;
 
       /* UZUN GÖLGE — güneş sol üstte. */
@@ -1660,6 +1723,7 @@ window.Oyun = (function () {
     S.ruzgar = { yon: r() * 6.3, guc: 0.35 + r() * 0.3, hYon: r() * 6.3, hGuc: 0.5 };
   }
   function hayatGuncelle(dt) {
+    if (S.sakin) return;                    /* sakin mod: boştaki hayat durur */
     var w = S.ruzgar;
     if (Math.random() < dt * 0.25) {
       w.hYon = Math.random() * 6.3; w.hGuc = 0.2 + Math.random() * 0.8;
@@ -1677,6 +1741,7 @@ window.Oyun = (function () {
     }
   }
   function tozCiz(c) {
+    if (S.sakin) return;
     for (var i = 0; i < S.toz.length; i++) {
       var t = S.toz[i];
       c.fillStyle = "rgba(255,250,232," + t.a.toFixed(2) + ")";
@@ -1745,17 +1810,16 @@ window.Oyun = (function () {
   }
 
   /* ------------------------------------------------------- madalyonlar */
-  function ilgiListesi() {
-    var l = [];
-    S.bitki.forEach(function (b) {
-      var n = nemDurum(b);
-      if (b.hasat) l.push({ ad: b.ad, tip: "hasat", yazi: "hasada hazır" });
-      else if (b.susadi) {
-        l.push({ ad: b.ad, tip: "su",
-                 yazi: "susadı · " + (b.su_kanit === "olculen" ? "ölçüme göre" : "tahmin") });
-      } else if (!n.var) l.push({ ad: b.ad, tip: "nem", yazi: "nemi ölçülmedi" });
-    });
-    return l;
+  /** GÖREV KARTLARI SUNUCUDAN. Kartları burada yeniden türetmiyoruz:
+   *  `sunucu/bahce.py` susama, nem ve hasat kararını gerekçesiyle birlikte
+   *  zaten veriyor; ikinci bir hesap iki farklı cevap demek olurdu. */
+  function kartlar() {
+    var k = ((S.veri && S.veri.kartlar) || []).slice();
+    k.sort(function (a, b) { return (a.ertelendi ? 1 : 0) - (b.ertelendi ? 1 : 0); });
+    return k;
+  }
+  function acikKartSayisi() {
+    return kartlar().filter(function (k) { return !k.ertelendi; }).length;
   }
   function madalyonCiz(c) {
     var e = engel(), r = 27;
@@ -1788,8 +1852,8 @@ window.Oyun = (function () {
     c.restore();
     vurusEkle("madalyon-makine", mx, my, 0, 0, { r: r + 4 });
 
-    /* BUGÜN MADALYONU — sağda üstte. İçinde ilgi isteyen sayısı. */
-    var l = ilgiListesi();
+    /* BUGÜN MADALYONU — sağda üstte. İçinde bekleyen görev sayısı. */
+    var l = kartlar().filter(function (kk) { return !kk.ertelendi; });
     var bx = S.en - 20 - r, by = 20 + r;
     c.save();
     c.fillStyle = "rgba(22,32,42,.2)";
@@ -1805,6 +1869,18 @@ window.Oyun = (function () {
     c.fillText("BUGÜN", bx, by + 14);
     c.restore();
     vurusEkle("madalyon-bugun", bx, by, 0, 0, { r: r + 4 });
+
+    /* SAKİN MOD — makine madalyonunun altında küçük bir çip.
+       Açıkken boştaki hayat (toz, salınım, nefes) duruyor; BİLGİ
+       DURMUYOR: paketler gelmeye, sayılar güncellenmeye devam ediyor. */
+    var sw = 76, sh = 24, sx2 = 20, sy2 = 20 + r * 2 + 8;
+    cip(c, sx2, sy2, sw, sh, 12, S.sakin);
+    c.save();
+    c.font = "700 11px system-ui,sans-serif"; c.textAlign = "center";
+    c.fillStyle = S.sakin ? "#2f7d4f" : "#4d565e";
+    c.fillText(S.sakin ? "sakin: açık" : "sakin mod", sx2 + sw / 2, sy2 + 16);
+    c.restore();
+    vurusEkle("sakin", sx2, sy2, sw, sh);
   }
 
   /* ------------------------------------------------------- tohum eli */
@@ -1934,11 +2010,25 @@ window.Oyun = (function () {
       if (!d.kapali) vurusEkle("eylem", d.x, d.y, 0, 0, { r: rb + 2, eylem: d.ad });
       else vurusEkle("eylem-kapali", d.x, d.y, 0, 0, { r: rb + 2 });
     }
+    /* KÜNYE ÇİPİ — halkanın altında. Bitkinin bütün yazılı bilgisi ve
+       ikincil işleri (yakından bak, taşı, hasat) orada; halka kalabalık
+       olmasın diye ayrı. */
+    var kw = 58, kh = 22, kx2 = k.x - kw / 2, ky2 = k.y2 + 6;
+    cip(c, kx2, ky2, kw, kh, 11, S.kartKip === "bitki");
+    c.save();
+    c.font = "700 11px system-ui,sans-serif"; c.textAlign = "center";
+    c.fillStyle = "#21262b";
+    c.fillText("künye", k.x, ky2 + 15);
+    c.restore();
+    vurusEkle("kunye", kx2, ky2, kw, kh);
     /* KAPALIYSA SEBEBİ YAZILI. */
     var e = engel();
     if (e.engel) {
-      etiketCiz(c, "makineli işler kapalı: " + e.yazi, k.x, k.y2 + 16, "rgba(150,40,32,.92)");
-      etiketCiz(c, "hasat kayıt işi, açık", k.x, k.y2 + 34, "rgba(70,80,88,.9)");
+      etiketCiz(c, "makineli işler kapalı: " + e.yazi, k.x, ky2 + kh + 16, "rgba(150,40,32,.92)");
+      etiketCiz(c, "hasat kayıt işi, açık", k.x, ky2 + kh + 34, "rgba(70,80,88,.9)");
+    }
+    if (S.tasiKip === String(b.ad)) {
+      etiketCiz(c, "taşıma açık — yeni karoya dokun", k.x, ky2 + kh + 52, "rgba(47,125,79,.94)");
     }
   }
   /* Simgeler vektör: emoji yazı tipi Pi'de her zaman yok. */
@@ -2096,7 +2186,7 @@ window.Oyun = (function () {
   }
   /** Izgara sürekli görünmüyor: yalnız ekim kipinde ya da imleç yataktayken. */
   function izgaraCiz(c) {
-    var goster = S.ekTur ? 0.5 : (S.uzerinde ? 0.28 : 0);
+    var goster = (S.ekTur || S.tasiKip) ? 0.5 : (S.uzerinde ? 0.28 : 0);
     if (goster <= 0) return;
     var i;
     c.save();
@@ -2139,16 +2229,66 @@ window.Oyun = (function () {
         ? "yürünebilir alan " + Math.round(G.s.x2 - G.s.x1) + " × "
           + Math.round(G.s.y2 - G.s.y1) + " mm · " + G.nx + "×" + G.ny + " karo"
         : '<span class="kritik">sınırlar bildirilmedi</span>') + "</li>");
-      h.push("<li>" + (S.soketAcik ? '<span class="iyi">sunucu bağlı</span>'
-        : '<span class="kritik">sunucuya bağlı değil</span>') + "</li>");
+      h.push("<li>" + (baglantiVar() ? '<span class="iyi">sunucudan haber geliyor</span>'
+        : '<span class="kritik">sunucudan haber yok</span>') + "</li>");
       var is = calisanIs();
       h.push("<li>" + (is ? "çalışan iş: " + kacisli(is.etiket || is.tip)
         : '<span class="sonuk">çalışan iş yok</span>') + "</li>");
       h.push("</ul>");
       h.push('<div class="dip">Çiftçi eksenin kendisi: bildirilen konumun '
         + "önüne geçmez, makine kopuksa kımıldamaz.</div>");
+    } else if (kip === "bitki") {
+      /* KÜNYE — seçili bitkinin bütün yazılı bilgisi ve ikincil işleri.
+         Halkada dört birincil iş var; buradakiler daha seyrek kullanılan
+         ama kaybolmaması gereken işler. */
+      var b = S.ix[S.secili];
+      if (!b) { kartKapat(); return; }
+      var bic = bicimSec(b), n = nemDurum(b);
+      var yas = Math.round(sayi(b.yas_gun, 0)), olgun = Math.round(sayi(b.olgun_gun, 0));
+      h.push("<h2>" + kacisli(b.ad) + " · " + kacisli(b.tur_ad || b.tur || "?") + "</h2><ul>");
+      h.push("<li>" + (n.var
+        ? "nem <b>%" + Math.round(n.yuzde) + "</b>"
+          + (n.bayat ? " · sulamadan önceki okuma"
+            : (!n.kendi ? " · " + Math.round(n.uzak) + " mm öteden ödünç"
+              : " · " + sureKisa(n.yas) + " önce ölçüldü"))
+        : '<span class="kritik">nem ölçülmedi</span>') + "</li>");
+      h.push("<li>" + yas + " günlük"
+        /* GERİ SAYIM YOK: olgunluk bir ölçüm değil, türün katalog değeri. */
+        + (olgun ? " · hasada yaklaşık " + Math.max(0, olgun - yas) + " gün" : "") + "</li>");
+      if (b.susadi) {
+        h.push('<li class="kritik">susadı · '
+          + (b.su_kanit === "olculen" ? "ölçüme göre" : "geçen güne göre (tahmin)") + "</li>");
+      }
+      if (b.hasat) h.push('<li class="iyi">hasada hazır — toplayınca yataktan düşer</li>');
+      h.push('<li class="sonuk">' + kacisli(KOK_ADI[bic.kok] || KOK_ADI.bilinmiyor)
+        + " · türün biçimi, ölçülmedi</li>");
+      h.push('<li class="sonuk">siluet: '
+        + (bic.bilinen ? (bic.ozel ? "türe özel" : "aile biçimi (" + kacisli(bic.aile) + ")")
+                       : "tür tanınmadı — jenerik") + "</li>");
+      if (sayi(b.yayilim_mm, 0) > 0) {
+        h.push('<li class="sonuk">yayılım ' + Math.round(sayi(b.yayilim_mm)) + " mm (katalog)</li>");
+      }
+      if (S.gecmisAd === String(b.ad) && S.gecmis) {
+        h.push("<li>" + (S.gecmis.egilim
+          ? S.gecmis.egilim.adet + " ölçüm · "
+            + (sayi(S.gecmis.egilim.degisim) > 0 ? "+" : "")
+            + sayi(S.gecmis.egilim.degisim).toFixed(1) + " puan eğilim"
+          : '<span class="sonuk">' + (S.gecmis.adet === 1
+              ? "tek ölçüm — eğilim yok" : "eğilim için yeterli ölçüm yok") + "</span>") + "</li>");
+      }
+      h.push("</ul>");
+      h.push('<ul><li><button data-oy="yakin">Yakından bak <span>· uç kamerası'
+        + "</span></button></li>");
+      h.push('<li><button data-oy="tasi"><b>' + (S.tasiKip ? "Taşımayı bırak" : "Taşı")
+        + '</b> <span>· kayıt işi, makine kımıldamaz</span></button></li>');
+      h.push('<li><button data-oy="hasat"><b>Hasat et</b> <span>· yataktan düşer'
+        + "</span></button></li></ul>");
+      if (engel().engel) {
+        h.push('<div class="dip kritik">Makineli işler kapalı: ' + kacisli(engel().yazi)
+          + ". Hasat ve taşıma kayıt işi, onlar açık.</div>");
+      }
     } else {
-      var l = ilgiListesi(), o = S.olcum || {}, i;
+      var kk2 = kartlar(), o = S.olcum || {}, i, eo = (S.veri && S.veri.ekim) || {};
       h.push("<h2>Bugün</h2><ul>");
       /* ÖNCE OKUNAN ÖLÇÜMLER, sonra tek satırda okunamayanlar. */
       var bilinen = [], eksik = [];
@@ -2159,18 +2299,52 @@ window.Oyun = (function () {
       else bilinen.push("Hava <b>" + sayi(sic).toFixed(1) + " °C</b>");
       if (o.toprak_nem == null) eksik.push("prob toprak nemi");
       else bilinen.push("Prob <b>%" + Math.round(sayi(o.toprak_nem)) + "</b> okuyor");
+      /* BASINÇ EĞİLİMİ ÖLÇÜMDEN: son üç saatin eğimi. İki uçtan az veri
+         varsa eğilim YOK — uydurma yok. */
+      if (S.egim == null) eksik.push("basınç eğilimi (üç saatlik ölçüm yetmedi)");
+      else {
+        bilinen.push("Basınç saatte <b>" + (S.egim > 0 ? "+" : "") + S.egim.toFixed(1)
+          + " hPa</b> " + (S.egim < -0.2 ? "düşüyor" : (S.egim > 0.2 ? "yükseliyor" : "sabit")));
+      }
       if (!bilinen.length) h.push('<li class="sonuk">Henüz okunmuş ölçüm yok.</li>');
       else for (i = 0; i < bilinen.length; i++) h.push("<li>" + bilinen[i] + "</li>");
-      if (!S.bitki.length) h.push('<li class="sonuk">Yatakta bitki yok.</li>');
-      else if (!l.length) h.push('<li class="iyi">' + S.bitki.length
-        + " bitki, bekleyen iş yok.</li>");
-      else {
-        for (i = 0; i < l.length && i < 12; i++) {
-          h.push('<li><button data-oy="ilgi" data-ad="' + kacisli(l[i].ad) + '">'
-            + "<b>" + kacisli(l[i].ad) + "</b> <span>· " + kacisli(l[i].yazi)
-            + "</span></button></li>");
+      h.push("</ul>");
+      /* EKİM SÜRÜYOR — sunucunun sorusu ve "devam et" onayı. */
+      if (eo.aktif) {
+        h.push('<h2>Ekim sürüyor'
+          + (sayi(eo.toplam, 0) ? " · " + sayi(eo.sira, 0) + "/" + sayi(eo.toplam, 0) : "")
+          + "</h2><ul>");
+        if (eo.tur_ad) h.push("<li>" + kacisli(eo.tur_ad) + "</li>");
+        if (eo.soru) {
+          h.push("<li>" + kacisli(eo.soru)
+            + '<button data-oy="ekim-onay"' + (engel().engel ? " disabled" : "")
+            + "><b>Devam et</b></button></li>");
         }
-        if (l.length > 12) h.push('<li class="sonuk">… ve ' + (l.length - 12) + " tane daha</li>");
+        h.push("</ul>");
+      }
+      h.push("<h2>Görevler</h2><ul>");
+      if (!S.veri) h.push('<li class="sonuk">Bahçe okunuyor…</li>');
+      else if (!kk2.length) h.push('<li class="iyi">Bugün bekleyen iş yok.</li>');
+      for (i = 0; i < kk2.length; i++) {
+        var k2 = kk2[i], adlar = (k2.noktalar || []).map(String);
+        h.push('<li' + (k2.ertelendi ? ' class="sonuk"' : "") + '>'
+          + '<button data-oy="kart-git" data-ix="' + i + '"'
+          + ' data-adlar="' + kacisli(adlar.join(",")) + '"><b>'
+          + kacisli((k2.simge || "") + " " + (k2.baslik || "")) + "</b>"
+          + (k2.aciklama ? " <span>· " + kacisli(k2.aciklama) + "</span>" : "")
+          + (k2.kanit ? " <span>· " + (k2.tahmin ? "tahmin: " : "ölçüm: ")
+              + kacisli(k2.kanit) + "</span>" : "")
+          + "</button>");
+        if (k2.ertelendi) {
+          h.push('<button data-oy="ertele-iptal" data-ix="' + i + '">'
+            + kacisli(k2.ertelendi_yazi || "ertelendi") + " — <b>geri al</b></button>");
+        } else {
+          h.push('<button data-oy="kart-evet" data-ix="' + i + '"'
+            + ((k2.tip !== "ek" && engel().engel) ? " disabled" : "")
+            + "><b>" + kacisli(k2.evet || "Yap") + "</b></button>");
+          h.push('<button data-oy="ertele" data-ix="' + i + '">yarın sor</button>');
+        }
+        h.push("</li>");
       }
       h.push("</ul>");
       h.push('<div class="dip">' + (eksik.length ? "Okunamayan: "
@@ -2184,6 +2358,87 @@ window.Oyun = (function () {
     else { kok.style.right = "16px"; kok.style.left = "auto"; }
     kok.style.top = "82px";
   });
+
+  /** Kart düğmeleri — görev kartları, ekim onayı ve künyenin ikincil
+   *  işleri. Ekranın ortası neresiyse onay orada açılıyor. */
+  function kartTik(e) {
+    var d = e.target.closest("[data-oy]");
+    if (!d) return;
+    var ad = d.dataset.oy;
+    var k = kartlar()[sayi(d.dataset.ix, -1)];
+    var b = S.ix[S.secili];
+    var ox = S.en / 2, oy = S.boy * 0.55;
+    if (ad === "kart-kapat") { kartKapat(); return; }
+    if (ad === "kart-git") {
+      var adlar = (d.dataset.adlar || "").split(",").filter(Boolean);
+      if (adlar.length) { kartKapat(); bitkiyeUc(S.ix[adlar[0]]); }
+      return;
+    }
+    if (ad === "ertele" && k) { erteleGonder(k.kimlik, false); return; }
+    if (ad === "ertele-iptal" && k) { erteleGonder(k.kimlik, true); return; }
+    if (ad === "ekim-onay") {
+      /* EKİM ONAYI — sunucunun sorusuna cevap; makine oradan devam ediyor. */
+      gonder("/api/bahce/onay", {})
+        .then(function () { mesajYaz("Ekim onayı gönderildi."); return veriYukle(); })
+        .catch(function (h) { mesajYaz("Onay geçmedi: " + ((h && h.message) || h)); });
+      return;
+    }
+    if (ad === "kart-evet" && k) {
+      var liste = (k.noktalar || []).map(String);
+      kartKapat();
+      if (k.tip === "sula") {
+        onayAc(liste.length + " bitki sulanacak.",
+          "süre her bitkinin kendi ayarından · geri alınamaz · ölçümler bayatlar",
+          "Sula", function () { isGonder("sula", liste); }, ox, oy);
+      } else if (k.tip === "nem") {
+        onayAc(liste.length + " bitkinin toprağına sırayla prob daldırılacak.",
+          "ölçümden sonra o bitkilerin taralı halkası gerçek dolguya döner",
+          "Ölç", function () { isGonder("nem", liste); }, ox, oy);
+      } else if (k.tip === "hasat") {
+        onayAc(liste.length + " bitkinin üstüne gidilip fotoğraf çekilecek.",
+          "geri alınabilir · film yalnız üst kameradan",
+          "Çek", function () { isGonder("foto", liste); }, ox, oy);
+      } else if (k.tip === "ek") {
+        S.el = true;
+        mesajYaz("Ekmek için alttaki tepsiden bir göz seç, sonra bir karoya dokun.");
+      } else if (k.tip === "hazne") {
+        mesajYaz(k.aciklama || "Hazne gözleri bildirilmiyor.");
+      } else {
+        mesajYaz("Bu kart için doğrudan bir iş yok: " + (k.baslik || k.tip));
+      }
+      return;
+    }
+    if (!b) return;
+    if (ad === "yakin") {
+      kartKapat();
+      onayAc("Eksen " + b.ad + " üstüne gidip uç kamerasıyla yakından bakacak.",
+        "çekilen kare büyüme filmine GİRMEZ — film yalnız üst kameradan",
+        "Bak", function () {
+          gonder("/api/bahce/yakin", { ad: b.ad })
+            .then(function () { mesajYaz("Yakından bakma kuyruğa girdi."); return veriYukle(); })
+            .catch(function (h) { mesajYaz("Olmadı: " + ((h && h.message) || h)); });
+        }, ox, oy);
+      return;
+    }
+    if (ad === "tasi") {
+      S.tasiKip = S.tasiKip ? "" : String(b.ad);
+      kartKapat();
+      mesajYaz(S.tasiKip ? b.ad + " taşınacak — yeni yerine dokun." : "Taşıma bırakıldı.");
+      kirlet();
+      return;
+    }
+    if (ad === "hasat") { kartKapat(); bitkiEylem("hasat", b); }
+  }
+  /** "Yarın sor" — kartı erteliyor, geri alınabiliyor. */
+  function erteleGonder(kimlik, iptal) {
+    gonder("/api/bahce/ertele", { kimlik: kimlik, iptal: !!iptal })
+      .then(function () {
+        mesajYaz(iptal ? "Erteleme geri alındı." : "Yarın yeniden sorulacak.");
+        return veriYukle();
+      })
+      .then(function () { if (S.kartKip === "bugun") { S.kartKip = ""; kartYaz("bugun"); } })
+      .catch(function (h) { mesajYaz("Erteleme geçmedi: " + ((h && h.message) || h)); });
+  }
 
   /* ==================================================================== *
    * EYLEMLER — geri alınamaz her iş NE OLACAĞINI söyleyip onay istiyor.
@@ -2277,9 +2532,13 @@ window.Oyun = (function () {
         S.bayrak = null; kirlet(); return;
       }
     }
+    var der = (S.katalog && Object.prototype.hasOwnProperty.call(S.katalog, slug))
+      ? S.katalog[slug] : undefined;
     onayAc(turAdi(slug) + " buraya ekilecek.",
       "X " + Math.round(mx) + " mm · Y " + Math.round(my) + " mm · yayılım "
-        + Math.round(yay) + " mm · geri alınamaz",
+        + Math.round(yay) + " mm · "
+        + (der == null ? "ekim derinliği bilinmiyor" : Math.round(der) + " mm derine")
+        + " · geri alınamaz",
       "Ek", function () {
         gonder("/api/bahce/ek", { tur: slug, yerler: [{ x: mx, y: my }] })
           .then(function () {
@@ -2442,6 +2701,8 @@ window.Oyun = (function () {
       S.secili = S.secili === b.ad ? "" : b.ad;
       S.halka = S.secili;
       S.bayrak = null;
+      if (S.secili) gecmisAl(S.secili);
+      else if (S.kartKip === "bitki") kartKapat();
       kirlet();
       return;
     }
@@ -2454,9 +2715,45 @@ window.Oyun = (function () {
     }
     var u = Math.floor(m.u), vv = Math.floor(m.v);
     S.bayrak = { u: u, v: vv };
-    if (S.ekTur) ekimOnay(u, vv);
+    if (S.tasiKip) tasiOnay(u, vv);
+    else if (S.ekTur) ekimOnay(u, vv);
     else gitOnay(u, vv);
     kirlet();
+  }
+
+  /** TAŞIMA KAYITTIR: makine kımıldamıyor, bitkinin x/y'si değişiyor.
+   *  Sunucu yatak sınırını ve dikim alanını kendi denetliyor; burada
+   *  yalnız çakışma önden söyleniyor ki kullanıcı boşa onaylamasın. */
+  function tasiOnay(u, v) {
+    var b = S.ix[S.tasiKip];
+    if (!b) { S.tasiKip = ""; return; }
+    var mx = kis(G.s.x1 + (u + 0.5) * KARO_MM, G.s.x1, G.s.x2);
+    var my = kis(G.s.y1 + (v + 0.5) * KARO_MM, G.s.y1, G.s.y2);
+    var x = ex(u + 0.5, v + 0.5), y = ey(u + 0.5, v + 0.5) - Math.max(22, G.th * 1.6);
+    var r = sayi(b.yayilim_mm, sayi(b.yaricap_mm, 30) * 2) / 2, i;
+    for (i = 0; i < S.bitki.length; i++) {
+      var o = S.bitki[i];
+      if (String(o.ad) === String(b.ad)) continue;
+      var orr = sayi(o.yayilim_mm, sayi(o.yaricap_mm, 30) * 2) / 2;
+      if (Math.hypot(sayi(o.x) - mx, sayi(o.y) - my) < r + orr) {
+        mesajYaz("Oraya taşınamaz — " + o.ad + " ile çakışıyor.");
+        S.bayrak = null; kirlet(); return;
+      }
+    }
+    onayAc(b.ad + " X " + Math.round(mx) + " mm, Y " + Math.round(my) + " mm noktasına taşınacak.",
+      "kayıt işi — makine kımıldamaz · ekim tarihi ve geçmişi korunur",
+      "Taşı", function () {
+        gonder("/api/bahce/tasi", { ad: b.ad, x: mx, y: my })
+          .then(function () {
+            S.tasiKip = ""; S.bayrak = null;
+            mesajYaz(b.ad + " taşındı.");
+            return veriYukle();
+          })
+          .catch(function (h) {
+            S.bayrak = null;
+            mesajYaz("Taşınamadı: " + ((h && h.message) || h));
+          });
+      }, x, y);
   }
   function arayuzDokun(o) {
     if (o.ad === "onay-evet") {
@@ -2484,6 +2781,13 @@ window.Oyun = (function () {
       bitkiEylem(o.eylem, S.ix[S.halka]);
     } else if (o.ad === "eylem-kapali") {
       mesajYaz("Bu iş şimdi yapılamaz: " + engel().yazi + ".");
+    } else if (o.ad === "sakin") {
+      S.sakin = !S.sakin;
+      mesajYaz(S.sakin ? "Sakin mod açık — boştaki hayat durdu, bilgi durmadı."
+        : "Sakin mod kapandı.");
+      kirlet();
+    } else if (o.ad === "kunye") {
+      if (S.secili) { gecmisAl(S.secili); kartYaz("bitki"); }
     }
   }
 
@@ -2544,8 +2848,13 @@ window.Oyun = (function () {
    *  yeniden uyandırıyor. Sekme görünmüyorsa zaten hiç kare yok. */
   var DURGUN_SN = 90;
   function canliMi() {
-    if (document.hidden || !S.jeton) return 0;
+    /* SEKME GÖRÜNMÜYORSA HİÇ KARE YOK: panelde 3B sahne de çiziyor,
+       ikisi aynı anda dönerse Pi zorlanıyor. `S.acik` sekme değişiminden
+       geliyor (app.js `Bahce.sekme(...)` çağırıyor); kendi sayfasında
+       hep açık. */
+    if (document.hidden || !S.acik || !S.hazir) return 0;
     if (isVarMi()) return 2;
+    if (S.sakin) return 0;                  /* sakin mod: boşta çizim yok */
     if (Date.now() - S.sonEtkilesim > DURGUN_SN * 1000) return 0;
     return 1;
   }
@@ -2555,7 +2864,7 @@ window.Oyun = (function () {
     if (uyuyordu) kirlet();
   }
   function isteKare() {
-    if (!S.dongu && S.jeton) S.dongu = requestAnimationFrame(kare);
+    if (!S.dongu && S.hazir && S.acik) S.dongu = requestAnimationFrame(kare);
   }
   function kare(t) {
     S.dongu = 0;
@@ -2617,6 +2926,58 @@ window.Oyun = (function () {
     if (S.secili && !S.ix[S.secili]) S.secili = "";
     if (S.halka && !S.ix[S.halka]) S.halka = "";
   }
+  /** Tür kataloğu — ekim derinliği onay metninde yazsın diye.
+   *  Yoksa "bilinmiyor" yazıyor, uydurma derinlik yok. */
+  var katalogAl = guvenli("katalog", function () {
+    if (S.katalogT && Date.now() - S.katalogT < 600000) return Promise.resolve();
+    S.katalogT = Date.now();
+    return api("/api/turler").then(function (c) {
+      var k = {};
+      (c.turler || []).forEach(function (t) {
+        if (t && t.slug) k[t.slug] = t.sow_depth_mm == null ? null : sayi(t.sow_depth_mm);
+      });
+      S.katalog = k;
+    }).catch(function () { S.katalog = null; });
+  });
+  /** Basınç EĞİLİMİ ölçümden: son üç saatin eğimi (hPa/saat).
+   *  İki uçtan az veri varsa eğilim YOK — uydurma yok. */
+  var egimAl = guvenli("eğilim", function () {
+    if (S.egimT && Date.now() - S.egimT < 300000) return Promise.resolve();
+    S.egimT = Date.now();
+    return api("/api/gecmis?dakika=180").then(function (c) {
+      var ts = (c && c.ts) || [], bp = (c && c.basinc) || [], i, ilk = -1, son = -1;
+      for (i = 0; i < bp.length; i++) {
+        if (bp[i] == null) continue;
+        if (ilk < 0) ilk = i;
+        son = i;
+      }
+      if (ilk < 0 || son <= ilk) { S.egim = null; return; }
+      var sa = (sayi(ts[son]) - sayi(ts[ilk])) / 3600;
+      S.egim = sa > 0.25 ? (sayi(bp[son]) - sayi(bp[ilk])) / sa : null;
+    }).catch(function () { S.egim = null; });
+  });
+  /** Seçili bitkinin ölçüm geçmişi ve eğilimi — künyede yazıyor. */
+  var gecmisAl = guvenli("geçmiş", function (ad) {
+    if (!ad || S.gecmisAd === ad) return;
+    S.gecmisAd = ad; S.gecmis = null;
+    api("/api/bitki").then(function (c) {
+      var b = (c.bitkiler || []).filter(function (x) { return String(x.ad) === ad; })[0];
+      if (!b) return;
+      S.gecmis = { adet: (b.gecmis || []).length, egilim: b.egilim || null };
+      if (S.kartKip === "bitki") { S.kartKip = ""; kartYaz("bitki"); }
+    }).catch(function () { /* geçmiş yoksa künye onsuz yazılıyor */ });
+  });
+  /** Kendi sayfasında ölçüm paketi soketten geliyor; PANELDE app.js onu
+   *  bize iletmiyor, o yüzden hava için /api/durum okunuyor. */
+  var havaAl = guvenli("hava", function () {
+    if (!PANELDE) return Promise.resolve();
+    return api("/api/durum").then(function (c) {
+      if (c && c.olcum) { S.olcum = c.olcum; kirlet(); }
+    }).catch(function () {
+      hataYaz("hava", "Ölçümler okunamadı — hava satırları boş kalıyor.");
+    });
+  });
+
   var veriYukle = guvenli("veri", function () {
     if (S.yukleniyor) return Promise.resolve();
     S.yukleniyor = true;
@@ -2627,6 +2988,7 @@ window.Oyun = (function () {
       geometriKur();
       zeminCiz();
       hataYaz("veri", "");
+      katalogAl(); egimAl(); havaAl();
       if (S.kartKip) { var kip = S.kartKip; S.kartKip = ""; kartYaz(kip); }
       kirlet();
     }).catch(function (h) {
@@ -2639,6 +3001,7 @@ window.Oyun = (function () {
     if (!d) return;
     var oncekiNx = G.nx, oncekiNy = G.ny;
     S.durum = d;
+    S.durumT = Date.now();
     var k = d.konum || {};
     if (k.x != null && k.y != null) {
       S.bildirilen = { x: sayi(k.x), y: sayi(k.y), z: k.z == null ? null : sayi(k.z) };
@@ -2649,6 +3012,7 @@ window.Oyun = (function () {
       S.bildirilen.z = null;
       S.konumYok = true;
     }
+    if (!S.hazir || !S.en) return;          /* ölçü daha alınmadı */
     geometriKur();
     if (G.nx !== oncekiNx || G.ny !== oncekiNy) zeminCiz();
     if (S.kartKip === "makine") { S.kartKip = ""; kartYaz("makine"); }
@@ -2691,8 +3055,11 @@ window.Oyun = (function () {
   }
 
   var olcuKur = guvenli("ölçü", function () {
-    var en = Math.max(280, Math.round(window.innerWidth));
-    var boy = Math.max(220, Math.round(window.innerHeight));
+    /* Ölçü TUVALİN KENDİ KUTUSUNDAN: kendi sayfasında bu bütün ekran,
+       panelde Bahçe sekmesine ne kalıyorsa o. İkisi için ayrı hesap yok. */
+    var r = S.tuval.getBoundingClientRect();
+    var en = Math.max(280, Math.round(r.width || window.innerWidth));
+    var boy = Math.max(220, Math.round(r.height || window.innerHeight));
     var dpr = kis(window.devicePixelRatio || 1, 1, 2);
     if (en === S.en && boy === S.boy && dpr === S.dpr) return;
     S.en = en; S.boy = boy; S.dpr = dpr;
@@ -2716,19 +3083,13 @@ window.Oyun = (function () {
     S.tuval.addEventListener("pointerleave", cikti);
     S.tuval.addEventListener("wheel", tekerlek, { passive: false });
     S.tuval.addEventListener("contextmenu", function (e) { e.preventDefault(); });
-    $("#oy-kart").addEventListener("click", guvenli("kart tık", function (e) {
-      var d = e.target.closest("[data-oy]");
-      if (!d) return;
-      if (d.dataset.oy === "kart-kapat") { kartKapat(); return; }
-      if (d.dataset.oy === "ilgi") {
-        kartKapat();
-        bitkiyeUc(S.ix[d.dataset.ad]);
-      }
-    }));
+    var kartKok = $("#oy-kart");
+    if (kartKok) kartKok.addEventListener("click", guvenli("kart tık", kartTik));
     document.addEventListener("keydown", function (e) {
       if (e.key !== "Escape") return;
       if (S.onay) { onayKapat(); S.bayrak = null; return; }
       if (S.kartKip) { kartKapat(); return; }
+      if (S.tasiKip) { S.tasiKip = ""; mesajYaz("Taşıma bırakıldı."); return; }
       if (S.el) { S.el = false; S.ekTur = ""; kirlet(); return; }
       if (S.halka) { S.halka = ""; S.secili = ""; kirlet(); }
     });
@@ -2743,34 +3104,87 @@ window.Oyun = (function () {
   }
 
   function baslat() {
+    PANELDE = !!(window.Panel && window.Panel.apiIste);
     S.tuval = $("#oy-tuval");
     if (!S.tuval || !S.tuval.getContext) {
       hataYaz("kurulum", "Tuval bulunamadı — tarayıcı canvas desteklemiyor olabilir.");
       return;
     }
     S.ct = S.tuval.getContext("2d");
-    S.jeton = jetonAl();
-    if (!S.jeton) {
-      /* JETON YOK: boş sahne çizmiyoruz, sebebini söyleyip panele
-         yönlendiriyoruz. */
-      var kilit = $("#oy-kilit");
-      if (kilit) kilit.hidden = false;
-      return;
+    if (!PANELDE) {
+      /* KENDİ SAYFASI: jeton localStorage'dan. Yoksa boş sahne çizmiyoruz,
+         sebebini söyleyip panele yönlendiriyoruz. */
+      S.jeton = jetonAl();
+      if (!S.jeton) {
+        var kilit = $("#oy-kilit");
+        if (kilit) kilit.hidden = false;
+        return;
+      }
     }
     olaylariBagla();
+    S.hazir = true;
+    /* PANELDE ölçü ve ilk yükleme SEKME AÇILINCA yapılıyor: bölüm
+       `display:none` iken kutusu sıfır. app.js sekmeye geçince
+       `Bahce.sekme(true)` çağırıyor. Sekme zaten açıksa (ya da app.js
+       bizden önce haber verdiyse) burada kuruluyor. Kendi sayfasında
+       sekme diye bir şey yok, hep açık. */
+    if (PANELDE) {
+      var bolum = document.getElementById("sayfa-bahce");
+      if (S.acik || (bolum && bolum.classList.contains("etkin"))) dis.sekme(true);
+      return;
+    }
+    S.acik = true;
     olcuKur();
     veriYukle();
     soketBagla();
     setInterval(function () {
-      if (!document.hidden && Date.now() - S.veriT > TAZE_MS) veriYukle();
+      if (!document.hidden && S.acik && Date.now() - S.veriT > TAZE_MS) veriYukle();
     }, 10000);
   }
-  if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", baslat);
-  } else baslat();
 
-  /* Dış arayüz — ölçüm ve elle yenileme. */
-  return {
+  /* ==================================================================== *
+   * DIŞ ARAYÜZ
+   *
+   * Panelde app.js bu nesneyi `window.Bahce` adıyla çağırıyor: sekme
+   * değişimi, durum paketi, kuyruk ve ekim haberleri oradan geliyor.
+   * Kendi sayfasında bu çağrılar hiç gelmiyor; oyun kendi soketini
+   * kullanıyor ve sekmesi hep açık.
+   * ==================================================================== */
+  var dis = {
+    /** Sekme açıldı/kapandı — SEKME KAPALIYKEN HİÇ KARE ÇİZİLMİYOR. */
+    sekme: function (acik) {
+      S.acik = !!acik;
+      /* Kabuk kuralları bu sınıfa bağlı: sol yüzen panel tam genişliğe
+         açılıyor, 3B sahne alanı kapanıyor, gövdenin iç boşluğu kalkıyor.
+         Oyun sekmede ne kadar alan varsa hepsini kullanıyor. */
+      document.body.classList.toggle("bahce-acik", S.acik);
+      if (!S.acik) {
+        if (S.dongu) { cancelAnimationFrame(S.dongu); S.dongu = 0; }
+        kartKapat();
+        return;
+      }
+      if (!S.hazir) return;
+      /* Sekme görünür olduktan SONRA ölçülüyor: bölüm `display:none`
+         iken kutusu sıfır. */
+      requestAnimationFrame(function () {
+        olcuKur();
+        uyandir();
+        veriYukle();
+        var p = P();
+        if (p && p.S && p.S.durum) durumGeldi(p.S.durum);
+        kirlet();
+      });
+    },
+    durumDegisti: function (d) { durumGeldi(d); },
+    kuyrukDegisti: function (kk) {
+      S.veri = S.veri || {};
+      if (kk) S.veri.kuyruk = kk;
+      if (S.acik) veriYukle();
+    },
+    ekimDegisti: function () { if (S.acik) veriYukle(); },
+    baglandi: function () { if (S.acik) veriYukle(); },
+    /* Kamera karesi bu sahnede kullanılmıyor. */
+    kareGeldi: function () { /* boş — bilerek */ },
     yenile: function () { return veriYukle(); },
     kadraj: kadrajaDon,
     /** Kare süresi ölçümü. */
@@ -2800,6 +3214,17 @@ window.Oyun = (function () {
                  w: o.w ? +o.w.toFixed(1) : 0, h: o.h ? +o.h.toFixed(1) : 0,
                  eylem: o.eylem || "", tur: o.tur || "" };
       });
-    }
+    },
+    baglam: function () { return PANELDE ? "panel" : "sayfa"; }
   };
+  /* `window.Bahce` ADIYLA DA DURUYOR: app.js sekme değişimini, durum
+     paketini ve kuyruk haberlerini o adla çağırıyor — ona dokunmadan
+     bağlanıyoruz. Kendi sayfasında bu ad kimseyi rahatsız etmiyor.
+     Modül gövdesi app.js'ten önce çalışıyor, o yüzden burada duruyor:
+     app.js `basla()` çağırdığında `window.Bahce` hazır olmalı. */
+  window.Bahce = dis;
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", baslat);
+  } else baslat();
+  return dis;
 }());
