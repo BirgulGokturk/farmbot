@@ -16,7 +16,11 @@ cd "$(dirname "$0")"
 
 PORT="${1:-}"
 FQBN="${2:-arduino:avr:uno}"
-ESKIZ="firmware/farmbot_sensors"
+# Hangi sketch? Varsayilan ana firmware. Deneme sketch'i icin:
+#   ESKIZ=firmware/servo_testi bash arduino-yukle.sh
+# NEDEN CEVRE DEGISKENI: port ve kart tipi zaten konumsal arguman; ucuncu
+# bir konumsal arguman eklemek "hangisi neydi" sorusunu doguruyordu.
+ESKIZ="${ESKIZ:-firmware/farmbot_sensors}"
 
 # Port verilmediyse bul. Birden fazla varsa seçim bizim işimiz değil:
 # yanlış karta yazmaktansa sormak iyidir.
