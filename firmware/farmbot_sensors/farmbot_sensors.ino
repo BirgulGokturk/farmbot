@@ -21,12 +21,22 @@
 #define SERVO_PIN      9
 
 /* ---------------------------------------------------- SERVO DENEME KİPİ --
- * SÜREKLİ DÖNÜŞLÜ SERVO İÇİN. Normal servoda `write(derece)` KONUM verir;
- * sürekli dönüşlüde HIZ verir. 90 dur, 90'dan uzaklaştıkça hızlanır ve
- * yön değiştirir. Açı diye bir şey yok: açı = hız × süre.
+ * KONUMLU (NORMAL) SERVO İÇİN. `write(derece)` hedef AÇI veriyor: servo
+ * kendi sabit hızıyla oraya gidiyor ve orada duruyor.
  *
- * BUNUN BEDELİ: konum AÇIK DÖNGÜ. Her turda birkaç derece kayar ve kayma
- * birikir; kart sıfırlanırsa horn'un nerede kaldığı bilinemez. */
+ * ÖNCE SÜREKLİ DÖNÜŞLÜ SANILMIŞTI ve kod ona göre yazılmıştı — hız yazıp
+ * süreyle açı üretiyordu. Ölçüm bunu çürüttü: `HIZ 150` bir kez hareket
+ * edip durdu ve HER değerde AYNI hızla hareket etti. Sürekli dönüşlüde
+ * komut hızı belirler, yani 150 ile 120 farklı hızda dönerdi ve hiç
+ * durmazdı. Aynı hız + durma = komut açıdır, hız değil.
+ *
+ * BUNUN SONUCU İYİ: konum tekrarlanabilir, kayma birikmiyor, uçların
+ * açıları (`ajan/uclar.json`) doğrudan anlamlı ve mikro switch gerekmiyor.
+ *
+ * Geri besleme YİNE DE YOK: servo zorlanır ya da takılırsa kart bunu
+ * bilemez. Bu yüzden `uc_secili`/`uc_aci` hâlâ "komut edilen", "ölçülen"
+ * değil. Fark şu: artık yanlış olduklarında sebep bir arıza, biriken
+ * kayma değil. */
 
 /* AÇILIŞTA BAŞLASIN MI? Varsayılan 0 — kart pompa çekişinde sıfırlanıyor
  * ve açılışta kendiliğinden dönen bir servo, uçlar takılıyken istenmez.
@@ -34,11 +44,17 @@
 #define TEST_ACILISTA 0
 
 /* ⚙️ DEĞİŞTİREBİLECEĞİNİZ İNCE AYARLAR — hepsi burada, başka yerde yok. */
-const int durmaHizi          = 90;   // motorun durduğu değer
-const int yavasIleriHizi     = 93;   // çok yavaş ileri (91, 92, 94 deneyin)
-const int yavasGeriHizi      = 87;   // çok yavaş geri  (89, 88, 86 deneyin)
-const int doksanDereceSuresi = 800;  // 90 derece dönmesi kaç ms sürüyor
-const int duraklardaBekleme  = 3000; // her durakta kaç ms beklesin
+
+/* Denemenin gezeceği açılar. Uçların GERÇEK açıları burada DEĞİL: onlar
+ * `ajan/uclar.json`'da duruyor ve UC komutuyla geliyor (gerekçesi UC'nin
+ * başlığında). Bu liste yalnız mekanizmayı gözle görmek için — ölçtükten
+ * sonra buraya kendi açılarınızı yazıp uçların gerçekten hizalandığını
+ * doğrulayabilirsiniz. */
+const int testAcilari[]     = {0, 90, 180, 90};
+const int hareketSuresi     = 800;  // servonun hedefe varması için beklenen süre (ms)
+const int duraklardaBekleme = 3000; // her açıda kaç ms beklesin
+
+const int TEST_ACI_SAYISI = sizeof(testAcilari) / sizeof(testAcilari[0]);
 
 #define OLCUM_ARALIGI_MS 2000
 
@@ -80,9 +96,7 @@ String girisTamponu = "";
 bool testAcik = false;
 /* İleri bildirim: `ucKomut` bu dosyada `testDurdur`dan ÖNCE tanımlı. */
 void testDurdur();
-int  usDeger(int derece);   // testBasla bunu kendinden ONCE cagiriyor
 void testBasla();   // setup, TEST_ACILISTA 1 iken bunu çağırıyor
-int  testAdim = 0;              // 0..5 — aşağıdaki testGozet'e bakın
 unsigned long testAdimMs = 0;   // bu adım ne zaman başladı
 
 // --------------------------------------------------------------- RÖLE -----
@@ -141,7 +155,7 @@ void setup() {
   bmpVar = bmp.begin();
   if (!bmpVar) Serial.println("UYARI: BMP180 bulunamadi, digerleriyle devam");
 
-  Serial.println("Hazir. Komutlar: ROLE <ad> <0|1> | UC <indeks> <derece> <sure_ms> | KAPAT | OKU | TEST | HIZ <0-180>");
+  Serial.println("Hazir. Komutlar: ROLE <ad> <0|1> | UC <indeks> <derece> <sure_ms> | KAPAT | OKU | TEST | ACI <0-180>");
 #if TEST_ACILISTA
   testBasla();
 #endif
@@ -174,103 +188,94 @@ void ucGozet() {
 }
 
 // ---------------------------------------------------- SERVO DENEME KİPİ --
-/* Altı adımlı döngü. Sizin kodunuzdaki sıranın aynısı:
- *   0  ileri, 90 derecelik süre        3  bekle
- *   1  bekle                           4  geri, iki katı süre (180 geri)
- *   2  ileri, 90 derecelik süre        5  bekle, sonra başa
- * `delay` yok: her adım "başlangıç anı + süre" ile bitiyor. */
+/* `testAcilari` listesini sırayla geziyor: bir açıya git, varması için
+ * bekle, sonra durakta bekle, sonraki açı.
+ *
+ * `delay` YOK. `delay` ile yazılsaydı servo giderken ve durakta beklerken
+ * kart sağır kalırdı — sensör okunmaz, seri komut işlenmez, panel
+ * "Arduino sustu" derdi. Her adım "başlangıç anı + süre" ile bitiyor. */
+int  testSirasi = 0;            // testAcilari içinde neredeyiz
+bool testGidiyor = false;       // true: hedefe gidiyor, false: durakta
+
+/** Bir `write(derece)` değerinin kaç mikrosaniyelik darbeye karşılık
+ *  geldiği. Arduino'nun Servo kütüphanesi 0..180'i 544..2400 us'e
+ *  eşliyor — yani `write(90)` 1500 DEĞİL, 1472 us. Servo beklenmedik
+ *  yerde duruyorsa bakılacak sayı bu; derece bunu göstermiyor. */
+int usDeger(int derece) {
+  return 544 + (int)((long)derece * (2400L - 544L) / 180L);
+}
+
+/** Servoyu doğrudan bir açıya sürer — mekanizmayı elle yoklamak için.
+ *
+ *  NEDEN VAR: uç açıları ayar dosyasında ve panelden geliyor; ama makine
+ *  başındayken "şu açıda hangi uç iniyor" sorusunu yeniden yükleme
+ *  yapmadan cevaplamak gerekiyor. Ölçüp panele gireceğiniz sayıları
+ *  burada buluyorsunuz. */
+void aciyaSur(int derece) {
+  if (testAcik) testDurdur();
+  if (!ucTakili) { ucServo.attach(SERVO_PIN); ucTakili = true; }
+  ucServo.write(derece);
+  /* UÇ BİLGİSİ GEÇERSİZ: elle sürmek horn'u bir uçla eşleşmeyen bir açıya
+   * götürebilir, "şu uç seçili" kaydı artık doğruyu anlatmaz. */
+  ucSecili = -1;
+  ucAci = derece;
+  ucHarekette = false;
+  Serial.print("KOMUT: aci ");
+  Serial.print(derece);
+  Serial.print(" (");
+  Serial.print(usDeger(derece));
+  Serial.println(" us)");
+  sonOlcum = 0;
+}
+
 void testAdimUygula() {
   if (!ucTakili) { ucServo.attach(SERVO_PIN); ucTakili = true; }
-  switch (testAdim) {
-    case 0: case 2: ucServo.write(yavasIleriHizi); break;
-    case 4:         ucServo.write(yavasGeriHizi);  break;
-    default:        ucServo.write(durmaHizi);      break;
+  if (testGidiyor) {
+    ucServo.write(testAcilari[testSirasi]);
+    ucAci = testAcilari[testSirasi];
   }
   testAdimMs = millis();
 }
 
-unsigned long testAdimSuresi() {
-  switch (testAdim) {
-    case 0: case 2: return (unsigned long)doksanDereceSuresi;
-    // 180 derece geri dönecek, o yüzden iki katı.
-    case 4:         return (unsigned long)doksanDereceSuresi * 2UL;
-    default:        return (unsigned long)duraklardaBekleme;
-  }
-}
-
 void testBasla() {
   testAcik = true;
-  testAdim = 0;
-  /* UÇ BİLGİSİ ARTIK GEÇERSİZ. Deneme horn'u serbestçe döndürüyor; kartın
-   * "şu uç seçili" kaydı bu andan sonra horn'un gerçek yerini anlatmıyor. */
+  testSirasi = 0;
+  testGidiyor = true;
+  /* HANGİ UÇ SEÇİLİ BİLİNMİYOR: deneme listesi uçların gerçek açıları
+   * değil, mekanizmayı görmek için bir tarama. Eski değeri bırakmak
+   * bilinmeyeni bilinen gibi göstermek olurdu. */
   ucSecili = -1;
-  ucAci = -1;
   ucHarekette = false;
   testAdimUygula();
-  Serial.print("KOMUT: servo denemesi BASLADI — ileri ");
-  Serial.print(yavasIleriHizi);
-  Serial.print(" (");
-  Serial.print(usDeger(yavasIleriHizi));
-  Serial.print(" us), geri ");
-  Serial.print(yavasGeriHizi);
-  Serial.print(" (");
-  Serial.print(usDeger(yavasGeriHizi));
-  Serial.println(" us). Durdurmak icin tekrar TEST");
-  /* 1500 us servonun durma noktası. Bu ikisi ona çok yakınsa servo
-   * komutu alır ama kımıldamaz — ölü bant. Sessizce beklememek için
-   * kartın kendisi söylüyor. */
-  if (usDeger(yavasIleriHizi) > 1460 && usDeger(yavasIleriHizi) < 1540) {
-    Serial.println("UYARI: ileri hizi 1500 us'e cok yakin — olu bantta olabilir, HIZ ile deneyin");
+  Serial.print("KOMUT: servo denemesi BASLADI — aci listesi:");
+  for (int i = 0; i < TEST_ACI_SAYISI; i++) {
+    Serial.print(' ');
+    Serial.print(testAcilari[i]);
   }
+  Serial.println(". Durdurmak icin tekrar TEST");
   sonOlcum = 0;
 }
 
 void testDurdur() {
   testAcik = false;
-  if (ucTakili) ucServo.write(durmaHizi);
+  /* Servoyu BIRAKMIYORUZ (detach yok): konumlu servo detach edilince
+   * horn'u tutmayı bırakır ve mekanizmanın ağırlığı onu kaydırabilir.
+   * Nerede durduysa orada tutuyor. */
   Serial.println("KOMUT: servo denemesi DURDU");
-  sonOlcum = 0;
-}
-
-/* Bir `write(derece)` değerinin kaç mikrosaniyelik darbeye karşılık
- * geldiği. Arduino'nun Servo kütüphanesi 0..180'i 544..2400 us'e
- * eşliyor — yani `write(90)` 1500 DEĞİL, 1472 us.
- *
- * BUNU YAZDIRIYORUZ çünkü sürekli dönüşlü servoda karar veren şey
- * derece değil darbe genişliği: durma noktası 1500 us ve etrafında
- * ölü bant var. "93 yazdım ama dönmedi"nin cevabı bu sayıda görünüyor,
- * derecede görünmüyor. */
-int usDeger(int derece) {
-  return 544 + (int)((long)derece * (2400L - 544L) / 180L);
-}
-
-/** Servoyu doğrudan bir değerde tutar — ölü bandı elle bulmak için.
- *
- * NEDEN VAR: hız sabitleri derleme zamanında sabit; her denemede yeniden
- * yüklemek gerekiyordu. Ölü bandın kenarı servodan servoya değişiyor ve
- * ancak deneyerek bulunuyor. Bu komutla seri porttan süpürüp bulabilir,
- * sonra bulduğunuz sayıyı yukarıdaki sabitlere yazabilirsiniz. */
-void hizYaz(int deger) {
-  if (testAcik) testDurdur();
-  if (!ucTakili) { ucServo.attach(SERVO_PIN); ucTakili = true; }
-  ucServo.write(deger);
-  /* UÇ BİLGİSİ GEÇERSİZ — elle sürmek horn'u bilinmeyen bir yere
-   * götürüyor, "şu uç seçili" kaydı artık doğruyu anlatmaz. */
-  ucSecili = -1;
-  ucAci = -1;
-  ucHarekette = false;
-  Serial.print("KOMUT: hiz ");
-  Serial.print(deger);
-  Serial.print(" (");
-  Serial.print(usDeger(deger));
-  Serial.println(" us) — durdurmak icin HIZ 90");
   sonOlcum = 0;
 }
 
 void testGozet() {
   if (!testAcik) return;
-  if (millis() - testAdimMs < testAdimSuresi()) return;
-  testAdim = (testAdim + 1) % 6;
+  unsigned long sure = testGidiyor ? (unsigned long)hareketSuresi
+                                   : (unsigned long)duraklardaBekleme;
+  if (millis() - testAdimMs < sure) return;
+  if (testGidiyor) {
+    testGidiyor = false;            // vardı, şimdi durakta bekle
+  } else {
+    testGidiyor = true;             // bekleme bitti, sıradaki açıya
+    testSirasi = (testSirasi + 1) % TEST_ACI_SAYISI;
+  }
   testAdimUygula();
 }
 
@@ -298,11 +303,18 @@ void komutIsle(String komut) {
     return;
   }
 
-  if (buyuk.startsWith("HIZ ")) {
-    // "HIZ 105" — servoyu o değerde tut. 90 = dur. Ölü bandı bulmak için.
-    int deger = komut.substring(komut.indexOf(' ') + 1).toInt();
-    if (deger < 0 || deger > 180) { Serial.println("HATA: HIZ 0-180"); return; }
-    hizYaz(deger);
+  /* "ACI 120" — servoyu o açıya sürer.
+   *
+   * "HIZ" DA KABUL EDİLİYOR ama adı düzeltilerek: servo sürekli dönüşlü
+   * sanılırken komut HIZ'dı. Sessizce "bilinmeyen komut" demek, ezber
+   * hâline gelmiş bir komutu bozardı; ne değiştiğini söylemek daha iyi. */
+  if (buyuk.startsWith("ACI ") || buyuk.startsWith("HIZ ")) {
+    if (buyuk.startsWith("HIZ ")) {
+      Serial.println("BILGI: servo konumlu — komut artik ACI, HIZ degil");
+    }
+    int derece = komut.substring(komut.indexOf(' ') + 1).toInt();
+    if (derece < 0 || derece > 180) { Serial.println("HATA: ACI 0-180"); return; }
+    aciyaSur(derece);
     return;
   }
 
