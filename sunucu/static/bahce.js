@@ -47,10 +47,37 @@
  *   sürüklenen şey HAYALET, gerçeği onaydan sonra gider.
  *
  * ---------------------------------------------------------------------
+ * ELE ALINAN ŞEYLER — YAN RAYLAR
+ * ---------------------------------------------------------------------
+ * Solda alet rayı: su, nem probu, kamera, yakın bak. Aleti tutup bitkinin
+ * üstüne bırakınca iş kuyruğa giriyor; bırakmak NİYET, onay KARAR.
+ * Bunlar makinenin işi olduğu için makine kopukken ray kilitli ve sebebi
+ * rayın üstünde yazılı. Çalışan işin aleti ucun üstünde duruyor: ekranda
+ * elindeki alet ile makinedeki alet aynı şey.
+ * Sağda sepet: bitkiyi sepete bırakmak HASAT (kayıt), yatağın içinde
+ * başka bir yere bırakmak TAŞIMA (kayıt). İkisinde de makine kımıldamıyor,
+ * bu yüzden kopukken de çalışıyorlar. Sınırı ve dikim alanını sunucu
+ * denetliyor; ret gelirse sebebi ekranda.
+ *
+ * ---------------------------------------------------------------------
+ * SU
+ * ---------------------------------------------------------------------
+ * Damla ve ıslaklık yalnız su gerçekten aktığında çiziliyor: önce röle
+ * (`Panel.S.roleDurum.su_pompasi`), o yoksa kuyrukta çalışan sulama işi —
+ * ikincisinde ekranda "röle okunmuyor · çalışan işten" yazıyor. Su UCUN
+ * BİLDİRİLEN KONUMUNA düşüyor; konum bildirilmemişse hiçbir yere damla
+ * çizilmiyor ve sebebi yatağın altında yazıyor. Sahne kuşbakışı olduğu
+ * için damlalar aşağı düşmüyor, dışa saçılıyor. Taze sulamanın serin
+ * parıltısı var, ölçülmüş nem lekesinin yok: ikisi karışmasın diye.
+ *
+ * ---------------------------------------------------------------------
  * PERFORMANS (Raspberry Pi 5, 800×480 ve telefon)
  * ---------------------------------------------------------------------
- * Çim ve toprak birer kez ayrı tuvale çiziliyor, sahneye tek drawImage
- * ile basılıyor. Bitki siluetleri önbellekte; salınım yalnız bir
+ * Çim, toprak ve NEM KATMANI birer kez ayrı tuvale çiziliyor, sahneye tek
+ * drawImage ile basılıyor. Nemin ayrı tuvalde olması şart: tül ölçülen
+ * bitkilerin çevresinde `destination-out` ile deliniyor ve bu ana tuvalde
+ * yapılınca toprağı da siliyordu — ekranda kocaman siyah bir leke
+ * çıkıyordu. Nem katmanı yalnız veri değiştiğinde yeniden çiziliyor. Bitki siluetleri önbellekte; salınım yalnız bir
  * döndürme. Canlandırma 20 kare/sn ile sınırlı, sekme kapalıyken ve
  * sakin modda hiç kare yok.
  */
@@ -82,6 +109,9 @@ window.Bahce = (function () {
     onay: null, kartIx: 0, isKip: "kart",
     insaT: 0, insaBitti: true, insaVar: false,
     t: 0, sonT: 0, dongu: 0, sonCizim: 0,
+    nemKat: null, nemKatCt: null, nemDamga: "",
+    islak: [], damla: [], suAkiyor: false, suKanit: "yok",
+    ray: [], sepet: null, tasima: null, tasimaHedef: null,
     toz: [], ari: null, mesaj: "", mesajT: 0,
     notlar: {}, hatalar: [],
     olcum: { kare: 0, sure: 0, enUzun: 0 }
@@ -208,6 +238,7 @@ window.Bahce = (function () {
     G.kal = Math.max(8, Math.min(26, k * 26));      /* tahta kalınlığı */
     G.ray = Math.max(7, Math.min(16, k * 16));      /* ray genişliği */
     G.s = s;
+    rayKur();
   }
   function px(mx) { return G.ox + (sayi(mx) - G.s.x1) * G.k; }
   function py(my) { return G.oy + (sayi(my) - G.s.y1) * G.k; }
@@ -426,6 +457,15 @@ window.Bahce = (function () {
     S.toprak = document.createElement("canvas"); S.toprak.width = w; S.toprak.height = h;
     S.toprakCt = S.toprak.getContext("2d");
     S.toprakCt.setTransform(S.olcek, 0, 0, S.olcek, 0, 0);
+    /* NEM KENDİ KATMANINDA. Tül, ölçülen bitkilerin çevresinde
+       `destination-out` ile deliniyor; bu ana tuvalde yapılınca çimi,
+       tahtayı ve TOPRAĞI da siliyordu — ekranda bitki kümesinin üstünde
+       kocaman siyah bir leke çıkıyordu (ölçüldü: 1240x504 tuvalde
+       139.730 piksel saydamlaşmıştı). Delik artık yalnız tülü deliyor. */
+    S.nemKat = document.createElement("canvas"); S.nemKat.width = w; S.nemKat.height = h;
+    S.nemKatCt = S.nemKat.getContext("2d");
+    S.nemKatCt.setTransform(S.olcek, 0, 0, S.olcek, 0, 0);
+    S.nemDamga = "";
     S.cimIx = 0;
     cimHazirla();
     topragiCiz();
@@ -505,36 +545,77 @@ window.Bahce = (function () {
   }
 
   function topragiCiz() {
+    /* TOPRAK CANLI OLMALI ama YALAN SÖYLEMEMELİ: dokudaki bütün değişim
+       RENK TONUNDA, parlaklıkta değil. Parlaklık nemin dili (ıslak leke
+       koyu, ölçülmeyen tül solgun); doku da koyu-açık oynasaydı bakan
+       kişi kuru toprakla ölçülmüş nemli toprağı ayırt edemezdi. */
     var c = S.toprakCt, r = uretec(424242), i;
     c.clearRect(0, 0, S.en, S.boy);
     c.save();
     c.beginPath(); c.rect(G.ox, G.oy, G.bw, G.bh); c.clip();
-    var g = c.createLinearGradient(G.ox, G.oy, G.ox + G.bw * 0.3, G.oy + G.bh);
-    g.addColorStop(0, "#63492f"); g.addColorStop(0.5, "#57402a"); g.addColorStop(1, "#4a3623");
+    var g = c.createLinearGradient(G.ox, G.oy, G.ox + G.bw * 0.35, G.oy + G.bh);
+    g.addColorStop(0, "#7a5734"); g.addColorStop(0.42, "#6b4c2d");
+    g.addColorStop(0.78, "#5e4227"); g.addColorStop(1, "#553b23");
     c.fillStyle = g; c.fillRect(G.ox, G.oy, G.bw, G.bh);
-    var siraAdet = Math.max(10, Math.round(G.bh / 14));
-    for (i = 0; i < siraAdet; i++) {                       /* tırmık izleri */
+
+    /* Toprağın kendi alacası: geniş, yumuşak ve AYNI parlaklıkta sıcak /
+       serin kahve lekeleri. Uzaktan "işlenmiş toprak", yakından leke. */
+    var alaca = Math.max(14, Math.round((G.bw * G.bh) / 5200));
+    for (i = 0; i < alaca; i++) {
+      var ax = G.ox + r() * G.bw, ay = G.oy + r() * G.bh;
+      var ar = 16 + r() * Math.max(26, G.bw * 0.09);
+      var sicak = r() > 0.5;
+      var ag = c.createRadialGradient(ax, ay, 0, ax, ay, ar);
+      ag.addColorStop(0, sicak ? "rgba(139,96,52,.20)" : "rgba(96,79,58,.18)");
+      ag.addColorStop(1, "rgba(0,0,0,0)");
+      c.fillStyle = ag;
+      c.beginPath(); c.ellipse(ax, ay, ar, ar * (0.6 + r() * 0.5), r() * 3, 0, 6.3); c.fill();
+    }
+
+    /* Tırmık sırtları: her sıra ince bir gölge + üstünde ince bir aydınlık
+       çizgi. İkisi birlikte kabartma etkisi veriyor; tek çizgi düz kalıyordu. */
+    var siraAdet = Math.max(10, Math.round(G.bh / 13));
+    for (i = 0; i < siraAdet; i++) {
       var yy = G.oy + (i + 0.5) * (G.bh / siraAdet);
-      c.strokeStyle = i % 2 ? "rgba(255,228,190,.045)" : "rgba(0,0,0,.10)";
-      c.lineWidth = 1.4;
+      var dalga = 1.1 + (i % 3) * 0.5;
+      c.lineWidth = 1.5;
+      c.strokeStyle = "rgba(38,24,12,.13)";
       c.beginPath(); c.moveTo(G.ox, yy);
-      for (var x = G.ox; x <= G.ox + G.bw; x += 16) c.lineTo(x, yy + Math.sin(x * 0.08 + i) * 1.4);
+      for (var x = G.ox; x <= G.ox + G.bw; x += 14) c.lineTo(x, yy + Math.sin(x * 0.075 + i) * dalga);
+      c.stroke();
+      c.lineWidth = 1;
+      c.strokeStyle = "rgba(255,226,178,.10)";
+      c.beginPath(); c.moveTo(G.ox, yy - 2);
+      for (var x2 = G.ox; x2 <= G.ox + G.bw; x2 += 14) c.lineTo(x2, yy - 2 + Math.sin(x2 * 0.075 + i) * dalga);
       c.stroke();
     }
-    var kesek = Math.round((G.bw * G.bh) / 260);
+
+    /* Kesekler: her birinin gölgesi ve aydınlık yüzü var — toprak taneli
+       görünüyor, düz bir zemin değil. */
+    var kesek = Math.round((G.bw * G.bh) / 210);
     for (i = 0; i < kesek; i++) {
-      var cx = G.ox + r() * G.bw, cy = G.oy + r() * G.bh, rr = 1.2 + r() * 3.4;
-      c.fillStyle = "rgba(28,18,10," + (0.10 + r() * 0.22).toFixed(3) + ")";
-      c.beginPath(); c.ellipse(cx, cy, rr, rr * (0.6 + r() * 0.5), r() * 3, 0, 6.3); c.fill();
-      c.fillStyle = "rgba(255,224,180," + (0.05 + r() * 0.1).toFixed(3) + ")";
+      var cx = G.ox + r() * G.bw, cy = G.oy + r() * G.bh, rr = 1.3 + r() * 3.6;
+      var aci = r() * 3;
+      c.fillStyle = "rgba(34,21,10," + (0.10 + r() * 0.20).toFixed(3) + ")";
+      c.beginPath(); c.ellipse(cx + rr * 0.22, cy + rr * 0.28, rr, rr * (0.6 + r() * 0.5), aci, 0, 6.3); c.fill();
+      c.fillStyle = "rgba(196,146,92," + (0.14 + r() * 0.18).toFixed(3) + ")";
+      c.beginPath(); c.ellipse(cx, cy, rr * 0.9, rr * (0.5 + r() * 0.4), aci, 0, 6.3); c.fill();
+      c.fillStyle = "rgba(255,232,190," + (0.07 + r() * 0.11).toFixed(3) + ")";
       c.beginPath();
-      c.ellipse(cx - rr * 0.3, cy - rr * 0.35, rr * 0.6, rr * 0.4, r() * 3, 0, 6.3);
-      c.fill();
+      c.ellipse(cx - rr * 0.32, cy - rr * 0.36, rr * 0.5, rr * 0.32, aci, 0, 6.3); c.fill();
     }
-    for (i = 0; i < Math.round(kesek / 9); i++) {          /* çakıl */
+    /* Çakıl ve saman kırıntısı: ölçekten anlaşılan ayrıntı. */
+    for (i = 0; i < Math.round(kesek / 9); i++) {
       var sx = G.ox + r() * G.bw, sy = G.oy + r() * G.bh, sr = 1 + r() * 2.2;
-      c.fillStyle = "rgba(186,178,164," + (0.18 + r() * 0.3).toFixed(3) + ")";
+      c.fillStyle = "rgba(196,190,176," + (0.20 + r() * 0.3).toFixed(3) + ")";
       c.beginPath(); c.ellipse(sx, sy, sr, sr * 0.72, r() * 3, 0, 6.3); c.fill();
+    }
+    for (i = 0; i < Math.round(kesek / 14); i++) {
+      var tx = G.ox + r() * G.bw, ty = G.oy + r() * G.bh, tl = 3 + r() * 7, ta = r() * 3.1;
+      c.strokeStyle = "rgba(212,180,116," + (0.16 + r() * 0.22).toFixed(3) + ")";
+      c.lineWidth = 0.9;
+      c.beginPath(); c.moveTo(tx, ty);
+      c.lineTo(tx + Math.cos(ta) * tl, ty + Math.sin(ta) * tl * 0.5); c.stroke();
     }
     c.restore();
   }
@@ -552,27 +633,42 @@ window.Bahce = (function () {
       esik: sayi(o.esik, 0), esikAcik: !!o.esik_acik
     };
   }
-  function nemKatCiz(c, p) {
-    if (p <= 0) return;
-    c.save();
-    c.globalAlpha = p;
+  /** Tülün ve lekelerin durum damgası: veri değişmediyse katman yeniden
+   *  çizilmiyor (yeniden çizim 24 bitkide ~1.6 ms). */
+  function nemDamgaAl() {
+    var d = Math.round(G.ox) + "x" + Math.round(G.oy) + "x" + Math.round(G.bw) + "x"
+      + Math.round(G.bh) + "|";
+    S.bitki.forEach(function (b) {
+      var n = nemDurum(b);
+      d += b.ad + (n.var ? ":" + Math.round(n.yuzde) + (n.kendi ? "k" : "o") + (n.bayat ? "b" : "") : ":-") + ";";
+    });
+    return d;
+  }
+  function nemKatKur() {
+    var c = S.nemKatCt;
+    if (!c) return;
+    c.setTransform(S.olcek, 0, 0, S.olcek, 0, 0);
+    c.clearRect(0, 0, S.en, S.boy);
     c.save();
     c.beginPath(); c.rect(G.ox, G.oy, G.bw, G.bh); c.clip();
+    /* Islak leke: nem yüksekse toprak koyu ve hafif serin. Ödünç ve bayat
+       okuma daha soluk — kendi taze okuması kadar güvenilir görünmüyorlar. */
     S.bitki.forEach(function (b) {
       var n = nemDurum(b);
       if (!n.var) return;
-      /* Islak leke: nem yüksekse toprak koyu. Ödünç ve bayat okuma daha
-         soluk — kendi taze okuması kadar güvenilir görünmüyorlar. */
       var guc = (n.kendi ? 1 : 0.5) * (n.bayat ? 0.45 : 1);
       var R = rp(NEM_YARICAP_MM * 0.72), gx = px(b.x), gy = py(b.y);
       var g = c.createRadialGradient(gx, gy, R * 0.1, gx, gy, R);
-      g.addColorStop(0, "rgba(30,20,11," + (0.05 + 0.19 * (n.yuzde / 100) * guc).toFixed(3) + ")");
-      g.addColorStop(1, "rgba(30,20,11,0)");
+      g.addColorStop(0, "rgba(46,32,18," + (0.05 + 0.20 * (n.yuzde / 100) * guc).toFixed(3) + ")");
+      g.addColorStop(1, "rgba(46,32,18,0)");
       c.fillStyle = g;
       c.beginPath(); c.arc(gx, gy, R, 0, 6.3); c.fill();
     });
-    c.fillStyle = "rgba(108,136,164,.13)";
+    /* ÖLÇÜLMEYEN TOPRAK: ince, soğuk bir tül. Kararmıyor — bilmemek
+       karanlık değil, SOLGUNLUK. */
+    c.fillStyle = "rgba(150,168,186,.15)";
     c.fillRect(G.ox, G.oy, G.bw, G.bh);
+    /* Ölçülenin çevresinde tül açılıyor. Bu silme yalnız BU katmanda. */
     c.globalCompositeOperation = "destination-out";
     S.bitki.forEach(function (b) {
       var n = nemDurum(b);
@@ -588,18 +684,29 @@ window.Bahce = (function () {
     c.globalCompositeOperation = "source-over";
     c.restore();
     /* Tarama yalnız ölçümü OLMAYAN bitkinin toprağında — yokluğun kendisi. */
+    c.save();
+    c.beginPath(); c.rect(G.ox, G.oy, G.bw, G.bh); c.clip();
     S.bitki.forEach(function (b) {
       if (nemDurum(b).var) return;
       var sp = spriteAl(b);
       var R = sp.R + 14, gx = px(b.x), gy = py(b.y);
       c.save();
       c.beginPath(); c.arc(gx, gy, R, 0, 6.3); c.clip();
-      c.strokeStyle = "rgba(206,222,238,.20)"; c.lineWidth = 0.9;
+      c.strokeStyle = "rgba(214,228,242,.22)"; c.lineWidth = 0.9;
       for (var i = -R; i < R * 2; i += 9) {
         c.beginPath(); c.moveTo(gx - R + i, gy - R); c.lineTo(gx - R + i + R * 2, gy + R); c.stroke();
       }
       c.restore();
     });
+    c.restore();
+  }
+  function nemKatCiz(c, p) {
+    if (p <= 0 || !S.nemKat) return;
+    var d = nemDamgaAl();
+    if (d !== S.nemDamga) { nemKatKur(); S.nemDamga = d; }
+    c.save();
+    c.globalAlpha = p;
+    c.drawImage(S.nemKat, 0, 0, S.nemKat.width, S.nemKat.height, 0, 0, S.en, S.boy);
     c.restore();
   }
 
@@ -1069,6 +1176,9 @@ window.Bahce = (function () {
     if (!S.acik) return false;
     if (!S.insaBitti) return true;
     if (S.basiliSula) return true;
+    if (S.tasima) return true;                  /* elde bir şey taşınıyor */
+    if (S.suAkiyor || (S.damla && S.damla.length)) return true;
+    if (S.islak.length) return true;            /* ıslaklık soluyor */
     if (S.veri && S.veri.mesgul) return true;   /* makine çalışırken izliyoruz */
     if (S.sakin) return false;
     if (document.hidden) return false;
@@ -1107,6 +1217,7 @@ window.Bahce = (function () {
       return;
     }
     S.sonCizim = sn;
+    suGuncelle(dt);
     var b0 = performance.now();
     sahneCiz(dt);
     var ms = performance.now() - b0;
@@ -1146,6 +1257,7 @@ window.Bahce = (function () {
       }
     }
     nemKatCiz(c, evre("nem"));
+    islakCiz(c);
     alanCiz(c);
 
     var ptoh = evre("tohum"), pb = evre("buyume");
@@ -1159,9 +1271,14 @@ window.Bahce = (function () {
     bitkiCizHepsi(c);
     ekimCiz(c);
     makineCiz(c, evre("ray"));
+    suCiz(c);
+    suNedenYok(c);
+    calisanAletCiz(c);
     eylemCiz(c);
+    if (S.insaBitti) rayCiz(c);
     atmosferCiz(c, dt);
     isikCiz(c);
+    tasimaCiz(c);
     if (!S.insaBitti) {
       c.fillStyle = "rgba(255,255,255,.5)";
       c.font = "12px ui-monospace,monospace"; c.textAlign = "center";
@@ -1192,6 +1309,361 @@ window.Bahce = (function () {
     if (S.insaBitti) cimCiz(S.cimYaprak.length);
     isteKare();
   });
+
+  /* ==================================================================== *
+   * SU — GERÇEK SUYUN GÖRÜNTÜSÜ
+   *
+   * Damla, ıslaklık ve parıltı YALNIZ su gerçekten aktığında çiziliyor.
+   * Kaynak sırasıyla: (1) röle durumu — panelde `Panel.S.roleDurum
+   * .su_pompasi` varsa suyun aktığını söyleyen tek gerçek sinyal odur;
+   * (2) röle bilinmiyorsa kuyrukta ÇALIŞAN bir sulama işi. İkincisinde
+   * ekranda "röle okunmuyor · çalışan işten" yazıyor, çünkü o bir çıkarım.
+   *
+   * Su nereye düşüyor? UCUN BİLDİRİLEN KONUMUNA. Konum bildirilmiyorsa
+   * hiçbir yere damla çizilmiyor — makinenin nerede olduğunu bilmiyoruz.
+   * Islaklık hafızası da aynı yerden: gerçekten su verilen noktada kalıyor
+   * ve ISLAK_SN içinde soluyor.
+   * ==================================================================== */
+  var ISLAK_SN = 150;
+  function suKaynak() {
+    var p = P();
+    var rl = p && p.S && p.S.roleDurum;
+    if (rl && ("su_pompasi" in rl)) return { akiyor: !!rl.su_pompasi, kanit: "röle" };
+    var k = (S.veri && S.veri.kuyruk) || {};
+    var ca = k.calisan;
+    if (ca && ca.tip === "sula") return { akiyor: true, kanit: "iş" };
+    return { akiyor: false, kanit: rl ? "röle" : "yok" };
+  }
+  function suGuncelle(dt) {
+    var kay = suKaynak();
+    var m = S.robot || S.makine;
+    var yer = (m && m.x != null && S.veri && S.veri.konum) ? { x: sayi(m.x), y: sayi(m.y) } : null;
+    S.suAkiyor = kay.akiyor && !!yer;
+    S.suKanit = kay.kanit;
+    if (!S.damla) S.damla = [];
+    if (S.suAkiyor) {
+      /* Islaklık hafızası: aynı yere üst üste damla yağıyor, tek leke
+         büyüyor. Yeni yere geçince yeni leke açılıyor. */
+      var son = S.islak.length ? S.islak[S.islak.length - 1] : null;
+      if (son && Math.hypot(son.x - yer.x, son.y - yer.y) < 45) {
+        son.t = S.t; son.guc = kis(son.guc + dt * 0.55, 0, 1);
+        son.r = Math.min(son.r + dt * 13, NEM_YARICAP_MM * 0.7);
+      } else {
+        S.islak.push({ x: yer.x, y: yer.y, t0: S.t, t: S.t, r: 34, guc: 0.3 });
+        if (S.islak.length > 24) S.islak.shift();
+      }
+      /* Sakin modda damla yok: ıslaklık kalıyor, kıpırtı gidiyor. */
+      var adetSakin = S.sakin ? 0 : 1;
+      /* Damlalar ÜSTTEN görünüyor: uçtan dışa doğru saçılıyorlar, aşağı
+         düşmüyorlar. Bu sahne kuşbakışı; yana düşen damla yalan olurdu. */
+      var adet = adetSakin * Math.min(7, Math.round(dt * 34) + (Math.random() < 0.5 ? 1 : 0));
+      for (var i = 0; i < adet; i++) {
+        var aci = Math.random() * 6.283, hiz = 52 + Math.random() * 90;
+        /* Damlalar arabanın gövdesinin DIŞINDA başlıyor: kutunun altında
+           doğan damla görünmüyor, su akmıyor sanılıyordu. */
+        var r0 = 15 + Math.random() * 12;
+        S.damla.push({ x: px(yer.x) + Math.cos(aci) * r0,
+                       y: py(yer.y) + Math.sin(aci) * r0 * 0.6,
+                       vx: Math.cos(aci) * hiz, vy: Math.sin(aci) * hiz * 0.6,
+                       t: 0, sure: 0.3 + Math.random() * 0.25 });
+      }
+    }
+    for (var j = S.damla.length - 1; j >= 0; j--) {
+      var d = S.damla[j];
+      d.t += dt; d.x += d.vx * dt; d.y += d.vy * dt;
+      d.vx *= (1 - kis(dt * 3.4, 0, 1)); d.vy *= (1 - kis(dt * 3.4, 0, 1));
+      if (d.t > d.sure) S.damla.splice(j, 1);
+    }
+    for (var k2 = S.islak.length - 1; k2 >= 0; k2--) {
+      if (S.t - S.islak[k2].t > ISLAK_SN) S.islak.splice(k2, 1);
+    }
+  }
+  function islakCiz(c) {
+    if (!S.islak.length) return;
+    c.save();
+    c.beginPath(); c.rect(G.ox, G.oy, G.bw, G.bh); c.clip();
+    S.islak.forEach(function (o) {
+      var yas = kis(1 - (S.t - o.t) / ISLAK_SN, 0, 1);
+      var a = 0.55 * o.guc * yas;
+      if (a <= 0.004) return;
+      var gx = px(o.x), gy = py(o.y), R = rp(o.r);
+      var g = c.createRadialGradient(gx, gy, R * 0.15, gx, gy, R);
+      g.addColorStop(0, "rgba(40,28,15," + a.toFixed(3) + ")");
+      g.addColorStop(0.7, "rgba(44,32,18," + (a * 0.55).toFixed(3) + ")");
+      g.addColorStop(1, "rgba(44,32,18,0)");
+      c.fillStyle = g;
+      c.beginPath(); c.arc(gx, gy, R, 0, 6.3); c.fill();
+      /* TAZE su ile ÖLÇÜLEN nem birbirine karışmasın: yeni sulanan yerin
+         kenarında serin bir parıltı var, ölçüm lekesinde yok. Parıltı ilk
+         yarım dakikada sönüyor, ıslaklık kalıyor. */
+      var taze = kis(1 - (S.t - o.t0) / 30, 0, 1);
+      if (taze > 0.02 && !S.sakin) {
+        c.strokeStyle = "rgba(196,226,246," + (0.3 * taze * o.guc).toFixed(3) + ")";
+        c.lineWidth = 1.6;
+        c.beginPath(); c.ellipse(gx, gy, R * 0.66, R * 0.66 * 0.62, 0, 0, 6.3); c.stroke();
+        c.fillStyle = "rgba(206,234,250," + (0.10 * taze * o.guc).toFixed(3) + ")";
+        c.beginPath(); c.ellipse(gx, gy, R * 0.55, R * 0.55 * 0.62, 0, 0, 6.3); c.fill();
+      }
+    });
+    c.restore();
+  }
+  function suCiz(c) {
+    if (!S.damla || !S.damla.length) return;
+    c.save();
+    S.damla.forEach(function (d) {
+      var p = d.t / d.sure;
+      c.globalAlpha = kis(1 - p, 0, 1);
+      c.fillStyle = "rgba(186,228,250,.95)";
+      c.beginPath(); c.ellipse(d.x, d.y, 1.9, 1.4, 0, 0, 6.3); c.fill();
+      c.globalAlpha = kis(0.5 - p * 0.5, 0, 1);
+      c.strokeStyle = "rgba(210,240,255,.8)"; c.lineWidth = 1;
+      c.beginPath(); c.moveTo(d.x, d.y);
+      c.lineTo(d.x - d.vx * 0.02, d.y - d.vy * 0.02); c.stroke();
+    });
+    /* Sıçrama: damlanın düştüğü yerde küçük halka. */
+    c.globalAlpha = 1;
+    var m = S.robot || S.makine;
+    if (S.suAkiyor) {
+      var sx = px(m.x), sy = py(m.y);
+      /* Ucun altında sürekli beslenen ıslak göbek: üstten bakınca suyun
+         kendisi bu, huzme değil. */
+      var gg = c.createRadialGradient(sx, sy, 12, sx, sy, 46);
+      gg.addColorStop(0, "rgba(196,232,252,.34)");
+      gg.addColorStop(0.55, "rgba(160,212,242,.16)");
+      gg.addColorStop(1, "rgba(160,212,242,0)");
+      c.fillStyle = gg;
+      c.beginPath(); c.ellipse(sx, sy, 46, 46 * 0.62, 0, 0, 6.3); c.fill();
+      /* Yayılan iki halka: suyun toprağa vurup dışa gitmesi. Arabanın
+         gövdesinden geniş başlıyorlar, yoksa kutunun altında kalıyorlar. */
+      [0, 0.5].forEach(function (kay2, i3) {
+        var f = (S.t * 1.5 + kay2) % 1;
+        var R2 = 16 + f * 54;
+        c.strokeStyle = "rgba(180,224,250," + ((i3 ? 0.34 : 0.5) * (1 - f)).toFixed(3) + ")";
+        c.lineWidth = 1.8;
+        c.beginPath(); c.ellipse(sx, sy, R2, R2 * 0.5, 0, 0, 6.3); c.stroke();
+      });
+      if (S.suKanit === "iş") {
+        c.font = "600 10px system-ui,sans-serif"; c.textAlign = "center";
+        c.fillStyle = "rgba(176,220,248,.9)";
+        c.fillText("röle okunmuyor · çalışan işten", sx, sy + 34);
+      }
+    }
+    c.restore();
+  }
+  /** Su akıyor ama ucun konumu bildirilmiyorsa hiçbir yere damla
+   *  çizmiyoruz — ve bunu SÖYLÜYORUZ. Sessizce kuru bir bahçe göstermek
+   *  yalan olurdu. */
+  function suNedenYok(c) {
+    var kay = suKaynak();
+    if (!kay.akiyor || S.suAkiyor) return;
+    c.save();
+    c.font = "600 11px system-ui,sans-serif"; c.textAlign = "center";
+    c.fillStyle = "#8fd0ff";
+    c.fillText("su akıyor — ucun konumu bildirilmedi, nereye döküldüğü çizilemiyor",
+      G.ox + G.bw / 2, G.oy + G.bh + 18);
+    c.restore();
+  }
+
+  /* ==================================================================== *
+   * YAN RAYLAR — SOLDA ALETLER, SAĞDA SEPET
+   *
+   * Sol ray MAKİNENİN yapacağı işler: aleti tut, bitkinin üstüne bırak,
+   * iş kuyruğa girsin. Makine kopukken kilitli ve sebebi yazıyor — çünkü
+   * o işleri yapan makine.
+   * Sağdaki sepet KAYIT işi: hasat makinenin işi değil, toplayan insan;
+   * bitkiyi sepete bırakmak yataktan düşürüyor. Bitkiyi yatağın içinde
+   * başka bir yere bırakmak da kayıt: `/api/bahce/tasi`.
+   * ==================================================================== */
+  var RAY_ALET = [
+    { k: "sula", ad: "Su", renk: "#5aa6e8", ipucu: "bitkiye bırak · sula" },
+    { k: "nem", ad: "Nem", renk: "#63c46b", ipucu: "bitkiye bırak · nem ölç" },
+    { k: "foto", ad: "Kamera", renk: "#c8ccc4", ipucu: "bitkiye bırak · fotoğraf" },
+    { k: "yakin", ad: "Yakın", renk: "#d9b26a", ipucu: "bitkiye bırak · uç kamerası" }
+  ];
+  function rayKur() {
+    var gen = 46, ara = 10;
+    var top = RAY_ALET.length * gen + (RAY_ALET.length - 1) * ara;
+    var y0 = Math.max(12, (S.boy - top) / 2);
+    var solBos = G.ox - G.kal - G.ray - 12;
+    var x = solBos > gen + 16 ? (solBos - gen) / 2 : 8;
+    S.ray = RAY_ALET.map(function (a, i) {
+      return { k: a.k, ad: a.ad, renk: a.renk, ipucu: a.ipucu,
+               x: x, y: y0 + i * (gen + ara), w: gen, h: gen };
+    });
+    var sagBos = S.en - (G.ox + G.bw + G.kal + G.ray + 12);
+    var sx = sagBos > gen + 16 ? S.en - sagBos / 2 - gen / 2 : S.en - gen - 8;
+    S.sepet = { x: sx, y: Math.max(12, S.boy / 2 - 30), w: gen, h: 60 };
+  }
+  function aletSimge(c, k, cx, cy, renk, sol) {
+    c.save();
+    c.strokeStyle = renk; c.fillStyle = renk;
+    c.lineWidth = 2; c.lineCap = "round"; c.lineJoin = "round";
+    if (k === "sula") {                       /* musluk */
+      c.beginPath(); c.moveTo(cx - 9, cy - 8); c.lineTo(cx - 2, cy - 8);
+      c.lineTo(cx - 2, cy + 1); c.lineTo(cx + 6, cy + 1); c.stroke();
+      c.beginPath(); c.arc(cx - 5, cy - 12, 3.4, 0, 6.3); c.stroke();
+      c.beginPath(); c.moveTo(cx + 6, cy + 1); c.lineTo(cx + 6, cy + 4); c.stroke();
+      c.beginPath(); c.moveTo(cx + 6, cy + 7); c.lineTo(cx + 6, cy + 11); c.stroke();
+      c.beginPath(); c.arc(cx + 6, cy + 14, 1.6, 0, 6.3); c.fill();
+    } else if (k === "nem") {                 /* prob — iki çatal uç */
+      c.beginPath(); c.moveTo(cx - 5, cy - 11); c.lineTo(cx - 5, cy + 8); c.stroke();
+      c.beginPath(); c.moveTo(cx + 5, cy - 11); c.lineTo(cx + 5, cy + 8); c.stroke();
+      c.beginPath(); c.moveTo(cx - 9, cy - 11); c.lineTo(cx + 9, cy - 11); c.stroke();
+      c.beginPath(); c.moveTo(cx - 5, cy + 8); c.lineTo(cx - 5, cy + 13);
+      c.moveTo(cx + 5, cy + 8); c.lineTo(cx + 5, cy + 13); c.stroke();
+    } else if (k === "foto") {                /* kamera */
+      c.beginPath();
+      if (c.roundRect) c.roundRect(cx - 11, cy - 7, 22, 16, 3); else c.rect(cx - 11, cy - 7, 22, 16);
+      c.stroke();
+      c.beginPath(); c.arc(cx, cy + 1, 4.6, 0, 6.3); c.stroke();
+      c.beginPath(); c.moveTo(cx - 4, cy - 7); c.lineTo(cx - 2, cy - 11);
+      c.lineTo(cx + 2, cy - 11); c.lineTo(cx + 4, cy - 7); c.stroke();
+    } else if (k === "yakin") {               /* büyüteç */
+      c.beginPath(); c.arc(cx - 2, cy - 2, 7.5, 0, 6.3); c.stroke();
+      c.beginPath(); c.moveTo(cx + 4, cy + 4); c.lineTo(cx + 10, cy + 10); c.stroke();
+    } else if (k === "sepet") {               /* sepet */
+      c.beginPath(); c.moveTo(cx - 11, cy - 4); c.lineTo(cx + 11, cy - 4);
+      c.lineTo(cx + 7, cy + 10); c.lineTo(cx - 7, cy + 10); c.closePath(); c.stroke();
+      c.beginPath(); c.moveTo(cx - 7, cy - 4); c.lineTo(cx - 4, cy + 10);
+      c.moveTo(cx + 7, cy - 4); c.lineTo(cx + 4, cy + 10);
+      c.moveTo(cx, cy - 4); c.lineTo(cx, cy + 10); c.stroke();
+      c.beginPath(); c.arc(cx, cy - 4, 8, Math.PI, 0); c.stroke();
+    }
+    c.restore();
+    if (sol === false) return;
+  }
+  function rayCiz(c) {
+    var bagli = !!(S.veri && S.veri.bagli);
+    var tut = S.tasima && S.tasima.tip === "alet" ? S.tasima.k : "";
+    S.ray.forEach(function (a) {
+      var acik = bagli;
+      c.save();
+      c.shadowColor = "rgba(0,0,0,.45)"; c.shadowBlur = 7; c.shadowOffsetY = 2;
+      c.fillStyle = tut === a.k ? "rgba(38,44,38,.96)" : "rgba(22,26,21,.88)";
+      c.beginPath();
+      if (c.roundRect) c.roundRect(a.x, a.y, a.w, a.h, 11); else c.rect(a.x, a.y, a.w, a.h);
+      c.fill();
+      c.restore();
+      c.strokeStyle = acik ? a.renk : "#4a4d47";
+      c.lineWidth = tut === a.k ? 2.2 : 1.3;
+      c.beginPath();
+      if (c.roundRect) c.roundRect(a.x, a.y, a.w, a.h, 11); else c.rect(a.x, a.y, a.w, a.h);
+      c.stroke();
+      aletSimge(c, a.k, a.x + a.w / 2, a.y + a.h / 2 - 3, acik ? a.renk : "#5c605a");
+      c.font = "600 9px system-ui,sans-serif"; c.textAlign = "center";
+      c.fillStyle = acik ? "rgba(226,232,222,.85)" : "#6b6f68";
+      c.fillText(a.ad, a.x + a.w / 2, a.y + a.h - 6);
+    });
+    if (!bagli && S.ray.length) {
+      var s0 = S.ray[0];
+      c.save();
+      c.font = "600 10px system-ui,sans-serif"; c.textAlign = "center";
+      c.fillStyle = "#e07f6a";
+      c.fillText("aletler kilitli", s0.x + s0.w / 2, s0.y - 8);
+      c.fillText("makine bağlı değil", s0.x + s0.w / 2, s0.y - 20);
+      c.restore();
+    }
+    /* SEPET — kayıt işi, makine kopukken de çalışıyor. */
+    var sp = S.sepet;
+    if (!sp) return;
+    var uzeri = S.tasima && S.tasima.tip === "bitki" && S.tasimaHedef === "sepet";
+    c.save();
+    c.shadowColor = "rgba(0,0,0,.45)"; c.shadowBlur = 7; c.shadowOffsetY = 2;
+    c.fillStyle = uzeri ? "rgba(70,52,26,.96)" : "rgba(22,26,21,.88)";
+    c.beginPath();
+    if (c.roundRect) c.roundRect(sp.x, sp.y, sp.w, sp.h, 11); else c.rect(sp.x, sp.y, sp.w, sp.h);
+    c.fill();
+    c.restore();
+    c.strokeStyle = uzeri ? "#f6c456" : "#a08a52"; c.lineWidth = uzeri ? 2.2 : 1.3;
+    c.beginPath();
+    if (c.roundRect) c.roundRect(sp.x, sp.y, sp.w, sp.h, 11); else c.rect(sp.x, sp.y, sp.w, sp.h);
+    c.stroke();
+    aletSimge(c, "sepet", sp.x + sp.w / 2, sp.y + sp.h / 2 - 4, uzeri ? "#f6c456" : "#a08a52");
+    c.font = "600 9px system-ui,sans-serif"; c.textAlign = "center";
+    c.fillStyle = uzeri ? "#f6c456" : "rgba(226,232,222,.75)";
+    c.fillText("Hasat", sp.x + sp.w / 2, sp.y + sp.h - 7);
+  }
+  /** Elde taşınan şey: alet ya da bitki. Parmağın altında duruyor. */
+  function tasimaCiz(c) {
+    var t = S.tasima;
+    if (!t) return;
+    c.save();
+    if (t.tip === "alet") {
+      var al = null;
+      S.ray.forEach(function (a) { if (a.k === t.k) al = a; });
+      var hedefB = S.tasimaHedef && S.tasimaHedef !== "sepet" ? S.ix[S.tasimaHedef] : null;
+      if (hedefB) {
+        var sp = spriteAl(hedefB);
+        c.strokeStyle = al ? al.renk : "#8fd0ff"; c.lineWidth = 2.4;
+        c.setLineDash([7, 5]);
+        c.beginPath(); c.arc(px(hedefB.x), py(hedefB.y), sp.R + 12, 0, 6.3); c.stroke();
+        c.setLineDash([]);
+        /* Makine oraya gidecek: hayaleti şimdiden göster. */
+        c.globalAlpha = 0.5;
+        c.fillStyle = "rgba(143,208,255,.35)";
+        c.fillRect(px(hedefB.x) - 15, py(hedefB.y) - 13, 30, 26);
+        c.globalAlpha = 1;
+      }
+      c.shadowColor = "rgba(0,0,0,.5)"; c.shadowBlur = 9;
+      c.fillStyle = "rgba(20,24,19,.92)";
+      c.beginPath(); c.arc(t.x, t.y, 21, 0, 6.3); c.fill();
+      c.shadowColor = "transparent"; c.shadowBlur = 0;
+      c.strokeStyle = al ? al.renk : "#8fd0ff"; c.lineWidth = 1.8;
+      c.beginPath(); c.arc(t.x, t.y, 21, 0, 6.3); c.stroke();
+      aletSimge(c, t.k, t.x, t.y, al ? al.renk : "#8fd0ff");
+    } else if (t.tip === "bitki") {
+      var b = S.ix[t.ad];
+      if (b) {
+        var sp2 = spriteAl(b);
+        c.globalAlpha = 0.85;
+        c.drawImage(sp2.tuval, t.x - sp2.boy / 2, t.y - sp2.boy / 2, sp2.boy, sp2.boy);
+        c.globalAlpha = 1;
+        /* Bırakılacak yer: yatağın içindeyse hedef halkası, dışındaysa
+           neden olmadığı. */
+        if (S.tasimaHedef === "sepet") {
+          c.font = "600 11px system-ui,sans-serif"; c.textAlign = "center";
+          c.fillStyle = "#f6c456";
+          c.fillText("sepete bırak · hasat", t.x, t.y - 26);
+        } else if (yataktaMi(t.x, t.y)) {
+          c.strokeStyle = "rgba(246,246,240,.8)"; c.lineWidth = 1.4;
+          c.setLineDash([5, 4]);
+          c.beginPath(); c.arc(t.x, t.y, sp2.R + 8, 0, 6.3); c.stroke();
+          c.setLineDash([]);
+          c.font = "600 10px ui-monospace,monospace"; c.textAlign = "center";
+          c.fillStyle = "rgba(236,240,232,.9)";
+          c.fillText("X " + Math.round(mmx(t.x)) + " · Y " + Math.round(mmy(t.y)),
+            t.x, t.y + sp2.R + 20);
+        } else {
+          c.font = "600 10px system-ui,sans-serif"; c.textAlign = "center";
+          c.fillStyle = "#e07f6a";
+          c.fillText("yatağın dışı — taşınamaz", t.x, t.y - 26);
+        }
+      }
+    }
+    c.restore();
+  }
+  /** Çalışan iş ucun üstünde görünüyor: alet makineyle SENKRON. */
+  function calisanAletCiz(c) {
+    var k = (S.veri && S.veri.kuyruk) || {};
+    var ca = k.calisan;
+    if (!ca) return;
+    var eslek = { sula: "sula", nem: "nem", foto: "foto", gez: "yakin", ek: null }[ca.tip];
+    if (!eslek) return;
+    var m = S.robot || S.makine;
+    if (m.x == null || !(S.veri && S.veri.konum)) return;
+    var al = null;
+    RAY_ALET.forEach(function (a) { if (a.k === eslek) al = a; });
+    var cx = px(m.x), cy = arabaY() - 30;
+    c.save();
+    c.fillStyle = "rgba(20,24,19,.86)";
+    c.beginPath(); c.arc(cx, cy, 15, 0, 6.3); c.fill();
+    c.strokeStyle = al ? al.renk : "#8fd0ff"; c.lineWidth = 1.6;
+    c.beginPath(); c.arc(cx, cy, 15, 0, 6.3); c.stroke();
+    c.save(); c.translate(cx, cy); c.scale(0.72, 0.72); c.translate(-cx, -cy);
+    aletSimge(c, eslek, cx, cy, al ? al.renk : "#8fd0ff");
+    c.restore();
+    c.restore();
+  }
 
   /* ==================================================================== *
    * ETKİLEŞİM — altı ayrı hareket, hepsi yerin kendisinde.
@@ -1237,6 +1709,21 @@ window.Bahce = (function () {
     if (!S.insaBitti) { insaAtla(); return; }
     var bagli = !!(S.veri && S.veri.bagli);
 
+    /* SOL RAY — aleti eline al. Makine kopukken alınmıyor ve sebebi
+       söyleniyor: o işi yapan makine. */
+    var ray = rayVur(p);
+    if (ray) {
+      if (!bagli) {
+        mesajYaz("Makine bağlı değil — " + ray.ad.toLowerCase()
+          + " aleti alınamaz. Hasat ve taşıma çalışıyor, onlar kayıt işi.");
+        isteKare(); return;
+      }
+      S.tasima = { tip: "alet", k: ray.k, x: p.x, y: p.y };
+      S.tasimaHedef = null; S.halka = false; S.secili = "";
+      mesajYaz(ray.ad + " elinde — bir bitkinin üstüne bırak.");
+      altYaz(); isteKare(); return;
+    }
+
     /* eylem halkası */
     if (S.secili && !S.ekimNokta) {
       var ey = halkadaMi(EYLEM, p);
@@ -1273,11 +1760,12 @@ window.Bahce = (function () {
       bas = { tip: "kiris", x: p.x, y: p.y, surukle: false };
       return;
     }
-    /* bitki */
+    /* bitki — dokunmak seçiyor, SÜRÜKLEMEK taşıyor. */
     var b = bitkiBul(p);
     if (b) {
       S.secili = b.ad; S.halka = false;
       gecmisAl(b.ad);
+      bas = { tip: "bitki", ad: b.ad, x: p.x, y: p.y, surukle: false };
       altYaz(); isteKare(); return;
     }
     /* boş toprak → uzun bas ekim */
@@ -1295,12 +1783,41 @@ window.Bahce = (function () {
     S.secili = ""; S.halka = false; altYaz(); isteKare();
   });
 
+  function rayVur(p) {
+    for (var i = 0; i < S.ray.length; i++) {
+      var a = S.ray[i];
+      if (p.x >= a.x - 4 && p.x <= a.x + a.w + 4 && p.y >= a.y - 4 && p.y <= a.y + a.h + 4) return a;
+    }
+    return null;
+  }
+  function sepetteMi(p) {
+    var sp = S.sepet;
+    return !!sp && p.x >= sp.x - 10 && p.x <= sp.x + sp.w + 10
+      && p.y >= sp.y - 10 && p.y <= sp.y + sp.h + 10;
+  }
   var tuvalKaydi = guvenli("gezinme", function (e) {
+    if (S.tasima) {
+      var pt = konum(e);
+      S.tasima.x = pt.x; S.tasima.y = pt.y;
+      if (S.tasima.tip === "alet") {
+        var hb = bitkiBul(pt);
+        S.tasimaHedef = hb ? hb.ad : null;
+      } else {
+        S.tasimaHedef = sepetteMi(pt) ? "sepet" : null;
+      }
+      isteKare(); return;
+    }
     if (!bas) return;
     var p = konum(e);
     if (!bas.surukle && Math.hypot(p.x - bas.x, p.y - bas.y) > 6) {
       bas.surukle = true;
       if (uzunSayac) { clearTimeout(uzunSayac); uzunSayac = 0; }
+    }
+    if (bas.surukle && bas.tip === "bitki") {
+      S.tasima = { tip: "bitki", ad: bas.ad, x: p.x, y: p.y };
+      S.tasimaHedef = null;
+      bas = null;
+      isteKare(); return;
     }
     if (bas.surukle) {
       /* Uç yalnız KAYITLI NOKTALARA gidebiliyor (`/api/bahce/is` nokta
@@ -1318,6 +1835,13 @@ window.Bahce = (function () {
 
   var tuvalBirakti = guvenli("bırakma", function () {
     if (uzunSayac) { clearTimeout(uzunSayac); uzunSayac = 0; }
+    if (S.tasima) {
+      var t = S.tasima, hedef = S.tasimaHedef;
+      S.tasima = null; S.tasimaHedef = null;
+      if (t.tip === "alet") aletBirak(t.k, hedef ? S.ix[hedef] : null);
+      else bitkiBirak(t, hedef);
+      bas = null; isteKare(); return;
+    }
     if (S.basiliSula) {
       var sn = S.basiliSn;
       S.basiliSula = false; S.basiliSn = 0;
@@ -1339,6 +1863,92 @@ window.Bahce = (function () {
     }
     bas = null;
   });
+
+  /** Alet bir bitkinin üstüne bırakıldı: iş kuyruğa giriyor. Hiçbir iş
+   *  onaysız gitmiyor — bırakmak niyet, onay karar. */
+  function aletBirak(k, b) {
+    if (!b) {
+      mesajYaz("Alet bir bitkinin üstüne bırakılmalı — boş toprağa iş verilemiyor.");
+      altYaz(); return;
+    }
+    var ad = b.tur_ad || b.ad;
+    var yol = S.makine && S.makine.x != null
+      ? Math.round(Math.hypot(sayi(b.x) - sayi(S.makine.x), sayi(b.y) - sayi(S.makine.y))) : null;
+    var altSatir = "X " + Math.round(sayi(b.x)) + " mm · Y " + Math.round(sayi(b.y)) + " mm"
+      + (yol != null ? " · " + yol + " mm yol" : " · makinenin konumu bildirilmedi");
+    if (k === "sula") {
+      var sn = sayi(b.sulama_saniye, 0);
+      if (sn <= 0) {
+        mesajYaz("Bu bitki için sulama süresi yazılı değil — süreyi sen ver: "
+          + "bitkiye dokun, Sula düğmesini basılı tut.");
+        altYaz(); return;
+      }
+      onayAc(ad + " sulanacak: " + sn.toFixed(1) + " sn.",
+        altSatir + " · süreyi değiştirmek için Sula'yı basılı tut", "Sula",
+        function () { isGonder("sula", [b.ad], { saniye: sn }); });
+    } else if (k === "nem") {
+      onayAc(ad + " kökünde nem ölçülecek.",
+        altSatir + " · prob toprağa iniyor, ölçüm bitince yazılıyor", "Ölç",
+        function () { isGonder("nem", [b.ad]); });
+    } else if (k === "foto") {
+      onayAc(ad + " fotoğraflanacak.", altSatir + " · kare büyüme filmine giriyor", "Çek",
+        function () { isGonder("foto", [b.ad]); });
+    } else if (k === "yakin") {
+      onayAc("Uç " + ad + " üstüne gidecek, uç kamerası yakından bakacak.",
+        altSatir + " · bu kare büyüme filmine GİRMİYOR", "Git",
+        function () {
+          gonder("/api/bahce/yakin", { ad: b.ad })
+            .then(function () { gunluk("bahçe: yakından bak · " + b.ad); return veriYukle(); })
+            .catch(function (h) { notYaz("yakin", "Olmadı: " + ((h && h.message) || h)); });
+        });
+    }
+    isteKare();
+  }
+
+  /** Bitki bırakıldı: sepete ise HASAT, yatağın içine ise TAŞIMA.
+   *  İkisi de KAYIT işi — makine kımıldamıyor, bu yüzden kopukken de
+   *  çalışıyorlar. */
+  function bitkiBirak(t, hedef) {
+    var b = S.ix[t.ad];
+    if (!b) return;
+    var ad = b.tur_ad || b.ad;
+    if (hedef === "sepet") {
+      onayAc(ad + " hasat edilecek — yataktan düşecek.",
+        "Makine hareket etmiyor: toplayan sensin. Fotoğraf filmi siliniyor değil.",
+        "Hasat",
+        function () {
+          gonder("/api/bahce/hasat", { noktalar: [b.ad] })
+            .then(function (c) {
+              gunluk("bahçe: hasat · " + b.ad);
+              mesajYaz((c && c.mesaj) || "Hasat edildi.");
+              S.secili = ""; return veriYukle();
+            })
+            .catch(function (h) { notYaz("hasat", "Hasat kaydedilmedi: " + ((h && h.message) || h)); });
+        });
+      isteKare(); return;
+    }
+    if (!yataktaMi(t.x, t.y)) {
+      mesajYaz("Orası yatağın dışı — bitki oraya taşınamaz.");
+      altYaz(); isteKare(); return;
+    }
+    var nx = Math.round(mmx(t.x)), ny = Math.round(mmy(t.y));
+    var kac = Math.round(Math.hypot(nx - sayi(b.x), ny - sayi(b.y)));
+    if (kac < 8) { altYaz(); isteKare(); return; }   /* yerinde bırakıldı */
+    onayAc(ad + " " + kac + " mm taşınacak — kayıt değişiyor, makine gitmiyor.",
+      "Yeni yer: X " + nx + " mm · Y " + ny + " mm. Sunucu yatak sınırlarını ve "
+      + "dikim alanlarını denetliyor; kabul etmezse sebebini yazar.",
+      "Taşı",
+      function () {
+        gonder("/api/bahce/tasi", { ad: b.ad, x: nx, y: ny })
+          .then(function () {
+            gunluk("bahçe: taşındı · " + b.ad + " → " + nx + "," + ny);
+            mesajYaz(ad + " taşındı.");
+            return veriYukle();
+          })
+          .catch(function (h) { notYaz("tasi", "Taşınmadı: " + ((h && h.message) || h)); });
+      });
+    isteKare();
+  }
 
   function eylemBasildi(ey, bagli) {
     var b = S.ix[S.secili];
@@ -1652,8 +2262,10 @@ window.Bahce = (function () {
       return;
     }
     kok.dataset.kip = "bos";
-    var ipuc = S.mesaj || "Uca dokun (aletler) · bitkiye dokun (eylemler) · "
-      + "boş toprağa uzun bas (ekim) · kirişi sürükle (makineyi taşı)";
+    var ipuc = S.mesaj || "Soldaki aleti bitkinin üstüne sürükle (sula · nem · "
+      + "kamera · yakın bak) · bitkiyi sürükle (taşı) ya da sepete bırak (hasat) · "
+      + "bitkiye dokun (eylemler) · boş toprağa uzun bas (ekim) · kirişi sürükle "
+      + "(makineyi taşı)";
     kok.innerHTML = '<div class="bh-a-metin"><span class="bh-a-alt'
       + (S.mesaj ? " vurgu" : "") + '">' + kacisli(ipuc) + "</span></div>";
   });
@@ -1852,6 +2464,24 @@ window.Bahce = (function () {
     ekimDegisti: function () { if (S.acik) veriYukle(); },
     baglandi: function () { if (S.acik) veriYukle(); },
     yenile: function () { return veriYukle(); },
+    /** Ekrandaki alanların yerleri — ölçüm ve doğrulama için. Hiçbir şeyi
+     *  değiştirmiyor, yalnız nerede ne olduğunu söylüyor. */
+    alanlar: function () {
+      return {
+        ray: S.ray.map(function (a) {
+          return { k: a.k, ad: a.ad, x: a.x, y: a.y, w: a.w, h: a.h };
+        }),
+        sepet: S.sepet ? { x: S.sepet.x, y: S.sepet.y, w: S.sepet.w, h: S.sepet.h } : null,
+        yatak: { x: G.ox, y: G.oy, w: G.bw, h: G.bh },
+        bitki: S.bitki.map(function (b) {
+          return { ad: b.ad, px: px(b.x), py: py(b.y), r: spriteAl(b).R,
+                   x: sayi(b.x), y: sayi(b.y) };
+        }),
+        tasima: S.tasima ? { tip: S.tasima.tip, k: S.tasima.k || S.tasima.ad } : null,
+        su: { akiyor: !!S.suAkiyor, kanit: S.suKanit, damla: (S.damla || []).length,
+              islak: S.islak.length }
+      };
+    },
     /** Kare süresi ölçümü — 24 bitkilik sahnede kaç ms sürdüğünü söyler. */
     olcum: function (sifirla) {
       var o = S.olcum;
