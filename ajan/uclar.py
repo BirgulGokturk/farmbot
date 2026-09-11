@@ -724,7 +724,14 @@ class Uclar:
         adla okuyor; içerik artık `baslar.sulama`dan geliyor.
         """
         b = self.bas("sulama")
-        return {"dx": b["dx"], "dy": b["dy"], "z_min": b["z_min"]}
+        # `t_asagi_mm` DE GİDİYOR. Sözlük üç alanla sınırlıydı ve sulama
+        # çözümleyicisi başlığı buradan okuduğu için T derinliğini hiç
+        # göremiyordu: nem ölçümünde uç iniyor, sulamada inmiyordu.
+        # Sebebi "ayar girilmemiş" sanılıyordu, oysa ayar giriliydi —
+        # taşıyıcı sözlük onu düşürüyordu.
+        return {"dx": b["dx"], "dy": b["dy"], "z_min": b["z_min"],
+                "derinlik_mm": b.get("derinlik_mm"),
+                "t_asagi_mm": b.get("t_asagi_mm")}
 
     def tohumluk_gozleri(self) -> list[dict[str, Any]]:
         """Tohumluk gözleri — tek doğru kaynak."""
