@@ -458,6 +458,7 @@
     kutu.innerHTML = s.katman.tanim.kart(o, taze) +
       '<button class="kapat" id="d-tarla-kapat" title="Kapat">✕</button>';
     $("#d-tarla-kapat").onclick = secimiKapat;
+    favoriBagla(kutu);
     if (s.katman.tanim.baglan) {
       try { s.katman.tanim.baglan(o, kutu, taze); } catch (h) { console.error(h); }
     }
@@ -1428,6 +1429,7 @@
     kutu.innerHTML = vurus.katman.tanim.kart(o, vurus.kayit) +
       '<button class="kapat" id="d-tarla-kapat" title="Kapat">✕</button>';
     $("#d-tarla-kapat").onclick = secimiKapat;
+    favoriBagla(kutu);
     if (vurus.katman.tanim.baglan) {
       try { vurus.katman.tanim.baglan(o, kutu, vurus.kayit); } catch (h) { console.error(h); }
     }
@@ -2086,6 +2088,27 @@ Onaylıyor musunuz?`;
     });
 
     window.addEventListener("resize", boyutla);
+  }
+
+  /* YILDIZ DÜĞMESİ — kart içinde, olay yükseltmeyle.
+   *
+   * Kart HTML'i her seçimde yeniden kuruluyor; her kurulumda düğmeye tek
+   * tek işleyici bağlamak, bir sonraki kurulumda unutulmak demekti.
+   * Dinleyici kartın KABINDA duruyor ve tıklamanın hedefine bakıyor. */
+  function favoriBagla(kok) {
+    if (!kok || kok._favoriBagli) return;
+    kok._favoriBagli = true;
+    kok.addEventListener("click", (o) => {
+      const d = o.target && o.target.closest && o.target.closest("[data-favori]");
+      if (!d || !window.Favori) return;
+      o.preventDefault();
+      o.stopPropagation();
+      const acik = window.Favori.degistir(d.dataset.favori);
+      d.textContent = acik ? "★" : "☆";
+      d.classList.toggle("dolu", acik);
+      d.setAttribute("aria-pressed", acik ? "true" : "false");
+      d.title = acik ? "Favoriden çıkar" : "Favorilere ekle";
+    });
   }
 
   function ipucu(metin) {

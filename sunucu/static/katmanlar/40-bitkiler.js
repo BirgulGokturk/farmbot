@@ -675,11 +675,22 @@ Tarla.katman({
     const hasat = b.d("days_to_harvest").deger || null;
     const kalan = gun != null && hasat ? Math.max(0, hasat - gun) : null;
     const ekstra = { days_to_harvest: kalan != null ? `(${kalan} kaldı)` : "" };
+    /* YILDIZ — favori. Liste `bahce.js`teki `window.Favori`da ve
+     * `localStorage`da; ikinci bir liste tutmak iki ekranın farklı
+     * favori göstermesi demekti. Modül yoksa (deneme sayfası) yıldız
+     * hiç çizilmiyor — çalışmayan bir düğme göstermektense. */
+    const fav = window.Favori;
+    const yildiz = !fav ? "" :
+      `<button class="ikon-dugme tarla-yildiz${fav.var(n.ad) ? " dolu" : ""}"
+               data-favori="${o.kacisli(n.ad)}"
+               title="${fav.var(n.ad) ? "Favoriden çıkar" : "Favorilere ekle"}"
+               aria-pressed="${fav.var(n.ad) ? "true" : "false"}">${
+        fav.var(n.ad) ? "★" : "☆"}</button>`;
     return `<div class="tarla-kart-bas">
         <span class="simge">${o.kacisli(t.icon || "🌱")}</span>
         <div><b>${o.kacisli(t.name_tr || n.tur)}</b>
           <div class="alt-not">${o.kacisli(n.ad)} · X${o.say(n.x, 1)} Y${o.say(n.y, 1)} Z${o.say(n.z, 1)}</div>
-        </div></div>
+        </div>${yildiz}</div>
       <table class="tarla-ozellik">
         ${this.ozellikSatirlari(o, b, ekstra)}
         <tr><td>Büyüme</td><td><b>%${o.say(ol * 100, 0)}</b>${gun != null ? ` <span class="alt-not">(${gun}. gün)</span>` : ""}</td></tr>

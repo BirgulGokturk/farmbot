@@ -2683,3 +2683,24 @@ body.kamera-sekmesi .toplu-cubuk { display: none; }
 .prox-yok { opacity: .5; border-style: dashed; }
 .prox-yok .prox-isik { background: transparent; box-shadow: none;
                        border: 1px dashed var(--cizgi, #3a4a3c); }
+
+/* FAVORİ YILDIZI — bitki kartının sağ üstü.
+   Dolu yıldız favori, boş değil. Renk farkı tek başına yetmiyor: boş ve
+   dolu yıldızın SİLUETİ de ayrı, böylece renk ayrımı zor olan bir ekranda
+   da okunuyor. */
+.tarla-kart-bas { position: relative; }
+.tarla-yildiz {
+  position: absolute;
+  top: 0;
+  right: 0;
+  font-size: 17px;
+  line-height: 1;
+  color: var(--metin-yumusak, #9CAD9D);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 2px 4px;
+}
+.tarla-yildiz:hover { color: #f6c456; }
+.tarla-yildiz.dolu { color: #f6c456; }
+

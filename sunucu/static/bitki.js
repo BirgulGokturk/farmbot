@@ -154,6 +154,12 @@
   function sirala(liste, simdi) {
     const adKarsi = (a, b) => String(a.ad).localeCompare(String(b.ad), "tr");
     const kopya = liste.slice();
+    /* FAVORİLER ÜSTTE — seçili sıralamanın ÜSTÜNE biniyor, yerine
+     * geçmiyor. Kullanıcı "en kuru" sıralamasını seçtiyse favoriler de
+     * kendi içinde en kurudan sıralı kalıyor; yalnız blok olarak öne
+     * geçiyorlar. `Favori.sirala` kararlı (stable) sıralama yaptığı için
+     * bu, aşağıdaki asıl sıralamadan SONRA uygulanmalı — o yüzden en
+     * altta, dönüşten hemen önce. */
     if (sira === "kuru") {
       kopya.sort((a, b) => nemDegeri(a) - nemDegeri(b) || adKarsi(a, b));
     } else if (sira === "olcum") {
@@ -175,7 +181,8 @@
         || nemDegeri(a) - nemDegeri(b)
         || olcumYasi(b) - olcumYasi(a) || adKarsi(a, b));
     }
-    return kopya;
+    // Favoriler bloğu öne; kendi içlerindeki sıra korunuyor.
+    return window.Favori ? window.Favori.sirala(kopya) : kopya;
   }
 
   function suzulmus() {
@@ -445,6 +452,15 @@
   }
 
   /* ----------------------------------------------------------------- çizim */
+  /* FAVORİ DEĞİŞİNCE LİSTE YENİDEN ÇİZİLİYOR — başka sekmede
+   * değişse bile (`Favori` storage olayını dinliyor). Yenilemeden
+   * bırakmak, yıldıza basıp listenin kıpırdamadığını görmekti. */
+  try {
+    if (window.Favori && window.Favori.dinle) {
+      window.Favori.dinle(function () { try { ciz(); } catch (h) {} });
+    }
+  } catch (h) {}
+
   function ciz() {
     const izgara = $("#bk-izgara");
     if (!izgara || !bahce) return;
