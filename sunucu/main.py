@@ -1115,9 +1115,18 @@ async def _nem_olc_baslat(adlar: list[str]) -> dict[str, Any]:
                   f"{_sayi_guvenli(b.get('dx')):+.0f}/"
                   f"{_sayi_guvenli(b.get('dy')):+.0f} mm · derinlik "
                   f"{_sayi_guvenli(b.get('derinlik_mm')):.0f} mm")})
+    # BAŞ AÇIKÇA VERİLİYOR. `dizi_baslat` gereken başlığı adımlardan
+    # çıkarıyor (`_dizi_basi`) ama nem ölçümünün adımları yalnız "nokta"
+    # ve "bekle" — su pompası rölesi yok, tohum ucu adımı yok, yani
+    # çıkarım "" dönüyordu ve `_uc_hazirla` HİÇ ÇAĞRILMIYORDU.
+    #
+    # Sonucu: servo neredeyse orada kalıyor, nem probu indirilmiyor ve
+    # makine ölçümü hangi başlık aşağıdaysa onunla yapıyordu. Sulama
+    # çalışıyordu çünkü onun adımlarında pompa rölesi var ve çıkarım
+    # tutuyordu; nem ve gezinti sessizce dışarıda kalmıştı.
     sonuc = await merkez.komut_gonder("dizi_baslat", {
         "ad": f"Nem ölçümü · {len(hedefler)} bitki",
-        "adimlar": adimlar, "tekrar": 1})
+        "adimlar": adimlar, "tekrar": 1, "bas": "nem"})
     # ÖLÇÜMÜ TOPLAYAN GÖREV. Dizi sürerken makine her bitkinin üstünde
     # duruyor; o anlarda probun okuduğunu bitkiye yazıyoruz.
     #
