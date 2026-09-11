@@ -542,9 +542,12 @@ class Ajan:
         buradan gidiyor.
 
         KENDİLİĞİNDEN HAREKET EDEN BİR MEKANİZMA — kurallar korunuyor:
-          - Z aşağıdayken seçim yapılmıyor (`uc_secim_engel`). İnen
-            başlık toprağın içinden sürüklenmesin diye; engel varsa iş
-            başlamıyor ve sebebi yazılıyor.
+          - SIRA: Z güvenli yüksekliğe → tohum ucu çekilir → servo
+            açısı → kartın onayı. İnen bir başlık ya da inmiş tohum ucu
+            varken horn dönerse uç toprağın içinden sürüklenir.
+            Z ve T artık SORULMUYOR, YAPILIYOR: ikisi de güvenli yön
+            (makineyi ancak açıklığa götürüyor) ve dizinin ilk adımı
+            zaten oydu. Olmazsa iş başlamıyor ve sebebi yazılıyor.
           - Bir başlık hareket hâlindeyken üstüne ikinci komut
             gitmiyor; önce oturması bekleniyor.
           - Komut gittikten sonra KARTIN ONAYI bekleniyor. Servoda geri
@@ -577,8 +580,33 @@ class Ajan:
         if self._uc_secili is not None and int(self._uc_secili) == istenen:
             return ""                      # doğru başlık zaten inmiş
 
-        # DEĞİŞTİRMEK GEREKİYOR. Önce Z kilidi: inmiş bir başlık
-        # çekilmeden servo dönemez.
+        # ---- 1) Z GÜVENLİ YÜKSEKLİĞE. Eskiden yalnız SORULUYORDU:
+        # Z aşağıdaysa iş reddediliyor ve kullanıcı Z'yi elle kaldırıp
+        # baştan başlatıyordu. Kaldırmak güvenli yön — makineyi ancak
+        # açıklığa götürüyor — ve bu dizinin ilk adımı zaten o.
+        if not self.plc.z_guvenli_mi():
+            try:
+                await asyncio.to_thread(self.plc.eksen_git_dogrula, 2,
+                                        float(self.plc.guvenli_z))
+            except Exception as hata:                        # noqa: BLE001
+                return (f"Z güvenli yüksekliğe çıkarılamadı: {hata}. "
+                        f"{ad} indirilemiyor.")
+
+        # ---- 2) TOHUM UCU ÇEKİLSİN. Bunu HİÇ yapmıyorduk ve belirtisi
+        # şuydu: iş başlıyor, ilk X/Y adımında "Tohum ucu aşağıda — önce
+        # yukarı çekilmeli" denip dizi 1. adımda duruyordu. Kullanıcının
+        # elle çekip baştan başlatması gerekiyordu.
+        #
+        # SERVODAN ÖNCE: horn dönerken inmiş bir uç, toprağın içinden
+        # sürüklenir. Sıra Z → T → servo → uç inişi.
+        if not self.plc.t_yukarida_mi():
+            try:
+                await asyncio.to_thread(self.plc.t_git, None, None, True)
+            except Exception as hata:                        # noqa: BLE001
+                return (f"Tohum ucu çekilemedi: {hata}. "
+                        f"{ad} indirilemiyor.")
+
+        # ---- 3) Kalan engel varsa iş başlamıyor (bölge, acil mandal…).
         engel = self.uc_secim_engel()
         if engel:
             return engel
