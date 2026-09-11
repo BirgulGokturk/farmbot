@@ -4817,6 +4817,8 @@ function durumGuncelle(d) {
   rozetYaz("#rozet-ajan", d.bagli ? "canli" : "kopuk", d.bagli ? "Raspberry Pi bağlı" : "Raspberry Pi çevrimdışı");
 
   const acilAcik = d.acil && d.acil.acik;
+  // Düğme mandalı kendisi temizliyor; hâli burada saklanıyor.
+  S.acilMandal = !!acilAcik;
   const plcSinif = d.plc === "bagli" ? (acilAcik ? "kopuk" : "canli") : d.plc === "kopuk" ? "kopuk" : "";
   const plcMetin = d.plc !== "bagli" ? `PLC: ${d.plc}`
     : acilAcik ? "PLC: ACİL DURDURMA"
@@ -4876,8 +4878,10 @@ function durumGuncelle(d) {
   });
 
   // Acil durdurma mandalı
-  $("#acil-bant").classList.toggle("gizli", !acilAcik);
-  if (acilAcik) $("#acil-detay").textContent = `${d.acil.saat} · ${d.acil.neden}`;
+  /* MANDAL BANDI YOK ARTIK. Mandalın açık olduğu üstteki PLC rozetinde
+   * yazıyor ("PLC: ACİL DURDURMA") ve "Sürücüleri aç" düğmesi mandalı
+   * kendisi temizliyor — ayrı bir şerit ve ayrı bir temizle düğmesi,
+   * aynı niyeti iki adıma bölüyordu. */
 
   // Z güvenlik kilidi: X/Y jog düğmelerini de kapatıyoruz ki basıp
   // "neden hareket etmiyor" diye düşünülmesin — sebebi kutuda yazıyor.
@@ -4927,9 +4931,13 @@ function durumGuncelle(d) {
     const xy = b.dataset.eksen !== "z";
     b.disabled = kilit || (xy && zSorunlu);
   });
-  $("#d-enable").disabled = !d.bagli || (acilAcik && !d.enable);
+  /* MANDAL AÇIKKEN DE BASILABİLİR. Eskiden burada kilitliydi ve önce
+   * bandın "Mandalı temizle"sine basmak gerekiyordu; o düğme kalktığına
+   * göre kilit de kalkmalı — yoksa acil durdurmadan sonra makineyi
+   * açmanın hiçbir yolu kalmaz. Temizlemeyi düğmenin kendisi yapıyor. */
+  $("#d-enable").disabled = !d.bagli;
   $("#d-acil").disabled = !d.bagli;
-  $("#d-acil-temizle").disabled = !d.bagli;
+
 
   // Aynı hata her durum paketinde tekrarlanıyor; günlüğü doldurmasın.
   if (d.hata && d.hata !== _sonHata) gunluk(`⚠ ${d.hata}`, "hata");
@@ -5231,8 +5239,21 @@ function olaylariBagla() {
     b.onclick = () => komutGonder("home", { eksen: b.dataset.home });
   });
   $("#d-dur").onclick = () => { jogDurdur(); komutGonder("dur"); };
-  $("#d-enable").onclick = () => komutGonder("enable", { deger: !S.enable });
-  $("#d-acil-temizle").onclick = () => komutGonder("acil_temizle");
+  /* TEK DÜĞME, İKİ ADIM. Acil durdurmadan sonra mandal açık kalıyor ve
+   * `enable` komutu mandal açıkken reddediliyor. Kullanıcının niyeti
+   * "makineyi geri aç" — mandalı ayrıca temizlemek o niyetin
+   * parçasıydı, ayrı bir karar değil. Düğme sırayla ikisini yapıyor.
+   *
+   * SIRA ÖNEMLİ ve sonuç denetleniyor: temizleme başarısızsa `enable`
+   * gönderilmiyor, yoksa panelde iki ret üst üste düşerdi ve ikincisi
+   * birincinin sebebini gizlerdi. */
+  $("#d-enable").onclick = async () => {
+    if (!S.enable && S.acilMandal) {
+      const t = await komutGonder("acil_temizle");
+      if (!t || t.ok === false) return;
+    }
+    komutGonder("enable", { deger: !S.enable });
+  };
   // Kameranın aç/kapa anahtarı artık her kameranın kendi yarısında
   // (Kamera sekmesi) ve orada bağlanıyor — bkz. `kamYariBagla`.
   /* Yüzen kamera kutuları — kamera başına bir tane, hepsi bağımsız.

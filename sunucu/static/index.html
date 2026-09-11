@@ -84,19 +84,18 @@
           <span class="isik" id="rozet-ajan" tabindex="0"><i class="nokta"></i><span class="ad">Raspberry Pi</span></span>
           <span class="isik" id="rozet-plc" tabindex="0"><i class="nokta"></i><span class="ad">PLC</span></span>
         </div>
+        <button class="dugme" id="d-enable">Sürücüleri aç</button>
         <button class="dugme tehlike acil-dugme" id="d-acil">Acil durdurma</button>
       </div>
     </div>
   </header>
 
-  <!-- Acil durdurma mandalı sayfa seviyesinde: hangi sekmede olursanız olun
-       görünür ve temizlenmeden hiçbir hareket komutu geçmez. -->
-  <div id="acil-bant" class="gizli">
-    <div class="bant-ic">
-      <span><b>Acil durdurma mandallı</b> — <span id="acil-detay"></span></span>
-      <button class="dugme" id="d-acil-temizle">Mandalı temizle</button>
-    </div>
-  </div>
+  <!-- MANDAL BANDI KALDIRILDI. Sayfanın üstünde duran bir şerit ve ayrı
+       bir "Mandalı temizle" düğmesi vardı; acil durdurmadan sonra
+       kullanıcı önce onu temizleyip sonra sürücüleri açıyordu — iki
+       adım, ikisi de aynı niyetin parçası. Tek düğme kaldı ve o düğme
+       acil durdurmanın YANINDA: durduran ve yeniden başlatan şey yan
+       yana. Mandalın açık olduğu zaten üstteki PLC rozetinde yazılı. -->
 
   <!-- BAĞLANTI TANILARI — ham hata değil, ne koptu / olası sebep / ne yapmalı.
        Metinler ajanda `tani.py` içinde tek yerde duruyor; `tanila.py` de
@@ -647,7 +646,8 @@
           </p>
 
           <div class="satir-8">
-            <button class="dugme" id="d-enable">Sürücüleri aç</button>
+            <!-- "Sürücüleri aç" üst şeride taşındı, acil durdurmanın
+                 yanına: durduran ve yeniden başlatan şey yan yana. -->
             <button class="dugme" id="d-dur">Durdur</button>
           </div>
         </div>

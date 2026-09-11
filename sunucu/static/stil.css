@@ -748,17 +748,6 @@ input:disabled, select:disabled { opacity: .45; }
 .onay input { accent-color: var(--vurgu); }
 
 /* -------------------------------------------------------------- durum kutuları */
-#acil-bant {
-  background: #3a1c1c;
-  border-bottom: 1px solid #7a3030;
-  color: #ffd7d7;
-  padding: var(--b2) 0;
-  flex: none;
-  z-index: 18;
-}
-#acil-bant .bant-ic { justify-content: space-between; flex-wrap: wrap; gap: var(--b2); }
-#acil-bant b { color: #ffb4b4; }
-
 /* AYRIM: yalnız zemin — uyarı rengi zaten ayırıyor. */
 .uyari-kutu {
   background: #3a2e10;
