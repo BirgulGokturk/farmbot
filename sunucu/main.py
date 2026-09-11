@@ -1211,6 +1211,55 @@ def _istek_saniye(govde: dict[str, Any] | None) -> float | None:
         return None
 
 
+#: Aynı SATIR sayılma payı (mm). Bitkiler elle dikildiği için bir sıranın
+#: Y'leri birkaç milimetre oynuyor; tam eşitlik arayan bir gruplama her
+#: bitkiyi ayrı satır sayardı ve makine sırayı bir aşağı bir yukarı
+#: tarardı. Izgara adımından küçük, elle dikim sapmasından büyük.
+ROTA_SATIR_PAYI_MM = 40.0
+
+
+def rota_sirala(adlar: list[str], kayitli: dict[str, Any]) -> list[str]:
+    """İş noktalarını SATIR SATIR, yılankavi sırala.
+
+    NEDEN: sıra eskiden panelin gönderdiği seçim sırasıydı — kullanıcı
+    bitkileri hangi düzende tıkladıysa makine o düzende geziyordu. 24
+    bitkilik bir seçimde bu, aynı satıra birkaç kez dönmek demek.
+
+    KURAL: Y'ye göre satırlara ayır, satırları sırayla gez, her satırın
+    içinde X'e göre git — ve BİR SONRAKİ SATIRI TERS YÖNDE tara. Böylece
+    satır sonunda makine, yeni satırın kendisine en yakın ucundan devam
+    ediyor; başa dönmüyor.
+
+    KOORDİNATI OLMAYAN NOKTA SIRAYI BOZMUYOR: kayıtta bulunmayan ad
+    (silinmiş nokta, yazım hatası) sona alınıyor. Atmıyoruz — eksik nokta
+    hatasını `programlar.coz` tek elden veriyor ve buradan sessizce
+    düşürmek o hatayı yutardı.
+    """
+    bilinen, bilinmeyen = [], []
+    for ad in adlar:
+        b = kayitli.get(ad)
+        if b is None or b.get("x") is None or b.get("y") is None:
+            bilinmeyen.append(ad)
+        else:
+            bilinen.append((float(b["y"]), float(b["x"]), ad))
+    if not bilinen:
+        return list(adlar)
+
+    bilinen.sort(key=lambda t: (t[0], t[1]))
+    satirlar: list[list[tuple[float, float, str]]] = [[bilinen[0]]]
+    for kayit in bilinen[1:]:
+        if abs(kayit[0] - satirlar[-1][-1][0]) <= ROTA_SATIR_PAYI_MM:
+            satirlar[-1].append(kayit)
+        else:
+            satirlar.append([kayit])
+
+    sirali: list[str] = []
+    for n, satir in enumerate(satirlar):
+        satir.sort(key=lambda t: t[1], reverse=bool(n % 2))
+        sirali.extend(ad for _, _, ad in satir)
+    return sirali + bilinmeyen
+
+
 def _sulama_coz(adlar: list[str], saniye: float | None,
                 okumalar: list[dict[str, Any]] | None = None,
                 nem_bak: bool = True) -> dict[str, Any]:
@@ -1252,6 +1301,7 @@ def _sulama_coz(adlar: list[str], saniye: float | None,
     ozet: list[dict[str, Any]] = []
     ret: list[str] = []
     uyari: list[str] = []
+    adlar = rota_sirala(adlar, kayitli)
     for ad in adlar:
         bitki = kayitli.get(ad)
         if bitki is None:
