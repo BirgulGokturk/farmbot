@@ -481,6 +481,25 @@ class Ajan:
                 "indirmek onu da toprağa sokar. Önce T'yi çekin "
                 "(Sür → Tohum ucu → Yukarı çek ya da ⌂ T). "
                 "Çekilmiş sayılma payı: Ayarlar → Tohum ucu payı.")
+
+    # KARTIN RAPOR ARASI (saniye). Firmware `OLCUM_ARALIGI_MS = 2000`.
+    # Uç yerine oturunca firmware `sonOlcum = 0` yazıp raporu beklemeden
+    # gönderiyor, yani onay normalde anında geliyor; bu sayı o rapor
+    # kaçarsa bir sonrakini bekleyebilmek için. Firmware'de aralık
+    # büyütülürse burası da büyümeli.
+    OLCUM_ARALIGI_SN = 2.0
+    #: Servo süresine eklenen onay payı — iki rapor fırsatı.
+    UC_ONAY_PAYI_SN = 2 * OLCUM_ARALIGI_SN
+    # BÜTÜN HAZIRLIĞIN ÜST SINIRI. Sunucu bu komutu `KOMUT_ZAMAN_ASIMI`
+    # = 20 sn bekliyor (sunucu/main.py); aşarsak panel 504 alıyor ve
+    # ajan işi başlatıp başlatmadığını söyleyemiyor — en kötü sonuç bu.
+    # `sure_ms` panelden 10 000 ms'ye kadar girilebiliyor ve önce süren
+    # bir hareketi, sonra kendi komutumuzu beklersek iki tam süre üst
+    # üste biniyor (10+4 + 10+4 = 28 sn). Bütçe o yüzden burada
+    # kesiliyor: aşarsa panele ZAMAN AŞIMI değil, sebebi yazılı bir RET
+    # gidiyor. Sunucudaki sayı büyürse burası da büyüyebilir.
+    UC_HAZIRLIK_BUTCESI_SN = 15.0
+
     async def _uc_yerine_otursun(self, istenen: int, bitis: float) -> bool:
         """Kart 'istenen uç seçili ve hareket bitti' diyene kadar bekler.
 
