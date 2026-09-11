@@ -1161,8 +1161,25 @@ class Gantry:
 
     def _bolge_plani_denetle(self, simdiki: list[float],
                              adimlar: list[tuple[int, float, str]]) -> None:
-        """Planın her parçasını yasak bölgelere karşı denetler."""
+        """Planın her parçasını yasak bölgelere karşı denetler.
+
+        YALNIZ X/Y/Z DENETLENİYOR. Yasak bölgeler üç boyutlu bir hacim ve
+        `simdiki` üç elemanlı (X, Y, Z); T (tohum ucunun kendi dikey
+        ekseni) o hacimde bir koordinat değil, ana Z'nin üstüne binen
+        ayrı bir hareket.
+
+        BU SATIR BİR KAZAYI KAPATIYOR. Aşağıda `yeni[i] = deger` var ve
+        i == 3 geldiğinde üç elemanlı listeye dördüncü indeksle yazmaya
+        çalışıyordu: `list assignment index out of range`. Eski yorum
+        "T buraya hiç gelmiyor" diyordu ve o gün doğruydu — T hiçbir
+        çağrı yolunda `bolge_denetle=True` ile geçmiyordu. Ortak ⌂
+        dizisine T eklenince geçmeye başladı ve home, T adımında
+        çöktü. Varsayımı yorumda tutmak yetmiyor; burada süzülüyor.
+        """
         if self.bolgeler is None:
+            return
+        adimlar = [a for a in adimlar if a[0] < 3]
+        if not adimlar:
             return
         baglam = self.baglam()
 
@@ -1174,8 +1191,8 @@ class Gantry:
         # sürüklenme (asıl tehlikeli olan) engelli kalıyor.
         bas_ihlal = self.bolgeler.ihlal(simdiki[0], simdiki[1], simdiki[2], baglam)
         if bas_ihlal:
-            # T (i == 3) buraya hiç gelmiyor (`bolge_denetle=False`); yine de
-            # indeks taşmasına karşı üç eksenle sınırlıyoruz.
+            # T zaten yukarıda süzüldü; `i < 3` koşulu ikinci kapı olarak
+            # duruyor.
             yalniz_z_yukari = all(
                 i == 2 and deger > simdiki[2] + 0.2 for i, deger, _ in adimlar
                 if i < 3 and abs(deger - simdiki[i]) > 0.2)
