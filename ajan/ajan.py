@@ -1183,6 +1183,9 @@ class Ajan:
                 # ayarlar: hareket süresi ve güvenli yükseklik. Kayma
                 # BURADA YOK, baş başına (`baslar`).
                 "uc_secici": self.uclar.uc_secici(),
+                # Hangi proksimite anahtarı hangi başa bağlı — panel
+                # lambaları bununla adlandırıyor.
+                "prox_baslar": self.uclar.prox_baslar(),
                 # UÇ SEÇİCİ — KOMUT EDİLEN DEĞER, ÖLÇÜM DEĞİL. `secili`
                 # None = kart hiç komut almamış ya da sıfırlanmış; panel
                 # bunu "bilinmiyor" diye yazıyor, sıfırıncı uç diye değil.

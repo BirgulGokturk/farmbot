@@ -118,6 +118,17 @@ VARSAYILAN = {
     #
     # None = "girilmemiş", sıfır değil: o eksende `ayar.json`daki değer
     # (ya da genel hız) geçerli kalıyor.
+    # PROKSİMİTE ANAHTARI -> HANGİ BAŞ.
+    #
+    # Anahtar kapalıyken o baş yukarıda; baş inince bağlantı kesiliyor ve
+    # lambası sönüyor. Hangi anahtarın hangi başa gittiği KABLOLAMA
+    # gerçeği, kod varsayımı değil — bir süre `PROX_BAS_SIRASI` diye
+    # panelde sabit duruyordu ve ters bağlanmış bir makinede yanlış başı
+    # gösterirdi. Ayara alındı.
+    #
+    # Sıra PLC giriş sırası: [X0, X5, X6] -> [D1110, D1111, D1112].
+    # Boş dize ("") "bu anahtar bir başa bağlı değil" demek.
+    "prox_baslar": ["sulama", "nem", "tohum"],
     "hiz": None,
     "hiz_eksen": [None, None, None, None],   # [X, Y, Z, T]
     # PLC'nin "Z güvenli yükseklikte" biti. 0 = bağlı değil, karar
@@ -510,6 +521,14 @@ class Uclar:
                 # denetleniyor, ama dosya elle de düzenlenebiliyor; aralık
                 # dışı bir Z hızı sessizce yürürlüğe girerse makine
                 # beklenenden hızlı iner.
+                if "prox_baslar" in temiz:
+                    # Yalnız tanınan baş kimlikleri ya da boş dize.
+                    # Tanınmayan bir ad yazmak, lambayı adsız bırakırdı.
+                    ham = temiz["prox_baslar"]
+                    ham = list(ham) if isinstance(ham, (list, tuple)) else []
+                    temiz["prox_baslar"] = [
+                        (str(k) if str(k) in BASLAR else "")
+                        for k in (ham + ["", "", ""])[:3]]
                 if "hiz" in temiz:
                     temiz["hiz"] = _hiz_dogrula(temiz["hiz"])
                 if "hiz_eksen" in temiz:
@@ -604,6 +623,13 @@ class Uclar:
         except (TypeError, ValueError):
             sure = int(VARSAYILAN["uc_secici"]["sure_ms"])
         return max(1, min(10000, sure))
+
+    def prox_baslar(self) -> list[str]:
+        """[anahtar1, anahtar2, anahtar3] -> baş kimliği (ya da "")."""
+        ham = self.ayar.get("prox_baslar")
+        ham = list(ham) if isinstance(ham, (list, tuple)) else []
+        return [(str(k) if str(k) in BASLAR else "")
+                for k in (ham + ["", "", ""])[:3]]
 
     def hiz(self) -> float | None:
         """Genel hız (mm/s) — girilmemişse None, `ayar.json`daki geçerli."""

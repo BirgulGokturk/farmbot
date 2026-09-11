@@ -1013,6 +1013,19 @@ function ucGuncelle(u) {
       yaz("#ua-safe_z", u.ayar.safe_z);
       yaz("#ua-guvenli_z_ofset", u.ayar.guvenli_z_ofset);
     }
+    /* Proksimite eşleşmesi. Seçenekler baş listesinden kuruluyor, elle
+     * yazılmıyor: başların adı `bas_bilgi`den geliyor ve iki yerde iki
+     * liste tutmak, biri değişince sessizce ayrışmak demekti. */
+    const pb = u.prox_baslar || [];
+    const bilgi = u.bas_bilgi || {};
+    const kimlikler = Object.keys(bilgi);
+    $$(".ua-prox").forEach((sel) => {
+      const secili = String(pb[Number(sel.dataset.sira)] || "");
+      sel.innerHTML = `<option value=""${secili ? "" : " selected"}>—</option>`
+        + kimlikler.map((k) => `<option value="${kacisli(k)}"${
+          k === secili ? " selected" : ""}>${kacisli((bilgi[k] || {}).simge || "")} ${
+          kacisli((bilgi[k] || {}).ad || k)}</option>`).join("");
+    });
     yaz("#ua-z_safe_reg", u.z_safe_reg);
   }
   basOrnekYaz();
@@ -1077,12 +1090,16 @@ function tohumUcuYaz(d) {
  * SÖNÜYOR; öteki ikisi yanmaya devam ediyor. Yani ekranda sönük olan
  * tek lamba, o an inmiş olan baştır.
  *
- * ANAHTAR SIRASI BAŞ SIRASIYLA EŞLEŞTİRİLİYOR — kablolama varsayımı bu
- * ve TEK YERDE duruyor. Sahada ters çıkarsa değiştirilecek yer burası;
- * lambanın yanında giriş adı (X0/X5/X6) da yazılı, böylece hangi
- * anahtarın hangi başa gittiği ekrandan doğrulanabiliyor.
+ * EŞLEŞME AYARDAN GELİYOR (Ayarlar → "Sulama başlığını hizala ve genel
+ * ayarlar"). Hangi anahtarın hangi başa gittiği KABLOLAMA gerçeği ve
+ * makineye göre değişiyor; burada sabit tutmak, ters bağlanmış bir
+ * makinede yanlış başı göstermek demekti. Aşağıdaki liste yalnızca ajan
+ * bu alanı hiç bildirmiyorsa (eski sürüm) devreye giriyor.
+ *
+ * Lambanın yanında giriş adı (X0/X5/X6) yazılı: eşleşmeyi ekrandan
+ * doğrulamanın yolu, bir başı indirip hangi lambanın söndüğüne bakmak.
  */
-const PROX_BAS_SIRASI = ["sulama", "nem", "tohum"];
+const PROX_BAS_VARSAYILAN = ["sulama", "nem", "tohum"];
 
 /** Proksimite lambaları — PLC girişlerinin yansıması.
  *
@@ -1098,7 +1115,11 @@ function proxYaz(d) {
   if (!liste.length) { el.textContent = "kart bildirmiyor"; return; }
   const bilgi = ((d && d.uc) || {}).bas_bilgi || {};
   el.innerHTML = liste.map((p, i) => {
-    const kimlik = PROX_BAS_SIRASI[i] || "";
+    /* EŞLEŞME AYARDAN. Ayarlar → "Sulama başlığını hizala ve genel
+     * ayarlar" bölümünde düzenleniyor; ajan bildirmiyorsa (eski sürüm)
+     * eski sabit sıra devreye giriyor. */
+    const esleme = ((d && d.uc) || {}).prox_baslar || PROX_BAS_VARSAYILAN;
+    const kimlik = esleme[i] || "";
     const b = bilgi[kimlik] || {};
     const ad = b.ad || kimlik || p.ad;
     const simge = b.simge || "";
@@ -1315,6 +1336,14 @@ async function basKaydet() {
   // koda gömülü 1 mm'ydi ve hiçbir yerden değiştirilemiyordu.
   const zo = $("#ua-guvenli_z_ofset");
   if (zo && zo.value !== "") ayar.guvenli_z_ofset = Number(zo.value);
+  // Üçü birlikte gidiyor: tek anahtarı göndermek ötekileri silerdi.
+  const prox = $$(".ua-prox");
+  if (prox.length === 3) {
+    ayar.prox_baslar = prox
+      .slice()
+      .sort((a, b) => Number(a.dataset.sira) - Number(b.dataset.sira))
+      .map((s2) => s2.value || "");
+  }
   const sonuc = await komutGonder("uc_kaydet", { ayar });
   if (sonuc && sonuc.ok) {
     S.ucAyarDuzenleniyor = false;
