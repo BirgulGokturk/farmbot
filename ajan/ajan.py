@@ -422,6 +422,39 @@ class Ajan:
         return {"prox": False, "tool": ""}
 
     # --- başka iş parçacıklarından gelen olaylar -------------------------
+    def _toprak_yuzde_ekle(self, veri: dict[str, Any]) -> dict[str, Any]:
+        """Ham toprak sayımının yanına KALİBRE yüzdeyi koyar.
+
+        `toprak_nem` 0-1023 arası bir ADC sayımı — yüzde DEĞİL. Paneller
+        onu "%" etiketiyle gösterince "toprak nemi %1023" gibi bir şey
+        çıkıyor; oysa 1023 "prob havada, bomboş kuru" demek.
+
+        Dönüştürme zaten vardı (`sulama.nem_yuzde`) ama sunucudaydı ve
+        yalnız sulama kararında kullanılıyordu; ölçüm paketi ham sayıyı
+        tek başına taşıyordu. Her panelin aynı hesabı yeniden yapması
+        gerekiyordu ve biri unutunca ekranda ham sayı "%" diye duruyordu.
+
+        KALİBRE DEĞİLSE YÜZDE YOK. `toprak_kalibre` false geliyor ve
+        `toprak_nem_yuzde` null kalıyor: kalibre edilmemiş bir probdan
+        yüzde uydurmak, ham sayıyı "%" diye göstermekle aynı yalan.
+        Ölçmek için `python3 toprak-kalibre.py kuru` / `... islak`.
+        """
+        ham = veri.get("toprak_nem")
+        if ham is None:
+            return veri
+        ard = self.ayar.get("arduino", {})
+        kuru = float(ard.get("toprak_kuru", 1023))
+        islak = float(ard.get("toprak_islak", 0))
+        kalibre = abs(kuru - islak) >= self.EN_AZ_KALIB_ARALIK
+        yuzde = None
+        if kalibre:
+            try:
+                oran = (kuru - float(ham)) / (kuru - islak)
+                yuzde = round(max(0.0, min(1.0, oran)) * 100.0, 1)
+            except (TypeError, ValueError, ZeroDivisionError):
+                yuzde = None
+        return {**veri, "toprak_nem_yuzde": yuzde, "toprak_kalibre": kalibre}
+
     def _konum_ekle(self, veri: dict[str, Any]) -> dict[str, Any]:
         """Ölçüme/kareye o anki eksen konumunu iliştirir.
 
@@ -655,7 +688,8 @@ class Ajan:
         self._uc_secili = veri.get("uc_secili")
         self._uc_aci = veri.get("uc_aci")
         self._uc_harekette = bool(veri.get("uc_hareket"))
-        self._kuyruga_at({"tip": "olcum", "ts": time.time(), "veri": self._konum_ekle(veri)})
+        self._kuyruga_at({"tip": "olcum", "ts": time.time(),
+                          "veri": self._konum_ekle(self._toprak_yuzde_ekle(veri))})
 
     def _kare_geldi(self, kam_ad: str, b64: str, ts: float) -> None:
         """Kamera iş parçacığından çağrılır.
