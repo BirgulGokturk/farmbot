@@ -720,6 +720,13 @@ def _yol_uzunlugu(noktalar_xy: list[tuple[float, float]],
     return toplam
 
 
+#: Aynı SATIR sayılma payı (mm). Bitkiler elle dikildiği için bir sıranın
+#: Y'leri birkaç milimetre oynuyor; tam eşitlik arayan bir gruplama her
+#: bitkiyi ayrı satır sayar ve makine sırayı bir aşağı bir yukarı tarardı.
+#: Izgara adımından küçük, elle dikim sapmasından büyük.
+SATIR_PAYI_MM = 40.0
+
+
 def _yakin_sira(adlar: list[str],
                 kayitli: dict[str, dict[str, Any]] | None = None
                 ) -> tuple[list[str], dict[str, Any]]:
@@ -770,13 +777,46 @@ def _yakin_sira(adlar: list[str],
         ad, nk = kalan.pop(0)
         sirali.append(ad)
         imlec = nk
-    while kalan:
-        i_en = min(range(len(kalan)),
-                   key=lambda i: math.hypot(kalan[i][1][0] - imlec[0],
-                                            kalan[i][1][1] - imlec[1]))
-        ad, nk = kalan.pop(i_en)
-        sirali.append(ad)
-        imlec = nk
+    # SATIR SATIR, YILANKAVİ — açgözlü en-yakın-komşu DEĞİL.
+    #
+    # Açgözlü komşu her adımda en yakını seçiyor ve bu, satır sonlarında
+    # başka satıra atlayıp sonra geri dönmesine yol açıyordu: sahada
+    # "önce 1. satır, sonra SON satır, sonra 2. satır" görüldü. Toplam
+    # yol kısa çıkabiliyor ama hareket okunaksız ve sulama yarım kalmış
+    # gibi duruyor.
+    #
+    # KURAL: Y'ye göre satırlara ayır, makineye EN YAKIN satırdan başla,
+    # her satırı X boyunca tara ve bir sonrakini TERS yönde tara. Satır
+    # sonunda makine, yeni satırın kendisine yakın ucundan devam ediyor.
+    if kalan:
+        kalan.sort(key=lambda t: (t[1][1], t[1][0]))
+        satirlar: list[list[tuple[str, tuple[float, float]]]] = [[kalan[0]]]
+        for kayit in kalan[1:]:
+            if abs(kayit[1][1] - satirlar[-1][-1][1][1]) <= SATIR_PAYI_MM:
+                satirlar[-1].append(kayit)
+            else:
+                satirlar.append([kayit])
+
+        # Makineye en yakın satırdan başlıyoruz; yoksa en alttakinden.
+        bas_i = 0
+        if imlec is not None:
+            bas_i = min(range(len(satirlar)),
+                        key=lambda n: abs(satirlar[n][0][1][1] - imlec[1]))
+        # O satırdan yukarı, sonra kalanı aşağı: her satır bir kez geziliyor.
+        duzen = list(range(bas_i, len(satirlar))) + list(range(bas_i - 1, -1, -1))
+
+        # İlk satırın yönü de imlece göre: uzak uçtan başlamak, satırın
+        # tamamını boşuna kat etmek olurdu.
+        ters = False
+        if imlec is not None and satirlar[duzen[0]]:
+            ilk = satirlar[duzen[0]]
+            ters = abs(ilk[-1][1][0] - imlec[0]) < abs(ilk[0][1][0] - imlec[0])
+        for sira_no, n in enumerate(duzen):
+            satir = satirlar[n]
+            satir.sort(key=lambda t: t[1][0], reverse=(ters != bool(sira_no % 2)))
+            for ad, nk in satir:
+                sirali.append(ad)
+                imlec = nk
 
     yer = {ad: nk for ad, nk in yerli}
     yeni_yol = _yol_uzunlugu([yer[a] for a in sirali], baslangic)
@@ -800,7 +840,7 @@ def _yakin_sira(adlar: list[str],
 
 def _sira_gunluk_metni(bilgi: dict[str, Any], is_adi: str) -> str:
     """Sıralamanın günlük satırı — kullanıcı sırayı görebilsin."""
-    metin = (f"{is_adi}: en yakından başlanarak sıralandı · "
+    metin = (f"{is_adi}: satır satır sıralandı · "
              f"yol {bilgi['yol_mm']:.0f} mm "
              f"(tıklama sırasıyla {bilgi['tiklama_yol_mm']:.0f} mm)")
     if bilgi.get("not"):
@@ -1215,51 +1255,6 @@ def _istek_saniye(govde: dict[str, Any] | None) -> float | None:
 #: Y'leri birkaç milimetre oynuyor; tam eşitlik arayan bir gruplama her
 #: bitkiyi ayrı satır sayardı ve makine sırayı bir aşağı bir yukarı
 #: tarardı. Izgara adımından küçük, elle dikim sapmasından büyük.
-ROTA_SATIR_PAYI_MM = 40.0
-
-
-def rota_sirala(adlar: list[str], kayitli: dict[str, Any]) -> list[str]:
-    """İş noktalarını SATIR SATIR, yılankavi sırala.
-
-    NEDEN: sıra eskiden panelin gönderdiği seçim sırasıydı — kullanıcı
-    bitkileri hangi düzende tıkladıysa makine o düzende geziyordu. 24
-    bitkilik bir seçimde bu, aynı satıra birkaç kez dönmek demek.
-
-    KURAL: Y'ye göre satırlara ayır, satırları sırayla gez, her satırın
-    içinde X'e göre git — ve BİR SONRAKİ SATIRI TERS YÖNDE tara. Böylece
-    satır sonunda makine, yeni satırın kendisine en yakın ucundan devam
-    ediyor; başa dönmüyor.
-
-    KOORDİNATI OLMAYAN NOKTA SIRAYI BOZMUYOR: kayıtta bulunmayan ad
-    (silinmiş nokta, yazım hatası) sona alınıyor. Atmıyoruz — eksik nokta
-    hatasını `programlar.coz` tek elden veriyor ve buradan sessizce
-    düşürmek o hatayı yutardı.
-    """
-    bilinen, bilinmeyen = [], []
-    for ad in adlar:
-        b = kayitli.get(ad)
-        if b is None or b.get("x") is None or b.get("y") is None:
-            bilinmeyen.append(ad)
-        else:
-            bilinen.append((float(b["y"]), float(b["x"]), ad))
-    if not bilinen:
-        return list(adlar)
-
-    bilinen.sort(key=lambda t: (t[0], t[1]))
-    satirlar: list[list[tuple[float, float, str]]] = [[bilinen[0]]]
-    for kayit in bilinen[1:]:
-        if abs(kayit[0] - satirlar[-1][-1][0]) <= ROTA_SATIR_PAYI_MM:
-            satirlar[-1].append(kayit)
-        else:
-            satirlar.append([kayit])
-
-    sirali: list[str] = []
-    for n, satir in enumerate(satirlar):
-        satir.sort(key=lambda t: t[1], reverse=bool(n % 2))
-        sirali.extend(ad for _, _, ad in satir)
-    return sirali + bilinmeyen
-
-
 def _sulama_coz(adlar: list[str], saniye: float | None,
                 okumalar: list[dict[str, Any]] | None = None,
                 nem_bak: bool = True) -> dict[str, Any]:
@@ -1301,7 +1296,6 @@ def _sulama_coz(adlar: list[str], saniye: float | None,
     ozet: list[dict[str, Any]] = []
     ret: list[str] = []
     uyari: list[str] = []
-    adlar = rota_sirala(adlar, kayitli)
     for ad in adlar:
         bitki = kayitli.get(ad)
         if bitki is None:
