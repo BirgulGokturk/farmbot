@@ -130,7 +130,9 @@ window.Bahce = (function () {
     nemKat: null, nemKatCt: null, nemDamga: "",
     islak: [], damla: [], suAkiyor: false, suKanit: "yok",
     ray: [], sepet: null, tasima: null, tasimaHedef: null, durDugme: null, suSesT: 0,
-    sesDugme: null,
+    sesDugme: null, konumVar: false, hareketSes: false, enable: false, acil: false, hareket: false,
+    jog: null, jogBasili: null, jogSayac: null, olcumVeri: null, olcumT: 0,
+    olcumHata: "", sensorKutu: null,
     film: null, esik: null, gorevKutu: null,
     gorevTuval: null, gorevCt: null, gorevDamga: "",
     balonlar: [], parcalar: [], bulutlar: null,
@@ -262,6 +264,8 @@ window.Bahce = (function () {
     G.s = s;
     rayKur();
     gorevKur();
+    sensorKur();
+    jogKur();
   }
   function px(mx) { return G.ox + (sayi(mx) - G.s.x1) * G.k; }
   function py(my) { return G.oy + (sayi(my) - G.s.y1) * G.k; }
@@ -1333,7 +1337,7 @@ window.Bahce = (function () {
     suNedenYok(c);
     calisanAletCiz(c);
     eylemCiz(c);
-    if (S.insaBitti) { rayCiz(c); gorevCiz(c); }
+    if (S.insaBitti) { rayCiz(c); gorevCiz(c); sensorCiz(c); jogCiz(c); }
     esikCiz(c);
     balonCiz(c);
     atmosferCiz(c, dt);
@@ -1387,7 +1391,8 @@ window.Bahce = (function () {
    * bağlam ilk dokunuşta kuruluyor.
    * ==================================================================== */
   var Ses = (function () {
-    var ctx = null, acik = true;
+    var ctx = null, acik = true, ana = null;
+    var akis = null, motor = null;
     try { acik = localStorage.getItem("bh-ses") !== "0"; } catch (h) { acik = true; }
     function kur() {
       if (!acik) return null;
@@ -1395,13 +1400,20 @@ window.Bahce = (function () {
         var C = window.AudioContext || window.webkitAudioContext;
         if (!C) return null;
         try { ctx = new C(); } catch (h) { return null; }
+        ana = ctx.createGain(); ana.gain.value = 0.9; ana.connect(ctx.destination);
       }
       if (ctx.state === "suspended" && ctx.resume) { try { ctx.resume(); } catch (h) {} }
       return ctx;
     }
+    function gurultuTampon(c, sn) {
+      var n = Math.max(1, Math.floor(c.sampleRate * sn));
+      var t = c.createBuffer(1, n, c.sampleRate), d = t.getChannelData(0), i;
+      for (i = 0; i < n; i++) d[i] = Math.random() * 2 - 1;
+      return t;
+    }
     function zarf(k, t0, sure, tepe) {
       k.gain.setValueAtTime(0.0001, t0);
-      k.gain.exponentialRampToValueAtTime(tepe, t0 + 0.012);
+      k.gain.exponentialRampToValueAtTime(tepe, t0 + 0.008);
       k.gain.exponentialRampToValueAtTime(0.0001, t0 + sure);
     }
     function ton(f0, f1, sure, tip, tepe, gecikme) {
@@ -1411,56 +1423,144 @@ window.Bahce = (function () {
       var o = c.createOscillator(), k = c.createGain();
       o.type = tip || "sine";
       o.frequency.setValueAtTime(f0, t0);
-      if (f1 && f1 !== f0) o.frequency.exponentialRampToValueAtTime(f1, t0 + sure);
+      if (f1 && f1 !== f0) o.frequency.exponentialRampToValueAtTime(Math.max(1, f1), t0 + sure);
       zarf(k, t0, sure, tepe || 0.12);
-      o.connect(k); k.connect(c.destination);
+      o.connect(k); k.connect(ana);
       o.start(t0); o.stop(t0 + sure + 0.02);
     }
-    /** Gürültü: su ve toprak seslerinin gövdesi. */
-    function gurultu(sure, f0, f1, tepe, q) {
+    function patlama(sure, f0, f1, tepe, q, gecikme) {
       var c = kur();
       if (!c) return;
-      var t0 = c.currentTime;
-      var n = Math.max(1, Math.floor(c.sampleRate * sure));
-      var tampon = c.createBuffer(1, n, c.sampleRate);
-      var d = tampon.getChannelData(0), i;
-      for (i = 0; i < n; i++) d[i] = Math.random() * 2 - 1;
-      var kay = c.createBufferSource(); kay.buffer = tampon;
+      var t0 = c.currentTime + (gecikme || 0);
+      var kay = c.createBufferSource(); kay.buffer = gurultuTampon(c, sure);
       var sz = c.createBiquadFilter();
       sz.type = "bandpass"; sz.Q.value = q || 1.2;
       sz.frequency.setValueAtTime(f0, t0);
-      sz.frequency.exponentialRampToValueAtTime(f1 || f0, t0 + sure);
+      sz.frequency.exponentialRampToValueAtTime(Math.max(20, f1 || f0), t0 + sure);
       var k = c.createGain();
       zarf(k, t0, sure, tepe || 0.09);
-      kay.connect(sz); sz.connect(k); k.connect(c.destination);
+      kay.connect(sz); sz.connect(k); k.connect(ana);
       kay.start(t0); kay.stop(t0 + sure);
+    }
+    /** RÖLE TIKI — gerçek makinenin sesi bu: kuru, kısa, metalik. */
+    function role(tepe) {
+      patlama(0.035, 2600, 900, tepe || 0.10, 6);
+      ton(1400, 700, 0.035, "square", (tepe || 0.10) * 0.35);
     }
     return {
       acikMi: function () { return acik; },
       degistir: function () {
         acik = !acik;
         try { localStorage.setItem("bh-ses", acik ? "1" : "0"); } catch (h) {}
-        if (acik) this.tik();
+        if (!acik) { this.akisDur(); this.motorDur(); }
+        else role(0.08);
         return acik;
       },
       uyandir: function () { kur(); },
-      tik: function () { ton(660, 520, 0.05, "triangle", 0.05); },     /* alet alındı */
-      sirilti: function () {                                           /* su aktı */
-        gurultu(0.75, 900, 2600, 0.10, 1.1);
-        ton(320, 520, 0.22, "sine", 0.045);
+
+      /* ---- SÜREKLİ SESLER: gerçek bir durum sürdüğü sürece çalıyorlar,
+         durum bitince susuyorlar. Tekrar tekrar patlatılan kısa örnekler
+         "su akıyor" değil "biri bardağı deviriyor" gibi duyuluyordu. ---- */
+      /** Su akışı: boru şırıltısı. İki bantlı gürültü + yavaş kabarcık
+       *  dalgalanması. Röle açık olduğu SÜRECE çalıyor. */
+      akisBasla: function () {
+        var c = kur();
+        if (!c || akis) return;
+        var kay = c.createBufferSource();
+        kay.buffer = gurultuTampon(c, 2); kay.loop = true;
+        var alt = c.createBiquadFilter();
+        alt.type = "lowpass"; alt.frequency.value = 2400;
+        var bant = c.createBiquadFilter();
+        bant.type = "bandpass"; bant.frequency.value = 1100; bant.Q.value = 0.7;
+        var k = c.createGain();
+        k.gain.setValueAtTime(0.0001, c.currentTime);
+        k.gain.exponentialRampToValueAtTime(0.055, c.currentTime + 0.12);
+        /* Kabarcık: bant frekansını yavaşça gezdiren düşük frekanslı
+           salınım. Düz gürültü "hışırtı", gezinen gürültü "su". */
+        var lfo = c.createOscillator(), lk = c.createGain();
+        lfo.type = "sine"; lfo.frequency.value = 2.6; lk.gain.value = 420;
+        lfo.connect(lk); lk.connect(bant.frequency);
+        kay.connect(alt); alt.connect(bant); bant.connect(k); k.connect(ana);
+        kay.start(); lfo.start();
+        akis = { kay: kay, k: k, lfo: lfo };
       },
-      damla: function () { ton(900, 380, 0.09, "sine", 0.05); },       /* iş sıraya girdi */
-      pop: function () {                                               /* hasat */
-        ton(480, 150, 0.16, "sine", 0.14);
-        gurultu(0.14, 220, 90, 0.07, 0.9);
+      akisDur: function () {
+        if (!akis || !ctx) { akis = null; return; }
+        var t = ctx.currentTime;
+        try {
+          akis.k.gain.cancelScheduledValues(t);
+          akis.k.gain.setValueAtTime(akis.k.gain.value, t);
+          akis.k.gain.exponentialRampToValueAtTime(0.0001, t + 0.25);
+          akis.kay.stop(t + 0.3); akis.lfo.stop(t + 0.3);
+        } catch (h) {}
+        akis = null;
       },
-      toprak: function () { gurultu(0.22, 260, 120, 0.07, 0.8); },     /* bitki taşındı */
-      basari: function () {                                            /* görev bitti */
-        ton(523, 523, 0.1, "triangle", 0.07, 0);
-        ton(659, 659, 0.1, "triangle", 0.07, 0.09);
-        ton(784, 784, 0.16, "triangle", 0.08, 0.18);
+      /** Step motor uğultusu: makine GERÇEKTEN hareket ederken
+       *  (`durum.hareket`). Testere dişi + alçak geçiren = sürücü sesi. */
+      motorBasla: function () {
+        var c = kur();
+        if (!c || motor) return;
+        var o = c.createOscillator(), o2 = c.createOscillator();
+        var f = c.createBiquadFilter(), k = c.createGain();
+        o.type = "sawtooth"; o.frequency.value = 88;
+        o2.type = "square"; o2.frequency.value = 176;
+        f.type = "lowpass"; f.frequency.value = 620; f.Q.value = 3;
+        k.gain.setValueAtTime(0.0001, c.currentTime);
+        k.gain.exponentialRampToValueAtTime(0.03, c.currentTime + 0.06);
+        var tit = c.createOscillator(), tk = c.createGain();
+        tit.type = "sine"; tit.frequency.value = 7.5; tk.gain.value = 5;
+        tit.connect(tk); tk.connect(o.frequency);
+        o.connect(f); o2.connect(f); f.connect(k); k.connect(ana);
+        o.start(); o2.start(); tit.start();
+        motor = { o: o, o2: o2, tit: tit, k: k };
       },
-      hata: function () { ton(200, 140, 0.18, "sawtooth", 0.05); }
+      motorDur: function () {
+        if (!motor || !ctx) { motor = null; return; }
+        var t = ctx.currentTime;
+        try {
+          motor.k.gain.cancelScheduledValues(t);
+          motor.k.gain.setValueAtTime(motor.k.gain.value, t);
+          motor.k.gain.exponentialRampToValueAtTime(0.0001, t + 0.18);
+          motor.o.stop(t + 0.22); motor.o2.stop(t + 0.22); motor.tit.stop(t + 0.22);
+        } catch (h) {}
+        motor = null;
+      },
+
+      /* ---- ANLIK SESLER: hepsi bir MAKİNE PARÇASININ sesi ---- */
+      role: role,                                   /* vana / röle tıkı */
+      tik: function () { role(0.07); },             /* alet alındı */
+      damla: function () {                          /* iş kuyruğa girdi */
+        role(0.06);
+        ton(880, 660, 0.07, "sine", 0.04, 0.04);
+      },
+      prob: function () {                           /* prob toprağa iniyor */
+        patlama(0.16, 700, 220, 0.08, 1.6);
+        ton(190, 120, 0.14, "triangle", 0.05, 0.02);
+        patlama(0.07, 420, 180, 0.05, 2, 0.2);
+      },
+      deklansor: function () {                      /* kamera */
+        role(0.09);
+        patlama(0.05, 3200, 1400, 0.07, 4, 0.06);
+      },
+      pop: function () {                            /* hasat — sap kopuyor */
+        patlama(0.05, 2200, 700, 0.09, 5);
+        ton(420, 120, 0.12, "triangle", 0.11, 0.01);
+        patlama(0.2, 300, 110, 0.05, 0.8, 0.04);
+      },
+      toprak: function () { patlama(0.26, 320, 110, 0.07, 0.7); },  /* toprağa konuldu */
+      home: function () {                           /* home: iki eksen ucu */
+        role(0.08);
+        ton(150, 90, 0.18, "triangle", 0.06, 0.02);
+        role(0.06);
+      },
+      basari: function () {                         /* iş bitti */
+        ton(523, 523, 0.09, "triangle", 0.055, 0);
+        ton(784, 784, 0.14, "triangle", 0.06, 0.1);
+      },
+      hata: function () {
+        ton(180, 120, 0.22, "sawtooth", 0.05);
+        patlama(0.1, 400, 160, 0.05, 1.5);
+      }
     };
   }());
 
@@ -1626,7 +1726,22 @@ window.Bahce = (function () {
    *  listeden düşmüşse ve onu biz iptal etmediysek, makine onu yapmış
    *  demektir. */
   var kuyrukGorulen = {}, iptalEdilen = {};
+  /** İŞ BAŞLADIĞINDA O İŞİN SESİ: prob toprağa iniyor, deklanşör,
+   *  vana. Kuyruktaki "çalışan" iş değişince bir kez çalıyor. */
+  var calisanSonKimlik = "";
+  function calisanSes() {
+    var ca = ((S.veri && S.veri.kuyruk) || {}).calisan;
+    var kimlik = ca ? String(ca.kimlik) : "";
+    if (kimlik === calisanSonKimlik) return;
+    calisanSonKimlik = kimlik;
+    if (!ca) return;
+    if (ca.tip === "nem") Ses.prob();
+    else if (ca.tip === "foto") Ses.deklansor();
+    else if (ca.tip === "sula") Ses.role(0.09);   /* vana açılıyor */
+    else if (ca.tip === "gez") Ses.role(0.06);
+  }
   function kuyrukIzle() {
+    calisanSes();
     var k = (S.veri && S.veri.kuyruk) || {};
     var simdi = {}, bitti = 0;
     (k.isler || []).forEach(function (i) { simdi[String(i.kimlik)] = i.tip || ""; });
@@ -1765,6 +1880,255 @@ window.Bahce = (function () {
   }
 
   /* ==================================================================== *
+   * SENSÖR TAHTASI — GERÇEK ÖLÇÜMLER, BAHÇENİN İÇİNDE
+   *
+   * Değerler `/api/durum` ucunun `olcum` bölümünden: hava sıcaklığı, hava
+   * nemi, basınç, toprak nemi, BMP sıcaklığı. UYDURMA YOK: yalnız gelen
+   * kanallar yazılıyor, gelmeyen kanal için satır açılmıyor. Her satırın
+   * yanında okumanın YAŞI var — 40 saniye önceki bir sayı ile şimdiki
+   * sayı aynı görünmemeli. Paket hiç gelmediyse tahtada sebebi yazıyor.
+   *
+   * Yağmur, ışık ve rüzgâr sensörü bu makinede YOK; tahtada da yok.
+   * ==================================================================== */
+  var OLCUM_SATIR = [
+    { k: "hava_sicaklik", ad: "Hava", birim: "°C", ondalik: 1 },
+    { k: "hava_nem", ad: "Hava nemi", birim: "%", ondalik: 0 },
+    { k: "toprak_nem", ad: "Toprak nemi", birim: "%", ondalik: 0 },
+    { k: "basinc", ad: "Basınç", birim: "hPa", ondalik: 0 },
+    { k: "bmp_sicaklik", ad: "Kart", birim: "°C", ondalik: 1 }
+  ];
+  var olcumAl = guvenli("ölçüm", function () {
+    return api("/api/durum").then(function (c) {
+      S.olcumVeri = (c && c.olcum) || null;
+      S.olcumT = Date.now();
+      S.olcumHata = "";
+      isteKare();
+    }).catch(function (h) {
+      S.olcumVeri = null;
+      S.olcumHata = "okunamadı — " + ((h && h.kod ? h.kod + ": " : "")
+        + ((h && h.message) || "sebep bilinmiyor"));
+      isteKare();
+    });
+  });
+  function olcumSatirlari() {
+    var o = S.olcumVeri || {}, cikti = [];
+    OLCUM_SATIR.forEach(function (t) {
+      var d = o[t.k];
+      if (d === null || d === undefined || !isFinite(Number(d))) return;
+      cikti.push({ ad: t.ad, deger: Number(d).toFixed(t.ondalik) + " " + t.birim });
+    });
+    return cikti;
+  }
+  function sensorKur() {
+    var sagBos = S.en - (G.ox + G.bw + G.kal + G.ray + 12);
+    if (sagBos < 150 || S.boy < 300) { S.sensorKutu = null; return; }
+    var w = Math.min(200, sagBos - 14);
+    S.sensorKutu = { x: S.en - sagBos / 2 - w / 2, y: 14, w: w, h: 128 };
+  }
+  function sensorCiz(c) {
+    var kt = S.sensorKutu;
+    if (!kt) return;
+    var satir = olcumSatirlari();
+    c.save();
+    /* Direk + tahta: görev tabelasının kardeşi, sağ çimde. */
+    c.fillStyle = "#6b4a2c";
+    c.fillRect(kt.x + kt.w / 2 - 4, kt.y + kt.h - 4, 8, 18);
+    c.fillStyle = "rgba(0,0,0,.3)";
+    c.beginPath();
+    if (c.roundRect) c.roundRect(kt.x + 3, kt.y + 5, kt.w, kt.h, 8);
+    else c.rect(kt.x + 3, kt.y + 5, kt.w, kt.h);
+    c.fill();
+    var g = c.createLinearGradient(kt.x, kt.y, kt.x, kt.y + kt.h);
+    g.addColorStop(0, "#8d6b46"); g.addColorStop(0.5, "#79583a"); g.addColorStop(1, "#63472d");
+    c.fillStyle = g;
+    c.beginPath();
+    if (c.roundRect) c.roundRect(kt.x, kt.y, kt.w, kt.h, 8); else c.rect(kt.x, kt.y, kt.w, kt.h);
+    c.fill();
+    c.strokeStyle = "rgba(38,24,10,.55)"; c.lineWidth = 1.4; c.stroke();
+
+    c.textAlign = "left";
+    c.font = "700 12px system-ui,sans-serif"; c.fillStyle = "#f3e3c6";
+    c.fillText("Ölçümler", kt.x + 12, kt.y + 20);
+
+    var yas = S.olcumT ? Math.round((Date.now() - S.olcumT) / 1000) : -1;
+    c.font = "10px system-ui,sans-serif";
+    c.fillStyle = "rgba(243,227,198,.6)";
+    c.fillText(yas < 0 ? "henüz okunmadı" : (yas < 90 ? yas + " sn önce"
+      : Math.round(yas / 60) + " dk önce"), kt.x + 12, kt.y + 33);
+
+    var yy = kt.y + 54;
+    if (!satir.length) {
+      c.font = "italic 11px system-ui,sans-serif";
+      c.fillStyle = S.olcumHata ? "#ffb9a6" : "rgba(243,227,198,.8)";
+      var m = S.olcumHata || "ölçüm paketi gelmedi";
+      c.fillText(m.length > 30 ? m.slice(0, 29) + "…" : m, kt.x + 12, yy);
+    }
+    satir.slice(0, 4).forEach(function (r) {
+      c.font = "11px system-ui,sans-serif";
+      c.fillStyle = "rgba(243,227,198,.85)";
+      c.fillText(r.ad, kt.x + 12, yy);
+      c.font = "600 12px ui-monospace,monospace";
+      c.fillStyle = "#f3e3c6";
+      c.textAlign = "right";
+      c.fillText(r.deger, kt.x + kt.w - 12, yy);
+      c.textAlign = "left";
+      yy += 19;
+    });
+    c.restore();
+  }
+
+  /* ==================================================================== *
+   * YÖN TUŞLARI — MAKİNEYİ ELLE SÜRMEK
+   *
+   * Dört ok X ve Y'yi, iki küçük tuş Z'yi sürüyor; ortadaki tuş BÜTÜN
+   * EKSENLERİ home'a gönderiyor. Hepsi var olan `/api/komut` ucunu
+   * kullanıyor: basılı tutarken `jog {eksen,yon,basili:true}`, bırakınca
+   * `jog_dur`. Yeni bir hareket yolu açılmıyor — sınır ve Z denetimleri
+   * ajanda, tek yerde kalsın.
+   *
+   * KİLİT ŞARTLARI ekranda yazılı: makine kopuksa, sürücü torku kapalıysa
+   * ya da acil mandalı düştüyse tuşlar sönük ve sebebi altında. Çalışmayan
+   * bir düğmeyi çalışıyor gibi göstermek, kullanıcıyı makinenin bozuk
+   * olduğuna inandırır.
+   * ==================================================================== */
+  function jogKur() {
+    var gen = 132;
+    var sagBos = S.en - (G.ox + G.bw + G.kal + G.ray + 12);
+    var x, y;
+    if (sagBos >= gen + 16) {
+      x = S.en - sagBos / 2 - gen / 2;
+      y = S.boy - gen - 26;
+    } else {
+      x = S.en - gen - 10;                       /* dar ekran: sağ alt köşe */
+      y = S.boy - gen - 14;
+    }
+    if (S.boy < 260) { S.jog = null; return; }
+    var t = 40, orta = gen / 2;
+    S.jog = {
+      x: x, y: y, w: gen, h: gen,
+      tuslar: [
+        { k: "y-", ad: "▲", cx: x + orta, cy: y + 22, r: 19, eksen: "y", yon: -1 },
+        { k: "y+", ad: "▼", cx: x + orta, cy: y + gen - 22, r: 19, eksen: "y", yon: 1 },
+        { k: "x-", ad: "◀", cx: x + 22, cy: y + orta, r: 19, eksen: "x", yon: -1 },
+        { k: "x+", ad: "▶", cx: x + gen - 22, cy: y + orta, r: 19, eksen: "x", yon: 1 },
+        { k: "home", ad: "⌂", cx: x + orta, cy: y + orta, r: 21, eksen: "", yon: 0 },
+        { k: "z-", ad: "Z▲", cx: x + 24, cy: y - 22, r: 16, eksen: "z", yon: -1 },
+        { k: "z+", ad: "Z▼", cx: x + gen - 24, cy: y - 22, r: 16, eksen: "z", yon: 1 }
+      ]
+    };
+    return t;
+  }
+  /** Tuşlar neden kilitli? Tek cümlede sebep — ya da boş. */
+  function jogKilit() {
+    if (!(S.veri && S.veri.bagli)) return "makine bağlı değil";
+    if (S.acil) return "acil durdurma mandalı düştü";
+    if (!S.enable) return "sürücü torku kapalı (Ayarlar > Enable)";
+    return "";
+  }
+  function jogCiz(c) {
+    var j = S.jog;
+    if (!j) return;
+    var kilit = jogKilit();
+    c.save();
+    /* Kumanda kutusu: koyu, hafif kabartmalı bir pano. */
+    c.fillStyle = "rgba(0,0,0,.34)";
+    c.beginPath();
+    if (c.roundRect) c.roundRect(j.x + 3, j.y + 5, j.w, j.h, 16);
+    else c.rect(j.x + 3, j.y + 5, j.w, j.h);
+    c.fill();
+    var g = c.createLinearGradient(j.x, j.y, j.x, j.y + j.h);
+    g.addColorStop(0, "rgba(46,52,46,.96)"); g.addColorStop(1, "rgba(26,30,26,.96)");
+    c.fillStyle = g;
+    c.beginPath();
+    if (c.roundRect) c.roundRect(j.x, j.y, j.w, j.h, 16); else c.rect(j.x, j.y, j.w, j.h);
+    c.fill();
+    c.strokeStyle = kilit ? "#4a4d47" : "#7c847a"; c.lineWidth = 1.2; c.stroke();
+
+    j.tuslar.forEach(function (t) {
+      var basili = S.jogBasili === t.k;
+      var evi = t.k === "home";
+      c.save();
+      c.fillStyle = basili ? (evi ? "#c98a3a" : "#4f6f8a") : "rgba(18,22,18,.92)";
+      c.beginPath(); c.arc(t.cx, t.cy, t.r, 0, 6.3); c.fill();
+      c.strokeStyle = kilit ? "#4a4d47" : (evi ? "#e0a955" : "#9fb3c4");
+      c.lineWidth = basili ? 2.2 : 1.4;
+      c.beginPath(); c.arc(t.cx, t.cy, t.r, 0, 6.3); c.stroke();
+      c.font = (evi ? "700 17px" : "600 13px") + " system-ui,sans-serif";
+      c.textAlign = "center"; c.textBaseline = "middle";
+      c.fillStyle = kilit ? "#6b6f68" : (evi ? "#f0cd8a" : "#d6e2ec");
+      c.fillText(t.ad, t.cx, t.cy + 1);
+      c.restore();
+    });
+    c.textBaseline = "alphabetic";
+    c.font = "9px system-ui,sans-serif"; c.textAlign = "center";
+    c.fillStyle = kilit ? "#e07f6a" : "rgba(214,226,236,.75)";
+    c.fillText(kilit || "basılı tut · ⌂ hepsini home'a gönderir",
+      j.x + j.w / 2, j.y + j.h + 14);
+    /* Konum: tuşların hemen üstünde, makinenin BİLDİRDİĞİ sayı. */
+    c.font = "10px ui-monospace,monospace";
+    c.fillStyle = "rgba(214,226,236,.7)";
+    var m = S.makine;
+    c.fillText(m && m.x != null && S.konumVar
+      ? ("X " + Math.round(m.x) + "  Y " + Math.round(m.y)
+         + (m.z == null ? "" : "  Z " + Math.round(m.z)))
+      : "konum bildirilmedi", j.x + j.w / 2, j.y - 44);
+    c.restore();
+  }
+  function jogTusBul(p) {
+    var j = S.jog;
+    if (!j) return null;
+    for (var i = 0; i < j.tuslar.length; i++) {
+      var t = j.tuslar[i];
+      if (Math.hypot(t.cx - p.x, t.cy - p.y) < t.r + 4) return t;
+    }
+    return null;
+  }
+  var komut = guvenli("komut", function (ad, arg) {
+    return gonder("/api/komut", { ad: ad, arg: arg || {} })
+      .then(function (c) { return c; })
+      .catch(function (h) {
+        notYaz("komut", ad + " gitmedi — " + ((h && h.message) || h));
+        Ses.hata(); isteKare();
+        return null;
+      });
+  });
+  function jogBasla(t) {
+    var kilit = jogKilit();
+    if (kilit) { mesajYaz("Yön tuşları kilitli — " + kilit + "."); Ses.hata(); altYaz(); return; }
+    if (t.k === "home") {
+      /* HOME BÜTÜN EKSENLERİ HAREKET ETTİRİR: önce ne olacağını yazıyor. */
+      onayAc("Bütün eksenler home koordinatına gidecek.",
+        "Z önce yukarı çıkıyor, sonra Y ve X. Yolda bir şey varsa çarpar — "
+        + "yatağın üstünü kontrol et.", "Home'a git",
+        function () {
+          Ses.home();
+          komut("home", {}).then(function (c) {
+            if (c) { mesajYaz("Home komutu gönderildi."); balon(
+              sayi(S.makine.x, 0), sayi(S.makine.y, 0), "home", "#f0cd8a"); }
+          });
+        });
+      isteKare(); return;
+    }
+    S.jogBasili = t.k;
+    Ses.uyandir(); Ses.role(0.07);
+    komut("jog", { eksen: t.eksen, yon: t.yon, basili: true });
+    /* Ajan basılı tutmayı tazeleme ister: 250 ms'de bir aynı bit. */
+    if (S.jogSayac) clearInterval(S.jogSayac);
+    S.jogSayac = setInterval(function () {
+      if (S.jogBasili !== t.k) return;
+      komut("jog", { eksen: t.eksen, yon: t.yon, basili: true });
+    }, 250);
+    isteKare();
+  }
+  function jogBitir() {
+    if (!S.jogBasili) return;
+    S.jogBasili = null;
+    if (S.jogSayac) { clearInterval(S.jogSayac); S.jogSayac = null; }
+    komut("jog_dur", {});
+    isteKare();
+  }
+
+  /* ==================================================================== *
    * SU — GERÇEK SUYUN GÖRÜNTÜSÜ
    *
    * Damla, ıslaklık ve parıltı YALNIZ su gerçekten aktığında çiziliyor.
@@ -1791,19 +2155,21 @@ window.Bahce = (function () {
   function suGuncelle(dt) {
     var kay = suKaynak();
     var m = S.robot || S.makine;
-    var yer = (m && m.x != null && S.veri && S.veri.konum) ? { x: sayi(m.x), y: sayi(m.y) } : null;
+    var yer = (m && m.x != null && S.konumVar) ? { x: sayi(m.x), y: sayi(m.y) } : null;
     var oncekiAkis = S.suAkiyor;
     S.suAkiyor = kay.akiyor && !!yer;
     S.suKanit = kay.kanit;
     /* SES VE BALON, SU GERÇEKTEN AKINCA: röle açıldı (ya da röle
        okunmuyorsa çalışan sulama işi başladı). Sıraya girmek yetmiyor. */
     if (S.suAkiyor && !oncekiAkis) {
-      Ses.sirilti();
-      S.suSesT = S.t;
+      /* Akış sesi başlıyor ve SU AKTIĞI SÜRECE sürüyor; kapanınca
+         susuyor. Kısa örnekleri arka arkaya patlatmak su gibi değil,
+         tekrarlayan bir hışırtı gibi duyuluyordu. */
+      Ses.akisBasla();
       balon(yer.x, yer.y, kay.kanit === "röle" ? "+ su veriliyor"
         : "+ su veriliyor (işten)", "#9ed6fa");
-    } else if (S.suAkiyor && S.t - sayi(S.suSesT, 0) > 1.1) {
-      Ses.sirilti(); S.suSesT = S.t;
+    } else if (!S.suAkiyor && oncekiAkis) {
+      Ses.akisDur();
     }
     if (!S.damla) S.damla = [];
     if (S.suAkiyor) {
@@ -2252,7 +2618,7 @@ window.Bahce = (function () {
     var eslek = { sula: "sula", nem: "nem", foto: "foto", gez: "yakin", ek: null }[ca.tip];
     if (!eslek) return;
     var m = S.robot || S.makine;
-    if (m.x == null || !(S.veri && S.veri.konum)) return;
+    if (m.x == null || !S.konumVar) return;
     var al = null;
     RAY_ALET.forEach(function (a) { if (a.k === eslek) al = a; });
     var cx = px(m.x), cy = arabaY() - 30;
@@ -2604,6 +2970,9 @@ window.Bahce = (function () {
     /* Eşik kadranı açıkken de aynısı. */
     if (S.esik && esikDokun(p)) return;
 
+    /* Yön tuşları */
+    var jt = jogTusBul(p);
+    if (jt) { jogBasla(jt); return; }
     /* Ses düğmesi */
     if (S.sesDugme && Math.hypot(S.sesDugme.x + 15 - p.x, S.sesDugme.y + 15 - p.y) < S.sesDugme.r + 4) {
       var sa = Ses.degistir();
@@ -2744,6 +3113,7 @@ window.Bahce = (function () {
 
   var tuvalBirakti = guvenli("bırakma", function () {
     if (uzunSayac) { clearTimeout(uzunSayac); uzunSayac = 0; }
+    if (S.jogBasili) { jogBitir(); bas = null; return; }
     if (bas && bas.tip === "film") { bas = null; return; }
     if (bas && bas.tip === "esik") {
       bas = null;
@@ -3276,6 +3646,7 @@ window.Bahce = (function () {
     S.tuval.addEventListener("pointerup", tuvalBirakti);
     S.tuval.addEventListener("pointercancel", function () {
       if (uzunSayac) { clearTimeout(uzunSayac); uzunSayac = 0; }
+      jogBitir();
       bas = null; S.basiliSula = false; S.basiliSn = 0; isteKare();
     });
     $("#bh-kok").addEventListener("click", tiklama);
@@ -3345,6 +3716,7 @@ window.Bahce = (function () {
       topragiCiz();
       notYaz("veri", "");
       katalogAl();
+      olcumAl();
       ustYaz(); altYaz(); isteKare();
     }).catch(function (h) {
       /* SESSİZ BAŞARISIZLIK YOK: sahne boş kalırsa sebebi ekranda. */
@@ -3423,7 +3795,10 @@ window.Bahce = (function () {
     sekme: function (acik) {
       S.acik = !!acik;
       document.body.classList.toggle("bahce-acik", S.acik);
-      if (!S.acik) carkKapat();
+      if (!S.acik) {
+        carkKapat(); jogBitir();
+        Ses.akisDur(); Ses.motorDur(); S.hareketSes = false;
+      }
       sayacKur(S.acik);
       if (!S.acik) {
         if (S.dongu) { cancelAnimationFrame(S.dongu); S.dongu = 0; }
@@ -3443,7 +3818,18 @@ window.Bahce = (function () {
     kareGeldi: function () { /* boş — bilerek */ },
     durumDegisti: function (d) {
       if (!S.acik || !d) return;
+      /* MOTOR SESİ GERÇEK SİNYALE BAĞLI: `durum.hareket` bayrağı. Makine
+         durduğu anda ses de duruyor; "hareket ediyormuş gibi" ses yok. */
+      var hrk = !!d.hareket;
+      if (hrk && !S.hareketSes) { Ses.motorBasla(); S.hareketSes = true; }
+      else if (!hrk && S.hareketSes) { Ses.motorDur(); S.hareketSes = false; }
       S.veri = S.veri || {};
+      /* KONUM BAYRAĞI AYRI TUTULUYOR: `S.veri` her tazelemede
+         `/api/bahce` cevabıyla baştan yazılıyor ve içine koyduğumuz
+         `konum` siliniyordu; konuma bakan her yer (su efekti, alet
+         rozeti, yön tuşları) tazelemeden sonra "konum bildirilmedi"
+         sanıyordu. */
+      S.konumVar = !!d.konum;
       if (d.konum) {
         S.veri.konum = d.konum;
         S.makine = { x: sayi(d.konum.x), y: sayi(d.konum.y),
@@ -3451,6 +3837,12 @@ window.Bahce = (function () {
       }
       if ("bagli" in d) S.veri.bagli = d.bagli;
       if ("mesgul" in d) S.veri.mesgul = d.mesgul;
+      /* Yön tuşları bu üç alana bakıyor: tork kapalıysa ya da acil mandalı
+         düştüyse jog hiçbir şey yapmaz; düğmeyi çalışır göstermek yalan. */
+      S.enable = !!d.enable;
+      S.acil = !!(d.acil && d.acil.acik);
+      S.hareket = !!d.hareket;
+      S.sinirlar = d.sinirlar || S.sinirlar;
       if ("toprak_z" in d) S.veri.toprak_z = d.toprak_z;
       if ("guvenli_z" in d) S.veri.guvenli_z = d.guvenli_z;
       ustYaz(); altYaz(); isteKare();
@@ -3485,6 +3877,13 @@ window.Bahce = (function () {
                          hata: S.film.hata, resim: !!S.film.img,
                          serit: S.film.serit || null, kutu: S.film.kutu || null } : null,
         esik: S.esik ? { slug: S.esik.slug, yuzde: Math.round(S.esik.yuzde) } : null,
+        jog: S.jog ? { x: S.jog.x, y: S.jog.y, w: S.jog.w, h: S.jog.h,
+                       kilit: jogKilit(),
+                       tuslar: S.jog.tuslar.map(function (t) {
+                         return { k: t.k, cx: t.cx, cy: t.cy, r: t.r };
+                       }) } : null,
+        olcum: { satir: olcumSatirlari(), hata: S.olcumHata,
+                 kutu: S.sensorKutu ? true : false },
         dur: S.durDugme ? { x: S.durDugme.x, y: S.durDugme.y, kimlik: S.durDugme.kimlik } : null,
         eylem: EYLEM.map(function (x) {
           return { k: x.k, x: x._x, y: x._y, r: x._r };
