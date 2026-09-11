@@ -1109,6 +1109,13 @@ function ucSeciciYaz(d) {
     aciDugme.title = engel
       || (bagli ? "Servoyu bu açıya sür" : "Robot bağlı değil.");
   }
+  /* Hazır açı düğmeleri aynı komuta gidiyor, aynı kilide tabi. Ayrı
+   * bırakmak, kilitli bir "Sür"ün yanında çalışan dört düğme demekti. */
+  $$("[data-servo-aci]").forEach((b) => {
+    b.disabled = !bagli || !!engel;
+    b.title = engel || (bagli ? `Servoyu ${b.dataset.servoAci}° açıya sür`
+                              : "Robot bağlı değil.");
+  });
 
   const durum = $("#uc-secici-durum");
   if (durum) {
@@ -5268,6 +5275,21 @@ function olaylariBagla() {
       komutGonder("servo_aci_sur", { derece: Math.round(derece) });
     };
   }
+
+  /* HAZIR AÇILAR. Elle açı kutusuyla AYNI komutu gönderiyorlar; ayrı bir
+   * yol açmak, iki yerde iki kural demekti. Basılan açı kutuya da
+   * yazılıyor: bir sonraki "Sür" oradan devam etsin ve ekranda hangi
+   * açıda olunduğu tek yerden okunsun. */
+  $$("[data-servo-aci]").forEach((b) => {
+    b.onclick = () => {
+      const derece = Number(b.dataset.servoAci);
+      const alan = $("#servo-aci-derece");
+      if (alan) alan.value = derece;
+      const not = $("#servo-aci-durum");
+      if (not) not.textContent = "";
+      komutGonder("servo_aci_sur", { derece });
+    };
+  });
 
   // TOHUM UCUNUN KENDİ EKSENİ — elle indir/kaldır.
   const tIn = $("#d-t-in");
