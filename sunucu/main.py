@@ -1087,6 +1087,31 @@ async def _nem_olc_baslat(adlar: list[str]) -> dict[str, Any]:
         yuzey = dikim.toprak_yuzeyi(
             ix, iy, _sayi_guvenli(durum.get("toprak_z")), alanlar)
         olc_z = baslar.inis_z(b, yuzey)
+        # AYAR EKSİKSE SEBEBİNİ SÖYLE — "yumuşak sınır dışı" DEME.
+        #
+        # `inis_z` = yüzey − derinlik, tabanı `z_min`. Üçü de girilmemişse
+        # sonuç 0.0 çıkıyor ve bu, Z'nin yumuşak sınırının ([120, 414])
+        # altında kalıyor. Ajanın reddi o zaman şöyle görünüyordu:
+        #     "Z yumuşak sınır dışı: 0.0 mm [120, 414]"
+        # — yani kalibrasyonu işaret ediyor, oysa kalibrasyon doğru ve
+        # eksik olan AYAR. Kullanıcı Z sınırlarını kurcalamaya gidiyor.
+        #
+        # Hangi alanın boş olduğunu burada biliyoruz; söylemek bir satır.
+        if olc_z <= 0.01:
+            eksik = []
+            if _sayi_guvenli(yuzey) <= 0.01:
+                eksik.append("toprak yüzeyi Z'si (Ayarlar → toprak_z ya da "
+                             "dikim alanının kendi yüzeyi)")
+            if _sayi_guvenli(b.get("derinlik_mm")) <= 0.01:
+                eksik.append("nem probunun derinliği (Ayarlar → Başlar → "
+                             "Nem probu → derinlik_mm)")
+            if _sayi_guvenli(b.get("z_min")) <= 0.01:
+                eksik.append("nem probunun Z tabanı (Ayarlar → Başlar → "
+                             "Nem probu → z_min)")
+            ret.append(f"{ad}: ölçüm Z'si 0 çıkıyor — şu ayar(lar) "
+                       f"girilmemiş: " + "; ".join(eksik)
+                       + ". Prob ne kadar dalacağı bilinmeden indirilmiyor.")
+            continue
         if olc_z >= guvenli_z:
             ret.append(f"{ad}: ölçüm Z{olc_z:.0f} güvenli Z{guvenli_z:.0f} "
                        f"altında değil — prob toprağa dalmaz")
