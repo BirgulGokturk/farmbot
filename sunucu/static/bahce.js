@@ -129,8 +129,11 @@ window.Bahce = (function () {
     t: 0, sonT: 0, dongu: 0, sonCizim: 0,
     nemKat: null, nemKatCt: null, nemDamga: "",
     islak: [], damla: [], suAkiyor: false, suKanit: "yok",
-    ray: [], sepet: null, tasima: null, tasimaHedef: null, durDugme: null,
-    film: null, esik: null,
+    ray: [], sepet: null, tasima: null, tasimaHedef: null, durDugme: null, suSesT: 0,
+    sesDugme: null,
+    film: null, esik: null, gorevKutu: null,
+    gorevTuval: null, gorevCt: null, gorevDamga: "",
+    balonlar: [], parcalar: [], bulutlar: null,
     toz: [], ari: null, mesaj: "", mesajT: 0,
     notlar: {}, hatalar: [],
     olcum: { kare: 0, sure: 0, enUzun: 0 }
@@ -258,6 +261,7 @@ window.Bahce = (function () {
     G.ray = Math.max(7, Math.min(16, k * 16));      /* ray genişliği */
     G.s = s;
     rayKur();
+    gorevKur();
   }
   function px(mx) { return G.ox + (sayi(mx) - G.s.x1) * G.k; }
   function py(my) { return G.oy + (sayi(my) - G.s.y1) * G.k; }
@@ -805,8 +809,12 @@ window.Bahce = (function () {
       var sp = spriteAl(b);
       var gx = px(b.x), gy = py(b.y);
       var R = sp.R * p;
+      /* Salınım + esinti dalgası: rüzgâr tarlayı soldan sağa geçiyor,
+         bitkiler sırayla eğiliyor. Ölçülen bir rüzgâr değil (sensör yok),
+         yalnız sahnenin havası. */
+      var es = esinti(gx);
       var sal = S.sakin ? 0
-        : Math.sin(S.t * 1.1 + b._faz) * 0.022 + Math.sin(S.t * 2.7 + b._faz) * 0.008;
+        : (Math.sin(S.t * 1.1 + b._faz) * 0.022 + Math.sin(S.t * 2.7 + b._faz) * 0.008) * es;
       c.save();
       c.globalAlpha = 0.26;
       c.fillStyle = "#120c06";
@@ -1227,6 +1235,7 @@ window.Bahce = (function () {
     if (S.tasima) return true;                  /* elde bir şey taşınıyor */
     if (S.suAkiyor || (S.damla && S.damla.length)) return true;
     if (S.islak.length) return true;            /* ıslaklık soluyor */
+    if (S.parcalar.length || S.balonlar.length) return true;
     if (S.veri && S.veri.mesgul) return true;   /* makine çalışırken izliyoruz */
     if (S.sakin) return false;
     if (document.hidden) return false;
@@ -1266,6 +1275,7 @@ window.Bahce = (function () {
     }
     S.sonCizim = sn;
     suGuncelle(dt);
+    parcaGuncelle(dt);
     var b0 = performance.now();
     sahneCiz(dt);
     var ms = performance.now() - b0;
@@ -1323,10 +1333,13 @@ window.Bahce = (function () {
     suNedenYok(c);
     calisanAletCiz(c);
     eylemCiz(c);
-    if (S.insaBitti) rayCiz(c);
+    if (S.insaBitti) { rayCiz(c); gorevCiz(c); }
     esikCiz(c);
+    balonCiz(c);
     atmosferCiz(c, dt);
+    bulutCiz(c, dt);
     isikCiz(c);
+    parcaCiz(c);
     tasimaCiz(c);
     filmCiz(c);
     if (!S.insaBitti) {
@@ -1361,6 +1374,397 @@ window.Bahce = (function () {
   });
 
   /* ==================================================================== *
+   * SES — kısa, sentezlenmiş, dosyasız.
+   *
+   * Ses dosyası indirmiyoruz: Pi'nin SD kartına megabaytlarca örnek
+   * koymak ve her açılışta indirmek, tek bir "şırıltı" için ağır. Bütün
+   * sesler Web Audio ile burada üretiliyor.
+   *
+   * SES BİR BİLDİRİM DEĞİL, BİR GERİ BİLDİRİM: yalnız KULLANICININ
+   * yaptığı bir şeyin karşılığında çalıyor (alet aldın, iş sıraya girdi,
+   * su gerçekten aktı, hasat kaydedildi). Arka planda kendiliğinden ses
+   * çıkmıyor. Tarayıcı ilk dokunuşa kadar sesi açtırmıyor; bu yüzden
+   * bağlam ilk dokunuşta kuruluyor.
+   * ==================================================================== */
+  var Ses = (function () {
+    var ctx = null, acik = true;
+    try { acik = localStorage.getItem("bh-ses") !== "0"; } catch (h) { acik = true; }
+    function kur() {
+      if (!acik) return null;
+      if (!ctx) {
+        var C = window.AudioContext || window.webkitAudioContext;
+        if (!C) return null;
+        try { ctx = new C(); } catch (h) { return null; }
+      }
+      if (ctx.state === "suspended" && ctx.resume) { try { ctx.resume(); } catch (h) {} }
+      return ctx;
+    }
+    function zarf(k, t0, sure, tepe) {
+      k.gain.setValueAtTime(0.0001, t0);
+      k.gain.exponentialRampToValueAtTime(tepe, t0 + 0.012);
+      k.gain.exponentialRampToValueAtTime(0.0001, t0 + sure);
+    }
+    function ton(f0, f1, sure, tip, tepe, gecikme) {
+      var c = kur();
+      if (!c) return;
+      var t0 = c.currentTime + (gecikme || 0);
+      var o = c.createOscillator(), k = c.createGain();
+      o.type = tip || "sine";
+      o.frequency.setValueAtTime(f0, t0);
+      if (f1 && f1 !== f0) o.frequency.exponentialRampToValueAtTime(f1, t0 + sure);
+      zarf(k, t0, sure, tepe || 0.12);
+      o.connect(k); k.connect(c.destination);
+      o.start(t0); o.stop(t0 + sure + 0.02);
+    }
+    /** Gürültü: su ve toprak seslerinin gövdesi. */
+    function gurultu(sure, f0, f1, tepe, q) {
+      var c = kur();
+      if (!c) return;
+      var t0 = c.currentTime;
+      var n = Math.max(1, Math.floor(c.sampleRate * sure));
+      var tampon = c.createBuffer(1, n, c.sampleRate);
+      var d = tampon.getChannelData(0), i;
+      for (i = 0; i < n; i++) d[i] = Math.random() * 2 - 1;
+      var kay = c.createBufferSource(); kay.buffer = tampon;
+      var sz = c.createBiquadFilter();
+      sz.type = "bandpass"; sz.Q.value = q || 1.2;
+      sz.frequency.setValueAtTime(f0, t0);
+      sz.frequency.exponentialRampToValueAtTime(f1 || f0, t0 + sure);
+      var k = c.createGain();
+      zarf(k, t0, sure, tepe || 0.09);
+      kay.connect(sz); sz.connect(k); k.connect(c.destination);
+      kay.start(t0); kay.stop(t0 + sure);
+    }
+    return {
+      acikMi: function () { return acik; },
+      degistir: function () {
+        acik = !acik;
+        try { localStorage.setItem("bh-ses", acik ? "1" : "0"); } catch (h) {}
+        if (acik) this.tik();
+        return acik;
+      },
+      uyandir: function () { kur(); },
+      tik: function () { ton(660, 520, 0.05, "triangle", 0.05); },     /* alet alındı */
+      sirilti: function () {                                           /* su aktı */
+        gurultu(0.75, 900, 2600, 0.10, 1.1);
+        ton(320, 520, 0.22, "sine", 0.045);
+      },
+      damla: function () { ton(900, 380, 0.09, "sine", 0.05); },       /* iş sıraya girdi */
+      pop: function () {                                               /* hasat */
+        ton(480, 150, 0.16, "sine", 0.14);
+        gurultu(0.14, 220, 90, 0.07, 0.9);
+      },
+      toprak: function () { gurultu(0.22, 260, 120, 0.07, 0.8); },     /* bitki taşındı */
+      basari: function () {                                            /* görev bitti */
+        ton(523, 523, 0.1, "triangle", 0.07, 0);
+        ton(659, 659, 0.1, "triangle", 0.07, 0.09);
+        ton(784, 784, 0.16, "triangle", 0.08, 0.18);
+      },
+      hata: function () { ton(200, 140, 0.18, "sawtooth", 0.05); }
+    };
+  }());
+
+  /* ==================================================================== *
+   * BALON YAZILAR VE PARÇACIKLAR — mikro geri bildirim.
+   *
+   * Balonun metni NE OLDUĞUNU söylüyor, ne olmasını istediğimizi değil:
+   * alet bırakıldığında "sulama sıraya girdi", su RÖLESİ açıldığında
+   * "+su veriliyor", hasat KAYDEDİLDİĞİNDE "hasat edildi". Sıraya giren
+   * işe "+su eklendi" demek, olmamış bir şeyi olmuş göstermek olurdu.
+   * ==================================================================== */
+  function balon(mx, my, metin, renk) {
+    S.balonlar.push({ x: sayi(mx), y: sayi(my), metin: String(metin),
+                      renk: renk || "#bfe2ff", t0: S.t });
+    if (S.balonlar.length > 8) S.balonlar.shift();
+    isteKare();
+  }
+  function balonCiz(c) {
+    if (!S.balonlar.length) return;
+    c.save();
+    c.textAlign = "center";
+    for (var i = S.balonlar.length - 1; i >= 0; i--) {
+      var o = S.balonlar[i];
+      var p = (S.t - o.t0) / 1.8;
+      if (p >= 1) { S.balonlar.splice(i, 1); continue; }
+      var x = px(o.x), y = py(o.y) - 18 - ky(p) * 34;
+      c.globalAlpha = p < 0.12 ? p / 0.12 : kis((1 - p) / 0.45, 0, 1);
+      c.font = "700 12px system-ui,sans-serif";
+      var gen = c.measureText(o.metin).width + 16;
+      c.fillStyle = "rgba(12,16,10,.82)";
+      c.beginPath();
+      if (c.roundRect) c.roundRect(x - gen / 2, y - 13, gen, 20, 10);
+      else c.rect(x - gen / 2, y - 13, gen, 20);
+      c.fill();
+      c.fillStyle = o.renk;
+      c.fillText(o.metin, x, y + 2);
+    }
+    c.restore();
+  }
+  /** Konfeti: yalnız GERÇEKTEN olmuş bir iş için patlıyor. */
+  function parcaPatlat(sx, sy, renkler, adet) {
+    var i, r = renkler || ["#f6c456", "#7bbf5a", "#8fd0ff", "#e8ece2"];
+    for (i = 0; i < (adet || 26); i++) {
+      var a = Math.random() * 6.283, h = 70 + Math.random() * 190;
+      S.parcalar.push({ x: sx, y: sy, vx: Math.cos(a) * h, vy: Math.sin(a) * h - 60,
+                        d: Math.random() * 6.3, dv: (Math.random() - 0.5) * 12,
+                        renk: r[i % r.length], t: 0,
+                        sure: 0.7 + Math.random() * 0.6,
+                        en: 3 + Math.random() * 3 });
+    }
+    isteKare();
+  }
+  function parcaGuncelle(dt) {
+    for (var i = S.parcalar.length - 1; i >= 0; i--) {
+      var o = S.parcalar[i];
+      o.t += dt; o.x += o.vx * dt; o.y += o.vy * dt;
+      o.vy += 300 * dt; o.vx *= (1 - kis(dt * 1.2, 0, 1)); o.d += o.dv * dt;
+      if (o.t > o.sure) S.parcalar.splice(i, 1);
+    }
+  }
+  function parcaCiz(c) {
+    if (!S.parcalar.length) return;
+    c.save();
+    S.parcalar.forEach(function (o) {
+      c.globalAlpha = kis(1 - o.t / o.sure, 0, 1);
+      c.fillStyle = o.renk;
+      c.save();
+      c.translate(o.x, o.y); c.rotate(o.d);
+      c.fillRect(-o.en / 2, -o.en / 4, o.en, o.en * 0.55);
+      c.restore();
+    });
+    c.restore();
+  }
+
+  /* ==================================================================== *
+   * BULUT GÖLGELERİ VE RÜZGÂR
+   *
+   * HİÇBİR ÖLÇÜME KARŞILIK GELMİYOR. Bu makinede ışık, rüzgâr ve bulut
+   * sensörü yok; bunlar sahnenin havası, veri değil — tıpkı günün saatine
+   * göre değişen ışık gibi. Hiçbir sayıya dönüşmüyorlar, hiçbir kararı
+   * etkilemiyorlar. Sakin modda ikisi de duruyor.
+   * ==================================================================== */
+  function bulutKur() {
+    var r = uretec(7714), i;
+    S.bulutlar = [];
+    for (i = 0; i < 3; i++) {
+      S.bulutlar.push({ x: r() * 1.6 - 0.3, y: 0.1 + r() * 0.8,
+                        en: 0.35 + r() * 0.5, hiz: 0.012 + r() * 0.016,
+                        koyu: 0.10 + r() * 0.08 });
+    }
+  }
+  function bulutCiz(c, dt) {
+    if (S.sakin || !S.bulutlar) return;
+    c.save();
+    S.bulutlar.forEach(function (o) {
+      o.x += o.hiz * dt;
+      if (o.x > 1.5) { o.x = -0.5; o.y = 0.1 + Math.random() * 0.8; }
+      var cx = o.x * S.en, cy = o.y * S.boy;
+      var rx = o.en * S.en * 0.5, ry = rx * 0.42;
+      var g = c.createRadialGradient(cx, cy, 0, cx, cy, rx);
+      g.addColorStop(0, "rgba(6,10,16," + o.koyu.toFixed(3) + ")");
+      g.addColorStop(0.65, "rgba(6,10,16," + (o.koyu * 0.55).toFixed(3) + ")");
+      g.addColorStop(1, "rgba(6,10,16,0)");
+      c.fillStyle = g;
+      c.beginPath(); c.ellipse(cx, cy, rx, ry, 0, 0, 6.3); c.fill();
+    });
+    c.restore();
+  }
+  /** Rüzgâr: tarlayı soldan sağa geçen esinti dalgası. Yaprakların
+   *  salınımını yerine göre güçlendiriyor — hepsi aynı anda değil. */
+  function esinti(sx) {
+    if (S.sakin) return 1;
+    var faz = S.t * 0.55 - (sx / Math.max(1, S.en)) * 1.8;
+    return 1 + Math.max(0, Math.sin(faz)) * Math.max(0, Math.sin(S.t * 0.21)) * 2.2;
+  }
+
+  /* ==================================================================== *
+   * GÖREV TABELASI VE ÇİFTÇİ PUANI
+   *
+   * GÖREVLER UYDURULMUYOR. "Bugün 5 bitki sula" gibi bir hedefi ekran
+   * kendi kafasından koysaydı, kullanıcıyı makinenin gerçekten gerek
+   * duymadığı bir işe yönlendirirdi. Tabeladaki satırlar sunucunun
+   * `/api/bahce` içinde verdiği KARTLARIN ta kendisi: susama kararı da,
+   * kaç bitki olduğu da orada hesaplanıyor. Kart listeden düşünce görev
+   * bitmiş sayılıyor.
+   *
+   * ÇİFTÇİ PUANI SUNUCU VERİSİ DEĞİL: bu tarayıcıda tutulan bir sayaç
+   * (localStorage). Tabelanın altında bunu yazıyor. Makineyle, hasat
+   * kaydıyla ya da herhangi bir ölçümle karıştırılmasın diye hiçbir
+   * karara girmiyor; yalnız yaptığın işleri sayıyor.
+   * ==================================================================== */
+  var XP = { puan: 0, tarih: "", gunluk: 0 };
+  function xpOku() {
+    try {
+      var ham = JSON.parse(localStorage.getItem("bh-xp") || "{}");
+      XP.puan = sayi(ham.puan, 0);
+      XP.tarih = String(ham.tarih || "");
+      XP.gunluk = sayi(ham.gunluk, 0);
+    } catch (h) { XP.puan = 0; }
+    var b = new Date().toDateString();
+    if (XP.tarih !== b) { XP.tarih = b; XP.gunluk = 0; }
+  }
+  function xpYaz() {
+    try {
+      localStorage.setItem("bh-xp", JSON.stringify(
+        { puan: XP.puan, tarih: XP.tarih, gunluk: XP.gunluk }));
+    } catch (h) {}
+  }
+  function seviye() { return Math.floor(XP.puan / 120) + 1; }
+  function xpEkle(n, sebep) {
+    var onceki = seviye();
+    XP.puan += n; XP.gunluk += n;
+    xpYaz();
+    gunluk("bahçe: +" + n + " çiftçi puanı · " + (sebep || ""));
+    if (seviye() > onceki) {
+      Ses.basari();
+      parcaPatlat(S.en / 2, S.boy * 0.35, ["#f6c456", "#8fd0ff", "#7bbf5a"], 40);
+      mesajYaz("Çiftçi seviyesi " + seviye() + " oldu — puan bu tarayıcıda tutuluyor.");
+    }
+    isteKare();
+  }
+  /** Kuyruk değişimini izleyip BİTEN işleri buluyor: bir iş kimliği
+   *  listeden düşmüşse ve onu biz iptal etmediysek, makine onu yapmış
+   *  demektir. */
+  var kuyrukGorulen = {}, iptalEdilen = {};
+  function kuyrukIzle() {
+    var k = (S.veri && S.veri.kuyruk) || {};
+    var simdi = {}, bitti = 0;
+    (k.isler || []).forEach(function (i) { simdi[String(i.kimlik)] = i.tip || ""; });
+    if (k.calisan) simdi[String(k.calisan.kimlik)] = k.calisan.tip || "";
+    Object.keys(kuyrukGorulen).forEach(function (kimlik) {
+      if (simdi[kimlik]) return;
+      if (iptalEdilen[kimlik]) { delete iptalEdilen[kimlik]; return; }
+      bitti++;
+    });
+    if (bitti > 0) { xpEkle(4 * bitti, bitti + " iş bitti"); Ses.basari(); }
+    kuyrukGorulen = simdi;
+  }
+  /** Tabelanın satırları: sunucunun kartları. */
+  function gorevListesi() {
+    return acikKartlar().slice(0, 3).map(function (k) {
+      return { kimlik: String(k.kimlik), metin: String(k.metin || k.baslik || k.tip || "iş"),
+               ertelendi: !!k.ertelendi,
+               adet: ((k.noktalar || []).length) || 0 };
+    });
+  }
+  function gorevKur() {
+    /* Tabela sol çimde, alet askısının üstünde. Yer dar ise çizilmiyor:
+       üst şerit zaten aynı kartları yazıyor, iki kez söylemenin anlamı
+       yok ve dar ekranda tabela sahneyi yiyor. */
+    var solBos = G.ox - G.kal - G.ray - 12;
+    if (solBos < 172 || S.boy < 320) { S.gorevKutu = null; return; }
+    var w = Math.min(236, solBos - 16);
+    S.gorevKutu = { x: Math.max(10, (solBos - w) / 2), y: 14, w: w, h: 132 };
+  }
+  /** Tabela KARE BAŞINA DEĞİL, içeriği değişince çiziliyor: ahşap
+   *  dokusu, gölgesi ve yazıları her karede yeniden üretmek 24 bitkilik
+   *  sahnede ölçülen kare süresini boş yere yükseltiyordu. */
+  function gorevDamga() {
+    var kt = S.gorevKutu;
+    if (!kt) return "";
+    return kt.x + "x" + kt.y + "x" + kt.w + "|" + XP.puan + "|"
+      + gorevListesi().map(function (g) {
+          return g.kimlik + (g.ertelendi ? "e" : "") + g.metin;
+        }).join(";");
+  }
+  function gorevCiz(c) {
+    var kt = S.gorevKutu;
+    if (!kt) return;
+    var d = gorevDamga();
+    if (S.gorevTuval && d === S.gorevDamga) {
+      c.drawImage(S.gorevTuval, 0, 0, S.gorevTuval.width, S.gorevTuval.height,
+        0, 0, S.en, S.boy);
+      return;
+    }
+    if (!S.gorevTuval || S.gorevTuval.width !== S.tuval.width
+      || S.gorevTuval.height !== S.tuval.height) {
+      S.gorevTuval = document.createElement("canvas");
+      S.gorevTuval.width = S.tuval.width; S.gorevTuval.height = S.tuval.height;
+      S.gorevCt = S.gorevTuval.getContext("2d");
+    }
+    S.gorevCt.setTransform(S.olcek, 0, 0, S.olcek, 0, 0);
+    S.gorevCt.clearRect(0, 0, S.en, S.boy);
+    gorevBoya(S.gorevCt, kt, gorevListesi());
+    S.gorevDamga = d;
+    c.drawImage(S.gorevTuval, 0, 0, S.gorevTuval.width, S.gorevTuval.height,
+      0, 0, S.en, S.boy);
+  }
+  function gorevBoya(c, kt, liste) {
+    c.save();
+    /* İki direk + tahta tabela. */
+    c.fillStyle = "#6b4a2c";
+    c.fillRect(kt.x + 14, kt.y + kt.h - 6, 7, 16);
+    c.fillRect(kt.x + kt.w - 21, kt.y + kt.h - 6, 7, 16);
+    c.fillStyle = "rgba(0,0,0,.32)";
+    c.beginPath();
+    if (c.roundRect) c.roundRect(kt.x + 3, kt.y + 5, kt.w, kt.h, 8);
+    else c.rect(kt.x + 3, kt.y + 5, kt.w, kt.h);
+    c.fill();
+    var g = c.createLinearGradient(kt.x, kt.y, kt.x, kt.y + kt.h);
+    g.addColorStop(0, "#9a6f42"); g.addColorStop(0.5, "#835b33"); g.addColorStop(1, "#6d4a29");
+    c.fillStyle = g;
+    c.beginPath();
+    if (c.roundRect) c.roundRect(kt.x, kt.y, kt.w, kt.h, 8); else c.rect(kt.x, kt.y, kt.w, kt.h);
+    c.fill();
+    c.strokeStyle = "rgba(38,24,10,.55)"; c.lineWidth = 1.4; c.stroke();
+    c.strokeStyle = "rgba(255,226,178,.14)"; c.lineWidth = 1;
+    c.beginPath(); c.moveTo(kt.x + 6, kt.y + kt.h * 0.42);
+    c.lineTo(kt.x + kt.w - 6, kt.y + kt.h * 0.42); c.stroke();
+
+    c.textAlign = "left";
+    c.font = "700 12px system-ui,sans-serif";
+    c.fillStyle = "#f3e3c6";
+    c.fillText("Bugünün işleri", kt.x + 12, kt.y + 20);
+    c.font = "10px system-ui,sans-serif";
+    c.fillStyle = "rgba(243,227,198,.65)";
+    c.fillText("sunucunun kararı", kt.x + 12, kt.y + 33);
+
+    var yy = kt.y + 52;
+    if (!liste.length) {
+      c.font = "italic 11px system-ui,sans-serif";
+      c.fillStyle = "rgba(243,227,198,.8)";
+      c.fillText("bugün bekleyen iş yok", kt.x + 12, yy);
+    }
+    liste.forEach(function (gv) {
+      /* Kutu: ertelenmiş iş çizili değil, SOLGUN — yapılmadı, bekliyor. */
+      c.strokeStyle = "rgba(243,227,198,.75)"; c.lineWidth = 1.4;
+      c.beginPath();
+      if (c.roundRect) c.roundRect(kt.x + 12, yy - 9, 11, 11, 3);
+      else c.rect(kt.x + 12, yy - 9, 11, 11);
+      c.stroke();
+      c.font = "11px system-ui,sans-serif";
+      c.fillStyle = gv.ertelendi ? "rgba(243,227,198,.45)" : "#f3e3c6";
+      var metin = gv.metin.length > 26 ? gv.metin.slice(0, 25) + "…" : gv.metin;
+      c.fillText(metin, kt.x + 30, yy);
+      if (gv.ertelendi) {
+        c.strokeStyle = "rgba(243,227,198,.45)"; c.lineWidth = 1;
+        var gen = c.measureText(metin).width;
+        c.beginPath(); c.moveTo(kt.x + 30, yy - 4);
+        c.lineTo(kt.x + 30 + gen, yy - 4); c.stroke();
+      }
+      yy += 20;
+    });
+
+    /* Puan çubuğu — SUNUCU DEĞİL, bu tarayıcı. */
+    var cy = kt.y + kt.h - 26, cw = kt.w - 24;
+    var oran = (XP.puan % 120) / 120;
+    c.fillStyle = "rgba(30,20,10,.5)";
+    c.beginPath();
+    if (c.roundRect) c.roundRect(kt.x + 12, cy, cw, 7, 4); else c.rect(kt.x + 12, cy, cw, 7);
+    c.fill();
+    c.fillStyle = "#7bbf5a";
+    c.beginPath();
+    if (c.roundRect) c.roundRect(kt.x + 12, cy, Math.max(3, cw * oran), 7, 4);
+    else c.rect(kt.x + 12, cy, Math.max(3, cw * oran), 7);
+    c.fill();
+    c.font = "10px system-ui,sans-serif";
+    c.fillStyle = "rgba(243,227,198,.85)";
+    c.fillText("Çiftçi " + seviye() + " · " + XP.puan + " puan (bu tarayıcıda)",
+      kt.x + 12, cy + 20);
+    c.restore();
+  }
+
+  /* ==================================================================== *
    * SU — GERÇEK SUYUN GÖRÜNTÜSÜ
    *
    * Damla, ıslaklık ve parıltı YALNIZ su gerçekten aktığında çiziliyor.
@@ -1388,8 +1792,19 @@ window.Bahce = (function () {
     var kay = suKaynak();
     var m = S.robot || S.makine;
     var yer = (m && m.x != null && S.veri && S.veri.konum) ? { x: sayi(m.x), y: sayi(m.y) } : null;
+    var oncekiAkis = S.suAkiyor;
     S.suAkiyor = kay.akiyor && !!yer;
     S.suKanit = kay.kanit;
+    /* SES VE BALON, SU GERÇEKTEN AKINCA: röle açıldı (ya da röle
+       okunmuyorsa çalışan sulama işi başladı). Sıraya girmek yetmiyor. */
+    if (S.suAkiyor && !oncekiAkis) {
+      Ses.sirilti();
+      S.suSesT = S.t;
+      balon(yer.x, yer.y, kay.kanit === "röle" ? "+ su veriliyor"
+        : "+ su veriliyor (işten)", "#9ed6fa");
+    } else if (S.suAkiyor && S.t - sayi(S.suSesT, 0) > 1.1) {
+      Ses.sirilti(); S.suSesT = S.t;
+    }
     if (!S.damla) S.damla = [];
     if (S.suAkiyor) {
       /* Islaklık hafızası: aynı yere üst üste damla yağıyor, tek leke
@@ -1540,6 +1955,8 @@ window.Bahce = (function () {
       return { k: a.k, ad: a.ad, renk: a.renk, ipucu: a.ipucu,
                x: x, y: y0 + i * (gen + ara), w: gen, h: gen };
     });
+    var son2 = S.ray[S.ray.length - 1];
+    S.sesDugme = { x: x + gen / 2 - 15, y: son2.y + son2.h + 30, r: 15 };
     var sagBos = S.en - (G.ox + G.bw + G.kal + G.ray + 12);
     var sgen = 58;
     var sx = sagBos > sgen + 16 ? S.en - sagBos / 2 - sgen / 2 : S.en - sgen - 10;
@@ -1686,6 +2103,34 @@ window.Bahce = (function () {
       c.restore();
     }
     sepetCiz(c);
+    sesCiz(c);
+  }
+  /** Ses açma/kapama — tarayıcı ilk dokunuşa kadar ses çaldırmıyor,
+   *  bu düğme hem izni açıyor hem tercihi (localStorage) tutuyor. */
+  function sesCiz(c) {
+    var d = S.sesDugme;
+    if (!d) return;
+    var acik = Ses.acikMi();
+    c.save();
+    c.fillStyle = "rgba(20,24,19,.8)";
+    c.beginPath(); c.arc(d.x + 15, d.y + 15, d.r, 0, 6.3); c.fill();
+    c.strokeStyle = acik ? "#7bbf5a" : "#6b6f68"; c.lineWidth = 1.3;
+    c.beginPath(); c.arc(d.x + 15, d.y + 15, d.r, 0, 6.3); c.stroke();
+    var cx = d.x + 12, cy = d.y + 15;
+    c.fillStyle = acik ? "#cfe8c2" : "#6b6f68";
+    c.beginPath();
+    c.moveTo(cx - 5, cy - 3); c.lineTo(cx - 1, cy - 3); c.lineTo(cx + 3, cy - 7);
+    c.lineTo(cx + 3, cy + 7); c.lineTo(cx - 1, cy + 3); c.lineTo(cx - 5, cy + 3);
+    c.closePath(); c.fill();
+    c.strokeStyle = acik ? "#cfe8c2" : "#6b6f68"; c.lineWidth = 1.4;
+    if (acik) {
+      c.beginPath(); c.arc(cx + 4, cy, 5, -0.9, 0.9); c.stroke();
+      c.beginPath(); c.arc(cx + 4, cy, 8, -0.8, 0.8); c.stroke();
+    } else {
+      c.beginPath(); c.moveTo(cx + 6, cy - 4); c.lineTo(cx + 12, cy + 4);
+      c.moveTo(cx + 12, cy - 4); c.lineTo(cx + 6, cy + 4); c.stroke();
+    }
+    c.restore();
   }
   /** SEPET — çimin üstünde duran hasır sepet. Kutu değil: bitkiyi içine
    *  bırakıyorsun. */
@@ -1840,6 +2285,7 @@ window.Bahce = (function () {
       "Kuyruktan düşer. Makine o işi çalıştırmaya başladıysa sunucu iptali "
       + "kabul etmez ve sebebini yazar.", "İptal et",
       function () {
+        iptalEdilen[String(kimlik)] = true;
         gonder("/api/bahce/is/iptal", { kimlik: String(kimlik) })
           .then(function () {
             gunluk("bahçe: iş iptal · " + kimlik);
@@ -2087,6 +2533,7 @@ window.Bahce = (function () {
           .then(function (c) {
             var kendi = (c && c.kendi_esigi_olan) || [];
             gunluk("bahçe: eşik · " + e.slug + " %" + y);
+            Ses.tik();
             mesajYaz("Eşik yazıldı: " + e.tur + " %" + y);
             /* Etkilenmeyen bitkiler NOT alanında kalıyor: geçici bir
                mesaj olarak yazılsaydı bir sonraki tazelemede silinir ve
@@ -2157,6 +2604,12 @@ window.Bahce = (function () {
     /* Eşik kadranı açıkken de aynısı. */
     if (S.esik && esikDokun(p)) return;
 
+    /* Ses düğmesi */
+    if (S.sesDugme && Math.hypot(S.sesDugme.x + 15 - p.x, S.sesDugme.y + 15 - p.y) < S.sesDugme.r + 4) {
+      var sa = Ses.degistir();
+      mesajYaz(sa ? "Ses açık." : "Ses kapalı.");
+      altYaz(); isteKare(); return;
+    }
     /* SOL RAY — aleti eline al. Makine kopukken alınmıyor ve sebebi
        söyleniyor: o işi yapan makine. */
     var ray = rayVur(p);
@@ -2168,6 +2621,7 @@ window.Bahce = (function () {
       }
       S.tasima = { tip: "alet", k: ray.k, x: p.x, y: p.y };
       S.tasimaHedef = null; S.halka = false; S.secili = "";
+      Ses.uyandir(); Ses.tik();
       mesajYaz(ray.ad + " elinde — bir bitkinin üstüne bırak.");
       altYaz(); isteKare(); return;
     }
@@ -2383,6 +2837,11 @@ window.Bahce = (function () {
             .then(function (c) {
               gunluk("bahçe: hasat · " + b.ad);
               mesajYaz((c && c.mesaj) || "Hasat edildi.");
+              /* Konfeti GERÇEKTEN olmuş bir iş için: sunucu kaydı sildi. */
+              Ses.pop();
+              parcaPatlat(px(b.x), py(b.y), ["#f6c456", "#7bbf5a", "#e8ece2"], 30);
+              balon(b.x, b.y, "hasat edildi", "#f6c456");
+              xpEkle(6, "hasat");
               S.secili = ""; return veriYukle();
             })
             .catch(function (h) { notYaz("hasat", "Hasat kaydedilmedi: " + ((h && h.message) || h)); });
@@ -2405,6 +2864,9 @@ window.Bahce = (function () {
           .then(function () {
             gunluk("bahçe: taşındı · " + b.ad + " → " + nx + "," + ny);
             mesajYaz(ad + " taşındı.");
+            Ses.toprak();
+            balon(nx, ny, "taşındı", "#e8ece2");
+            xpEkle(2, "tasi");
             return veriYukle();
           })
           .catch(function (h) { notYaz("tasi", "Taşınmadı: " + ((h && h.message) || h)); });
@@ -2490,10 +2952,19 @@ window.Bahce = (function () {
       .then(function (c) {
         gunluk("bahçe: " + tip + " · " + govde.noktalar.length + " bitki");
         notYaz("is", "");
+        Ses.damla();
+        /* Balon SIRAYA GİRDİ diyor, "yapıldı" demiyor: makine işi kuyruktan
+           yürütüyor ve henüz başlamadı. */
+        var ad0 = govde.noktalar[0], b0 = S.ix[ad0];
+        var sozluk = { sula: "sulama sıraya girdi", nem: "ölçüm sıraya girdi",
+                       foto: "fotoğraf sıraya girdi", gez: "ziyaret sıraya girdi",
+                       ek: "ekim sıraya girdi" };
+        if (b0) balon(b0.x, b0.y, sozluk[tip] || "iş sıraya girdi", "#bfe2ff");
         return veriYukle();
       })
       .catch(function (h) {
         notYaz("is", "İş sıraya girmedi: " + ((h && h.message) || h));
+        Ses.hata();
         isteKare();
         return null;
       });
@@ -2821,6 +3292,14 @@ window.Bahce = (function () {
     document.addEventListener("keydown", function (e) {
       if (!S.acik) return;
       if (e.key === "Escape") {
+        if (document.body.classList.contains("bh-menu")) {
+          carkKapat();
+          var ck = $("#bh-cark"); if (ck) ck.setAttribute("aria-expanded", "false");
+          isteKare(); return;
+        }
+        if (S.film) { filmKapat(); return; }
+        if (S.esik) { S.esik = null; altYaz(); isteKare(); return; }
+        if (S.tasima) { S.tasima = null; S.tasimaHedef = null; altYaz(); isteKare(); return; }
         if (S.onay) { var ip = S.onay.iptal; onayKapat(); if (ip) ip(); return; }
         if (S.ekimNokta) { S.ekimNokta = null; S.ekimTur = ""; altYaz(); isteKare(); return; }
         if (S.halka) { S.halka = false; isteKare(); return; }
@@ -2860,6 +3339,7 @@ window.Bahce = (function () {
     S.yukleniyor = true;
     return api("/api/bahce").then(function (c) {
       S.veri = c || {};
+      kuyrukIzle();
       bitkileriHazirla();
       yerlesim();
       topragiCiz();
@@ -2876,6 +3356,44 @@ window.Bahce = (function () {
   /* ==================================================================== *
    * KURULUM VE DIŞ ARAYÜZ
    * ==================================================================== */
+  /* ==================================================================== *
+   * ⚙ — TEKNİK ARAYÜZ BAHÇENİN ÜSTÜNDEN ÇEKİLİYOR
+   *
+   * Bahçe açıkken üst bardaki sekme şeridi, marka ve ışıklar gizleniyor;
+   * ekranın tamamı tarla oluyor. ⚙ düğmesi onları geri getiriyor (CSS
+   * `body.bh-menu`). Düğme burada YARATILIYOR — `index.html` ortak dosya
+   * ve üç oturum aynı ağaçta; oraya bir satır eklemek yerine kendi
+   * dosyamda yaratıp başlığın sağ ucuna takıyorum.
+   *
+   * ACİL DURDURMA DÜĞMESİ GİZLENMİYOR: güvenlik denetimi menünün arkasına
+   * konmaz. ⚙ onun soluna giriyor.
+   * ==================================================================== */
+  function carkKur() {
+    if ($(".bh-cark")) return;
+    var sag = document.querySelector("header .ust-sag");
+    if (!sag) return;
+    var d = document.createElement("button");
+    d.type = "button";
+    d.className = "bh-cark";
+    d.id = "bh-cark";
+    d.title = "Teknik sekmeler ve ayarlar";
+    d.setAttribute("aria-label", "Teknik sekmeler ve ayarlar");
+    d.setAttribute("aria-expanded", "false");
+    d.textContent = "⚙";
+    d.addEventListener("click", function () {
+      var acik = document.body.classList.toggle("bh-menu");
+      d.setAttribute("aria-expanded", acik ? "true" : "false");
+      Ses.uyandir(); Ses.tik();
+      /* Üst bar açılıp kapanınca tuvalin boyu değişmiyor (başlık sayfa
+         akışının dışında) ama ölçüyü yine de tazeliyoruz: kullanıcı
+         pencereyi bu sırada değiştirmiş olabilir. */
+      olcuKur(); isteKare();
+    });
+    var acil = sag.querySelector("#d-acil");
+    if (acil) sag.insertBefore(d, acil); else sag.appendChild(d);
+  }
+  function carkKapat() { document.body.classList.remove("bh-menu"); }
+
   var kuruldu = false;
   var kur = guvenli("kurulum", function () {
     if (kuruldu) return true;
@@ -2885,7 +3403,10 @@ window.Bahce = (function () {
       return false;
     }
     S.ct = S.tuval.getContext("2d");
+    carkKur();
     sakinKur();
+    bulutKur();
+    xpOku();
     olaylariBagla();
     kuruldu = true;
     return true;
@@ -2902,6 +3423,7 @@ window.Bahce = (function () {
     sekme: function (acik) {
       S.acik = !!acik;
       document.body.classList.toggle("bahce-acik", S.acik);
+      if (!S.acik) carkKapat();
       sayacKur(S.acik);
       if (!S.acik) {
         if (S.dongu) { cancelAnimationFrame(S.dongu); S.dongu = 0; }
