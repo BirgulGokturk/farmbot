@@ -4911,7 +4911,12 @@ function durumGuncelle(d) {
   if (window.Bahce) window.Bahce.durumDegisti(d);
 
   S.enable = !!d.enable;
-  $("#d-enable").textContent = d.enable ? "Sürücüleri kapat" : "Sürücüleri aç";
+  /* YAZI KISA, AÇIKLAMA `title`DA. Üst şeritte yer dar (bkz. index.html)
+   * ve uzun yazı Bahçe sekmesinin kendi şeridiyle çakışıyordu. */
+  $("#d-enable").textContent = d.enable ? "⏻ Kapat" : "⏻ Aç";
+  $("#d-enable").title = d.enable
+    ? "Sürücüleri kapat — eksenler serbest kalır"
+    : "Sürücüleri aç" + (S.acilMandal ? " (acil durdurma mandalı da temizlenir)" : "");
   $("#d-enable").classList.toggle("secili", !!d.enable);
 
   if (d.hiz && !$("#hiz-kaydirac").matches(":active")) {
