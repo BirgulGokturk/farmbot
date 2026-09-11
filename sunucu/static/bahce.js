@@ -132,7 +132,7 @@ window.Bahce = (function () {
     sesDugme: null, konumVar: false, hareketSes: false, enable: false, acil: false, hareket: false,
     jog: null, jogBasili: null, jogSayac: null, olcumVeri: null, olcumT: 0,
     olcumHata: "", sensorKutu: null,
-    film: null, gorevKutu: null, kartKutu: null,
+    film: null, gorevKutu: null, kartKutu: null, gorevSatir: [], vurgu: null,
     gorevTuval: null, gorevCt: null, gorevDamga: "",
     balonlar: [], parcalar: [], bulutlar: null,
     toz: [], ari: null, mesaj: "", mesajT: 0,
@@ -261,8 +261,8 @@ window.Bahce = (function () {
     G.kal = Math.max(8, Math.min(26, k * 26));      /* tahta kalınlığı */
     G.ray = Math.max(7, Math.min(16, k * 16));      /* ray genişliği */
     G.s = s;
-    rayKur();
     gorevKur();
+    rayKur();
     sensorKur();
     jogKur();
   }
@@ -1236,7 +1236,7 @@ window.Bahce = (function () {
     if (S.tasima) return true;                  /* elde bir şey taşınıyor */
     if (S.suAkiyor || (S.damla && S.damla.length)) return true;
     if (S.islak.length) return true;            /* ıslaklık soluyor */
-    if (S.parcalar.length || S.balonlar.length) return true;
+    if (S.parcalar.length || S.balonlar.length || S.vurgu) return true;
     if (S.veri && S.veri.mesgul) return true;   /* makine çalışırken izliyoruz */
     if (S.sakin) return false;
     if (document.hidden) return false;
@@ -1333,6 +1333,7 @@ window.Bahce = (function () {
     suCiz(c);
     suNedenYok(c);
     calisanAletCiz(c);
+    vurguCiz(c);
     eylemCiz(c);
     kartCiz(c);
     if (S.insaBitti) { rayCiz(c); gorevCiz(c); sensorCiz(c); jogCiz(c); }
@@ -1763,11 +1764,40 @@ window.Bahce = (function () {
     kuyrukGorulen = simdi;
   }
   /** Tabelanın satırları: sunucunun kartları. */
+  /** Tabelanın satırları: sunucunun kartları, ekrana göre yazılmış.
+   *  ÜST SATIR kartın kendi başlığı; ALT SATIR o işi yapmadan önce
+   *  bilinmesi gereken şey — hepsi kartın gerçek alanlarından:
+   *    sula   → kanıt (ölçülen nem mi, geçen gün mü) + toplam su süresi
+   *    nem    → kaç bitkinin HİÇ ölçümü yok
+   *    hasat  → hasadı makinenin yapmadığı
+   *    ek     → hangi türe göre hesaplandığı
+   *  Sayı uydurulmuyor: süre her bitkinin kendi `sulama_saniye` ayarından
+   *  toplanıyor, bir tanesi bile eksikse "≈" konmuyor, satır susuyor. */
   function gorevListesi() {
     return acikKartlar().slice(0, 3).map(function (k) {
-      return { kimlik: String(k.kimlik), metin: String(k.metin || k.baslik || k.tip || "iş"),
-               ertelendi: !!k.ertelendi,
-               adet: ((k.noktalar || []).length) || 0 };
+      var adlar = (k.noktalar || []).map(String);
+      var alt = "";
+      if (k.tip === "sula") {
+        var sn = 0, bilinen = 0;
+        adlar.forEach(function (a) {
+          var b = S.ix[a];
+          if (b && sayi(b.sulama_saniye, 0) > 0) { sn += sayi(b.sulama_saniye, 0); bilinen++; }
+        });
+        alt = String(k.kanit || "");
+        if (bilinen && bilinen === adlar.length) alt += " · toplam " + sn.toFixed(0) + " sn su";
+      } else if (k.tip === "nem") {
+        var hic = sayi(k.hic_olcum_adet, 0);
+        alt = hic ? hic + " bitkinin hiç ölçümü yok" : "okumalar bayat ya da ödünç";
+      } else if (k.tip === "hasat") {
+        alt = "toplayan sensin · bu iş kare çeker";
+      } else if (k.tip === "ek") {
+        alt = k.taban_ad ? ("taban tür: " + k.taban_ad) : "tür seçilmedi";
+      }
+      if (k.ertelendi) alt = "yarına ertelendi" + (k.ertelendi_yazi ? " · " + k.ertelendi_yazi : "");
+      return { kimlik: String(k.kimlik), tip: String(k.tip || ""),
+               metin: String(k.baslik || k.metin || k.tip || "iş"),
+               alt: alt, evet: String(k.evet || "Yap"),
+               ertelendi: !!k.ertelendi, adet: adlar.length, kart: k };
     });
   }
   function gorevKur() {
@@ -1776,8 +1806,11 @@ window.Bahce = (function () {
        yok ve dar ekranda tabela sahneyi yiyor. */
     var solBos = G.ox - G.kal - G.ray - 12;
     if (solBos < 172 || S.boy < 320) { S.gorevKutu = null; return; }
-    var w = Math.min(236, solBos - 16);
-    S.gorevKutu = { x: Math.max(10, (solBos - w) / 2), y: 14, w: w, h: 132 };
+    var w = Math.min(250, solBos - 16);
+    var adet = acikKartlar().slice(0, 3).length;
+    var h = gorevOlcu(adet);
+    if (h > S.boy - 200) h = Math.max(110, S.boy - 200);   /* askıya yer kalsın */
+    S.gorevKutu = { x: Math.max(10, (solBos - w) / 2), y: 14, w: w, h: h };
   }
   /** Tabela KARE BAŞINA DEĞİL, içeriği değişince çiziliyor: ahşap
    *  dokusu, gölgesi ve yazıları her karede yeniden üretmek 24 bitkilik
@@ -1785,14 +1818,25 @@ window.Bahce = (function () {
   function gorevDamga() {
     var kt = S.gorevKutu;
     if (!kt) return "";
-    return kt.x + "x" + kt.y + "x" + kt.w + "|" + XP.puan + "|"
+    return kt.x + "x" + kt.y + "x" + kt.w + "x" + kt.h + "|" + XP.puan + "|"
       + gorevListesi().map(function (g) {
-          return g.kimlik + (g.ertelendi ? "e" : "") + g.metin;
+          return g.kimlik + (g.ertelendi ? "e" : "") + g.metin + "|" + g.alt + "|" + g.evet;
         }).join(";");
+  }
+  /** Dokunma kutuları: tabela önbellekten basılsa bile satırların yeri
+   *  her karede biliniyor, yoksa dokunuş nereye geldiğini bilemezdi. */
+  function gorevSatirKutular(kt, liste) {
+    var kutular = [], yy = kt.y + 58;
+    liste.forEach(function (gv) {
+      kutular.push({ x: kt.x + 10, y: yy, w: kt.w - 20, h: GOREV_SATIR - 8, gorev: gv });
+      yy += GOREV_SATIR;
+    });
+    return kutular;
   }
   function gorevCiz(c) {
     var kt = S.gorevKutu;
-    if (!kt) return;
+    if (!kt) { S.gorevSatir = []; return; }
+    S.gorevSatir = gorevSatirKutular(kt, gorevListesi());
     var d = gorevDamga();
     if (S.gorevTuval && d === S.gorevDamga) {
       c.drawImage(S.gorevTuval, 0, 0, S.gorevTuval.width, S.gorevTuval.height,
@@ -1812,6 +1856,11 @@ window.Bahce = (function () {
     c.drawImage(S.gorevTuval, 0, 0, S.gorevTuval.width, S.gorevTuval.height,
       0, 0, S.en, S.boy);
   }
+  /** Satır yüksekliği iki satır yazı + dokunma payı. Tabelanın boyu
+   *  satır sayısına göre; sabit 132 pikselde üç iş sığmıyordu ve yazılar
+   *  "19 bitkinin nemi bilinmiy…" diye kesiliyordu. */
+  var GOREV_SATIR = 46;
+  function gorevOlcu(adet) { return 58 + Math.max(1, adet) * GOREV_SATIR + 34; }
   function gorevBoya(c, kt, liste) {
     c.save();
     /* İki direk + tahta tabela. */
@@ -1830,42 +1879,90 @@ window.Bahce = (function () {
     if (c.roundRect) c.roundRect(kt.x, kt.y, kt.w, kt.h, 8); else c.rect(kt.x, kt.y, kt.w, kt.h);
     c.fill();
     c.strokeStyle = "rgba(38,24,10,.55)"; c.lineWidth = 1.4; c.stroke();
-    c.strokeStyle = "rgba(255,226,178,.14)"; c.lineWidth = 1;
-    c.beginPath(); c.moveTo(kt.x + 6, kt.y + kt.h * 0.42);
-    c.lineTo(kt.x + kt.w - 6, kt.y + kt.h * 0.42); c.stroke();
 
-    c.textAlign = "left";
+    c.textAlign = "left"; c.textBaseline = "alphabetic";
     c.font = "700 12px system-ui,sans-serif";
     c.fillStyle = "#f3e3c6";
     c.fillText("Bugünün işleri", kt.x + 12, kt.y + 20);
     c.font = "10px system-ui,sans-serif";
     c.fillStyle = "rgba(243,227,198,.65)";
-    c.fillText("sunucunun kararı", kt.x + 12, kt.y + 33);
+    c.fillText("sunucunun kararı · dokun, yap", kt.x + 12, kt.y + 33);
+    c.strokeStyle = "rgba(255,226,178,.16)"; c.lineWidth = 1;
+    c.beginPath(); c.moveTo(kt.x + 8, kt.y + 42);
+    c.lineTo(kt.x + kt.w - 8, kt.y + 42); c.stroke();
 
-    var yy = kt.y + 52;
+    var yy = kt.y + 58;
     if (!liste.length) {
       c.font = "italic 11px system-ui,sans-serif";
       c.fillStyle = "rgba(243,227,198,.8)";
-      c.fillText("bugün bekleyen iş yok", kt.x + 12, yy);
+      c.fillText("bugün bekleyen iş yok", kt.x + 12, yy + 16);
     }
     liste.forEach(function (gv) {
-      /* Kutu: ertelenmiş iş çizili değil, SOLGUN — yapılmadı, bekliyor. */
-      c.strokeStyle = "rgba(243,227,198,.75)"; c.lineWidth = 1.4;
+      var sol = kt.x + 10, gen = kt.w - 20;
+      /* Dokunulabilir satır: hafif bir zemin + sağda işin düğmesi. */
+      c.fillStyle = "rgba(255,235,200,.06)";
       c.beginPath();
-      if (c.roundRect) c.roundRect(kt.x + 12, yy - 9, 11, 11, 3);
-      else c.rect(kt.x + 12, yy - 9, 11, 11);
+      if (c.roundRect) c.roundRect(sol, yy, gen, GOREV_SATIR - 8, 8);
+      else c.rect(sol, yy, gen, GOREV_SATIR - 8);
+      c.fill();
+      /* Kutu: ertelenmiş iş çizili ve solgun — yapılmadı, bekliyor. */
+      c.strokeStyle = gv.ertelendi ? "rgba(243,227,198,.4)" : "rgba(243,227,198,.8)";
+      c.lineWidth = 1.4;
+      c.beginPath();
+      if (c.roundRect) c.roundRect(sol + 8, yy + 8, 11, 11, 3);
+      else c.rect(sol + 8, yy + 8, 11, 11);
       c.stroke();
-      c.font = "11px system-ui,sans-serif";
-      c.fillStyle = gv.ertelendi ? "rgba(243,227,198,.45)" : "#f3e3c6";
-      var metin = gv.metin.length > 26 ? gv.metin.slice(0, 25) + "…" : gv.metin;
-      c.fillText(metin, kt.x + 30, yy);
+
+      /* Düğme İKİNCİ SATIRDA, sağda: birinci satırda dururken başlığa
+         yalnız 97 piksel kalıyordu ve "19 bitkinin nemi bilinmiy…" diye
+         kesiliyordu. Alt satır kısa, başlık uzun — yer oraya yakışıyor. */
+      c.font = "600 10px system-ui,sans-serif";
+      var dg = gv.evet, dgen = c.measureText(dg).width + 14;
+      var dx = sol + gen - dgen - 6, dy = yy + GOREV_SATIR - 27;
+      c.fillStyle = gv.ertelendi ? "rgba(40,30,16,.5)" : "rgba(52,86,52,.85)";
+      c.beginPath();
+      if (c.roundRect) c.roundRect(dx, dy, dgen, 18, 9); else c.rect(dx, dy, dgen, 18);
+      c.fill();
+      c.strokeStyle = gv.ertelendi ? "rgba(243,227,198,.3)" : "rgba(160,214,150,.8)";
+      c.lineWidth = 1;
+      c.beginPath();
+      if (c.roundRect) c.roundRect(dx, dy, dgen, 18, 9); else c.rect(dx, dy, dgen, 18);
+      c.stroke();
+      c.fillStyle = gv.ertelendi ? "rgba(243,227,198,.5)" : "#d8f0cf";
+      c.textAlign = "center";
+      c.fillText(dg, dx + dgen / 2, dy + 12.5);
+      c.textAlign = "left";
+
+      /* Başlık — düğmeye kadar olan yere sığdırılıyor, kesiliyorsa
+         sonunda üç nokta var ama yer önce SONUNA KADAR kullanılıyor. */
+      var enCok = gen - 34;
+      c.font = "600 11.5px system-ui,sans-serif";
+      c.fillStyle = gv.ertelendi ? "rgba(243,227,198,.45)" : "#f6e8cf";
+      var metin = gv.metin;
+      while (metin.length > 4 && c.measureText(metin).width > enCok) {
+        metin = metin.slice(0, metin.length - 2);
+      }
+      if (metin !== gv.metin) metin += "…";
+      c.fillText(metin, sol + 26, yy + 14);
       if (gv.ertelendi) {
         c.strokeStyle = "rgba(243,227,198,.45)"; c.lineWidth = 1;
-        var gen = c.measureText(metin).width;
-        c.beginPath(); c.moveTo(kt.x + 30, yy - 4);
-        c.lineTo(kt.x + 30 + gen, yy - 4); c.stroke();
+        var mg = c.measureText(metin).width;
+        c.beginPath(); c.moveTo(sol + 26, yy + 10);
+        c.lineTo(sol + 26 + mg, yy + 10); c.stroke();
       }
-      yy += 20;
+      /* Alt satır: işi yapmadan önce bilinmesi gereken. */
+      if (gv.alt) {
+        c.font = "10px system-ui,sans-serif";
+        c.fillStyle = "rgba(243,227,198,.62)";
+        var alt = gv.alt;
+        var altEnCok = dx - (sol + 26) - 8;
+        while (alt.length > 4 && c.measureText(alt).width > altEnCok) {
+          alt = alt.slice(0, alt.length - 2);
+        }
+        if (alt !== gv.alt) alt += "…";
+        c.fillText(alt, sol + 26, yy + 27);
+      }
+      yy += GOREV_SATIR;
     });
 
     /* Puan çubuğu — SUNUCU DEĞİL, bu tarayıcı. */
@@ -2353,6 +2450,12 @@ window.Bahce = (function () {
     var gen = 50, ara = 16;
     var top = RAY_ALET.length * gen + (RAY_ALET.length - 1) * ara;
     var y0 = Math.max(12, (S.boy - top) / 2);
+    /* Askı, görev tabelasının ALTINDAN başlıyor: ortalanınca tabelanın
+       altına giriyor ve ilk aletin yarısı kayboluyordu. */
+    if (S.gorevKutu) {
+      var alt0 = S.gorevKutu.y + S.gorevKutu.h + 34;
+      if (y0 < alt0) y0 = Math.min(alt0, Math.max(12, S.boy - top - 56));
+    }
     var solBos = G.ox - G.kal - G.ray - 12;
     var x = solBos > gen + 16 ? (solBos - gen) / 2 : 8;
     S.ray = RAY_ALET.map(function (a, i) {
@@ -3037,6 +3140,14 @@ window.Bahce = (function () {
        kazayla iş yaptırmak istemiyoruz. */
     if (S.film && filmDokun(p)) return;
 
+    /* GÖREV TABELASI — satıra dokunmak o işi başlatıyor. */
+    for (var gi = 0; gi < S.gorevSatir.length; gi++) {
+      var gk = S.gorevSatir[gi];
+      if (p.x >= gk.x && p.x <= gk.x + gk.w && p.y >= gk.y && p.y <= gk.y + gk.h) {
+        gorevBasildi(gk.gorev, gi);
+        return;
+      }
+    }
     /* Yön tuşları */
     var jt = jogTusBul(p);
     if (jt) { jogBasla(jt); return; }
@@ -3681,25 +3792,74 @@ window.Bahce = (function () {
       var k = suankiKart(); if (k) eylemErtele(k.kimlik, true);
     }
   });
-  var kartEvet = guvenli("kart eylemi", function () {
-    if (S.isKip === "ekim") { ekimOnayGec(); return; }
-    var k = suankiKart();
+  /** Bir kartın işini başlat. Üst şeritteki "Yap" da, tabeladaki satıra
+   *  dokunmak da buraya geliyor — iki yol aynı işi yapsın diye tek yer.
+   *  Onay metni KAÇ BİTKİ ve NE KADAR SU olduğunu söylüyor: sayılar
+   *  bitkilerin kendi ayarlarından toplanıyor, uydurulmuyor. */
+  function kartUygula(k) {
     if (!k) return;
     var adlar = (k.noktalar || []).map(String);
     if (k.tip === "sula") {
-      onayAc(adlar.length + " bitki sulanacak.",
-        "süre her bitkinin kendi ayarından · geri alınamaz · ölçümler bayatlar",
+      var sn = 0, bilinen = 0;
+      adlar.forEach(function (a) {
+        var b = S.ix[a];
+        if (b && sayi(b.sulama_saniye, 0) > 0) { sn += sayi(b.sulama_saniye, 0); bilinen++; }
+      });
+      onayAc(adlar.length + " bitki sulanacak"
+        + (bilinen === adlar.length && sn ? " · toplam " + sn.toFixed(0) + " sn su" : "") + ".",
+        (bilinen < adlar.length ? "bazı bitkilerin süresi yazılı değil · " : "")
+          + "süre her bitkinin kendi ayarından · geri alınamaz · ölçümler bayatlar",
         "Sula", function () { isGonder("sula", adlar); });
     } else if (k.tip === "nem") {
       onayAc(adlar.length + " bitkinin toprağına prob batırılacak.",
-        "ölçümden sonra ekran tahmin etmeyi bırakır", "Ölç",
+        "ölçümden sonra ekran o bitkiler için tahmin etmeyi bırakır", "Ölç",
         function () { isGonder("nem", adlar); });
     } else if (k.tip === "hasat") {
-      onayAc(adlar.length + " bitkinin üstüne gidilip fotoğraf çekilecek.", "geri alınabilir",
+      onayAc(adlar.length + " bitkinin üstüne gidilip fotoğraf çekilecek.",
+        "hasadı MAKİNE yapmıyor: toplayan sensin. Bu iş yalnız kare çekiyor — "
+        + "topladığını kaydetmek için bitkiyi sepete sürükle.",
         "Çek", function () { isGonder("foto", adlar); });
     } else if (k.tip === "ek") {
-      mesajYaz("Ekmek için yatakta boş bir toprağa UZUN BAS — tohum tepsisi orada açılır.");
+      mesajYaz("Boş yerleri ekmek için yatakta boş bir toprağa UZUN BAS — "
+        + "tohum tepsisi orada açılır.");
+      altYaz();
     }
+  }
+  /** Tabeladaki satıra dokunuldu: o kart üst şeritte de seçiliyor,
+   *  kartın bitkileri sahnede birkaç saniye vurgulanıyor ve işin onayı
+   *  açılıyor. Vurgu hangi bitkilerden söz edildiğini gösteriyor —
+   *  "8 bitki susadı" yazısının hangileri olduğunu görmeden onaylamak,
+   *  görmeden iş yaptırmaktı. */
+  var gorevBasildi = guvenli("görev", function (gv, ix) {
+    if (!gv) return;
+    S.kartIx = ix;
+    S.vurgu = { adlar: (gv.kart.noktalar || []).map(String), t0: S.t };
+    Ses.uyandir(); Ses.tik();
+    ustYaz();
+    kartUygula(gv.kart);
+    isteKare();
+  });
+  function vurguCiz(c) {
+    var v = S.vurgu;
+    if (!v) return;
+    var p = (S.t - v.t0) / 6;
+    if (p >= 1) { S.vurgu = null; return; }
+    c.save();
+    v.adlar.forEach(function (ad) {
+      var b = S.ix[ad];
+      if (!b) return;
+      var sp = spriteAl(b), gx = px(b.x), gy = py(b.y);
+      var nb = (Math.sin(S.t * 3.4) + 1) / 2;
+      c.strokeStyle = "rgba(246,196,86," + (0.85 * (1 - p)).toFixed(3) + ")";
+      c.lineWidth = 2;
+      c.beginPath(); c.arc(gx, gy, sp.R + 10 + nb * 5, 0, 6.3); c.stroke();
+    });
+    c.restore();
+  }
+
+  var kartEvet = guvenli("kart eylemi", function () {
+    if (S.isKip === "ekim") { ekimOnayGec(); return; }
+    kartUygula(suankiKart());
   });
 
   var olaylariBagla = guvenli("bağlama", function () {
@@ -3937,6 +4097,11 @@ window.Bahce = (function () {
         film: S.film ? { ad: S.film.ad, kare: S.film.kareler.length, ix: S.film.ix,
                          hata: S.film.hata, resim: !!S.film.img,
                          serit: S.film.serit || null, kutu: S.film.kutu || null } : null,
+        gorev: S.gorevSatir.map(function (g) {
+          return { kimlik: g.gorev.kimlik, tip: g.gorev.tip, metin: g.gorev.metin,
+                   alt: g.gorev.alt, evet: g.gorev.evet,
+                   x: g.x, y: g.y, w: g.w, h: g.h };
+        }),
         jog: S.jog ? { x: S.jog.x, y: S.jog.y, w: S.jog.w, h: S.jog.h,
                        kilit: jogKilit(),
                        tuslar: S.jog.tuslar.map(function (t) {
