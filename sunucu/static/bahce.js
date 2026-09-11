@@ -132,7 +132,11 @@ window.Bahce = (function () {
     sesDugme: null, konumVar: false, hareketSes: false, enable: false, acil: false, hareket: false,
     jog: null, jogBasili: null, jogSayac: null, olcumVeri: null, olcumT: 0,
     olcumHata: "", sensorKutu: null,
-    film: null, gorevKutu: null, kartKutu: null, gorevSatir: [], vurgu: null,
+    film: null, gorevKutu: null, kartKutu: null, kartYildiz: null,
+    gorevSatir: [], vurgu: null,
+    raf: [], rafKutu: null, rafAcik: false, ekimGoz: "", bosYer: null, bosYerHata: "",
+    sonIs: null, sonHasat: null, sonAlt: "",
+    ekimSunucudan: false,
     gorevTuval: null, gorevCt: null, gorevDamga: "",
     balonlar: [], parcalar: [], bulutlar: null,
     toz: [], ari: null, mesaj: "", mesajT: 0,
@@ -263,6 +267,7 @@ window.Bahce = (function () {
     G.s = s;
     gorevKur();
     rayKur();
+    rafKur();
     sensorKur();
     jogKur();
   }
@@ -666,7 +671,8 @@ window.Bahce = (function () {
       + Math.round(G.bh) + "|";
     S.bitki.forEach(function (b) {
       var n = nemDurum(b);
-      d += b.ad + (n.var ? ":" + Math.round(n.yuzde) + (n.kendi ? "k" : "o") + (n.bayat ? "b" : "") : ":-") + ";";
+      d += b.ad + (n.var ? ":" + Math.round(n.yuzde) + (n.kendi ? "k" : "o") + (n.bayat ? "b" : "") : ":-")
+        + "/" + Math.round(sayi(b.sulama_ts, 0) / 600) + ";";
     });
     return d;
   }
@@ -689,6 +695,36 @@ window.Bahce = (function () {
       g.addColorStop(1, "rgba(46,32,18,0)");
       c.fillStyle = g;
       c.beginPath(); c.arc(gx, gy, R, 0, 6.3); c.fill();
+    });
+    /* SULANAN TOPRAK KURU TOPRAKTAN RENKLE AYRILIYOR.
+     *
+     * Bu bir ÖLÇÜM DEĞİL, bir KAYIT: sunucu o bitkiye en son ne zaman su
+     * verildiğini yazıyor (`sulama_ts`). Leke "toprak şu an şu kadar
+     * ıslak" demiyor, "buraya yakın zamanda su verildi" diyor ve 24
+     * saatte soluyor — kuruma hızını bilmiyoruz, o yüzden solma bir
+     * ölçüye değil ZAMANA bağlı ve kartta saatiyle yazılı.
+     *
+     * Rengi ölçülen nem lekesinden AYRI: ölçüm sıcak kahve bir koyuluk,
+     * sulama serin mavimsi bir ıslaklık. İkisi aynı renk olsaydı "ölçtük"
+     * ile "su verdik" ekranda aynı şeye benzerdi. */
+    var simdiSn = Date.now() / 1000;
+    S.bitki.forEach(function (b) {
+      var st = sayi(b.sulama_ts, 0);
+      if (!st) return;
+      var yas = (simdiSn - st) / 86400;                  /* gün */
+      if (yas < 0 || yas > 1) return;
+      var guc = 1 - yas;
+      var R2 = rp(NEM_YARICAP_MM * 0.55), gx2 = px(b.x), gy2 = py(b.y);
+      var g2 = c.createRadialGradient(gx2, gy2, R2 * 0.12, gx2, gy2, R2);
+      g2.addColorStop(0, "rgba(42,46,44," + (0.34 * guc).toFixed(3) + ")");
+      g2.addColorStop(0.55, "rgba(48,54,52," + (0.2 * guc).toFixed(3) + ")");
+      g2.addColorStop(1, "rgba(48,54,52,0)");
+      c.fillStyle = g2;
+      c.beginPath(); c.arc(gx2, gy2, R2, 0, 6.3); c.fill();
+      /* Serin kenar: ıslak toprağın koyu halkası. */
+      c.strokeStyle = "rgba(150,190,205," + (0.22 * guc).toFixed(3) + ")";
+      c.lineWidth = 1.6;
+      c.beginPath(); c.arc(gx2, gy2, R2 * 0.72, 0, 6.3); c.stroke();
     });
     /* ÖLÇÜLMEYEN TOPRAK: ince, soğuk bir tül. Kararmıyor — bilmemek
        karanlık değil, SOLGUNLUK. */
@@ -842,6 +878,31 @@ window.Bahce = (function () {
         c.setLineDash(tah ? [3, 5] : [6, 5]);
         c.beginPath(); c.arc(gx, gy, R + 7, 0, 6.3); c.stroke();
         c.setLineDash([]);
+      }
+      /* SULANDI ROZETİ: son 12 saat içinde su verilmiş bitkinin üstünde
+         damla. Sayı kartta; buradaki işaret yalnız "yakın zamanda
+         sulandı" diyor. */
+      var sts = sayi(b.sulama_ts, 0);
+      if (sts && p > 0.7) {
+        var syas = (Date.now() / 1000 - sts) / 43200;
+        if (syas >= 0 && syas < 1) {
+          var sa = kis(1 - syas, 0.25, 1);
+          c.save();
+          c.globalAlpha = sa;
+          c.fillStyle = "#9ed6fa";
+          c.beginPath();
+          c.moveTo(gx - R * 0.75, gy - R - 9);
+          c.bezierCurveTo(gx - R * 0.75 + 5, gy - R - 3, gx - R * 0.75 + 4, gy - R + 2,
+            gx - R * 0.75, gy - R + 2);
+          c.bezierCurveTo(gx - R * 0.75 - 4, gy - R + 2, gx - R * 0.75 - 5, gy - R - 3,
+            gx - R * 0.75, gy - R - 9);
+          c.closePath(); c.fill();
+          c.strokeStyle = "rgba(20,40,55,.5)"; c.lineWidth = 0.9; c.stroke();
+          c.restore();
+        }
+      }
+      if (Favori.var(b.ad) && p > 0.7) {
+        yildizCiz(c, gx + R * 0.75, gy - R - 8, 6.5, true);
       }
       if (b.hasat && p > 0.85) {
         c.fillStyle = "rgba(246,196,86,.95)";
@@ -1328,6 +1389,7 @@ window.Bahce = (function () {
       });
     }
     bitkiCizHepsi(c);
+    bosYerCiz(c);
     ekimCiz(c);
     makineCiz(c, evre("ray"));
     suCiz(c);
@@ -1336,7 +1398,7 @@ window.Bahce = (function () {
     vurguCiz(c);
     eylemCiz(c);
     kartCiz(c);
-    if (S.insaBitti) { rayCiz(c); gorevCiz(c); sensorCiz(c); jogCiz(c); }
+    if (S.insaBitti) { rayCiz(c); rafCiz(c); gorevCiz(c); sensorCiz(c); jogCiz(c); }
     balonCiz(c);
     atmosferCiz(c, dt);
     bulutCiz(c, dt);
@@ -2232,7 +2294,7 @@ window.Bahce = (function () {
     if (kilit) { mesajYaz("Yön tuşları kilitli — " + kilit + "."); Ses.hata(); altYaz(); return; }
     if (t.k === "home") {
       /* HOME BÜTÜN EKSENLERİ HAREKET ETTİRİR: önce ne olacağını yazıyor. */
-      onayAc("Bütün eksenler home koordinatına gidecek.",
+      onayAc("Bütün eksenler home'a gidiyor.",
         "Z önce yukarı çıkıyor, sonra Y ve X. Yolda bir şey varsa çarpar — "
         + "yatağın üstünü kontrol et.", "Home'a git",
         function () {
@@ -2444,7 +2506,11 @@ window.Bahce = (function () {
     { k: "sula", ad: "Su", renk: "#5aa6e8", ipucu: "bitkiye bırak · sula" },
     { k: "nem", ad: "Nem", renk: "#63c46b", ipucu: "bitkiye bırak · nem ölç" },
     { k: "foto", ad: "Kamera", renk: "#c8ccc4", ipucu: "bitkiye bırak · fotoğraf" },
-    { k: "yakin", ad: "Yakın", renk: "#d9b26a", ipucu: "bitkiye bırak · uç kamerası" }
+    { k: "yakin", ad: "Yakın", renk: "#d9b26a", ipucu: "bitkiye bırak · uç kamerası" },
+    /* TOHUM: ötekilerden farklı — bitkiye değil BOŞ YERE bırakılıyor.
+       Dokununca tohum rafı açılıyor, tür seçilince sunucunun verdiği boş
+       yerler toprakta yanıyor. */
+    { k: "ek", ad: "Tohum", renk: "#e6d49c", ipucu: "tohum seç · boş yere ek" }
   ];
   function rayKur() {
     var gen = 50, ara = 16;
@@ -2496,6 +2562,14 @@ window.Bahce = (function () {
     } else if (k === "yakin") {               /* büyüteç */
       c.beginPath(); c.arc(cx - 2, cy - 2, 7.5, 0, 6.3); c.stroke();
       c.beginPath(); c.moveTo(cx + 4, cy + 4); c.lineTo(cx + 10, cy + 10); c.stroke();
+    } else if (k === "ek") {                  /* tohum paketi */
+      c.beginPath();
+      c.moveTo(cx - 8, cy - 9); c.lineTo(cx + 8, cy - 9);
+      c.lineTo(cx + 6, cy + 10); c.lineTo(cx - 6, cy + 10);
+      c.closePath(); c.stroke();
+      c.beginPath(); c.moveTo(cx - 8, cy - 9); c.lineTo(cx + 8, cy - 9); c.stroke();
+      c.beginPath(); c.ellipse(cx - 2, cy + 1, 2.2, 3, 0.5, 0, 6.3); c.fill();
+      c.beginPath(); c.ellipse(cx + 3, cy + 5, 2, 2.6, -0.4, 0, 6.3); c.fill();
     } else if (k === "sepet") {               /* sepet */
       c.beginPath(); c.moveTo(cx - 11, cy - 4); c.lineTo(cx + 11, cy - 4);
       c.lineTo(cx + 7, cy + 10); c.lineTo(cx - 7, cy + 10); c.closePath(); c.stroke();
@@ -2507,6 +2581,185 @@ window.Bahce = (function () {
     c.restore();
     if (sol === false) return;
   }
+  /* ==================================================================== *
+   * TOHUM RAFI VE EKİM
+   *
+   * Akış, makinenin gerçekten yaptığı iş neyse o: TOHUMU SEÇ → BOŞ YERİ
+   * SEÇ → makine gözden tohumu alıp oraya eker.
+   *   1. Raf, `/api/bahce`nin verdiği HAZNE GÖZLERİNİ gösteriyor: hangi
+   *      gözde hangi tohum var, hangisi boş. Boş göz seçilemiyor —
+   *      makinenin reddedeceği bir işe göndermek olurdu.
+   *   2. Tür seçilince boş yerler SUNUCUDAN isteniyor
+   *      (`/api/bahce/bos-yer?tur=`): dikim alanı, yatak sınırı ve komşu
+   *      bitkilerin yayılımı orada hesaplanıyor. Ekran kendi kafasından
+   *      yer önermiyor.
+   *   3. Yere dokununca onay: hangi tür, hangi göz, hangi koordinat, kaç
+   *      mm derine. Onaydan sonra `/api/bahce/ek` — nokta yaratılıyor ve
+   *      ekim kuyruğa giriyor; ekimi makine yapıyor.
+   * ==================================================================== */
+  function rafKur() {
+    if (!S.rafAcik) { S.raf = []; return; }
+    var gozler = gozListesi();
+    var ilk = S.ray.length ? S.ray[0] : { x: 12, y: 60, w: 50 };
+    var w = 152, x = Math.min(S.en - w - 10, ilk.x + ilk.w + 14);
+    var y = Math.max(10, ilk.y - 10);
+    S.raf = gozler.map(function (g, i) {
+      return { k: g.k, ad: g.ad, tohum: g.tohum, dolu: g.dolu,
+               x: x, y: y + i * 38, w: w, h: 32 };
+    });
+    S.rafKutu = { x: x - 8, y: y - 34, w: w + 16,
+                  h: Math.max(1, gozler.length) * 38 + 46 };
+  }
+  function rafCiz(c) {
+    if (!S.rafAcik) return;
+    var kt = S.rafKutu;
+    if (!kt) return;
+    c.save();
+    c.fillStyle = "rgba(0,0,0,.4)";
+    c.beginPath();
+    if (c.roundRect) c.roundRect(kt.x + 3, kt.y + 5, kt.w, kt.h, 10);
+    else c.rect(kt.x + 3, kt.y + 5, kt.w, kt.h);
+    c.fill();
+    var g = c.createLinearGradient(kt.x, kt.y, kt.x, kt.y + kt.h);
+    g.addColorStop(0, "#8d6b46"); g.addColorStop(1, "#63472d");
+    c.fillStyle = g;
+    c.beginPath();
+    if (c.roundRect) c.roundRect(kt.x, kt.y, kt.w, kt.h, 10); else c.rect(kt.x, kt.y, kt.w, kt.h);
+    c.fill();
+    c.strokeStyle = "rgba(38,24,10,.6)"; c.lineWidth = 1.3; c.stroke();
+    c.textAlign = "left"; c.textBaseline = "alphabetic";
+    c.font = "700 12px system-ui,sans-serif"; c.fillStyle = "#f3e3c6";
+    c.fillText("Tohum rafı", kt.x + 12, kt.y + 20);
+    if (!S.raf.length) {
+      c.font = "10px system-ui,sans-serif"; c.fillStyle = "#ffc9a6";
+      c.fillText("hazne gözleri bildirilmedi", kt.x + 12, kt.y + 40);
+      c.fillText("makine tohumu nereden alacağını", kt.x + 12, kt.y + 54);
+      c.fillText("bilmiyor", kt.x + 12, kt.y + 68);
+      c.restore(); return;
+    }
+    S.raf.forEach(function (r) {
+      var secili = S.ekimTur && r.tohum === S.ekimTur;
+      c.fillStyle = secili ? "rgba(120,158,96,.5)" : "rgba(26,22,14,.55)";
+      c.beginPath();
+      if (c.roundRect) c.roundRect(r.x, r.y, r.w, r.h, 7); else c.rect(r.x, r.y, r.w, r.h);
+      c.fill();
+      c.strokeStyle = r.dolu ? (secili ? "#a8d68f" : "rgba(243,227,198,.55)")
+                             : "rgba(243,227,198,.25)";
+      c.lineWidth = secili ? 1.8 : 1;
+      if (!r.dolu) c.setLineDash([4, 3]);
+      c.beginPath();
+      if (c.roundRect) c.roundRect(r.x, r.y, r.w, r.h, 7); else c.rect(r.x, r.y, r.w, r.h);
+      c.stroke(); c.setLineDash([]);
+      /* Göz adı solda küçük, tohumun adı büyük. */
+      c.font = "9px ui-monospace,monospace";
+      c.fillStyle = "rgba(243,227,198,.6)";
+      c.fillText(r.k, r.x + 9, r.y + 13);
+      c.font = "600 11.5px system-ui,sans-serif";
+      c.fillStyle = r.dolu ? "#f6e8cf" : "rgba(243,227,198,.45)";
+      c.fillText(r.dolu ? r.ad : "boş", r.x + 9, r.y + 26);
+      if (r.dolu) {
+        var yay = turYayilim(r.tohum);
+        if (yay) {
+          c.font = "9px ui-monospace,monospace";
+          c.fillStyle = "rgba(243,227,198,.55)";
+          c.textAlign = "right";
+          c.fillText(Math.round(yay) + " mm", r.x + r.w - 9, r.y + 26);
+          c.textAlign = "left";
+        }
+      }
+    });
+    c.restore();
+  }
+  function rafDokun(p) {
+    if (!S.rafAcik) return false;
+    for (var i = 0; i < S.raf.length; i++) {
+      var r = S.raf[i];
+      if (p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h) {
+        if (!r.dolu) {
+          mesajYaz(r.k + " gözü boş — makine oradan tohum alamaz.");
+          Ses.hata(); altYaz(); return true;
+        }
+        tohumSec(r);
+        return true;
+      }
+    }
+    var kt = S.rafKutu;
+    if (kt && p.x >= kt.x && p.x <= kt.x + kt.w && p.y >= kt.y && p.y <= kt.y + kt.h) {
+      return true;                                  /* rafın içi — geçirme */
+    }
+    return false;
+  }
+  /** Tohum elde: boş yerleri SUNUCUDAN iste ve toprakta göster. */
+  var tohumSec = guvenli("tohum", function (r) {
+    S.ekimTur = r.tohum; S.ekimGoz = r.k;
+    S.bosYer = null; S.bosYerHata = "";
+    /* Raf kapanıyor: tohum seçildikten sonra bakılacak yer YATAK, rafın
+       açık kalması yanan boş yerlerin bir kısmını örtüyordu. Tohumu
+       değiştirmek için alete yeniden dokunmak yetiyor. */
+    S.rafAcik = false; S.raf = []; S.rafKutu = null;
+    Ses.tik();
+    mesajYaz(turAdi(r.tohum) + " elinde — yanan yerlerden birine dokun.");
+    altYaz(); isteKare();
+    api("/api/bahce/bos-yer?tur=" + encodeURIComponent(r.tohum) + "&azami=60")
+      .then(function (c) {
+        if (S.ekimTur !== r.tohum) return;
+        S.bosYer = { tur: r.tohum, yerler: (c && c.yerler) || [],
+                     sinirda: !!(c && c.sinirda), hazne: !!(c && c.hazne) };
+        if (!S.bosYer.yerler.length) {
+          S.bosYerHata = "Bu tür için boş yer yok — mevcut bitkilerin yayılımı "
+            + "yatağı doldurmuş.";
+        }
+        isteKare();
+      })
+      .catch(function (h) {
+        S.bosYerHata = "Boş yerler hesaplanamadı — " + ((h && h.message) || h);
+        isteKare();
+      });
+  });
+  /** Sunucunun verdiği boş yerler: toprakta yanan halkalar. */
+  function bosYerCiz(c) {
+    if (!S.ekimTur || !S.bosYer || S.bosYer.tur !== S.ekimTur) return;
+    var R = rp(turYayilim(S.ekimTur)) / 2;
+    var nb = (Math.sin(S.t * 2.6) + 1) / 2;
+    c.save();
+    c.beginPath(); c.rect(G.ox, G.oy, G.bw, G.bh); c.clip();
+    S.bosYer.yerler.forEach(function (y) {
+      var gx = px(y.x), gy = py(y.y);
+      c.fillStyle = "rgba(124,198,110," + (0.10 + nb * 0.06).toFixed(3) + ")";
+      c.beginPath(); c.arc(gx, gy, Math.max(8, R), 0, 6.3); c.fill();
+      c.strokeStyle = "rgba(150,220,130," + (0.5 + nb * 0.3).toFixed(2) + ")";
+      c.lineWidth = 1.4;
+      c.beginPath(); c.arc(gx, gy, Math.max(8, R), 0, 6.3); c.stroke();
+      c.fillStyle = "rgba(214,240,200,.9)";
+      c.beginPath(); c.arc(gx, gy, 2.6, 0, 6.3); c.fill();
+    });
+    c.restore();
+    c.save();
+    c.font = "600 11px system-ui,sans-serif"; c.textAlign = "center";
+    c.fillStyle = S.bosYerHata ? "#ffb9a6" : "rgba(214,240,200,.95)";
+    var m = S.bosYerHata
+      || (turAdi(S.ekimTur) + " · " + S.bosYer.yerler.length
+          + (S.bosYer.sinirda ? "+" : "") + " boş yer · "
+          + S.ekimGoz + " gözünden alınacak");
+    c.fillText(m, G.ox + G.bw / 2, G.oy - 10);
+    c.restore();
+  }
+  /** Boş yere dokunuldu mu? (yanan halkanın içi) */
+  function bosYerBul(p) {
+    if (!S.ekimTur || !S.bosYer || S.bosYer.tur !== S.ekimTur) return null;
+    var R = Math.max(10, rp(turYayilim(S.ekimTur)) / 2), en = null, ed = 1e9;
+    S.bosYer.yerler.forEach(function (y) {
+      var d = Math.hypot(px(y.x) - p.x, py(y.y) - p.y);
+      if (d < R && d < ed) { ed = d; en = y; }
+    });
+    return en;
+  }
+  function ekimBirak() {
+    S.ekimTur = ""; S.ekimGoz = ""; S.bosYer = null; S.bosYerHata = "";
+    S.rafAcik = false; S.raf = []; S.rafKutu = null;
+    altYaz(); isteKare();
+  }
+
   /** Altıgen etiketin yolu — düğmeler yuvarlak kutu değil, çivili askıya
    *  asılmış ALET ETİKETLERİ. Yuvarlak köşeli kutu her arayüzde var;
    *  bahçe aletinin yerinde durmuyordu. */
@@ -2808,6 +3061,82 @@ window.Bahce = (function () {
   });
 
   /* ==================================================================== *
+   * FAVORİLER — YILDIZ
+   *
+   * Favori bir KULLANICI TERCİHİ, ölçüm değil: sunucuda yeri yok ve
+   * makinenin kararına girmiyor. Bu tarayıcıda `localStorage` içinde
+   * duruyor (`farmbot_favori`), yani aynı tarayıcının bütün panellerinde
+   * ve sekmelerinde aynı liste görünüyor; başka bir bilgisayarda ya da
+   * telefonda görünmez — bunu ekranda da söylüyoruz.
+   *
+   * `window.Favori` dışarı açık: tarla, bitkiler ve ayar ekranları da
+   * aynı listeyi okuyup "favoriler üstte" sıralaması yapabilsin diye tek
+   * kaynak burada. İkinci bir liste tutmak, iki ekranın farklı favori
+   * göstermesi demekti.
+   * ==================================================================== */
+  var Favori = (function () {
+    var anahtar = "farmbot_favori";
+    var kume = {};
+    var dinleyiciler = [];
+    function oku() {
+      try {
+        var ham = JSON.parse(localStorage.getItem(anahtar) || "[]");
+        kume = {};
+        if (ham && ham.length) ham.forEach(function (a) { kume[String(a)] = true; });
+      } catch (h) { kume = {}; }
+      return kume;
+    }
+    function yaz() {
+      try { localStorage.setItem(anahtar, JSON.stringify(Object.keys(kume))); }
+      catch (h) {}
+      dinleyiciler.forEach(function (f) { try { f(); } catch (h) {} });
+    }
+    oku();
+    /* Başka sekmede değişirse burada da değişsin. */
+    try {
+      window.addEventListener("storage", function (e) {
+        if (e && e.key === anahtar) { oku(); dinleyiciler.forEach(function (f) { f(); }); }
+      });
+    } catch (h) {}
+    return {
+      liste: function () { return Object.keys(kume); },
+      var: function (ad) { return !!kume[String(ad)]; },
+      degistir: function (ad) {
+        ad = String(ad);
+        if (kume[ad]) delete kume[ad]; else kume[ad] = true;
+        yaz();
+        return !!kume[ad];
+      },
+      /** Favoriler üste — sıra bozulmadan. Her panel bunu çağırabilir. */
+      sirala: function (dizi, adAl) {
+        adAl = adAl || function (x) { return x && (x.ad || x.isim || x); };
+        return (dizi || []).slice().sort(function (a, b) {
+          var fa = kume[String(adAl(a))] ? 0 : 1, fb = kume[String(adAl(b))] ? 0 : 1;
+          return fa - fb;
+        });
+      },
+      dinle: function (f) { if (typeof f === "function") dinleyiciler.push(f); }
+    };
+  }());
+  try { window.Favori = Favori; } catch (h) {}
+
+  /** Yıldız çizimi — dolu favori, boş değil. */
+  function yildizCiz(c, cx, cy, r, dolu, renk) {
+    var i, a, x, y;
+    c.beginPath();
+    for (i = 0; i < 10; i++) {
+      a = -Math.PI / 2 + i * Math.PI / 5;
+      var rr = i % 2 ? r * 0.46 : r;
+      x = cx + Math.cos(a) * rr; y = cy + Math.sin(a) * rr;
+      if (i) c.lineTo(x, y); else c.moveTo(x, y);
+    }
+    c.closePath();
+    if (dolu) { c.fillStyle = renk || "#f6c456"; c.fill(); }
+    c.strokeStyle = dolu ? "rgba(40,30,10,.5)" : (renk || "rgba(226,232,222,.7)");
+    c.lineWidth = 1.2; c.stroke();
+  }
+
+  /* ==================================================================== *
    * BİTKİ KARTI — DOKUNUNCA AÇILAN KÜNYE
    *
    * Bitkiye dokunmak eylem halkasını açıyor; halkanın yanında bu kart
@@ -2931,7 +3260,10 @@ window.Bahce = (function () {
     c.font = "700 14px system-ui,sans-serif";
     c.fillStyle = "#eef2e8";
     var ad = String(b.tur_ad || b.ad);
-    c.fillText(ad.length > 22 ? ad.slice(0, 21) + "…" : ad, x + 14, y + 24);
+    c.fillText(ad.length > 18 ? ad.slice(0, 17) + "…" : ad, x + 14, y + 24);
+    /* YILDIZ: favori. Tercih bu tarayıcıda tutuluyor, makineye gitmiyor. */
+    S.kartYildiz = { x: x + w - 32, y: y + 12, w: 24, h: 24 };
+    yildizCiz(c, x + w - 20, y + 24, 9, Favori.var(b.ad));
     c.font = "10px ui-monospace,monospace";
     c.fillStyle = "rgba(201,206,196,.65)";
     c.fillText(b.ad + "  ·  X " + Math.round(sayi(b.x)) + "  Y " + Math.round(sayi(b.y)),
@@ -3140,6 +3472,22 @@ window.Bahce = (function () {
        kazayla iş yaptırmak istemiyoruz. */
     if (S.film && filmDokun(p)) return;
 
+    /* TOHUM RAFI açıkken önce o. */
+    if (S.rafAcik && rafDokun(p)) return;
+    /* Elde tohum varsa: yanan boş yerlerden birine dokunmak ekiyor. */
+    if (S.ekimTur && !S.rafAcik) {
+      var by = bosYerBul(p);
+      if (by) {
+        S.ekimNokta = { x: sayi(by.x), y: sayi(by.y) };
+        S.ekimSunucudan = true;
+        ekimOnayHazirla();
+        isteKare(); return;
+      }
+      if (yataktaMi(p.x, p.y)) {
+        mesajYaz("Orası boş yer değil — yanan halkalardan birine dokun.");
+        Ses.hata(); altYaz(); isteKare(); return;
+      }
+    }
     /* GÖREV TABELASI — satıra dokunmak o işi başlatıyor. */
     for (var gi = 0; gi < S.gorevSatir.length; gi++) {
       var gk = S.gorevSatir[gi];
@@ -3160,6 +3508,20 @@ window.Bahce = (function () {
     /* SOL RAY — aleti eline al. Makine kopukken alınmıyor ve sebebi
        söyleniyor: o işi yapan makine. */
     var ray = rayVur(p);
+    if (ray && ray.k === "ek") {
+      /* Tohum aleti sürüklenmiyor: önce hangi tohum olduğunu seçmek
+         gerekiyor, o yüzden dokunuşta raf açılıyor. */
+      if (!bagli) {
+        mesajYaz("Makine bağlı değil — ekimi makine yapıyor, tohum alınamaz.");
+        Ses.hata(); altYaz(); isteKare(); return;
+      }
+      if (S.rafAcik) { ekimBirak(); return; }
+      S.rafAcik = true; S.secili = ""; S.halka = false;
+      rafKur();
+      Ses.uyandir(); Ses.tik();
+      mesajYaz("Tohum rafı açık — bir göz seç.");
+      altYaz(); isteKare(); return;
+    }
     if (ray) {
       if (!bagli) {
         mesajYaz("Makine bağlı değil — " + ray.ad.toLowerCase()
@@ -3173,6 +3535,18 @@ window.Bahce = (function () {
       altYaz(); isteKare(); return;
     }
 
+    /* Kartın yıldızı — favori aç/kapa. */
+    if (S.secili && S.kartYildiz) {
+      var ky = S.kartYildiz;
+      if (p.x >= ky.x - 6 && p.x <= ky.x + ky.w + 6
+        && p.y >= ky.y - 6 && p.y <= ky.y + ky.h + 6) {
+        var fv = Favori.degistir(S.secili);
+        Ses.tik();
+        mesajYaz(fv ? "Favorilere eklendi — listelerde üste çıkar (bu tarayıcıda)."
+                    : "Favorilerden çıkarıldı.");
+        altYaz(); isteKare(); return;
+      }
+    }
     /* eylem halkası */
     if (S.secili && !S.ekimNokta) {
       var ey = halkadaMi(EYLEM, p);
@@ -3228,6 +3602,7 @@ window.Bahce = (function () {
       uzunSayac = setTimeout(function () {
         if (!bas) return;
         S.ekimNokta = { x: mmx(bas.x), y: mmy(bas.y) };
+        S.ekimSunucudan = false;
         S.ekimTur = ""; S.secili = ""; S.halka = false;
         mesajYaz("Tohum tepsisi açıldı — bir göz seç.");
         bas = null; altYaz(); isteKare();
@@ -3340,18 +3715,18 @@ window.Bahce = (function () {
           + "bitkiye dokun, Sula düğmesini basılı tut.");
         altYaz(); return;
       }
-      onayAc(ad + " sulanacak: " + sn.toFixed(1) + " sn.",
+      onayAc(ad + " sulanıyor: " + sn.toFixed(1) + " sn — iş kuyruğa girdi.",
         altSatir + " · süreyi değiştirmek için Sula'yı basılı tut", "Sula",
         function () { isGonder("sula", [b.ad], { saniye: sn }); });
     } else if (k === "nem") {
-      onayAc(ad + " kökünde nem ölçülecek.",
+      onayAc(ad + " kökünde nem ölçülüyor — iş kuyruğa girdi.",
         altSatir + " · prob toprağa iniyor, ölçüm bitince yazılıyor", "Ölç",
         function () { isGonder("nem", [b.ad]); });
     } else if (k === "foto") {
-      onayAc(ad + " fotoğraflanacak.", altSatir + " · kare büyüme filmine giriyor", "Çek",
+      onayAc(ad + " fotoğraflanıyor — iş kuyruğa girdi.", altSatir + " · kare büyüme filmine giriyor", "Çek",
         function () { isGonder("foto", [b.ad]); });
     } else if (k === "yakin") {
-      onayAc("Uç " + ad + " üstüne gidecek, uç kamerası yakından bakacak.",
+      onayAc("Uç " + ad + " üstüne gidiyor — uç kamerası yakından bakacak.",
         altSatir + " · bu kare büyüme filmine GİRMİYOR", "Git",
         function () {
           gonder("/api/bahce/yakin", { ad: b.ad })
@@ -3370,8 +3745,8 @@ window.Bahce = (function () {
     if (!b) return;
     var ad = b.tur_ad || b.ad;
     if (hedef === "sepet") {
-      onayAc(ad + " hasat edilecek — yataktan düşecek.",
-        "Makine hareket etmiyor: toplayan sensin. Fotoğraf filmi siliniyor değil.",
+      onayAc(ad + " hasat edildi — yataktan düştü.",
+        "Makine hareket etmedi: toplayan sensin. Fotoğraf filmi silinmedi — 25 saniye geri alınabilir.",
         "Hasat",
         function () {
           gonder("/api/bahce/hasat", { noktalar: [b.ad] })
@@ -3380,6 +3755,7 @@ window.Bahce = (function () {
               mesajYaz((c && c.mesaj) || "Hasat edildi.");
               /* Konfeti GERÇEKTEN olmuş bir iş için: sunucu kaydı sildi. */
               Ses.pop();
+              if (c && c.geri_al) S.sonHasat = { kimlik: String(c.geri_al), t: Date.now() };
               parcaPatlat(px(b.x), py(b.y), ["#f6c456", "#7bbf5a", "#e8ece2"], 30);
               balon(b.x, b.y, "hasat edildi", "#f6c456");
               xpEkle(6, "hasat");
@@ -3396,7 +3772,7 @@ window.Bahce = (function () {
     var nx = Math.round(mmx(t.x)), ny = Math.round(mmy(t.y));
     var kac = Math.round(Math.hypot(nx - sayi(b.x), ny - sayi(b.y)));
     if (kac < 8) { altYaz(); isteKare(); return; }   /* yerinde bırakıldı */
-    onayAc(ad + " " + kac + " mm taşınacak — kayıt değişiyor, makine gitmiyor.",
+    onayAc(ad + " " + kac + " mm taşındı — kayıt değişti, makine gitmedi.",
       "Yeni yer: X " + nx + " mm · Y " + ny + " mm. Sunucu yatak sınırlarını ve "
       + "dikim alanlarını denetliyor; kabul etmezse sebebini yazar.",
       "Taşı",
@@ -3429,13 +3805,13 @@ window.Bahce = (function () {
       altYaz(); isteKare(); return;
     }
     if (ey.k === "nem") {
-      onayAc("Prob " + b.ad + " toprağına batıp nemi ölçecek.",
+      onayAc("Prob " + b.ad + " toprağına batıyor — iş kuyruğa girdi.",
         "ölçümden sonra ekran tahmin etmeyi bırakır",
         "Ölç", function () { isGonder("nem", [b.ad]); });
       return;
     }
     if (ey.k === "foto") {
-      onayAc("Uç " + b.ad + " üstüne gidip fotoğraf çekecek.", "geri alınabilir",
+      onayAc("Uç " + b.ad + " üstüne gidip fotoğraf çekiyor.", "geri alınabilir",
         "Çek", function () { isGonder("foto", [b.ad]); });
     }
   }
@@ -3444,27 +3820,51 @@ window.Bahce = (function () {
     if (!b) return;
     var kendi = sayi(b.sulama_saniye, 3);
     var sure = sn < 0.3 ? kendi : Math.round(kis(sn, 0.5, 60) * 10) / 10;
-    onayAc(b.ad + " " + sure.toFixed(1) + " saniye sulanacak.",
+    onayAc(b.ad + " " + sure.toFixed(1) + " saniye sulanıyor — iş kuyruğa girdi.",
       (sn < 0.3 ? "bitkinin kendi ayarı" : "basılı tuttuğun süre")
-        + " · geri alınamaz · sulamadan sonra nem ölçümü BAYATLAR",
+        + " · makine başlamadıysa 25 saniye iptal edilebilir · sulamadan "
+        + "sonra nem ölçümü BAYATLAR",
       "Sula", function () { isGonder("sula", [b.ad], { saniye: sure }); });
   }
   function ekimOnayHazirla() {
     var n = S.ekimNokta, slug = S.ekimTur;
     if (!n || !slug) return;
-    var d = ekimUygun(slug, n.x, n.y);
-    if (!d.ok) { mesajYaz("Buraya ekilemez — " + d.sebep); onayKapat(); return; }
+    /* YER SUNUCUDAN GELDİYSE YEREL VETO YOK. Boş yerleri hesaplayan
+       sunucu; ekranın kendi geometri denetimi ikinci bir doğruluk kaynağı
+       olurdu ve ikisi ayrıştığında kullanıcı sunucunun "olur" dediği yere
+       ekemezdi. Elle seçilen noktada (boş toprağa uzun bas) denetim
+       duruyor — orada öneri yok, kullanıcı serbest. */
+    if (!S.ekimSunucudan) {
+      var d = ekimUygun(slug, n.x, n.y);
+      if (!d.ok) { mesajYaz("Buraya ekilemez — " + d.sebep); onayKapat(); return; }
+    }
     var der = ekimDerinligi(slug);
-    onayAc(turAdi(slug) + " buraya ekilecek.",
+    onayAc(turAdi(slug) + " ekiliyor"
+      + (S.ekimGoz ? " · tohum " + S.ekimGoz + " gözünden" : "") + ".",
       "X " + Math.round(n.x) + " mm · Y " + Math.round(n.y) + " mm · yayılım "
         + Math.round(turYayilim(slug)) + " mm · "
         + (der == null ? "ekim derinliği bilinmiyor" : Math.round(der) + " mm derine")
-        + " · geri alınamaz",
+        + " · nokta yaratıldı, ekimi makine yapacak",
       "Ek", function () {
         gonder("/api/bahce/ek", { tur: slug, yerler: [{ x: n.x, y: n.y }] })
           .then(function (c) {
-            S.ekimNokta = null; S.ekimTur = "";
+            S.ekimNokta = null;
             var yeni = (c && c.noktalar || [])[0];
+            Ses.toprak();
+            if (yeni) balon(sayi(yeni.x, n.x), sayi(yeni.y, n.y), "tohum ekildi", "#e6d49c");
+            xpEkle(5, "ekim");
+            /* Tohum elde KALIYOR: arka arkaya ekim yapmak için rafı
+               yeniden açmak gerekmesin. Boş yerler tazeleniyor. */
+            if (S.ekimTur) {
+              var gsl = S.ekimTur;
+              api("/api/bahce/bos-yer?tur=" + encodeURIComponent(gsl) + "&azami=60")
+                .then(function (c2) {
+                  if (S.ekimTur !== gsl) return;
+                  S.bosYer = { tur: gsl, yerler: (c2 && c2.yerler) || [],
+                               sinirda: !!(c2 && c2.sinirda) };
+                  isteKare();
+                }).catch(function () {});
+            }
             mesajYaz("Nokta yaratıldı, ekim kuyruğa girdi.");
             return veriYukle().then(function () {
               if (yeni && yeni.ad) { S.secili = String(yeni.ad); altYaz(); isteKare(); }
@@ -3493,6 +3893,9 @@ window.Bahce = (function () {
         gunluk("bahçe: " + tip + " · " + govde.noktalar.length + " bitki");
         notYaz("is", "");
         Ses.damla();
+        /* İşin kimliği: alt şeritteki "geri al" bunu iptal ediyor. */
+        var isk = c && c.is && c.is.kimlik;
+        if (isk != null) S.sonIs = { kimlik: String(isk), tip: tip, t: Date.now() };
         /* Balon SIRAYA GİRDİ diyor, "yapıldı" demiyor: makine işi kuyruktan
            yürütüyor ve henüz başlamadı. */
         var ad0 = govde.noktalar[0], b0 = S.ix[ad0];
@@ -3521,11 +3924,82 @@ window.Bahce = (function () {
   });
 
   /* ---------------------------------------------------------------- onay */
+  /* ONAY ADIMI KALDIRILDI (kullanıcı istedi): düğmeye basınca iş HEMEN
+   * yapılıyor, "emin misin" sorulmuyor. İki şey yerinde duruyor:
+   *   1. NE YAPILDIĞI yazılıyor — onay metninin kendisi alt şeride
+   *      düşüyor. Ne olduğunu söylemeden iş yapmak, onay sormamaktan
+   *      farklı bir şey: biri hızı artırır, öteki kullanıcıyı kör bırakır.
+   *   2. GERİ ALINABİLENDE GERİ AL: kuyruğa giren iş 25 saniye boyunca
+   *      alt şeritteki bağdan iptal edilebiliyor (`/api/bahce/is/iptal`),
+   *      hasat da aynı süre içinde `/api/geri-al` ile geri konuyor.
+   * `iptalFn` artık çağrılmıyor; eskiden "Vazgeç"e basınca çalışıyordu. */
   function onayAc(metin, alt, evet, fn, iptalFn) {
-    S.onay = { metin: metin, alt: alt, evet: evet, fn: fn, iptal: iptalFn };
+    S.onay = null;
+    mesajYaz(String(metin || ""));
+    S.sonAlt = String(alt || "");
+    if (fn) fn();
     altYaz(); isteKare();
   }
   function onayKapat() { S.onay = null; altYaz(); }
+
+  /** GERİ AL — onay kalktığı için tek çıkış yolu bu. Yalnız gerçekten
+   *  geri alınabilen iki şey için ve yalnız süresi dolmadan görünüyor:
+   *  kuyruktaki iş (makine başlamadıysa sunucu iptal ediyor) ve hasat
+   *  kaydı (sunucunun 30 saniyelik geri alma penceresi). */
+  var GERI_SN = 25;
+  function geriAlDugmesi() {
+    var h = S.sonHasat && (Date.now() - S.sonHasat.t) < GERI_SN * 1000 ? S.sonHasat : null;
+    var i = S.sonIs && (Date.now() - S.sonIs.t) < GERI_SN * 1000 ? S.sonIs : null;
+    if (h) return '<div class="bh-a-dugme"><button type="button" data-bh="geri-hasat">Hasatı geri al</button></div>';
+    if (i) return '<div class="bh-a-dugme"><button type="button" data-bh="geri-is">İşi iptal et</button></div>';
+    return "";
+  }
+  var geriHasat = guvenli("geri al", function () {
+    var h = S.sonHasat;
+    if (!h) return;
+    gonder("/api/geri-al", { kimlik: h.kimlik })
+      .then(function (c) {
+        S.sonHasat = null;
+        mesajYaz((c && c.mesaj) || "Geri kondu.");
+        Ses.basari();
+        return veriYukle();
+      })
+      .catch(function (hh) {
+        S.sonHasat = null;
+        notYaz("geri", "Geri alınamadı — " + ((hh && hh.message) || hh));
+        Ses.hata(); altYaz(); isteKare();
+      });
+  });
+  var geriIs = guvenli("iş iptal", function () {
+    var i = S.sonIs;
+    if (!i) return;
+    iptalEdilen[i.kimlik] = true;
+    gonder("/api/bahce/is/iptal", { kimlik: i.kimlik })
+      .then(function () {
+        S.sonIs = null;
+        mesajYaz("İş kuyruktan düştü.");
+        return veriYukle();
+      })
+      .catch(function (hh) {
+        S.sonIs = null;
+        notYaz("geri", "İptal olmadı — " + ((hh && hh.message) || hh)
+          + " (makine başladıysa durdurmak teknik panelde)");
+        Ses.hata(); altYaz(); isteKare();
+      });
+  });
+
+  /** EN SON SULANAN BİTKİ — `sulama_ts` kayıtlarının en yenisi. */
+  function sonSulama() {
+    var en = null, simdi = Date.now() / 1000;
+    S.bitki.forEach(function (b) {
+      var t = sayi(b.sulama_ts, 0);
+      if (t > 0 && (!en || t > en.ts)) en = { ad: b.ad, tur: b.tur_ad || b.ad, ts: t };
+    });
+    if (!en) return null;
+    en.yas = simdi - en.ts;
+    en.yazi = "son sulama: " + en.tur + " · " + sureKisa(en.yas) + " önce";
+    return en;
+  }
 
   /* ==================================================================== *
    * TÜR KATALOĞU — ekim derinliği var olan /api/turler'den.
@@ -3759,11 +4233,16 @@ window.Bahce = (function () {
     }
     kok.dataset.kip = "bos";
     var ipuc = S.mesaj || "Soldaki aleti bitkinin üstüne sürükle (sula · nem · "
-      + "kamera · yakın bak) · bitkiyi sürükle (taşı) ya da sepete bırak (hasat) · "
-      + "bitkiye dokun (eylemler) · boş toprağa uzun bas (ekim) · kirişi sürükle "
-      + "(makineyi taşı)";
+      + "kamera · yakın bak) · tohumu boş yere ek · bitkiyi sürükle (taşı) ya da "
+      + "sepete bırak (hasat) · bitkiye dokun (künye)";
+    /* SON SULAMA hep görünür: hangi bitki en son ne zaman sulandı,
+       `sulama_ts` kayıtlarından. Kayıt yoksa satır da yok. */
+    var ss = sonSulama();
+    var altYazi = S.mesaj ? (S.sonAlt || "") : (ss ? ss.yazi : "");
     kok.innerHTML = '<div class="bh-a-metin"><span class="bh-a-alt'
-      + (S.mesaj ? " vurgu" : "") + '">' + kacisli(ipuc) + "</span></div>";
+      + (S.mesaj ? " vurgu" : "") + '">' + kacisli(ipuc) + "</span>"
+      + (altYazi ? '<span class="bh-a-alt">' + kacisli(altYazi) + "</span>" : "")
+      + "</div>" + geriAlDugmesi();
   });
 
   /* ==================================================================== *
@@ -3777,6 +4256,8 @@ window.Bahce = (function () {
       var fn = S.onay && S.onay.fn; onayKapat(); if (fn) fn();
     } else if (ad === "onay-hayir") {
       var ip = S.onay && S.onay.iptal; onayKapat(); if (ip) ip();
+    } else if (ad === "geri-hasat") { geriHasat();
+    } else if (ad === "geri-is") { geriIs();
     } else if (ad === "ekim-birak") {
       S.ekimNokta = null; S.ekimTur = ""; altYaz(); isteKare();
     } else if (ad === "sula" && b) { sulaOnayAc(0); }
@@ -3798,24 +4279,28 @@ window.Bahce = (function () {
    *  bitkilerin kendi ayarlarından toplanıyor, uydurulmuyor. */
   function kartUygula(k) {
     if (!k) return;
-    var adlar = (k.noktalar || []).map(String);
+    /* Favoriler önce: iş aynı iş, ama makine sıraya girdiği yerden
+       başlıyor ve önce senin işaretlediğin bitkilere gidiyor. */
+    var adlar = Favori.sirala((k.noktalar || []).map(String), function (a) { return a; });
     if (k.tip === "sula") {
       var sn = 0, bilinen = 0;
       adlar.forEach(function (a) {
         var b = S.ix[a];
         if (b && sayi(b.sulama_saniye, 0) > 0) { sn += sayi(b.sulama_saniye, 0); bilinen++; }
       });
-      onayAc(adlar.length + " bitki sulanacak"
-        + (bilinen === adlar.length && sn ? " · toplam " + sn.toFixed(0) + " sn su" : "") + ".",
+      onayAc(adlar.length + " bitki sulanıyor"
+        + (bilinen === adlar.length && sn ? " · toplam " + sn.toFixed(0) + " sn su" : "")
+        + " — iş kuyruğa girdi.",
         (bilinen < adlar.length ? "bazı bitkilerin süresi yazılı değil · " : "")
-          + "süre her bitkinin kendi ayarından · geri alınamaz · ölçümler bayatlar",
+          + "süre her bitkinin kendi ayarından · ölçümler bayatlar · "
+          + "makine başlamadıysa 25 saniye iptal edilebilir",
         "Sula", function () { isGonder("sula", adlar); });
     } else if (k.tip === "nem") {
-      onayAc(adlar.length + " bitkinin toprağına prob batırılacak.",
+      onayAc(adlar.length + " bitkinin nemi ölçülüyor — iş kuyruğa girdi.",
         "ölçümden sonra ekran o bitkiler için tahmin etmeyi bırakır", "Ölç",
         function () { isGonder("nem", adlar); });
     } else if (k.tip === "hasat") {
-      onayAc(adlar.length + " bitkinin üstüne gidilip fotoğraf çekilecek.",
+      onayAc(adlar.length + " bitkinin fotoğrafı çekiliyor — iş kuyruğa girdi.",
         "hasadı MAKİNE yapmıyor: toplayan sensin. Bu iş yalnız kare çekiyor — "
         + "topladığını kaydetmek için bitkiyi sepete sürükle.",
         "Çek", function () { isGonder("foto", adlar); });
@@ -3891,6 +4376,7 @@ window.Bahce = (function () {
           isteKare(); return;
         }
         if (S.film) { filmKapat(); return; }
+        if (S.rafAcik || S.ekimTur) { ekimBirak(); return; }
         if (S.tasima) { S.tasima = null; S.tasimaHedef = null; altYaz(); isteKare(); return; }
         if (S.onay) { var ip = S.onay.iptal; onayKapat(); if (ip) ip(); return; }
         if (S.ekimNokta) { S.ekimNokta = null; S.ekimTur = ""; altYaz(); isteKare(); return; }
@@ -4097,6 +4583,13 @@ window.Bahce = (function () {
         film: S.film ? { ad: S.film.ad, kare: S.film.kareler.length, ix: S.film.ix,
                          hata: S.film.hata, resim: !!S.film.img,
                          serit: S.film.serit || null, kutu: S.film.kutu || null } : null,
+        yildiz: S.kartYildiz ? { x: S.kartYildiz.x, y: S.kartYildiz.y,
+                                 w: S.kartYildiz.w, h: S.kartYildiz.h,
+                                 favori: S.secili ? Favori.var(S.secili) : false } : null,
+        raf: { acik: !!S.rafAcik, gozler: S.raf.map(function (r) {
+                 return { k: r.k, ad: r.ad, dolu: r.dolu, x: r.x, y: r.y, w: r.w, h: r.h }; }),
+               tur: S.ekimTur, goz: S.ekimGoz,
+               bosYer: S.bosYer ? S.bosYer.yerler.length : -1, hata: S.bosYerHata },
         gorev: S.gorevSatir.map(function (g) {
           return { kimlik: g.gorev.kimlik, tip: g.gorev.tip, metin: g.gorev.metin,
                    alt: g.gorev.alt, evet: g.gorev.evet,
