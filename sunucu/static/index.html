@@ -612,6 +612,17 @@
                     title="Servo home açısı — eksen home'undan ayrı">⌂ 45°</button>
           </div>
 
+          <!-- PROKSİMİTE ANAHTARLARI. PLC fiziksel girişleri (X0/X5/X6)
+               kalıcı registerlara yansıtıyor (D1110-D1112), ajan oradan
+               okuyor. Etiketlerde register değil GİRİŞ adı yazıyor:
+               sahada kabloyu ararken işe yarayan o.
+               Okunamayan anahtar "?" gösteriyor — sıfır yazmak "boşta"
+               demek olurdu ve o, bilinmeyeni bilinen gibi göstermek. -->
+          <div class="satir-8 alt-hizali" id="prox-satir">
+            <span class="alt-not">Proksimite</span>
+            <span class="alt-not" id="prox-durum">—</span>
+          </div>
+
           <div class="satir-8">
             <span class="alt-not">Home konumu</span>
             <button class="dugme" data-home="x" title="Yalnız X">⌂ X</button>

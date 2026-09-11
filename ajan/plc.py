@@ -65,6 +65,26 @@ EKSENLER = [
 ]
 N = len(EKSENLER)
 ENABLE_REG = 1010
+
+# PROKSİMİTE ANAHTARLARI — PLC fiziksel girişleri D registerlarına yansıtıyor.
+#
+# Ladder'da anahtarın kendisi BOOL bir giriş (X0 / X5 / X6) ve Modbus'tan
+# doğrudan okunmuyor; PLC projesi her birini kalıcı (Retained) bir INT
+# registera kopyalıyor. Okuduğumuz o register:
+#
+#     prox_1  X0  ->  pres_1  D1110
+#     prox_2  X5  ->  pres_2  D1111
+#     prox_3  X6  ->  pres_3  D1112
+#
+# Üçü ARDIŞIK, bu yüzden tek blok okumayla alınıyor: her durum paketinde
+# üç ayrı Modbus gidiş-dönüşü yapmak, saniyede birkaç kez sorulan bir
+# pakette gereksiz gecikme.
+#
+# INT ama ANLAMI İKİLİ: sıfırdan farklı = anahtar tetiklenmiş. Ham sayıyı
+# da taşıyoruz — PLC ileride sayaç ya da eşik yazarsa değer kaybolmasın.
+PROX_BAS = 1110
+PROX_ADET = 3
+PROX_GIRIS = ("X0", "X5", "X6")   # hangi fiziksel giriş, sırayla
 EKSEN_INDEKS = {"x": 0, "y": 1, "z": 2, "t": 3}
 
 # Tohum ucu ekseninin indeksi — koda sabit sayı yazmamak için.
@@ -580,6 +600,15 @@ class Gantry:
             konum = self.konum4_mm()
             enable = bool(self.mb.oku(ENABLE_REG, 1)[0])
             self._enable_son = enable
+            # PROKSİMİTELER. Okuma başarısız olursa durum paketinin
+            # tamamını düşürmüyoruz: anahtarlar yardımcı bilgi, konum ve
+            # enable ise makineyi sürmek için şart. Okunamadıysa None
+            # gidiyor — sıfır yazmak "anahtar boşta" demek olurdu ve o,
+            # bilinmeyeni bilinen gibi göstermek.
+            try:
+                prox_ham = list(self.mb.oku(PROX_BAS, PROX_ADET))
+            except Exception:                                # noqa: BLE001
+                prox_ham = [None] * PROX_ADET
             with self._jog_kilit:
                 jog_acik = sorted({f"{EKSENLER[i]['ad']}{'+' if k == 'jogf' else '-'}" for (i, k) in self._jog})
             self.son_hata = None
@@ -598,6 +627,15 @@ class Gantry:
                                 if self.t_kalibre_mi() else True,
                 },
                 "enable": enable,
+                # Anahtar başına: ham değer, ikili hâl ve hangi fiziksel
+                # giriş olduğu. Panelde "prox_2" yerine "X5" yazabilmek,
+                # sahada kabloyu ararken tek işe yarayan bilgi.
+                "prox": [
+                    {"ad": f"prox_{n + 1}", "giris": PROX_GIRIS[n],
+                     "reg": PROX_BAS + n, "ham": h,
+                     "acik": None if h is None else bool(h)}
+                    for n, h in enumerate(prox_ham)
+                ],
                 "hareket": self.hareket_ediyor or bool(jog_acik),
                 "jog": jog_acik,
                 "z_guvenli": konum[2] >= self.guvenli_z - self.guvenli_z_ofset,
@@ -1163,8 +1201,21 @@ class Gantry:
 
     def baglam(self) -> dict[str, Any]:
         """Bölge koşullarında kullanılan değişkenler."""
+        # `prox` BİR SÜRE HEP FALSE'TI. Koşul dilinde değişken olarak
+        # duruyordu (bkz. panel yardımı: z, x, y, prox, tool, safe_z,
+        # zmax) ama hiçbir zaman doğru olmuyordu — yani `prox` yazan her
+        # kural sessizce ölüydü. Artık üç anahtardan HERHANGİ BİRİ
+        # tetiklenmişse doğru.
+        #
+        # OKUNAMAYAN ANAHTAR FALSE SAYILIYOR: koşul dili üç değerli
+        # değil, ve "bilinmiyor"u doğru saymak bölge kuralını
+        # bilinmeyen bir sebeple tetiklerdi.
+        try:
+            prox_var = any(bool(h) for h in self.mb.oku(PROX_BAS, PROX_ADET))
+        except Exception:                                    # noqa: BLE001
+            prox_var = False
         temel = {"safe_z": self.guvenli_z, "zmax": float(self.kalib[2].get("max", 550.0)),
-                 "prox": False, "tool": ""}
+                 "prox": prox_var, "tool": ""}
         if self.baglam_saglayici:
             try:
                 temel.update(self.baglam_saglayici() or {})

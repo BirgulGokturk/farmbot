@@ -2649,3 +2649,11 @@ body.kamera-sekmesi .toplu-cubuk { display: none; }
      yüksekliği de kısalıyor, 320 px ekranın yarısından çok. */
   .tablo-kutu { max-height: 220px; }
 }
+
+/* PROKSİMİTE GÖSTERGESİ — Sür sekmesi.
+   Üç hâl üç renk: tetiklenmiş (dolu daire, vurgulu), boşta (boş daire,
+   normal) ve BİLİNMİYOR (soru işareti, soluk). Okunamayan anahtarı
+   boşta gibi göstermek, kopmuş bir kabloyu saklamak olurdu. */
+#prox-durum .prox-acik { color: var(--filiz, #3F8434); font-weight: 600; }
+#prox-durum .prox-yok { opacity: .55; }
+

@@ -1070,6 +1070,26 @@ function tohumUcuYaz(d) {
  * `secili` null geliyor ve panel sıfırıncı ucu değil "bilinmiyor"
  * yazıyor. İş de o hâlde başlamıyor (kapı ajanda).
  */
+/** Proksimite anahtarları — PLC girişlerinin yansıması.
+ *
+ *  ÜÇ HÂL VAR, İKİ DEĞİL: açık, kapalı ve BİLİNMİYOR. Modbus okuması
+ *  düşerse ajan `acik: null` gönderiyor; burada "?" yazıyoruz. Kapalı
+ *  saymak, kopmuş bir kabloyu "anahtar boşta" diye göstermek olurdu.
+ */
+function proxYaz(d) {
+  const el = $("#prox-durum");
+  if (!el) return;
+  const liste = (d && d.prox) || [];
+  if (!liste.length) { el.textContent = "kart bildirmiyor"; return; }
+  el.innerHTML = liste.map((p) => {
+    const hal = p.acik == null ? "?" : (p.acik ? "●" : "○");
+    const renk = p.acik == null ? "prox-yok" : (p.acik ? "prox-acik" : "");
+    return `<span class="${renk}" title="${kacisli(p.ad)} · giriş `
+      + `${kacisli(p.giris)} · D${p.reg}${p.ham == null ? "" : ` · ham ${p.ham}`}">`
+      + `${hal} ${kacisli(p.giris)}</span>`;
+  }).join(" · ");
+}
+
 function ucSeciciYaz(d) {
   const kutu = $("#uc-secici");
   if (!kutu) return;
@@ -4791,6 +4811,7 @@ function durumGuncelle(d) {
   ucGuncelle(d.uc);
   tohumUcuYaz(d);
   ucSeciciYaz(d);
+  proxYaz(d);
   diziGuncelle(d.dizi);
   kalibrasyonCiz(d);
   tanilariCiz(d);
