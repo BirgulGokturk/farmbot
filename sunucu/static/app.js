@@ -1012,6 +1012,7 @@ function ucGuncelle(u) {
     if (u.ayar) {
       yaz("#ua-safe_z", u.ayar.safe_z);
       yaz("#ua-guvenli_z_ofset", u.ayar.guvenli_z_ofset);
+      yaz("#ua-guvenli_t", u.ayar.guvenli_t);
     }
     /* Proksimite eşleşmesi. Seçenekler baş listesinden kuruluyor, elle
      * yazılmıyor: başların adı `bas_bilgi`den geliyor ve iki yerde iki
@@ -1336,6 +1337,8 @@ async function basKaydet() {
   // koda gömülü 1 mm'ydi ve hiçbir yerden değiştirilemiyordu.
   const zo = $("#ua-guvenli_z_ofset");
   if (zo && zo.value !== "") ayar.guvenli_z_ofset = Number(zo.value);
+  const gt = $("#ua-guvenli_t");
+  if (gt && gt.value !== "") ayar.guvenli_t = Number(gt.value);
   // Üçü birlikte gidiyor: tek anahtarı göndermek ötekileri silerdi.
   const prox = $$(".ua-prox");
   if (prox.length === 3) {

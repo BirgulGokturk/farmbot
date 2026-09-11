@@ -190,6 +190,7 @@ class Ajan:
         self._t_yukari_uygula()
         self._guvenli_z_ofset_uygula()
         self._guvenli_z_uygula()
+        self._guvenli_t_uygula()
         self._hiz_uygula()
         ard = ayar["arduino"]
         # Medyan penceresi: kaç örneğin ortancası gösterilsin. 5 örnek,
@@ -316,6 +317,25 @@ class Ajan:
                     for yeni, eski in zip(eksen, simdiki)]
             logger.info("Hızlar ayardan yüklendi: genel=%s eksen=%s",
                         genel, eksen)
+        except Exception:                                    # noqa: BLE001
+            pass
+
+    def _guvenli_t_uygula(self) -> None:
+        """`guvenli_t` ayarını PLC sürücüsüne taşır.
+
+        Pay koda 1.5 mm gömülüydü ve yalnız `ajan/ayar.json`dan
+        değiştirilebiliyordu. Sahada belirtisi şuydu: uç yukarıda olduğu
+        hâlde "Tohum ucu aşağıda — önce yukarı çekilmeli" denip dizi
+        durdu. Pay eksenin gerçek oturma sapmasından küçükse bu kaçınılmaz
+        ve kullanıcının elinde ayar yoktu.
+
+        Girilmemişse dokunulmuyor: `ayar.json`daki değer geçerli kalıyor.
+        `_guvenli_z_ofset_uygula` ile aynı kalıp.
+        """
+        try:
+            g = self.uclar.guvenli_t()
+            if g is not None:
+                self.plc.guvenli_t = g
         except Exception:                                    # noqa: BLE001
             pass
 
@@ -741,6 +761,7 @@ class Ajan:
                 self._t_yukari_uygula()
                 self._guvenli_z_ofset_uygula()
                 self._guvenli_z_uygula()
+                self._guvenli_t_uygula()
                 return {"ok": True, "mesaj": "Kafa ayarları kaydedildi",
                         "veri": {"ayar": yeni,
                                  "baslar": self.uclar.baslar()}}
@@ -1178,6 +1199,7 @@ class Ajan:
                 "z_safe_reg": int(self.uclar.ayar.get("z_safe_reg", 0) or 0),
                 "ayar": {"safe_z": self.uclar.ayar.get("safe_z"),
                          "guvenli_z_ofset": self.uclar.guvenli_z_ofset(),
+                         "guvenli_t": self.uclar.guvenli_t(),
                          "servo_sure_ms": self.uclar.servo_sure_ms()},
                 # UÇ SEÇİCİ MEKANİZMASI — başlığa değil mekanizmaya ait
                 # ayarlar: hareket süresi ve güvenli yükseklik. Kayma

@@ -128,6 +128,18 @@ VARSAYILAN = {
     #
     # Sıra PLC giriş sırası: [X0, X5, X6] -> [D1110, D1111, D1112].
     # Boş dize ("") "bu anahtar bir başa bağlı değil" demek.
+    # TOHUM UCU "YUKARIDA" SAYILMA PAYI (mm).
+    #
+    # X/Y hareketi tohum ucunun çekilmiş olmasına bağlı ve "çekilmiş" bir
+    # NOKTA değil bir PAY: eksen hedefe tam oturmuyor, birkaç sayım
+    # şaşıyor. Pay küçükse uç yukarıdayken bile hareket reddediliyor
+    # ("Tohum ucu aşağıda" hatası), büyükse gerçekten inmiş bir uçla
+    # yatay hareket serbest kalıyor.
+    #
+    # `guvenli_z_ofset` ile aynı mantık, T karşılığı. Koda 1.5 mm gömülü
+    # ve yalnız `ajan/ayar.json`da düzenlenebilirdi; panelde yoktu.
+    # None = girilmemiş, `ayar.json`daki değer geçerli.
+    "guvenli_t": None,
     "prox_baslar": ["sulama", "nem", "tohum"],
     "hiz": None,
     "hiz_eksen": [None, None, None, None],   # [X, Y, Z, T]
@@ -521,6 +533,12 @@ class Uclar:
                 # denetleniyor, ama dosya elle de düzenlenebiliyor; aralık
                 # dışı bir Z hızı sessizce yürürlüğe girerse makine
                 # beklenenden hızlı iner.
+                if "guvenli_t" in temiz:
+                    try:
+                        g = float(temiz["guvenli_t"])
+                        temiz["guvenli_t"] = round(g, 2) if 0.0 <= g <= 50.0 else None
+                    except (TypeError, ValueError):
+                        temiz["guvenli_t"] = None
                 if "prox_baslar" in temiz:
                     # Yalnız tanınan baş kimlikleri ya da boş dize.
                     # Tanınmayan bir ad yazmak, lambayı adsız bırakırdı.
@@ -623,6 +641,14 @@ class Uclar:
         except (TypeError, ValueError):
             sure = int(VARSAYILAN["uc_secici"]["sure_ms"])
         return max(1, min(10000, sure))
+
+    def guvenli_t(self) -> float | None:
+        """Tohum ucu "yukarıda" sayılma payı (mm); girilmemişse None."""
+        try:
+            g = float(self.ayar.get("guvenli_t"))
+        except (TypeError, ValueError):
+            return None
+        return g if 0.0 <= g <= 50.0 else None
 
     def prox_baslar(self) -> list[str]:
         """[anahtar1, anahtar2, anahtar3] -> baş kimliği (ya da "")."""
