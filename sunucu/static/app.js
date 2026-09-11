@@ -1070,24 +1070,47 @@ function tohumUcuYaz(d) {
  * `secili` null geliyor ve panel sıfırıncı ucu değil "bilinmiyor"
  * yazıyor. İş de o hâlde başlamıyor (kapı ajanda).
  */
-/** Proksimite anahtarları — PLC girişlerinin yansıması.
+/* PROKSİMİTE = "O BAŞ YUKARIDA MI".
  *
- *  ÜÇ HÂL VAR, İKİ DEĞİL: açık, kapalı ve BİLİNMİYOR. Modbus okuması
- *  düşerse ajan `acik: null` gönderiyor; burada "?" yazıyoruz. Kapalı
- *  saymak, kopmuş bir kabloyu "anahtar boşta" diye göstermek olurdu.
+ * Anahtar kapalıyken (lamba YANIYOR) o baş yukarıda, yerinde duruyor.
+ * Bir baş aşağı inince kendi anahtarının bağlantısı kesiliyor ve lambası
+ * SÖNÜYOR; öteki ikisi yanmaya devam ediyor. Yani ekranda sönük olan
+ * tek lamba, o an inmiş olan baştır.
+ *
+ * ANAHTAR SIRASI BAŞ SIRASIYLA EŞLEŞTİRİLİYOR — kablolama varsayımı bu
+ * ve TEK YERDE duruyor. Sahada ters çıkarsa değiştirilecek yer burası;
+ * lambanın yanında giriş adı (X0/X5/X6) da yazılı, böylece hangi
+ * anahtarın hangi başa gittiği ekrandan doğrulanabiliyor.
+ */
+const PROX_BAS_SIRASI = ["sulama", "nem", "tohum"];
+
+/** Proksimite lambaları — PLC girişlerinin yansıması.
+ *
+ *  ÜÇ HÂL VAR, İKİ DEĞİL: yanıyor (baş yukarıda), sönük (baş inmiş) ve
+ *  BİLİNMİYOR. Modbus okuması düşerse ajan `acik: null` gönderiyor ve
+ *  lamba soru işaretine dönüyor. Sönük saymak, kopmuş bir kabloyu
+ *  "baş aşağıda" diye göstermek olurdu — tam ters yönde bir yalan.
  */
 function proxYaz(d) {
   const el = $("#prox-durum");
   if (!el) return;
   const liste = (d && d.prox) || [];
   if (!liste.length) { el.textContent = "kart bildirmiyor"; return; }
-  el.innerHTML = liste.map((p) => {
-    const hal = p.acik == null ? "?" : (p.acik ? "●" : "○");
-    const renk = p.acik == null ? "prox-yok" : (p.acik ? "prox-acik" : "");
-    return `<span class="${renk}" title="${kacisli(p.ad)} · giriş `
-      + `${kacisli(p.giris)} · D${p.reg}${p.ham == null ? "" : ` · ham ${p.ham}`}">`
-      + `${hal} ${kacisli(p.giris)}</span>`;
-  }).join(" · ");
+  const bilgi = ((d && d.uc) || {}).bas_bilgi || {};
+  el.innerHTML = liste.map((p, i) => {
+    const kimlik = PROX_BAS_SIRASI[i] || "";
+    const b = bilgi[kimlik] || {};
+    const ad = b.ad || kimlik || p.ad;
+    const simge = b.simge || "";
+    const bilinmiyor = p.acik == null;
+    const sinif = bilinmiyor ? "prox-yok" : (p.acik ? "prox-acik" : "prox-inik");
+    const hal = bilinmiyor ? "bilinmiyor"
+      : (p.acik ? "yukarıda" : "AŞAĞIDA — anahtar açık");
+    return `<span class="prox-lamba ${sinif}" title="${kacisli(ad)} · ${hal}`
+      + ` · giriş ${kacisli(p.giris)} · D${p.reg}`
+      + `${p.ham == null ? "" : ` · ham ${p.ham}`}">`
+      + `<i class="prox-isik"></i>${kacisli(simge)} ${kacisli(p.giris)}</span>`;
+  }).join("");
 }
 
 function ucSeciciYaz(d) {

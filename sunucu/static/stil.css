@@ -2650,10 +2650,47 @@ body.kamera-sekmesi .toplu-cubuk { display: none; }
   .tablo-kutu { max-height: 220px; }
 }
 
-/* PROKSİMİTE GÖSTERGESİ — Sür sekmesi.
-   Üç hâl üç renk: tetiklenmiş (dolu daire, vurgulu), boşta (boş daire,
-   normal) ve BİLİNMİYOR (soru işareti, soluk). Okunamayan anahtarı
-   boşta gibi göstermek, kopmuş bir kabloyu saklamak olurdu. */
-#prox-durum .prox-acik { color: var(--filiz, #3F8434); font-weight: 600; }
-#prox-durum .prox-yok { opacity: .55; }
+/* PROKSİMİTE LAMBALARI — Sür sekmesi.
+   Anahtar kapalıyken lamba YANIYOR: o baş yukarıda, yerinde. Baş aşağı
+   inince anahtarın bağlantısı kesiliyor ve lambası sönüyor — ekranda
+   sönük olan tek lamba, o an inmiş olan baş.
+   Üçüncü bir hâl var: okunamadı. Onu sönük göstermek, kopmuş bir kabloyu
+   "baş aşağıda" diye göstermek olurdu; soluk ve kesik çizgili duruyor. */
+#prox-durum { display: inline-flex; gap: 10px; align-items: center; }
 
+.prox-lamba {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px 2px 5px;
+  border-radius: 999px;
+  border: 1px solid var(--cizgi, #3a4a3c);
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: nowrap;
+}
+
+.prox-isik {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--cizgi, #3a4a3c);
+  flex: 0 0 auto;
+}
+
+/* YANIYOR — baş yukarıda. Halka, lambanın gerçekten ışıdığı izlenimini
+   veriyor; yalnız renk değişimi küçük bir noktada zor seçiliyor. */
+.prox-acik .prox-isik {
+  background: #5BD16A;
+  box-shadow: 0 0 6px 1px rgba(91, 209, 106, .75);
+}
+.prox-acik { border-color: rgba(91, 209, 106, .45); }
+
+/* SÖNÜK — baş inmiş. Kenarlık vurgulu: "veri yok" değil, ANLAMLI bir hâl. */
+.prox-inik .prox-isik { background: #2a2f2b; }
+.prox-inik { border-color: var(--cizgi, #3a4a3c); opacity: .9; }
+
+/* BİLİNMİYOR — Modbus okunamadı. Kesik çizgi, ikisinden de ayrı. */
+.prox-yok { opacity: .5; border-style: dashed; }
+.prox-yok .prox-isik { background: transparent; box-shadow: none;
+                       border: 1px dashed var(--cizgi, #3a4a3c); }
