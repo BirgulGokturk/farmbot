@@ -986,9 +986,20 @@ window.Bahce = (function () {
       c.fillStyle = etkin === a.k ? "#12140f" : (acik === false ? "#82847a" : a.renk);
       c.fillText(adAl(a), hx, hy + (altAl ? 0 : 4));
       if (altAl) {
-        c.font = "9px ui-monospace,monospace";
-        c.fillStyle = etkin === a.k ? "#12140f" : "#8d9089";
-        c.fillText(altAl(a), hx, hy + 12);
+        var alt = altAl(a);
+        if (alt) {
+          /* Alt yazı dairenin DIŞINA taşıyor: altına koyu bir yastık
+             konmazsa komşu düğmenin üstüne binip ikisi de okunmuyor. */
+          c.font = "9px ui-monospace,monospace";
+          var gen = c.measureText(alt).width + 8;
+          c.fillStyle = "rgba(12,14,10,.82)";
+          c.beginPath();
+          if (c.roundRect) c.roundRect(hx - gen / 2, hy + 5, gen, 13, 6);
+          else c.rect(hx - gen / 2, hy + 5, gen, 13);
+          c.fill();
+          c.fillStyle = etkin === a.k ? "#e8ece2" : "#9da196";
+          c.fillText(alt, hx, hy + 15);
+        }
       }
       a._x = hx; a._y = hy; a._r = r;
     });
@@ -1012,7 +1023,11 @@ window.Bahce = (function () {
     var b = S.ix[S.secili];
     if (!b) return;
     var sp = spriteAl(b);
-    var R = Math.max(46, sp.R + 32);
+    /* Yarıçap DÜĞME SAYISINA göre: altı düğme 46 pikselde birbirinin
+       üstüne biniyordu. Kiriş kuralı — komşu iki merkez arası en az
+       52 piksel olacak. */
+    var enAz = 52 / (2 * Math.sin(Math.PI / EYLEM.length));
+    var R = Math.max(enAz, sp.R + 34);
     var bagli = !!(S.veri && S.veri.bagli);
     halkaCiz(c, px(b.x), py(b.y), EYLEM, R, S.basiliSula ? "sula" : "", bagli,
       function (e) { return e.ad; },
@@ -1192,6 +1207,9 @@ window.Bahce = (function () {
     S.bitki.forEach(function (b) { b._gorunum = 0; b._tohum = 0; });
     isteKare();
   }
+  /** "Hareketi azalt" açıksa sakin mod kendiliğinden açık başlıyor —
+   *  düğme kaldırıldığı için tek açma yolu bu. */
+  function sakinKur() { if (azHareket()) S.sakin = true; }
   function azHareket() {
     try {
       return window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -1513,7 +1531,7 @@ window.Bahce = (function () {
     { k: "yakin", ad: "Yakın", renk: "#d9b26a", ipucu: "bitkiye bırak · uç kamerası" }
   ];
   function rayKur() {
-    var gen = 46, ara = 10;
+    var gen = 50, ara = 16;
     var top = RAY_ALET.length * gen + (RAY_ALET.length - 1) * ara;
     var y0 = Math.max(12, (S.boy - top) / 2);
     var solBos = G.ox - G.kal - G.ray - 12;
@@ -1523,8 +1541,9 @@ window.Bahce = (function () {
                x: x, y: y0 + i * (gen + ara), w: gen, h: gen };
     });
     var sagBos = S.en - (G.ox + G.bw + G.kal + G.ray + 12);
-    var sx = sagBos > gen + 16 ? S.en - sagBos / 2 - gen / 2 : S.en - gen - 8;
-    S.sepet = { x: sx, y: Math.max(12, S.boy / 2 - 30), w: gen, h: 60 };
+    var sgen = 58;
+    var sx = sagBos > sgen + 16 ? S.en - sagBos / 2 - sgen / 2 : S.en - sgen - 10;
+    S.sepet = { x: sx, y: Math.max(16, S.boy / 2 - 32), w: sgen, h: 64 };
   }
   function aletSimge(c, k, cx, cy, renk, sol) {
     c.save();
@@ -1564,57 +1583,162 @@ window.Bahce = (function () {
     c.restore();
     if (sol === false) return;
   }
+  /** Altıgen etiketin yolu — düğmeler yuvarlak kutu değil, çivili askıya
+   *  asılmış ALET ETİKETLERİ. Yuvarlak köşeli kutu her arayüzde var;
+   *  bahçe aletinin yerinde durmuyordu. */
+  function etiketYol(c, x, y, w, h) {
+    var k = Math.min(w, h) * 0.26;
+    c.beginPath();
+    c.moveTo(x + k, y);
+    c.lineTo(x + w - k, y);
+    c.lineTo(x + w, y + h / 2);
+    c.lineTo(x + w - k, y + h);
+    c.lineTo(x + k, y + h);
+    c.lineTo(x, y + h / 2);
+    c.closePath();
+  }
+  /** Askı tahtası: aletlerin arkasında duran, çimin üstüne çakılmış
+   *  tahta. Aletler ondan sarkıyor; boş kanca elinde alet olduğunu
+   *  gösteriyor. */
+  function askiCiz(c) {
+    if (!S.ray.length) return;
+    var ilk = S.ray[0], son = S.ray[S.ray.length - 1];
+    var x = ilk.x - 9, y = ilk.y - 26, w = ilk.w + 18;
+    var h = (son.y + son.h) - ilk.y + 40;
+    c.save();
+    c.fillStyle = "rgba(0,0,0,.3)";
+    c.beginPath();
+    if (c.roundRect) c.roundRect(x + 3, y + 5, w, h, 6); else c.rect(x + 3, y + 5, w, h);
+    c.fill();
+    var g = c.createLinearGradient(x, y, x + w, y);
+    g.addColorStop(0, "#6b4a2c"); g.addColorStop(0.35, "#8a6238");
+    g.addColorStop(0.75, "#754f2d"); g.addColorStop(1, "#5c3f25");
+    c.fillStyle = g;
+    c.beginPath();
+    if (c.roundRect) c.roundRect(x, y, w, h, 6); else c.rect(x, y, w, h);
+    c.fill();
+    /* Tahta damarı: iki ince çizgi, ötesi gürültü. */
+    c.strokeStyle = "rgba(48,30,14,.28)"; c.lineWidth = 1;
+    var i;
+    for (i = 1; i < 4; i++) {
+      var lx = x + (w / 4) * i;
+      c.beginPath(); c.moveTo(lx, y + 6); c.lineTo(lx, y + h - 6); c.stroke();
+    }
+    c.strokeStyle = "rgba(30,18,8,.5)"; c.lineWidth = 1.2;
+    c.beginPath();
+    if (c.roundRect) c.roundRect(x + 0.5, y + 0.5, w - 1, h - 1, 6);
+    else c.rect(x + 0.5, y + 0.5, w - 1, h - 1);
+    c.stroke();
+    /* Dört vida */
+    [[x + 8, y + 8], [x + w - 8, y + 8], [x + 8, y + h - 8], [x + w - 8, y + h - 8]]
+      .forEach(function (v) {
+        c.fillStyle = "rgba(214,208,192,.8)";
+        c.beginPath(); c.arc(v[0], v[1], 2.6, 0, 6.3); c.fill();
+        c.strokeStyle = "rgba(40,30,16,.7)"; c.lineWidth = 1;
+        c.beginPath(); c.moveTo(v[0] - 1.8, v[1]); c.lineTo(v[0] + 1.8, v[1]); c.stroke();
+      });
+    c.restore();
+  }
   function rayCiz(c) {
     var bagli = !!(S.veri && S.veri.bagli);
     var tut = S.tasima && S.tasima.tip === "alet" ? S.tasima.k : "";
+    askiCiz(c);
     S.ray.forEach(function (a) {
       var acik = bagli;
+      var elde = tut === a.k;
+      /* Kanca: etiketin üstünde küçük bir çengel. Alet elindeyken kanca
+         boş kalıyor — nerede olduğunu ekran söylüyor. */
+      var kx = a.x + a.w / 2, ky = a.y - 9;
       c.save();
-      c.shadowColor = "rgba(0,0,0,.45)"; c.shadowBlur = 7; c.shadowOffsetY = 2;
-      c.fillStyle = tut === a.k ? "rgba(38,44,38,.96)" : "rgba(22,26,21,.88)";
-      c.beginPath();
-      if (c.roundRect) c.roundRect(a.x, a.y, a.w, a.h, 11); else c.rect(a.x, a.y, a.w, a.h);
+      c.strokeStyle = "#cfd5d8"; c.lineWidth = 2; c.lineCap = "round";
+      c.beginPath(); c.arc(kx, ky, 4.2, Math.PI * 0.15, Math.PI * 0.95, true); c.stroke();
+      c.restore();
+      if (elde) return;                       /* etiket elde: kanca boş */
+      c.save();
+      c.shadowColor = "rgba(0,0,0,.45)"; c.shadowBlur = 6; c.shadowOffsetY = 3;
+      var yg = c.createLinearGradient(a.x, a.y, a.x, a.y + a.h);
+      yg.addColorStop(0, acik ? "rgba(38,44,36,.97)" : "rgba(30,32,29,.9)");
+      yg.addColorStop(1, acik ? "rgba(22,27,21,.97)" : "rgba(20,22,20,.9)");
+      c.fillStyle = yg;
+      etiketYol(c, a.x, a.y, a.w, a.h);
       c.fill();
       c.restore();
+      /* İp: kancadan etikete. */
+      c.strokeStyle = "rgba(226,214,180,.75)"; c.lineWidth = 1.4;
+      c.beginPath(); c.moveTo(kx - 3, ky + 2); c.lineTo(a.x + a.w / 2, a.y + 2);
+      c.moveTo(kx + 3, ky + 2); c.lineTo(a.x + a.w / 2, a.y + 2); c.stroke();
       c.strokeStyle = acik ? a.renk : "#4a4d47";
-      c.lineWidth = tut === a.k ? 2.2 : 1.3;
-      c.beginPath();
-      if (c.roundRect) c.roundRect(a.x, a.y, a.w, a.h, 11); else c.rect(a.x, a.y, a.w, a.h);
+      c.lineWidth = 1.4;
+      etiketYol(c, a.x + 0.5, a.y + 0.5, a.w - 1, a.h - 1);
       c.stroke();
-      aletSimge(c, a.k, a.x + a.w / 2, a.y + a.h / 2 - 3, acik ? a.renk : "#5c605a");
+      aletSimge(c, a.k, a.x + a.w / 2, a.y + a.h / 2 - 4, acik ? a.renk : "#5c605a");
       c.font = "600 9px system-ui,sans-serif"; c.textAlign = "center";
-      c.fillStyle = acik ? "rgba(226,232,222,.85)" : "#6b6f68";
-      c.fillText(a.ad, a.x + a.w / 2, a.y + a.h - 6);
+      c.fillStyle = acik ? "rgba(230,236,226,.9)" : "#6b6f68";
+      c.fillText(a.ad, a.x + a.w / 2, a.y + a.h - 7);
     });
     if (!bagli && S.ray.length) {
       var s0 = S.ray[0];
       c.save();
       c.font = "600 10px system-ui,sans-serif"; c.textAlign = "center";
       c.fillStyle = "#e07f6a";
-      c.fillText("aletler kilitli", s0.x + s0.w / 2, s0.y - 8);
-      c.fillText("makine bağlı değil", s0.x + s0.w / 2, s0.y - 20);
+      c.fillText("aletler kilitli", s0.x + s0.w / 2, s0.y - 32);
+      c.fillText("makine bağlı değil", s0.x + s0.w / 2, s0.y - 44);
       c.restore();
     }
-    /* SEPET — kayıt işi, makine kopukken de çalışıyor. */
+    sepetCiz(c);
+  }
+  /** SEPET — çimin üstünde duran hasır sepet. Kutu değil: bitkiyi içine
+   *  bırakıyorsun. */
+  function sepetCiz(c) {
     var sp = S.sepet;
     if (!sp) return;
     var uzeri = S.tasima && S.tasima.tip === "bitki" && S.tasimaHedef === "sepet";
+    var cx = sp.x + sp.w / 2, ust = sp.y + 10, alt = sp.y + sp.h - 8;
+    var ru = sp.w * 0.54, ra = sp.w * 0.38;
     c.save();
-    c.shadowColor = "rgba(0,0,0,.45)"; c.shadowBlur = 7; c.shadowOffsetY = 2;
-    c.fillStyle = uzeri ? "rgba(70,52,26,.96)" : "rgba(22,26,21,.88)";
+    /* Çime düşen gölge */
+    c.fillStyle = "rgba(0,0,0,.34)";
+    c.beginPath(); c.ellipse(cx + 3, alt + 3, ru * 0.96, ru * 0.3, 0, 0, 6.3); c.fill();
+    /* Gövde */
+    var g = c.createLinearGradient(cx - ru, 0, cx + ru, 0);
+    g.addColorStop(0, uzeri ? "#c79a4e" : "#9c7a41");
+    g.addColorStop(0.45, uzeri ? "#e6bd6d" : "#b08c4c");
+    g.addColorStop(1, uzeri ? "#a8803f" : "#836636");
+    c.fillStyle = g;
     c.beginPath();
-    if (c.roundRect) c.roundRect(sp.x, sp.y, sp.w, sp.h, 11); else c.rect(sp.x, sp.y, sp.w, sp.h);
-    c.fill();
-    c.restore();
-    c.strokeStyle = uzeri ? "#f6c456" : "#a08a52"; c.lineWidth = uzeri ? 2.2 : 1.3;
-    c.beginPath();
-    if (c.roundRect) c.roundRect(sp.x, sp.y, sp.w, sp.h, 11); else c.rect(sp.x, sp.y, sp.w, sp.h);
-    c.stroke();
-    aletSimge(c, "sepet", sp.x + sp.w / 2, sp.y + sp.h / 2 - 4, uzeri ? "#f6c456" : "#a08a52");
+    c.moveTo(cx - ru, ust);
+    c.lineTo(cx + ru, ust);
+    c.lineTo(cx + ra, alt);
+    c.quadraticCurveTo(cx, alt + ra * 0.42, cx - ra, alt);
+    c.closePath(); c.fill();
+    /* Hasır örgü: dikey çubuklar + iki yatay bant */
+    c.strokeStyle = "rgba(60,40,16,.45)"; c.lineWidth = 1;
+    var i;
+    for (i = 1; i < 6; i++) {
+      var t = i / 6;
+      c.beginPath();
+      c.moveTo(cx - ru + 2 * ru * t, ust + 2);
+      c.lineTo(cx - ra + 2 * ra * t, alt - 1);
+      c.stroke();
+    }
+    [0.34, 0.68].forEach(function (t2) {
+      var yy = ust + (alt - ust) * t2, rr = ru + (ra - ru) * t2;
+      c.beginPath(); c.moveTo(cx - rr, yy); c.lineTo(cx + rr, yy); c.stroke();
+    });
+    /* Ağız halkası */
+    c.strokeStyle = uzeri ? "#f6c456" : "#c9a45c"; c.lineWidth = 2.4;
+    c.beginPath(); c.ellipse(cx, ust, ru, ru * 0.3, 0, 0, 6.3); c.stroke();
+    c.fillStyle = "rgba(18,14,8,.55)";
+    c.beginPath(); c.ellipse(cx, ust, ru - 2, ru * 0.3 - 1.4, 0, 0, 6.3); c.fill();
+    /* Kulp */
+    c.strokeStyle = uzeri ? "#f6c456" : "#c9a45c"; c.lineWidth = 2;
+    c.beginPath(); c.arc(cx, ust, ru * 0.72, Math.PI * 1.15, Math.PI * 1.85); c.stroke();
     c.font = "600 9px system-ui,sans-serif"; c.textAlign = "center";
-    c.fillStyle = uzeri ? "#f6c456" : "rgba(226,232,222,.75)";
-    c.fillText("Hasat", sp.x + sp.w / 2, sp.y + sp.h - 7);
+    c.fillStyle = uzeri ? "#f6c456" : "rgba(230,236,226,.8)";
+    c.fillText("Hasat", cx, sp.y + sp.h + 12);
+    c.restore();
   }
+
   /** Elde taşınan şey: alet ya da bitki. Parmağın altında duruyor. */
   function tasimaCiz(c) {
     var t = S.tasima;
@@ -2529,7 +2653,9 @@ window.Bahce = (function () {
     evet.textContent = k.evet || "Yap";
     evet.disabled = k.tip !== "ek" && !bagli;
     evet.title = evet.disabled ? "Makine bağlı değil" : "";
-    ertele.hidden = !!k.ertelendi;
+    /* Düğme kaldırıldı: her hâlde gizli. Kartın kendi "ertelendi · geri
+       al" satırı duruyor, erteleme yeteneği oradan görünüyor. */
+    ertele.hidden = true;
     var cok = hepsi.length > 1;
     sayac.hidden = !cok;
     sayac.textContent = cok ? (S.kartIx + 1) + "/" + hepsi.length : "";
@@ -2683,18 +2809,14 @@ window.Bahce = (function () {
     });
     $("#bh-kok").addEventListener("click", tiklama);
     $("#bh-is-evet").addEventListener("click", kartEvet);
-    $("#bh-is-ertele").addEventListener("click", function () {
-      var k = suankiKart(); if (k) eylemErtele(k.kimlik, false);
-    });
+    /* "yarın sor" ve "sakin mod" DÜĞMELERİ KALDIRILDI (kullanıcı istedi).
+       Düğmeler `index.html`de duruyor ama gizli ve artık bağlanmıyorlar;
+       o iki satırı ortak dosyadan silmek ayrı bir iş, haber vererek
+       yapılacak. Yetenekler duruyor: ertelenmiş kart hâlâ "ertelendi ·
+       geri al" diyor, sakin mod işletim sisteminin "hareketi azalt"
+       ayarından kendiliğinden açılıyor. */
     $("#bh-is-geri").addEventListener("click", function () { S.kartIx--; ustYaz(); });
     $("#bh-is-ileri").addEventListener("click", function () { S.kartIx++; ustYaz(); });
-    $("#bh-sakin").addEventListener("click", function () {
-      S.sakin = !S.sakin;
-      var d = $("#bh-sakin");
-      d.setAttribute("aria-pressed", S.sakin ? "true" : "false");
-      d.textContent = S.sakin ? "sakin mod açık" : "sakin mod";
-      isteKare();
-    });
     $("#bh-kur").addEventListener("click", function () { insaBasla(); });
     document.addEventListener("keydown", function (e) {
       if (!S.acik) return;
@@ -2763,6 +2885,7 @@ window.Bahce = (function () {
       return false;
     }
     S.ct = S.tuval.getContext("2d");
+    sakinKur();
     olaylariBagla();
     kuruldu = true;
     return true;

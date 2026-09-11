@@ -13,12 +13,43 @@
  * üç tipografi kademesi, renk yalnız durum için.
  */
 
-/* ------------------------------------------------------------------ kabuk */
-body.bahce-acik .yuzen.sol { grid-column: 1 / -1; width: auto; }
+/* ------------------------------------------------------------------ kabuk
+ * BAHÇE AÇIKKEN KABUĞUN TAMAMI BAHÇENİN. Sekme bir kart değil, bir YER;
+ * kenar boşluğu, köşe yuvarlaması ve altındaki şeritler onu "panelin
+ * içine sıkışmış" gösteriyordu. Kabuğun ızgarasında bahçe bütün sütun ve
+ * satırları kaplıyor, dolgu ile boşluk sıfırlanıyor.
+ *
+ * `#profil` ve `.toplu-cubuk` gizleniyor: ikisi de 2/3. sütunda, yani
+ * tam alana geçen bahçenin ÜSTÜNE düşüyorlardı — ekranda bahçe kesilmiş
+ * gibi görünmesinin sebebi buydu, sahnenin kısalığı değil. İkisi de
+ * haritanın araçları; bahçede yapacakları bir iş yok. */
+body.bahce-acik main.kabuk { padding: 0; gap: 0; }
+body.bahce-acik .yuzen.sol {
+  grid-column: 1 / -1; grid-row: 1 / -1; width: auto; border-radius: 0;
+}
 body.bahce-acik #sahne-cubuk,
-body.bahce-acik .sahne-alan { display: none; }
+body.bahce-acik .sahne-alan,
+body.bahce-acik #profil,
+body.bahce-acik .toplu-cubuk { display: none; }
 body.bahce-acik .yuzen-govde { overflow: hidden; padding: 0; }
+/* Panel başlığı da gizli: sekmenin adı zaten üstteki sekme çubuğunda
+   yazıyor ve buradaki tek düğme paneli KATLAMAYA yarıyordu — altında
+   gösterilecek sahne gizli olduğu için katlamanın anlamı kalmadı. */
+body.bahce-acik #sol-panel > .yuzen-ust { display: none; }
 body.bahce-acik #sayfa-bahce { height: 100%; }
+body.bahce-acik .bh { border-radius: 0; }
+/* Dar ekranda kabuk ızgara değil, dikey akış: panel kalan yerin tamamını
+   alsın (sahne gizli olduğu için yer zaten boş). */
+@media (max-width: 900px) {
+  body.bahce-acik .yuzen.sol { flex: 1 1 auto; min-height: 0; width: auto; }
+}
+
+/* KALDIRILAN İKİ DÜĞME: "sakin mod" ve "yarın sor".
+   Kullanıcı ikisini de istemedi. Erteleme YETENEĞİ duruyor (ertelenmiş
+   bir kart hâlâ "ertelendi · geri al" diyor), yalnız üst şeritteki düğme
+   yok. Sakin mod da duruyor: işletim sisteminde "hareketi azalt" açıksa
+   kendiliğinden devreye giriyor. */
+#bh-sakin, #bh-is-ertele { display: none !important; }
 
 .bh {
   position: relative;
@@ -73,27 +104,42 @@ body.bahce-acik #sayfa-bahce { height: 100%; }
   font-variant-numeric: tabular-nums;
 }
 
+/* DÜĞMELER: sahnedeki alet etiketleriyle aynı dili konuşsun diye
+   kapsül biçimli ve hafif kabartmalı. Köşeli düz kutu, bahçenin yanında
+   arayüz artığı gibi duruyordu. Kabartma tek kademe: üstte ince bir
+   aydınlık çizgi, altta yumuşak gölge. */
 .bh-ust button, .bh-alt button {
-  font: inherit; font-size: var(--yazi-kucuk); height: var(--alan-y);
-  padding: 0 var(--b2); border-radius: var(--yaricap-2);
-  border: 1px solid var(--cizgi-2); background: transparent; color: var(--metin-2);
+  font: inherit; font-size: var(--yazi-kucuk); font-weight: 500;
+  height: var(--alan-y);
+  padding: 0 14px; border-radius: 999px;
+  border: 1px solid var(--cizgi-2);
+  background: linear-gradient(180deg, rgba(255, 255, 255, .07), rgba(0, 0, 0, .14));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .07), 0 1px 2px rgba(0, 0, 0, .25);
+  color: var(--metin-2);
   cursor: pointer; white-space: nowrap;
+  transition: transform .08s ease, border-color .12s ease, color .12s ease;
 }
-.bh-ust button:hover, .bh-alt button:hover { border-color: var(--metin-3); color: var(--metin); }
+.bh-ust button:hover, .bh-alt button:hover {
+  border-color: var(--metin-3); color: var(--metin);
+}
+.bh-ust button:active, .bh-alt button:active { transform: translateY(1px); }
 .bh-ust button:focus-visible, .bh-alt button:focus-visible {
   outline: 2px solid var(--vurgu); outline-offset: 1px;
 }
-.bh-ok, .bh-ikon { width: var(--alan-y); padding: 0; }
-/* Bölüm başına tek dolu düğme: asıl iş. */
+/* Ok ve ikon düğmeleri tam yuvarlak: metin taşımıyorlar. */
+.bh-ok, .bh-ikon { width: var(--alan-y); padding: 0; border-radius: 50%; }
+/* Bölüm başına tek dolu düğme: asıl iş. Kabartması biraz daha belirgin —
+   şeritte gözle aranmadan bulunuyor. */
 .bh-evet, .bh-alt button.asil {
   background: var(--vurgu) !important; border-color: var(--vurgu) !important;
-  color: #fff !important; font-weight: 600;
+  color: #fff !important; font-weight: 600; padding: 0 18px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .28), 0 2px 6px rgba(0, 0, 0, .32) !important;
 }
 .bh-evet:disabled, .bh-alt button.asil:disabled, .bh-alt button:disabled {
   background: var(--yuzey-2) !important; border-color: var(--cizgi) !important;
   color: var(--metin-3) !important; cursor: not-allowed;
 }
-.bh-sakin[aria-pressed="true"] { border-color: var(--vurgu); color: var(--vurgu); }
+
 
 /* ------------------------------------------------------------------ sahne */
 .bh-tuval { position: relative; flex: 1 1 auto; min-height: 200px; overflow: hidden; }
