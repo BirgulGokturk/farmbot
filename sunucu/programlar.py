@@ -22,7 +22,12 @@ import noktalar
 
 _KILIT = threading.RLock()
 AZAMI_ADIM = 200
-GECERLI_TIPLER = ("nokta", "bekle", "role", "uc", "goz")
+# `uc_dikey` BURADA EKSİKTİ. Yürütücü (ajan/dizi.py) onu baştan beri
+# tanıyordu ama çözümleyici tanımıyordu; sulama dizisi T inişini
+# ekleyince "Bilinmeyen adım tipi: 'uc_dikey'" diye düştü. Nem ölçümü
+# etkilenmemişti çünkü o, `programlar.coz`dan geçmeden doğrudan ajana
+# gidiyor — iki yol, biri denetlemiyor.
+GECERLI_TIPLER = ("nokta", "bekle", "role", "uc", "uc_dikey", "goz")
 
 # Değişken tipleri. FarmBot'ta Location/Number/Text/Peripheral/Sensor/Sequence
 # var; bizde işi gören üçü: bir noktayı, bir sayıyı ve bir metni dışarıdan
@@ -158,6 +163,23 @@ def adim_dogrula(adim: dict[str, Any]) -> dict[str, Any]:
         if ad not in ("su_pompasi", "hava_pompasi"):
             raise ProgramHatasi(f"Bilinmeyen röle: '{ad}'")
         return {"tip": "role", "ad": ad, "durum": bool(adim.get("durum"))}
+    if tip == "uc_dikey":
+        # TOHUM UCUNUN KENDİ DİKEY EKSENİ (PLC'de j4) — ana Z'den ayrı.
+        # Seçili başlığı işe sokan hareket bu: sulama ve nem de konuma
+        # varınca T'yi indiriyor.
+        #
+        # İKİ BİÇİM: `yukari` (tam çekilmiş konuma) ya da `mm` (o başlığın
+        # ayarındaki derinliğe). Hangi konuma gidileceğine AJAN karar
+        # veriyor; sunucu sayıyı taşımakla yetiniyor, çünkü kalibrasyon ve
+        # yumuşak sınırlar orada.
+        if adim.get("yukari"):
+            return {"tip": "uc_dikey", "yukari": True}
+        try:
+            mm = float(adim.get("mm"))
+        except (TypeError, ValueError):
+            raise ProgramHatasi(
+                "uc_dikey adımı ya `yukari: true` ya da sayısal `mm` ister")
+        return {"tip": "uc_dikey", "mm": mm}
     if tip == "goz":
         # Tohumluk gözünü dolu/boş işaretler. Hareket etmiyor; gözün
         # gerçekten var olup olmadığına AJAN karar veriyor (gözler orada
