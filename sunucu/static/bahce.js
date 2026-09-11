@@ -2012,8 +2012,14 @@ window.Bahce = (function () {
         { k: "x-", ad: "◀", cx: x + 22, cy: y + orta, r: 19, eksen: "x", yon: -1 },
         { k: "x+", ad: "▶", cx: x + gen - 22, cy: y + orta, r: 19, eksen: "x", yon: 1 },
         { k: "home", ad: "⌂", cx: x + orta, cy: y + orta, r: 21, eksen: "", yon: 0 },
-        { k: "z-", ad: "Z▲", cx: x + 24, cy: y - 22, r: 16, eksen: "z", yon: -1 },
-        { k: "z+", ad: "Z▼", cx: x + gen - 24, cy: y - 22, r: 16, eksen: "z", yon: 1 }
+        /* Z YÖNÜ ANA PANELLE AYNI OLMAK ZORUNDA. Burada Z▲ eksiye,
+         * Z▼ artıya bağlıydı — yani düğmeler makineyi ters yöne
+         * götürüyordu. Sür sekmesindeki Z▲ artı, Z▼ eksi (index.html);
+         * iki panelde iki yön, kullanıcıyı ekrana göre değil kas
+         * hafızasına göre yanıltıyor ve Z'de o, ucu toprağa sürmek
+         * demek. Yalnız yön değişti, tuşların yeri ve adı aynı. */
+        { k: "z+", ad: "Z▲", cx: x + 24, cy: y - 22, r: 16, eksen: "z", yon: 1 },
+        { k: "z-", ad: "Z▼", cx: x + gen - 24, cy: y - 22, r: 16, eksen: "z", yon: -1 }
       ]
     };
     return t;
