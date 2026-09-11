@@ -4,6 +4,16 @@
     python3 plc-oku.py            # proksimiteler: D1110, D1111, D1112
     python3 plc-oku.py 1110 3     # istediğin adresten istediğin kadar
     python3 plc-oku.py 1110 3 -i  # izle: yarım saniyede bir, Ctrl-C ile çık
+    python3 plc-oku.py -x         # BİT tara: giriş ve bobin bitleri 0..31
+    python3 plc-oku.py -x -i      # bit taramasını izle
+
+BİT TARAMA (-x) NİYE VAR: D registerları, PLC'nin fiziksel girişi oraya
+KOPYALAMASINA bağlı. Ladder'da o kopyalama satırı yoksa register sonsuza
+kadar 0 kalır ve dışarıdan "sensör ölü" gibi görünür — sahada tam bu
+çıktı. Anahtarın kendisi ise bir BİT (X0/X5/X6) ve Modbus bit
+fonksiyonlarıyla doğrudan okunabiliyor olabilir. Tarama, bir ucu elle
+indirdiğinizde HANGİ BİTİN değiştiğini gösteriyor; bulunursa PLC'de
+kopyalama satırı yazmaya hiç gerek kalmıyor.
 
 NEDEN AYRI BİR ARAÇ: "panelde lamba yanmıyor" dendiğinde zincirde dört
 halka var — PLC registerı yazıyor mu, Modbus okuması geliyor mu, ajan
@@ -38,10 +48,11 @@ def ayar_oku() -> dict:
     return {}
 
 
-def oku(ip: str, port: int, birim: int, adres: int, adet: int) -> list[int]:
+def _istek(ip: str, port: int, birim: int, fonksiyon: int,
+           adres: int, adet: int) -> bytes:
     with socket.create_connection((ip, port), timeout=2.0) as s:
         s.settimeout(2.0)
-        pdu = struct.pack(">BHH", 3, adres, adet)
+        pdu = struct.pack(">BHH", fonksiyon, adres, adet)
         s.sendall(struct.pack(">HHHB", 1, 0, len(pdu) + 1, birim) + pdu)
 
         def al(n: int) -> bytes:
@@ -57,14 +68,46 @@ def oku(ip: str, port: int, birim: int, adres: int, adet: int) -> list[int]:
         cevap = al(uzunluk - 1)
         if cevap[0] & 0x80:
             raise IOError(f"Modbus istisnası {cevap[1]}")
-        govde = cevap[1:]
-        bayt = govde[0]
-        return list(struct.unpack(">" + "H" * (bayt // 2), govde[1:1 + bayt]))
+        return cevap[1:]
+
+
+def oku(ip: str, port: int, birim: int, adres: int, adet: int) -> list[int]:
+    """Holding register (fonksiyon 3)."""
+    govde = _istek(ip, port, birim, 3, adres, adet)
+    bayt = govde[0]
+    return list(struct.unpack(">" + "H" * (bayt // 2), govde[1:1 + bayt]))
+
+
+def bit_oku(ip: str, port: int, birim: int, fonksiyon: int,
+            adres: int, adet: int) -> list[int]:
+    """Bobin (1) ya da giriş biti (2). Bitler DÜŞÜKTEN yükseğe paketli."""
+    govde = _istek(ip, port, birim, fonksiyon, adres, adet)
+    ham = govde[1:1 + govde[0]]
+    return [(ham[n // 8] >> (n % 8)) & 1 for n in range(adet)]
+
+
+def bit_satiri(ip: str, port: int, birim: int, adet: int = 32) -> str:
+    """Giriş bitleri ve bobinler tek satırda.
+
+    Okunamayan fonksiyon atlanıyor: her PLC ikisini de desteklemiyor ve
+    biri düşünce ötekinin sonucu kaybolmasın.
+    """
+    parca = []
+    for fonksiyon, ad in ((2, "giris"), (1, "bobin")):
+        try:
+            b = bit_oku(ip, port, birim, fonksiyon, 0, adet)
+            parca.append(ad + " " + "".join(
+                str(v) + ("|" if (n + 1) % 8 == 0 and n + 1 < adet else "")
+                for n, v in enumerate(b)))
+        except Exception as hata:
+            parca.append(ad + " okunamadi (" + str(hata) + ")")
+    return "   ".join(parca)
 
 
 def main() -> int:
     arg = [a for a in sys.argv[1:] if not a.startswith("-")]
     izle = any(a in ("-i", "--izle") for a in sys.argv[1:])
+    bit_tara = any(a in ("-x", "--bit") for a in sys.argv[1:])
     bas = int(arg[0]) if arg else VARSAYILAN_BAS
     adet = int(arg[1]) if len(arg) > 1 else VARSAYILAN_ADET
 
@@ -75,10 +118,22 @@ def main() -> int:
     if p.get("sahte"):
         print("UYARI: ayarda plc.sahte = true — gerçek PLC'ye bakmıyorsunuz.",
               file=sys.stderr)
-    print(f"== {ip}:{port} birim {birim} · D{bas}..D{bas + adet - 1}")
+    if bit_tara:
+        print(f"== {ip}:{port} birim {birim} · bit taramasi 0..31")
+        print("   Bir ucu elle indirin; degisen biti arayin. Soldaki ilk bit 0.")
+    else:
+        print(f"== {ip}:{port} birim {birim} · D{bas}..D{bas + adet - 1}")
 
     while True:
         try:
+            if bit_tara:
+                satir = bit_satiri(ip, port, birim)
+                print(("\r" if izle else "") + satir,
+                      end="" if izle else "\n", flush=True)
+                if not izle:
+                    return 0
+                time.sleep(0.5)
+                continue
             d = oku(ip, port, birim, bas, adet)
             satir = " · ".join(
                 f"D{bas + n}={v}"
