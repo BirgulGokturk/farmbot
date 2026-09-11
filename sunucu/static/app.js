@@ -1283,15 +1283,22 @@ function basTablosuCiz(baslar, bilgi) {
           basAlani(alan, ad, birim, adim, ipucu, b[alan],
                    alan === "servo_aci" ? 'min="0" max="180"' : "")).join("")
       }${
-        /* TOHUM UCUNUN KENDİ DİKEY EKSENİ yalnız onun bloğunda: öteki iki
-           başlığın böyle bir ekseni yok ve boş bir kutu göstermek
-           "burada da var ama girilmemiş" demek olurdu. */
-        k !== "tohum" ? "" :
+        /* T ALANI ÜÇ BAŞLIKTA DA VAR.
+           Burada "yalnız tohum ucunun böyle bir ekseni var" yazıyordu ve
+           alan öteki ikisinde hiç gösterilmiyordu. Makinede öyle değil:
+           ana Z bütün grubu indiriyor, SEÇİLİ BAŞLIĞI İŞE SOKAN hareket
+           T. Sulama ve nem ölçümü de konuma varınca T'yi indiriyor.
+           Alan gizli kaldığı sürece o derinlik girilemiyordu — nem probu
+           toprağa hiç dalmadan "ölçtü" sayılıyordu.
+           BOŞ BIRAKILABİLİR: boşsa o başlıkta T hiç sürülmüyor. */
         basAlani("t_asagi_mm", "T aşağı", "mm", 0.5,
-                 "Tohum ucunun kendi dikey ekseni (PLC'de j4) inik konumu.",
+                 "Bu başlık iş yaparken T ekseninin (PLC'de j4) ineceği "
+                 + "konum. Boş bırakılırsa T sürülmez.",
                  b.t_asagi_mm)
-        + basAlani("t_yukari_mm", "T yukarı", "mm", 0.5,
-                   "Aynı eksenin tam çekilmiş konumu.", b.t_yukari_mm)
+        + (k !== "tohum" ? "" :
+           basAlani("t_yukari_mm", "T yukarı", "mm", 0.5,
+                    "Aynı eksenin tam çekilmiş konumu. Ortak eksen, bir "
+                    + "kez giriliyor.", b.t_yukari_mm))
       }</div></div>`;
   }).join("");
   kap.querySelectorAll("input").forEach((el) => {

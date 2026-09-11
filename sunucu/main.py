@@ -945,7 +945,8 @@ async def api_toplu(govde: dict[str, Any], jeton: str = Query(default="")):
 
     yanit = await _dizi_gonder(
         "Seçim: " + ("sulama" if islem == "sula" else "gezinti"),
-        adimlar, govde.get("hiz"))
+        adimlar, govde.get("hiz"),
+        bas="sulama" if islem == "sula" else "")
 
     # DAMGA YALNIZ DİZİ GERÇEKTEN BAŞLADIYSA. `komut_gonder` ajanın
     # reddini de 200 ile döndürüyor (`{"ok": false, "mesaj": …}`);
@@ -1024,8 +1025,14 @@ async def _sulama_damgala(cozum: dict[str, Any], sulanacak: list[str]) -> None:
 
 
 async def _dizi_gonder(ad: str, adimlar: list[dict[str, Any]],
-                       hiz: Any = None) -> dict[str, Any]:
+                       hiz: Any = None, bas: str = "") -> dict[str, Any]:
     """Adım listesini çözüp ajana yollar.
+
+    `bas` VERİLMELİ. Ajan gereken başlığı adımlardan çıkarabiliyor
+    (`_dizi_basi`) ama o çıkarım `uc_dikey` adımını görünce "tohum"
+    diyor — T'nin yalnız tohum ucuna ait olduğu varsayımından. Artık
+    sulama ve nem de T'yi indiriyor, yani çıkarım yanlış başlığı seçer.
+    Adı açıkça vermek o varsayıma hiç dayanmamak demek.
 
     Nokta adları koordinata BURADA çevriliyor — kayıtlı programlarla aynı
     yol. Bir nokta bulunamazsa dizi HİÇ başlamıyor; yarıda "nokta yok"
@@ -1036,8 +1043,11 @@ async def _dizi_gonder(ad: str, adimlar: list[dict[str, Any]],
             programlar.coz, {"ad": ad, "adimlar": adimlar, "tekrar": 1})
     except programlar.ProgramHatasi as hata:
         raise HTTPException(status_code=400, detail=str(hata))
-    return await merkez.komut_gonder("dizi_baslat", {
-        "ad": ad, "adimlar": cozulmus, "tekrar": 1, "hiz": hiz})
+    istek: dict[str, Any] = {"ad": ad, "adimlar": cozulmus,
+                             "tekrar": 1, "hiz": hiz}
+    if bas:
+        istek["bas"] = bas
+    return await merkez.komut_gonder("dizi_baslat", istek)
 
 
 # --------------------------------------------------------------------------- #
@@ -1119,10 +1129,32 @@ async def _nem_olc_baslat(adlar: list[str]) -> dict[str, Any]:
         adimlar += [
             {"tip": "nokta", "ad": f"{ad}↑", "x": mx, "y": my, "z": guvenli_z},
             {"tip": "nokta", "ad": ad, "x": mx, "y": my, "z": olc_z},
+        ]
+        # T DE İNİYOR — başlık kontrolü T ile.
+        #
+        # Ana Z bütün grubu indiriyor; seçili başlığı işe sokan hareket
+        # T. Burada T hiç sürülmüyordu: makine noktaya geliyor, Z iniyor,
+        # ama prob kendi ekseninde yukarıda kaldığı için toprağa
+        # dalmıyordu. Ölçüm yapılmış sayılıyor, okunan değer havadan
+        # geliyordu.
+        #
+        # DERİNLİK BAŞIN AYARINDAN (`t_asagi_mm`), koda gömülü değil.
+        # Girilmemişse T'ye HİÇ dokunulmuyor: uydurma bir derinlik, probu
+        # kabın dibine sürmenin en kolay yolu.
+        t_asagi = _sayi_guvenli(b.get("t_asagi_mm"))
+        if t_asagi > 0.01:
+            adimlar += [{"tip": "uc_dikey", "mm": t_asagi}]
+        adimlar += [
             # Prob toprakta: okumanın oturması için kısa bir bekleme.
             # Ölçüm anını AJANIN durum paketinden alıyoruz; ayrı bir
             # "oku" adımı yok, çünkü prob sürekli okuyor.
             {"tip": "bekle", "saniye": nem_bekleme},
+        ]
+        if t_asagi > 0.01:
+            # ÖNCE T ÇEKİLİYOR, SONRA Z KALKIYOR. Ters sırada prob,
+            # toprağın içinden yukarı sürüklenir.
+            adimlar += [{"tip": "uc_dikey", "yukari": True}]
+        adimlar += [
             {"tip": "nokta", "ad": f"{ad}↑", "x": mx, "y": my, "z": guvenli_z},
         ]
         hedefler.append({"ad": ad, "x": ix, "y": iy, "mx": mx, "my": my,
@@ -1361,13 +1393,24 @@ def _sulama_coz(adlar: list[str], saniye: float | None,
                      "nem_esigi": c.get("nem_esigi"),
                      "nem_gerekce": c.get("nem_gerekce", ""),
                      "baslik": c.get("baslik")})
+        # T DE İNİYOR — başlık kontrolü T ile. Ana Z bütün grubu
+        # indiriyor; seçili başlığı işe sokan hareket T. Sulama
+        # başlığının derinliği kendi ayarından (`t_asagi_mm`);
+        # girilmemişse T'ye hiç dokunulmuyor ve davranış eskisi gibi.
+        t_asagi = _sayi_guvenli((baslik or {}).get("t_asagi_mm"))
         for i, nk in enumerate(c["noktalar"], 1):
             adimlar.append({"tip": "nokta",
                             "ad": ad if len(c["noktalar"]) == 1 else f"{ad}#{i}",
                             "x": nk["x"], "y": nk["y"], "z": nk["z"]})
+            if t_asagi > 0.01:
+                adimlar.append({"tip": "uc_dikey", "mm": t_asagi})
             adimlar.append({"tip": "role", "ad": "su_pompasi", "durum": True})
             adimlar.append({"tip": "bekle", "saniye": nk["saniye"]})
             adimlar.append({"tip": "role", "ad": "su_pompasi", "durum": False})
+            if t_asagi > 0.01:
+                # SU KESİLDİKTEN SONRA çekiliyor: ters sırada başlık
+                # yukarı giderken su akmaya devam eder.
+                adimlar.append({"tip": "uc_dikey", "yukari": True})
 
     if len(adimlar) > programlar.AZAMI_ADIM:
         ret.append(
