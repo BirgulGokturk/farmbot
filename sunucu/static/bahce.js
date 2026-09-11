@@ -69,10 +69,9 @@
  *   /api/bahce/film     → bu ekimin kareleri; `/api/bahce` her bitkiyle
  *                         `film_kimlik` ve `film_kare` veriyor, kareler
  *                         `/api/bahce/film/kare`den geliyor.
- *   /api/bahce/esik     → sulama nem eşiği. TÜR EZMESİNE yazıyor: aynı
- *                         türün hepsini etkiliyor, kendi eşiği olan
- *                         bitkiler etkilenmiyor ve cevapta adlarıyla
- *                         dönüyorlar — kadran ikisini de söylüyor.
+ *   /api/bahce/esik     → sulama nem eşiği (TÜR ezmesi). Kadran KALDIRILDI;
+ *                         eşiğin kendisi bitki kartında okunuyor,
+ *                         değiştirmek teknik panelin tür ezmesinde.
  *   /api/bahce/is/iptal → kuyruktaki işi düşürüyor; çalışan işi sunucu
  *                         409 ile geri çeviriyor, o cevap ekrana olduğu
  *                         gibi yazılıyor.
@@ -133,7 +132,7 @@ window.Bahce = (function () {
     sesDugme: null, konumVar: false, hareketSes: false, enable: false, acil: false, hareket: false,
     jog: null, jogBasili: null, jogSayac: null, olcumVeri: null, olcumT: 0,
     olcumHata: "", sensorKutu: null,
-    film: null, esik: null, gorevKutu: null,
+    film: null, gorevKutu: null, kartKutu: null,
     gorevTuval: null, gorevCt: null, gorevDamga: "",
     balonlar: [], parcalar: [], bulutlar: null,
     toz: [], ari: null, mesaj: "", mesajT: 0,
@@ -1025,13 +1024,12 @@ window.Bahce = (function () {
     /* Film ve eşik MAKİNE İŞİ DEĞİL: biri arşivi okuyor, öteki ayar
        yazıyor. Makine kopukken de çalışıyorlar. */
     { k: "film", ad: "Film", renk: "#d9b26a" },
-    { k: "esik", ad: "Eşik", renk: "#b79ae0" },
     { k: "kapat", ad: "Bırak", renk: "#8d9089" }
   ];
   function eylemCiz(c) {
     /* Kadran açıkken eylem halkası çizilmiyor: ikisi aynı yarıçapta üst
        üste biniyor ve hangi daireye dokunduğun belirsizleşiyordu. */
-    if (!S.secili || S.ekimNokta || S.esik) return;
+    if (!S.secili || S.ekimNokta) return;
     var b = S.ix[S.secili];
     if (!b) return;
     var sp = spriteAl(b);
@@ -1048,7 +1046,6 @@ window.Bahce = (function () {
           var n = sayi(b.film_kare, 0);
           return n ? n + " kare" : "kare yok";
         }
-        if (e.k === "esik") return "tür ayarı";
         if (e.k !== "sula") return "";
         if (S.basiliSula) return S.basiliSn.toFixed(1) + " sn";
         return bagli ? "basılı tut" : "kilitli";
@@ -1337,8 +1334,8 @@ window.Bahce = (function () {
     suNedenYok(c);
     calisanAletCiz(c);
     eylemCiz(c);
+    kartCiz(c);
     if (S.insaBitti) { rayCiz(c); gorevCiz(c); sensorCiz(c); jogCiz(c); }
-    esikCiz(c);
     balonCiz(c);
     atmosferCiz(c, dt);
     bulutCiz(c, dt);
@@ -1400,7 +1397,15 @@ window.Bahce = (function () {
         var C = window.AudioContext || window.webkitAudioContext;
         if (!C) return null;
         try { ctx = new C(); } catch (h) { return null; }
-        ana = ctx.createGain(); ana.gain.value = 0.9; ana.connect(ctx.destination);
+        /* YUMUŞAK ZİNCİR: her ses önce tiz kesen bir süzgeçten, sonra
+           düşük bir ana kazançtan geçiyor. Sesler "bildirim" gibi değil,
+           uzaktan duyulan bir bahçe gibi dursun diye. */
+        var suz = ctx.createBiquadFilter();
+        suz.type = "lowpass"; suz.frequency.value = 2600; suz.Q.value = 0.6;
+        var raf = ctx.createBiquadFilter();
+        raf.type = "peaking"; raf.frequency.value = 3000; raf.gain.value = -6; raf.Q.value = 1;
+        ana = ctx.createGain(); ana.gain.value = 0.42;
+        ana.connect(suz); suz.connect(raf); raf.connect(ctx.destination);
       }
       if (ctx.state === "suspended" && ctx.resume) { try { ctx.resume(); } catch (h) {} }
       return ctx;
@@ -1411,10 +1416,13 @@ window.Bahce = (function () {
       for (i = 0; i < n; i++) d[i] = Math.random() * 2 - 1;
       return t;
     }
+    /* Yumuşak zarf: 8 ms'lik dik atak "tık" diye çarpıyordu; atak
+       sürenin beşte biri kadar (en az 25 ms) ve sönüm daha uzun. */
     function zarf(k, t0, sure, tepe) {
+      var atak = Math.max(0.025, sure * 0.2);
       k.gain.setValueAtTime(0.0001, t0);
-      k.gain.exponentialRampToValueAtTime(tepe, t0 + 0.008);
-      k.gain.exponentialRampToValueAtTime(0.0001, t0 + sure);
+      k.gain.exponentialRampToValueAtTime(tepe, t0 + atak);
+      k.gain.exponentialRampToValueAtTime(0.0001, t0 + sure + atak);
     }
     function ton(f0, f1, sure, tip, tepe, gecikme) {
       var c = kur();
@@ -1444,8 +1452,10 @@ window.Bahce = (function () {
     }
     /** RÖLE TIKI — gerçek makinenin sesi bu: kuru, kısa, metalik. */
     function role(tepe) {
-      patlama(0.035, 2600, 900, tepe || 0.10, 6);
-      ton(1400, 700, 0.035, "square", (tepe || 0.10) * 0.35);
+      /* Sert metal tık yerine yumuşak tahta tıkırtısı: alçak bantta
+         kısa bir gürültü + yuvarlak bir üçgen ton. */
+      patlama(0.05, 900, 380, (tepe || 0.08) * 0.7, 2.2);
+      ton(520, 300, 0.07, "triangle", (tepe || 0.08) * 0.5);
     }
     return {
       acikMi: function () { return acik; },
@@ -1453,7 +1463,7 @@ window.Bahce = (function () {
         acik = !acik;
         try { localStorage.setItem("bh-ses", acik ? "1" : "0"); } catch (h) {}
         if (!acik) { this.akisDur(); this.motorDur(); }
-        else role(0.08);
+        else role(0.055);
         return acik;
       },
       uyandir: function () { kur(); },
@@ -1469,16 +1479,16 @@ window.Bahce = (function () {
         var kay = c.createBufferSource();
         kay.buffer = gurultuTampon(c, 2); kay.loop = true;
         var alt = c.createBiquadFilter();
-        alt.type = "lowpass"; alt.frequency.value = 2400;
+        alt.type = "lowpass"; alt.frequency.value = 1500;
         var bant = c.createBiquadFilter();
         bant.type = "bandpass"; bant.frequency.value = 1100; bant.Q.value = 0.7;
         var k = c.createGain();
         k.gain.setValueAtTime(0.0001, c.currentTime);
-        k.gain.exponentialRampToValueAtTime(0.055, c.currentTime + 0.12);
+        k.gain.exponentialRampToValueAtTime(0.032, c.currentTime + 0.45);
         /* Kabarcık: bant frekansını yavaşça gezdiren düşük frekanslı
            salınım. Düz gürültü "hışırtı", gezinen gürültü "su". */
         var lfo = c.createOscillator(), lk = c.createGain();
-        lfo.type = "sine"; lfo.frequency.value = 2.6; lk.gain.value = 420;
+        lfo.type = "sine"; lfo.frequency.value = 1.6; lk.gain.value = 260;
         lfo.connect(lk); lk.connect(bant.frequency);
         kay.connect(alt); alt.connect(bant); bant.connect(k); k.connect(ana);
         kay.start(); lfo.start();
@@ -1490,8 +1500,8 @@ window.Bahce = (function () {
         try {
           akis.k.gain.cancelScheduledValues(t);
           akis.k.gain.setValueAtTime(akis.k.gain.value, t);
-          akis.k.gain.exponentialRampToValueAtTime(0.0001, t + 0.25);
-          akis.kay.stop(t + 0.3); akis.lfo.stop(t + 0.3);
+          akis.k.gain.exponentialRampToValueAtTime(0.0001, t + 0.5);
+          akis.kay.stop(t + 0.55); akis.lfo.stop(t + 0.55);
         } catch (h) {}
         akis = null;
       },
@@ -1502,13 +1512,13 @@ window.Bahce = (function () {
         if (!c || motor) return;
         var o = c.createOscillator(), o2 = c.createOscillator();
         var f = c.createBiquadFilter(), k = c.createGain();
-        o.type = "sawtooth"; o.frequency.value = 88;
-        o2.type = "square"; o2.frequency.value = 176;
-        f.type = "lowpass"; f.frequency.value = 620; f.Q.value = 3;
+        o.type = "triangle"; o.frequency.value = 76;
+        o2.type = "sine"; o2.frequency.value = 152;
+        f.type = "lowpass"; f.frequency.value = 340; f.Q.value = 1.2;
         k.gain.setValueAtTime(0.0001, c.currentTime);
-        k.gain.exponentialRampToValueAtTime(0.03, c.currentTime + 0.06);
+        k.gain.exponentialRampToValueAtTime(0.018, c.currentTime + 0.35);
         var tit = c.createOscillator(), tk = c.createGain();
-        tit.type = "sine"; tit.frequency.value = 7.5; tk.gain.value = 5;
+        tit.type = "sine"; tit.frequency.value = 4.5; tk.gain.value = 2.5;
         tit.connect(tk); tk.connect(o.frequency);
         o.connect(f); o2.connect(f); f.connect(k); k.connect(ana);
         o.start(); o2.start(); tit.start();
@@ -1520,46 +1530,44 @@ window.Bahce = (function () {
         try {
           motor.k.gain.cancelScheduledValues(t);
           motor.k.gain.setValueAtTime(motor.k.gain.value, t);
-          motor.k.gain.exponentialRampToValueAtTime(0.0001, t + 0.18);
-          motor.o.stop(t + 0.22); motor.o2.stop(t + 0.22); motor.tit.stop(t + 0.22);
+          motor.k.gain.exponentialRampToValueAtTime(0.0001, t + 0.4);
+          motor.o.stop(t + 0.45); motor.o2.stop(t + 0.45); motor.tit.stop(t + 0.45);
         } catch (h) {}
         motor = null;
       },
 
       /* ---- ANLIK SESLER: hepsi bir MAKİNE PARÇASININ sesi ---- */
       role: role,                                   /* vana / röle tıkı */
-      tik: function () { role(0.07); },             /* alet alındı */
+      tik: function () { role(0.05); },             /* alet alındı */
       damla: function () {                          /* iş kuyruğa girdi */
-        role(0.06);
-        ton(880, 660, 0.07, "sine", 0.04, 0.04);
+        ton(660, 500, 0.16, "sine", 0.035);
+        ton(990, 760, 0.12, "sine", 0.018, 0.06);
       },
       prob: function () {                           /* prob toprağa iniyor */
-        patlama(0.16, 700, 220, 0.08, 1.6);
-        ton(190, 120, 0.14, "triangle", 0.05, 0.02);
-        patlama(0.07, 420, 180, 0.05, 2, 0.2);
+        patlama(0.22, 520, 180, 0.05, 1.1);
+        ton(170, 110, 0.2, "sine", 0.035, 0.03);
       },
       deklansor: function () {                      /* kamera */
-        role(0.09);
-        patlama(0.05, 3200, 1400, 0.07, 4, 0.06);
+        role(0.055);
+        patlama(0.06, 1600, 700, 0.035, 2.5, 0.07);
       },
       pop: function () {                            /* hasat — sap kopuyor */
-        patlama(0.05, 2200, 700, 0.09, 5);
-        ton(420, 120, 0.12, "triangle", 0.11, 0.01);
-        patlama(0.2, 300, 110, 0.05, 0.8, 0.04);
+        patlama(0.06, 1200, 480, 0.045, 2.4);
+        ton(380, 140, 0.2, "sine", 0.06, 0.02);
+        patlama(0.26, 240, 100, 0.035, 0.7, 0.05);
       },
-      toprak: function () { patlama(0.26, 320, 110, 0.07, 0.7); },  /* toprağa konuldu */
+      toprak: function () { patlama(0.3, 260, 95, 0.045, 0.6); },   /* toprağa konuldu */
       home: function () {                           /* home: iki eksen ucu */
-        role(0.08);
-        ton(150, 90, 0.18, "triangle", 0.06, 0.02);
-        role(0.06);
+        role(0.05);
+        ton(140, 85, 0.3, "sine", 0.04, 0.05);
       },
       basari: function () {                         /* iş bitti */
-        ton(523, 523, 0.09, "triangle", 0.055, 0);
-        ton(784, 784, 0.14, "triangle", 0.06, 0.1);
+        ton(523, 523, 0.22, "sine", 0.03, 0);
+        ton(784, 784, 0.3, "sine", 0.028, 0.14);
       },
       hata: function () {
-        ton(180, 120, 0.22, "sawtooth", 0.05);
-        patlama(0.1, 400, 160, 0.05, 1.5);
+        ton(220, 150, 0.3, "sine", 0.04);
+        ton(165, 130, 0.32, "sine", 0.028, 0.05);
       }
     };
   }());
@@ -1737,8 +1745,8 @@ window.Bahce = (function () {
     if (!ca) return;
     if (ca.tip === "nem") Ses.prob();
     else if (ca.tip === "foto") Ses.deklansor();
-    else if (ca.tip === "sula") Ses.role(0.09);   /* vana açılıyor */
-    else if (ca.tip === "gez") Ses.role(0.06);
+    else if (ca.tip === "sula") Ses.role(0.06);   /* vana açılıyor */
+    else if (ca.tip === "gez") Ses.role(0.04);
   }
   function kuyrukIzle() {
     calisanSes();
@@ -2140,7 +2148,7 @@ window.Bahce = (function () {
       isteKare(); return;
     }
     S.jogBasili = t.k;
-    Ses.uyandir(); Ses.role(0.07);
+    Ses.uyandir(); Ses.role(0.045);
     komut("jog", { eksen: t.eksen, yon: t.yon, basili: true });
     /* Ajan basılı tutmayı tazeleme ister: 250 ms'de bir aynı bit. */
     if (S.jogSayac) clearInterval(S.jogSayac);
@@ -2697,6 +2705,161 @@ window.Bahce = (function () {
   });
 
   /* ==================================================================== *
+   * BİTKİ KARTI — DOKUNUNCA AÇILAN KÜNYE
+   *
+   * Bitkiye dokunmak eylem halkasını açıyor; halkanın yanında bu kart
+   * duruyor. İçindeki her satır GERÇEK BİR ALANDAN geliyor:
+   *   nem            → `su_olcum` (ölçüm varsa yüzde + yaşı + kanıtı;
+   *                    yoksa "ölçülmedi", tahmin edilmiş sayı yazılmıyor)
+   *   son sulama     → `sulama_ts` (yoksa "kayıt yok")
+   *   dikim          → `ekim` + `yas_gun` / `olgun_gun`
+   *   susama         → `susadi` + `su_gerekce` + `su_kanit`
+   *   hasat          → `hasat` + `hasat_gerekce`
+   *   boy            → `yaricap_mm`, `yayilim_mm`, `cakisik`
+   *   sayaçlar       → `/api/bitki` (`sula_adet`, `nem_adet`, eğilim)
+   *   eşik           → `su_olcum.esik` (tür ayarı; buradan DEĞİŞTİRİLMİYOR)
+   * Gelmeyen alan için satır açılmıyor; "—" ile boş satır göstermek,
+   * bilinmeyeni bilinmiş gibi hizalamak olurdu.
+   * ==================================================================== */
+  function kartSatirlari(b) {
+    var r = [], n = nemDurum(b), simdi = Date.now() / 1000;
+    /* NEM — kartın en üst satırı, çünkü bahçenin asıl sorusu bu. */
+    if (n.var && n.yuzde != null) {
+      var kanit = n.kendi ? "kendi ölçümü" : "komşu ölçümü (" + Math.round(n.uzak) + " mm)";
+      r.push({ ad: "Toprak nemi", deger: "%" + Math.round(n.yuzde),
+               alt: kanit + " · " + sureKisa(n.yas) + " önce" + (n.bayat ? " · bayat" : ""),
+               renk: n.bayat ? "#e8c07a" : (n.kendi ? "#9fe08a" : "#e8c07a") });
+    } else {
+      r.push({ ad: "Toprak nemi", deger: "ölçülmedi",
+               alt: "prob bu bitkinin toprağına hiç batmadı", renk: "#a9ada4" });
+    }
+    if (n.esik > 0) {
+      r.push({ ad: "Sulama eşiği", deger: "%" + Math.round(n.esik),
+               alt: n.esikAcik ? "türün ayarı · bu yüzdenin altı susamış sayılıyor"
+                               : "kapalı", renk: "#c9cec4" });
+    }
+    /* SON SULAMA */
+    var st = sayi(b.sulama_ts, 0);
+    r.push({ ad: "Son sulama",
+             deger: st ? sureKisa(simdi - st) + " önce" : "kayıt yok",
+             alt: st ? tarih(st) + " · " + sayi(b.sulama_saniye, 0).toFixed(1)
+                       + " sn ayarlı (" + (b.sulama_deseni || "üst") + ")"
+                     : "bu bitki bu panelden hiç sulanmadı",
+             renk: st ? "#9ed6fa" : "#a9ada4" });
+    /* DİKİM VE YAŞ */
+    var ek = sayi(b.ekim, 0), yas = sayi(b.yas_gun, 0), olgun = sayi(b.olgun_gun, 0);
+    if (ek || yas) {
+      r.push({ ad: "Dikim", deger: ek ? tarih(ek) : (yas + " gün önce"),
+               alt: yas + " günlük" + (olgun ? " · olgunluk " + olgun + " gün" : "")
+                 + (olgun ? " · %" + Math.round(kis(yas / olgun, 0, 1) * 100) : ""),
+               renk: "#e8ece2" });
+    }
+    /* SUSAMA KARARI — sunucunun kararı ve GEREKÇESİ */
+    if (b.susadi) {
+      r.push({ ad: "Susadı", deger: b.su_kanit === "olculen" ? "ölçüme göre" : "tahmine göre",
+               alt: String(b.su_gerekce || ""), renk: "#e8a86a" });
+    }
+    if (b.hasat) {
+      r.push({ ad: "Hasat", deger: "hazır", alt: String(b.hasat_gerekce || ""),
+               renk: "#f6c456" });
+    }
+    /* BOY */
+    var yc = sayi(b.yaricap_mm, 0), yy = sayi(b.yayilim_mm, 0);
+    if (yc || yy) {
+      r.push({ ad: "Boy", deger: yc ? Math.round(yc * 2) + " mm çap" : "ölçülmedi",
+               alt: (yy ? "türün yayılımı " + Math.round(yy) + " mm" : "")
+                 + (b.cakisik ? " · komşuyla çakışıyor" : ""),
+               renk: b.cakisik ? "#e8a86a" : "#c9cec4" });
+    }
+    /* SAYAÇLAR — /api/bitki */
+    if (S.gecmis && S.gecmisAd === b.ad
+      && (sayi(S.gecmis.sula, 0) || sayi(S.gecmis.olcum, 0) || sayi(S.gecmis.adet, 0))) {
+      var g = S.gecmis;
+      var egilim = g.egilim
+        ? ("nem %" + Math.round(g.egilim.ilk) + " → %" + Math.round(g.egilim.son))
+        : (g.adet ? g.adet + " okuma" : "yakında okuma yok");
+      r.push({ ad: "Geçmiş",
+               deger: sayi(g.sula, 0) + " sulama · " + sayi(g.olcum, 0) + " ölçüm",
+               alt: egilim + (g.sulaToplam ? " · toplam " + Math.round(g.sulaToplam) + " sn su" : ""),
+               renk: "#c9cec4" });
+    }
+    if (sayi(b.film_kare, 0)) {
+      r.push({ ad: "Film", deger: sayi(b.film_kare, 0) + " kare",
+               alt: "halkadaki Film düğmesi açıyor", renk: "#d9b26a" });
+    }
+    return r;
+  }
+  function kartCiz(c) {
+    if (!S.secili || S.ekimNokta || S.film) return;
+    var b = S.ix[S.secili];
+    if (!b) return;
+    var satir = kartSatirlari(b);
+    var w = 246, ust = 46, satirY = 34;
+    var h = ust + satir.length * satirY + 12;
+    /* Kart bitkinin YANINDA duruyor, üstünde değil: eylem halkası orada.
+       Hangi yanda yer varsa o yana açılıyor, ekrandan taşmıyor. */
+    var sp = spriteAl(b), gx = px(b.x), gy = py(b.y);
+    var R = Math.max(66, sp.R + 40);
+    var x = gx + R + 16;
+    if (x + w > S.en - 8) x = gx - R - 16 - w;
+    x = kis(x, 8, Math.max(8, S.en - w - 8));
+    var y = kis(gy - h / 2, 8, Math.max(8, S.boy - h - 8));
+    S.kartKutu = { x: x, y: y, w: w, h: h };
+    c.save();
+    c.fillStyle = "rgba(0,0,0,.4)";
+    c.beginPath();
+    if (c.roundRect) c.roundRect(x + 3, y + 5, w, h, 14); else c.rect(x + 3, y + 5, w, h);
+    c.fill();
+    var g = c.createLinearGradient(x, y, x, y + h);
+    g.addColorStop(0, "rgba(31,36,30,.97)"); g.addColorStop(1, "rgba(22,26,21,.97)");
+    c.fillStyle = g;
+    c.beginPath();
+    if (c.roundRect) c.roundRect(x, y, w, h, 14); else c.rect(x, y, w, h);
+    c.fill();
+    c.strokeStyle = "rgba(140,152,134,.5)"; c.lineWidth = 1.2; c.stroke();
+    /* Bitkiye bağlayan ince çizgi: kartın kime ait olduğu belli olsun. */
+    c.strokeStyle = "rgba(140,152,134,.45)"; c.lineWidth = 1;
+    c.beginPath();
+    c.moveTo(x < gx ? x + w : x, y + h / 2);
+    c.lineTo(gx + (x < gx ? -1 : 1) * (R + 2), gy);
+    c.stroke();
+
+    c.textAlign = "left"; c.textBaseline = "alphabetic";
+    c.font = "700 14px system-ui,sans-serif";
+    c.fillStyle = "#eef2e8";
+    var ad = String(b.tur_ad || b.ad);
+    c.fillText(ad.length > 22 ? ad.slice(0, 21) + "…" : ad, x + 14, y + 24);
+    c.font = "10px ui-monospace,monospace";
+    c.fillStyle = "rgba(201,206,196,.65)";
+    c.fillText(b.ad + "  ·  X " + Math.round(sayi(b.x)) + "  Y " + Math.round(sayi(b.y)),
+      x + 14, y + 38);
+
+    var yy2 = y + ust + 12;
+    satir.forEach(function (r, i) {
+      if (i) {
+        c.strokeStyle = "rgba(255,255,255,.06)"; c.lineWidth = 1;
+        c.beginPath(); c.moveTo(x + 12, yy2 - 22); c.lineTo(x + w - 12, yy2 - 22); c.stroke();
+      }
+      c.font = "10px system-ui,sans-serif";
+      c.fillStyle = "rgba(201,206,196,.7)";
+      c.fillText(r.ad, x + 14, yy2 - 8);
+      c.font = "600 12px system-ui,sans-serif";
+      c.fillStyle = r.renk || "#e8ece2";
+      c.textAlign = "right";
+      c.fillText(r.deger, x + w - 14, yy2 - 8);
+      c.textAlign = "left";
+      if (r.alt) {
+        c.font = "10px system-ui,sans-serif";
+        c.fillStyle = "rgba(180,186,176,.8)";
+        var alt = r.alt.length > 42 ? r.alt.slice(0, 41) + "…" : r.alt;
+        c.fillText(alt, x + 14, yy2 + 6);
+      }
+      yy2 += satirY;
+    });
+    c.restore();
+  }
+
+  /* ==================================================================== *
    * FİLM — BÜYÜME ARŞİVİ (`/api/bahce/film`)
    *
    * Kareler sunucuda zaten var: `/api/bahce` her bitkiyle birlikte
@@ -2827,130 +2990,6 @@ window.Bahce = (function () {
   }
 
   /* ==================================================================== *
-   * EŞİK — SULAMA NEM EŞİĞİ (`/api/bahce/esik`)
-   *
-   * DİKKAT, BU BİR TÜR AYARIDIR. Sunucu eşiği tür ezmesine yazıyor;
-   * aynı türdeki bütün bitkiler etkileniyor ve kendi `ozel` eşiği olan
-   * bitkiler etkilenmiyor. Kadranın üstünde bu yazıyor, cevapta gelen
-   * "kendi eşiği olan" bitkiler de adlarıyla söyleniyor — yoksa kullanıcı
-   * değişmeyen bir sayıyı değişmiş sanırdı.
-   * ==================================================================== */
-  var esikAc = guvenli("eşik", function (b) {
-    var slug = String(b.tur || "");
-    if (!slug) {
-      mesajYaz("Bu bitkinin türü tanınmıyor — tür ayarı yazılamaz.");
-      altYaz(); return;
-    }
-    var n = nemDurum(b);
-    S.esik = { ad: b.ad, slug: slug, tur: b.tur_ad || slug,
-               yuzde: n.esik > 0 ? n.esik : 35, ilk: n.esik > 0 ? n.esik : null };
-    S.secili = b.ad;
-    isteKare();
-  });
-  function esikCiz(c) {
-    var e = S.esik;
-    if (!e) return;
-    var b = S.ix[e.ad];
-    if (!b) { S.esik = null; return; }
-    var cx = px(b.x), cy = py(b.y), R = Math.max(66, spriteAl(b).R + 52);
-    e.merkez = { x: cx, y: cy, r: R };
-    c.save();
-    /* Kadran: yay boyunca %0–%100. */
-    c.strokeStyle = "rgba(20,24,19,.85)"; c.lineWidth = 13;
-    c.beginPath(); c.arc(cx, cy, R, -Math.PI * 0.82, Math.PI * -0.18); c.stroke();
-    var t = kis(e.yuzde / 100, 0, 1);
-    c.strokeStyle = "#b79ae0"; c.lineWidth = 6;
-    c.beginPath();
-    c.arc(cx, cy, R, -Math.PI * 0.82, -Math.PI * 0.82 + t * (Math.PI * 0.64));
-    c.stroke();
-    var a = -Math.PI * 0.82 + t * (Math.PI * 0.64);
-    var hx = cx + Math.cos(a) * R, hy = cy + Math.sin(a) * R;
-    c.fillStyle = "#e6ddf6";
-    c.beginPath(); c.arc(hx, hy, 8, 0, 6.3); c.fill();
-    /* Ölçülen nem varsa kadranın üstünde işaretli: eşiği neye göre
-       koyduğunu görebilesin. */
-    var n = nemDurum(b);
-    if (n.var && n.yuzde != null) {
-      var a2 = -Math.PI * 0.82 + kis(n.yuzde / 100, 0, 1) * (Math.PI * 0.64);
-      c.strokeStyle = "#63c46b"; c.lineWidth = 2.4;
-      c.beginPath();
-      c.moveTo(cx + Math.cos(a2) * (R - 11), cy + Math.sin(a2) * (R - 11));
-      c.lineTo(cx + Math.cos(a2) * (R + 11), cy + Math.sin(a2) * (R + 11));
-      c.stroke();
-    }
-    c.font = "700 15px system-ui,sans-serif"; c.textAlign = "center";
-    c.fillStyle = "#e6ddf6";
-    c.fillText("%" + Math.round(e.yuzde), cx, cy - R - 26);
-    c.font = "600 10px system-ui,sans-serif";
-    c.fillStyle = "rgba(226,222,240,.9)";
-    c.fillText(e.tur + " TÜRÜNÜN eşiği — aynı türün hepsini etkiler", cx, cy - R - 12);
-    c.font = "10px system-ui,sans-serif";
-    c.fillStyle = "rgba(210,214,206,.8)";
-    c.fillText("kadranı sürükle · %100 = sulama kapalı", cx, cy + R + 22);
-    c.restore();
-  }
-  function esikDokun(p) {
-    var e = S.esik;
-    if (!e || !e.merkez) return false;
-    var d = Math.hypot(e.merkez.x - p.x, e.merkez.y - p.y);
-    if (d > e.merkez.r - 26 && d < e.merkez.r + 26) {
-      esikSurukle(p); bas = { tip: "esik", x: p.x, y: p.y, surukle: true };
-      return true;
-    }
-    /* Kadranın dışına dokunmak kadranı KAPATIYOR: açık kalırsa sahnedeki
-       başka her dokunuşu yutuyor (dur düğmesi dâhil). Değer değiştiyse
-       onay şeridi açık kalıyor, o DOM'da ve kadrana bağlı değil. */
-    var kopya = { slug: e.slug, tur: e.tur, yuzde: e.yuzde, ilk: e.ilk };
-    S.esik = null;
-    if (kopya.ilk == null || Math.round(kopya.yuzde) !== Math.round(kopya.ilk)) {
-      esikOnay(kopya);
-    } else { altYaz(); isteKare(); }
-    return true;
-  }
-  function esikSurukle(p) {
-    var e = S.esik;
-    if (!e || !e.merkez) return;
-    var a = Math.atan2(p.y - e.merkez.y, p.x - e.merkez.x);
-    if (a > Math.PI * -0.18) a = a > Math.PI * 0.5 ? -Math.PI * 0.82 : Math.PI * -0.18;
-    if (a < -Math.PI * 0.82) a = -Math.PI * 0.82;
-    e.yuzde = kis(((a + Math.PI * 0.82) / (Math.PI * 0.64)) * 100, 0, 100);
-    isteKare();
-  }
-  function esikOnay(e) {
-    e = e || S.esik;
-    if (!e) return;
-    var y = Math.round(e.yuzde);
-    onayAc(e.tur + " türünün sulama eşiği %" + y + " olacak.",
-      "Bu bir TÜR ayarı: aynı türdeki bütün bitkileri etkiler ve teknik "
-      + "paneldeki tür ezmesiyle aynı yere yazılır. %100 = sulama kapalı.",
-      "Yaz",
-      function () {
-        gonder("/api/bahce/esik", { turler: [e.slug], yuzde: y })
-          .then(function (c) {
-            var kendi = (c && c.kendi_esigi_olan) || [];
-            gunluk("bahçe: eşik · " + e.slug + " %" + y);
-            Ses.tik();
-            mesajYaz("Eşik yazıldı: " + e.tur + " %" + y);
-            /* Etkilenmeyen bitkiler NOT alanında kalıyor: geçici bir
-               mesaj olarak yazılsaydı bir sonraki tazelemede silinir ve
-               kullanıcı değişmeyen bitkileri hiç görmezdi. */
-            notYaz("esik", kendi.length
-              ? ("Kendi eşiği olan " + kendi.length + " bitki bu ayardan "
-                 + "etkilenmedi: " + kendi.slice(0, 4).join(", ")
-                 + (kendi.length > 4 ? "…" : ""))
-              : "");
-            S.esik = null;
-            return veriYukle();
-          })
-          .catch(function (h) {
-            notYaz("esik", "Eşik yazılmadı — " + ((h && h.message) || h));
-            isteKare();
-          });
-      },
-      function () { S.esik = null; altYaz(); isteKare(); });
-  }
-
-  /* ==================================================================== *
    * ETKİLEŞİM — altı ayrı hareket, hepsi yerin kendisinde.
    *   dokun (uç)      → alet halkası
    *   dokun (bitki)   → eylem halkası
@@ -2997,8 +3036,6 @@ window.Bahce = (function () {
     /* Film penceresi açıkken bütün dokunuşlar onun: arkadaki sahneye
        kazayla iş yaptırmak istemiyoruz. */
     if (S.film && filmDokun(p)) return;
-    /* Eşik kadranı açıkken de aynısı. */
-    if (S.esik && esikDokun(p)) return;
 
     /* Yön tuşları */
     var jt = jogTusBul(p);
@@ -3103,7 +3140,6 @@ window.Bahce = (function () {
   }
   var tuvalKaydi = guvenli("gezinme", function (e) {
     if (bas && bas.tip === "film") { filmSec(konum(e).x); return; }
-    if (bas && bas.tip === "esik") { esikSurukle(konum(e)); return; }
     if (S.tasima) {
       var pt = konum(e);
       S.tasima.x = pt.x; S.tasima.y = pt.y;
@@ -3145,12 +3181,6 @@ window.Bahce = (function () {
     if (uzunSayac) { clearTimeout(uzunSayac); uzunSayac = 0; }
     if (S.jogBasili) { jogBitir(); bas = null; return; }
     if (bas && bas.tip === "film") { bas = null; return; }
-    if (bas && bas.tip === "esik") {
-      bas = null;
-      var ek = S.esik;
-      if (ek) { S.esik = null; esikOnay({ slug: ek.slug, tur: ek.tur, yuzde: ek.yuzde, ilk: ek.ilk }); }
-      return;
-    }
     if (S.tasima) {
       var t = S.tasima, hedef = S.tasimaHedef;
       S.tasima = null; S.tasimaHedef = null;
@@ -3279,7 +3309,6 @@ window.Bahce = (function () {
     if (!b) return;
     if (ey.k === "kapat") { S.secili = ""; onayKapat(); altYaz(); isteKare(); return; }
     if (ey.k === "film") { filmAc(b); return; }
-    if (ey.k === "esik") { esikAc(b); return; }
     if (!bagli) { mesajYaz("Makine bağlı değil — bu iş başlatılamaz."); return; }
     if (ey.k === "sula") {
       /* BASILI TUT: tuttuğun süre sulama süresi oluyor. Bırakınca ne
@@ -3426,8 +3455,11 @@ window.Bahce = (function () {
       if (S.gecmisAd !== ad) return;
       var e = (c.ek || {})[ad];
       S.gecmis = e ? { adet: (e.gecmis || []).length, egilim: e.egilim || null,
-                       sula: sayi(e.sula_adet, 0), olcum: sayi(e.nem_adet, 0) }
-                   : { adet: 0, egilim: null };
+                       sula: sayi(e.sula_adet, 0), olcum: sayi(e.nem_adet, 0),
+                       sulaToplam: sayi(e.sula_toplam_sn, 0),
+                       son: (e.gecmis && e.gecmis.length)
+                         ? e.gecmis[e.gecmis.length - 1] : null }
+                   : { adet: 0, egilim: null, sula: 0, olcum: 0, sulaToplam: 0, son: null };
       altYaz();
     }).catch(function (h) {
       /* NEDEN okunamadığını yazıyoruz. "Okunamadı" tek başına hiçbir şey
@@ -3699,7 +3731,6 @@ window.Bahce = (function () {
           isteKare(); return;
         }
         if (S.film) { filmKapat(); return; }
-        if (S.esik) { S.esik = null; altYaz(); isteKare(); return; }
         if (S.tasima) { S.tasima = null; S.tasimaHedef = null; altYaz(); isteKare(); return; }
         if (S.onay) { var ip = S.onay.iptal; onayKapat(); if (ip) ip(); return; }
         if (S.ekimNokta) { S.ekimNokta = null; S.ekimTur = ""; altYaz(); isteKare(); return; }
@@ -3906,7 +3937,6 @@ window.Bahce = (function () {
         film: S.film ? { ad: S.film.ad, kare: S.film.kareler.length, ix: S.film.ix,
                          hata: S.film.hata, resim: !!S.film.img,
                          serit: S.film.serit || null, kutu: S.film.kutu || null } : null,
-        esik: S.esik ? { slug: S.esik.slug, yuzde: Math.round(S.esik.yuzde) } : null,
         jog: S.jog ? { x: S.jog.x, y: S.jog.y, w: S.jog.w, h: S.jog.h,
                        kilit: jogKilit(),
                        tuslar: S.jog.tuslar.map(function (t) {
