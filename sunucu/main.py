@@ -4219,6 +4219,21 @@ async def api_bahce_film_kare(kimlik: str = Query(...), damga: str = Query(...),
                     headers={"Cache-Control": "public, max-age=86400"})
 
 
+@app.delete("/api/bahce/film/kare")
+async def api_bahce_film_kare_sil(kimlik: str = Query(...), damga: str = Query(...),
+                                  jeton: str = Query(default="")):
+    """Tek kareyi siler — filmin tamamını değil.
+
+    GERİ ALINAMAZ ve bilerek öyle: kareler büyüyor, geri alma kuyruğunda
+    tutmak arşivi iki katına çıkarırdı. Onayı panel soruyor (bitki
+    silmedeki kuralın aynısı).
+    """
+    _parola_dogrula(jeton)
+    if not await asyncio.to_thread(arsiv.kare_sil, kimlik, damga):
+        raise HTTPException(status_code=404, detail="Kare bulunamadı")
+    return {"ok": True, "kimlik": kimlik, "damga": damga}
+
+
 @app.post("/api/bahce/foto")
 async def api_bahce_foto(govde: dict[str, Any], jeton: str = Query(default="")):
     """Şimdi kare çek — kullanıcı "Fotoğraf"a bastığında.

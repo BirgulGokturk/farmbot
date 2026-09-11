@@ -128,6 +128,28 @@ def kare_oku(kimlik: str, damga: str) -> bytes | None:
         return None
 
 
+def kare_sil(kimlik: str, damga: str) -> bool:
+    """Tek bir kareyi siler. -> silindi mi
+
+    `sil(kimlik)` filmin TAMAMINI siliyor; bu, içinden tek kare çıkarmak
+    için. Bulanık çıkan ya da makinenin gölgesi düşen bir kare filmi
+    bozuyor ve bütün geçmişi atmak o kareyi düzeltmenin yolu değil.
+
+    DAMGA BİÇİMİ DENETLENİYOR (`kare_oku` ile aynı kalıp): ad doğrudan
+    dosya yoluna giriyor ve denetimsiz bırakmak, `..` ile klasörün
+    dışına çıkmaya açık kapı bırakmak demek.
+    """
+    if not re.fullmatch(r"[0-9]+(\.[0-9]+)?", str(damga)):
+        return False
+    yol = os.path.join(_klasor(kimlik), f"{damga}.jpg")
+    try:
+        os.remove(yol)
+    except OSError:
+        return False
+    ozet_bosalt()          # boyut özeti önbellekli; silinen kare orada kalmasın
+    return True
+
+
 def son_damga(kimlik: str) -> float:
     """Bu filmin en yeni karesinin damgası — özetten, taramadan."""
     return float((ozet()["filmler"].get(kimlik) or {}).get("son") or 0.0)
@@ -417,6 +439,11 @@ def cek(bitkiler_listesi: list[dict[str, Any]], tur_indeks: dict[str, dict[str, 
             atlanan.append({"ad": b.get("ad"),
                             "sebep": "bitki karenin dışında ya da kenarına çok yakın"})
             continue
-        yaz(kimlik, veri, simdi)
-        cekilen.append({"ad": b.get("ad"), "kimlik": kimlik})
+        damga = yaz(kimlik, veri, simdi)
+        # DAMGA DA DÖNÜYOR. Eskiden yalnız `ad` ve `kimlik` vardı ve panel
+        # yeni çekilen kareyi gösterebilmek için filmin tamamını yeniden
+        # listelemek zorundaydı — çektiğin şeyi görmek için bir tur daha
+        # sunucuya gitmek. `/api/bahce/film/kare?kimlik=…&damga=…`
+        # doğrudan bu ikisiyle çağrılıyor.
+        cekilen.append({"ad": b.get("ad"), "kimlik": kimlik, "damga": damga})
     return {"ok": True, "sebep": "", "cekilen": cekilen, "atlanan": atlanan}
