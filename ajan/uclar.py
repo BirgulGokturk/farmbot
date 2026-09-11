@@ -338,7 +338,7 @@ def _atomik_yaz(yol: str, veri: Any) -> None:
             pass
         raise
 
-def _bas_dogrula(ham: Any) -> dict[str, Any]:
+def _bas_dogrula(ham: Any, kismi: bool = False) -> dict[str, Any]:
     """Tek bir başın alanlarını sayıya çevirir; okunamayan varsayılana düşer.
 
     Sessizce sıfıra düşmüyoruz diye değil — düşüyoruz, ama varsayılan
@@ -349,6 +349,22 @@ def _bas_dogrula(ham: Any) -> dict[str, Any]:
     h = ham if isinstance(ham, dict) else {}
     cikti: dict[str, Any] = {}
     for alan, vars_ in BAS_VARSAYILAN.items():
+        # ALAN İSTEKTE YOKSA DOKUNULMUYOR — `kismi` iken.
+        #
+        # Burası her alanı HER SEFERİNDE yazıyordu: istekte olmayan alan
+        # varsayılana (0) düşüyor, isteğe bağlı olan `None` oluyordu. Üst
+        # taraftaki birleştirme (`{**eski, **_bas_dogrula(...)}`) o yüzden
+        # hiçbir şey koruyamıyordu — sözlük zaten bütün anahtarları
+        # taşıyordu.
+        #
+        # Sahada görülen: kullanıcı bir değeri girip kaydediyor, sonra
+        # başka bir alanı kaydeden ikinci bir istek gelince ilki
+        # sıfırlanıyor. Sayfa yenilenince "girdiğim değerler geri gitti".
+        #
+        # BOŞ DİZE HÂLÂ TEMİZLİYOR: kullanıcı bir alanı bilerek boşalttıysa
+        # o bir istek. "Yok" ile "boş" ayrı şeyler.
+        if kismi and alan not in h:
+            continue
         deger = h.get(alan, vars_)
         try:
             cikti[alan] = round(float(deger), 2)
@@ -358,6 +374,8 @@ def _bas_dogrula(ham: Any) -> dict[str, Any]:
     # geçerli bir T konumu; "girilmedi" ile "sıfır" ikisi ayrı şey ve
     # karıştırmak, kurulmamış bir ekseni sıfıra sürmek olurdu.
     for alan in BAS_ISTEGE_BAGLI:
+        if kismi and alan not in h:
+            continue
         deger = h.get(alan)
         if deger in (None, ""):
             cikti[alan] = None
@@ -561,9 +579,12 @@ class Uclar:
                     birlesik = dict(self.ayar.get("baslar") or {})
                     for kimlik, deger in (temiz["baslar"] or {}).items():
                         if kimlik in BASLAR:
+                            # KISMİ: istekte OLMAYAN alan korunuyor.
+                            # Panel bir başın yalnız bir alanını
+                            # gönderdiğinde ötekiler silinmesin.
                             birlesik[kimlik] = {
                                 **birlesik.get(kimlik, {}),
-                                **_bas_dogrula(deger)}
+                                **_bas_dogrula(deger, kismi=True)}
                     temiz["baslar"] = _baslar_dogrula(birlesik)
                 # Eski panel `sulama_basligi` gönderiyor olabilir: sulama
                 # başına yazıyoruz ki iki yerde iki farklı kayma olmasın.
