@@ -1081,6 +1081,7 @@ async def _nem_olc_baslat(adlar: list[str]) -> dict[str, Any]:
     adimlar: list[dict[str, Any]] = []
     hedefler: list[dict[str, Any]] = []
     ret: list[str] = []
+    t_eksik = False
     for ad in adlar:
         n = kayitli.get(ad)
         if n is None:
@@ -1144,6 +1145,11 @@ async def _nem_olc_baslat(adlar: list[str]) -> dict[str, Any]:
         t_asagi = _sayi_guvenli(b.get("t_asagi_mm"))
         if t_asagi > 0.01:
             adimlar += [{"tip": "uc_dikey", "mm": t_asagi}]
+        else:
+            # SESSİZ ATLAMA YOK. T girilmemişse prob toprağa hiç
+            # dalmıyor ve okunan değer HAVADAN geliyor — ölçüm yapılmış
+            # gibi görünüp yanlış sayı kaydediyor. Ayarın adı yazılı.
+            t_eksik = True
         adimlar += [
             # Prob toprakta: okumanın oturması için kısa bir bekleme.
             # Ölçüm anını AJANIN durum paketinden alıyoruz; ayrı bir
@@ -1165,6 +1171,13 @@ async def _nem_olc_baslat(adlar: list[str]) -> dict[str, Any]:
     if not adimlar:
         raise HTTPException(status_code=400, detail="Ölçülecek bitki yok")
 
+    if t_eksik:
+        await merkez.yayinla({
+            "tip": "gunluk", "seviye": "uyari",
+            "metin": ("Nem probunun 'T aşağı' değeri girilmemiş — T "
+                      "indirilmiyor. Prob toprağa dalmaz ve okunan değer "
+                      "HAVADAN gelir. Ayarlar → Başlar ve tohumluk → "
+                      "Nem probu → T aşağı.")})
     await _adim_on_kontrol(adimlar, "Nem ölçümü")
     await merkez.yayinla({
         "tip": "gunluk", "seviye": "bilgi",
@@ -1398,6 +1411,14 @@ def _sulama_coz(adlar: list[str], saniye: float | None,
         # başlığının derinliği kendi ayarından (`t_asagi_mm`);
         # girilmemişse T'ye hiç dokunulmuyor ve davranış eskisi gibi.
         t_asagi = _sayi_guvenli((baslik or {}).get("t_asagi_mm"))
+        if t_asagi <= 0.01:
+            # SESSİZ ATLAMA YOK. T inmezse başlık yukarıda kalıyor ve su
+            # yukarıdan dökülüyor; "sulama yaptım ama T inmedi" sorusunun
+            # cevabı bu ve ayarın adıyla yazılması gerekiyor.
+            uyari.append("Sulama başlığının 'T aşağı' değeri girilmemiş — "
+                         "T indirilmiyor, su yukarıdan dökülüyor. "
+                         "Ayarlar → Başlar ve tohumluk → Sulama başlığı → "
+                         "T aşağı.")
         for i, nk in enumerate(c["noktalar"], 1):
             adimlar.append({"tip": "nokta",
                             "ad": ad if len(c["noktalar"]) == 1 else f"{ad}#{i}",

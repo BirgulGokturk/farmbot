@@ -451,69 +451,36 @@ class Ajan:
     def uc_secim_engel(self) -> str:
         """Başka bir başlığı indirmeyi engelleyen sebep varsa metni, yoksa ''.
 
-        MEKANİZMA: üç başlık tek parçada birleştirilmiş ama DÖNMÜYORLAR;
-        her biri kendi sabit yerinde duruyor ve servo yalnız sırası
-        geleni AŞAĞI İNDİRİYOR. Dolayısıyla kural "dönerken sürükleme"
-        değil: inmiş bir başlık toprağın içindeyken ikinci bir başlığı
-        indirmek, onu da toprağa sokar ve inen ilkini çekmeden ikinciyi
-        indirmek mekanizmayı zorlar.
+        KİLİT T'YE BAKIYOR, Z'YE DEĞİL.
+        --------------------------------
+        Burası uzun süre Z yüksekliğine bakıyordu ve yanlış soruyordu.
+        MEKANİZMA ŞÖYLE: ana Z bütün başlık grubunu birden indiriyor;
+        SEÇİLİ BAŞLIĞI İŞE SOKAN hareket T. Yani "bir başlık toprağın
+        içinde mi" sorusunun cevabı T'de, Z'de değil. Z aşağıda olabilir
+        ve hiçbir başlık inmemiş olabilir — normal çalışma hâli bu.
 
-        İKİ KURAL, SIRAYLA. Mekanizmanın kendi eşiği
-        (`uc_secici.guvenli_z`) girilmişse o geçerli — inen başlığın
-        çekilmiş sayılabilmesi için gereken yükseklik, ölçülerek
-        giriliyor. Girilmemişse karar genel Z güvenlik kuralına
-        (`plc.z_guvenli_mi`) kalıyor. Hangi kuralın uygulandığı metinde
-        yazılı; "neden inmiyor" sorusu iki ayrı sayıdan hangisine
-        bakılacağını da söylemeli.
+        Eski kural iki ayrı eşik taşıyordu (`uc_secici.guvenli_z` ve
+        `plc.guvenli_z`) ve ikisi çakışıyordu: iş hazırlığı Z'yi genel
+        güvenli yüksekliğe (265 mm) çıkarıyor, uç seçici eşiği ise 270
+        istiyordu; hazırlık başarılı oluyor, hemen ardından seçim
+        reddediliyordu. Sahada görülen buydu:
+            "Z 265 mm — başlık 270 mm'nin altında indirilmiyor"
+        Tek soru, tek eşik: T çekili mi.
 
         Konum okunamıyorsa engel VAR diyoruz: hata anında serbest
-        bırakmak, ikinci bir başlığı toprağa sokmanın en kolay yolu.
+        bırakmak, inmiş bir başlıkla servo döndürmenin en kolay yolu.
         """
-        guvenli_z = (self.uclar.uc_secici() or {}).get("guvenli_z")
-        if guvenli_z is not None:
-            try:
-                simdiki = self.plc.konum_mm()[2]
-            except Exception:
-                return ("Z konumu okunamıyor — başlık indirilmiyor. "
-                        "Robot bağlantısını denetleyin.")
-            if simdiki >= float(guvenli_z):
-                return ""
-            return (f"Z {simdiki:.0f} mm — başlık {float(guvenli_z):.0f} mm'nin "
-                    f"altında indirilmiyor. İnmiş bir başlık toprağın "
-                    f"içindeyken ikincisini indirmek onu da toprağa sokar. "
-                    f"Önce Z'yi kaldırın. (Eşik: Ayarlar → Başlar → uç "
-                    f"seçici güvenli yüksekliği.)")
         try:
-            guvenli = self.plc.z_guvenli_mi()
-        except Exception:
-            guvenli = False
-        if guvenli:
-            return ""
-        return (f"Z aşağıda — başlık indirilmiyor. İnmiş bir başlık toprağın "
-                f"içindeyken ikincisini indirmek onu da toprağa sokar. Önce "
-                f"Z'yi güvenli yüksekliğe (≥ {self.plc.guvenli_z:.0f} mm) "
-                f"kaldırın. Mekanizmanın kendi eşiği girilmemiş; girilirse "
-                f"genel kural yerine o geçerli olur (Ayarlar → Başlar → uç "
-                f"seçici güvenli yüksekliği).")
-
-    # KARTIN RAPOR ARASI (saniye). Firmware `OLCUM_ARALIGI_MS = 2000`.
-    # Uç yerine oturunca firmware `sonOlcum = 0` yazıp raporu beklemeden
-    # gönderiyor, yani onay normalde anında geliyor; bu sayı o rapor
-    # kaçarsa bir sonrakini bekleyebilmek için. Firmware'de aralık
-    # büyütülürse burası da büyümeli.
-    OLCUM_ARALIGI_SN = 2.0
-    #: Servo süresine eklenen onay payı — iki rapor fırsatı.
-    UC_ONAY_PAYI_SN = 2 * OLCUM_ARALIGI_SN
-    # BÜTÜN HAZIRLIĞIN ÜST SINIRI. Sunucu bu komutu `KOMUT_ZAMAN_ASIMI`
-    # = 20 sn beklyor (sunucu/main.py); aşarsak panel 504 alıyor ve
-    # ajan işi başlatıp başlatmadığını söyleyemiyor — en kötü sonuç bu.
-    # `sure_ms` panelden 10 000 ms'ye kadar girilebiliyor ve önce süren
-    # bir hareketi, sonra kendi komutumuzu beklersek iki tam süre üst
-    # üste biniyor (10+4 + 10+4 = 28 sn). Bütçe o yüzden burada
-    # kesiliyor: aşarsa panele ZAMAN AŞIMI değil, sebebi yazılı bir RET
-    # gidiyor. Sunucudaki sayı büyürse burası da büyüyebilir.
-    UC_HAZIRLIK_BUTCESI_SN = 15.0
-
+            if self.plc.t_yukarida_mi():
+                return ""
+        except Exception:                                    # noqa: BLE001
+            return ("Tohum ucu ekseni (T) okunamıyor — başlık "
+                    "indirilmiyor. Robot bağlantısını denetleyin.")
+        return ("Bir başlık aşağıda (T inik) — servo döndürülmüyor. "
+                "İnmiş bir başlık toprağın içindeyken ikincisini "
+                "indirmek onu da toprağa sokar. Önce T'yi çekin "
+                "(Sür → Tohum ucu → Yukarı çek ya da ⌂ T). "
+                "Çekilmiş sayılma payı: Ayarlar → Tohum ucu payı.")
     async def _uc_yerine_otursun(self, istenen: int, bitis: float) -> bool:
         """Kart 'istenen uç seçili ve hareket bitti' diyene kadar bekler.
 
