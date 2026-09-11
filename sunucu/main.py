@@ -937,6 +937,27 @@ async def api_toplu(govde: dict[str, Any], jeton: str = Query(default="")):
             raise HTTPException(
                 status_code=422,
                 detail="Sulama başlatılmadı — " + " · ".join(cozum["ret"]))
+        # HİÇ ADIM YOKSA SEBEBİNİ SÖYLE.
+        #
+        # `ret` boş ama `adimlar` da boşsa hiçbir şey reddedilmedi —
+        # bitkilerin hiçbirinin suya İHTİYACI yok (toprak nemi eşiğin
+        # üstünde ya da yeni sulanmış). Bu tasarlanmış davranış, ama
+        # kullanıcıya "Dizide adım yok" diye ulaşıyordu: bir arıza gibi
+        # okunuyor ve sebebi hiçbir yerde yazmıyordu.
+        #
+        # Gerekçe `ozet`te zaten var (`nem_gerekce`), yalnız taşınmıyordu.
+        if not cozum["adimlar"]:
+            sebepler = [f"{o['ad']}: {o.get('nem_gerekce') or 'sulama gerekmiyor'}"
+                        for o in cozum.get("ozet") or []
+                        if o.get("sulanacak") is False]
+            raise HTTPException(
+                status_code=422,
+                detail=("Sulanacak bitki yok — " + " · ".join(sebepler[:6])
+                        + (f" (+{len(sebepler) - 6})" if len(sebepler) > 6 else "")
+                        if sebepler else
+                        "Sulama adımı çıkmadı: seçilen bitkilerin sulama deseni "
+                        "hiç nokta üretmedi. Ayarlar → Tür özellikleri → "
+                        "sulama deseni ve nokta sayısını denetleyin."))
         damgalanacak = await _sulama_uygula(cozum)
         adimlar = cozum["adimlar"]
     else:
