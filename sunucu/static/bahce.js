@@ -1891,9 +1891,12 @@ window.Bahce = (function () {
    * Yağmur, ışık ve rüzgâr sensörü bu makinede YOK; tahtada da yok.
    * ==================================================================== */
   var OLCUM_SATIR = [
-    { k: "hava_sicaklik", ad: "Hava", birim: "°C", ondalik: 1 },
+    /* "Hava" tek başına neyin havası olduğunu söylemiyordu; yanında
+       "Hava nemi" durunca ikisi aynı şeyin iki hâli gibi okunuyor. */
+    { k: "hava_sicaklik", ad: "Hava sıcaklığı", birim: "°C", ondalik: 1 },
     { k: "hava_nem", ad: "Hava nemi", birim: "%", ondalik: 0 },
-    { k: "toprak_nem", ad: "Toprak nemi", birim: "%", ondalik: 0 },
+    /* TOPRAK NEMİ AYRI ELE ALINIYOR (bkz. `olcumSatirlari`): ham sayı
+       yüzde değil ve "%" etiketiyle göstermek yanlıştı. */
     { k: "basinc", ad: "Basınç", birim: "hPa", ondalik: 0 },
     { k: "bmp_sicaklik", ad: "Kart", birim: "°C", ondalik: 1 }
   ];
@@ -1917,6 +1920,27 @@ window.Bahce = (function () {
       if (d === null || d === undefined || !isFinite(Number(d))) return;
       cikti.push({ ad: t.ad, deger: Number(d).toFixed(t.ondalik) + " " + t.birim });
     });
+
+    /* TOPRAK NEMİ — "%" DEĞİL, KALİBRE EDİLMEMİŞSE HAM SAYI.
+     *
+     * Burada `toprak_nem` doğrudan "%" ile yazılıyordu ve ekranda
+     * "Toprak nemi 1022 %" görünüyordu. 1022 bir yüzde değil, 0-1023
+     * arası ADC sayımı — üstelik büyük sayı KURU demek, yani gösterilen
+     * şey anlamın tersiydi.
+     *
+     * Ajan artık `toprak_nem_yuzde` (kalibre yüzde) ve `toprak_kalibre`
+     * (kalibrasyon makul mü) gönderiyor. Yüzde varsa o yazılıyor; yoksa
+     * ham sayı "ham" etiketiyle duruyor ve yanında ne yapılacağı yazılı.
+     * Uydurma bir yüzde göstermek, ham sayıyı "%" demekle aynı yalan. */
+    var ham = o.toprak_nem;
+    var yuzde = o.toprak_nem_yuzde;
+    if (yuzde !== null && yuzde !== undefined && isFinite(Number(yuzde))) {
+      cikti.splice(2, 0, { ad: "Toprak nemi",
+                           deger: Number(yuzde).toFixed(0) + " %" });
+    } else if (ham !== null && ham !== undefined && isFinite(Number(ham))) {
+      cikti.splice(2, 0, { ad: "Toprak nemi",
+                           deger: Number(ham).toFixed(0) + " ham" });
+    }
     return cikti;
   }
   function sensorKur() {
