@@ -155,6 +155,19 @@ async function komutGonder(ad, arg = {}) {
     // saniyede birkaç kez tekrarlanan bir sorgu, gerçek olayları kaydırırdı.
     if (!govde.sessiz) {
       gunluk(govde.ok ? `✓ ${govde.mesaj}` : `✕ ${govde.mesaj}`, govde.ok ? "ok" : "hata");
+      /* SESLER BURADAN. Tek geçit: her panel düğmesi `komutGonder`den
+       * geçiyor, dolayısıyla ses de tek yerde bağlanıyor — her düğmeye
+       * ayrı ayrı eklemek, bir sonraki düğmede unutulmak demekti.
+       *
+       * SU SESİ BURADA YOK, bilerek: o kartın bildirdiği pompa
+       * durumundan sürülüyor (`roleDurumSenkron`). Komuta bağlasaydık
+       * pompa çalışmadığında da su sesi duyururduk. */
+      if (window.Ses) {
+        if (!govde.ok) Ses.hata();
+        else if (ad === "dizi_baslat") Ses.basladi();
+        else if (ad === "dizi_durdur") Ses.bitti();
+        else if (ad === "uc_sec" || ad === "servo_aci_sur") Ses.tik();
+      }
     }
     return govde;
   } catch (hata) {
@@ -4733,7 +4746,17 @@ function roleDurumSenkron(o) {
     const deger = o["r_" + ad];
     if (deger === undefined) continue;
     const acik = Number(deger) === 1;
+    /* SES KARTIN DURUMUNDAN, KOMUTTAN DEĞİL. "Sulama komutu gönderdim,
+     * demek akıyordur" demek, pompa gerçekte çalışmadığında su sesi
+     * duyurmak olurdu — 3B sahnedeki huzmenin düştüğü hatanın aynısı.
+     * Durum her pakette geldiği için `su(false)` da kendiliğinden
+     * geliyor: pompa kapandığı an ses kesiliyor. */
+    const oncekiHal = S.roleDurum[ad];
     S.roleDurum[ad] = acik;
+    if (window.Ses && oncekiHal !== acik) {
+      if (ad === "su_pompasi") Ses.su(acik);
+      else if (ad === "hava_pompasi") Ses.hava(acik);
+    }
     const dugme = $(`.dugme.role[data-role="${ad}"]`);
     if (!dugme) continue;
     dugme.classList.toggle("acik", acik);
@@ -4964,6 +4987,10 @@ function olaylariBagla() {
       $(`#sayfa-${dugme.dataset.sayfa}`).classList.add("etkin");
       const oncekiSekme = S.sekme;
       S.sekme = dugme.dataset.sayfa;
+      // Bahçe kendi ses motorunu taşıyor; ikisi aynı anda çalmasın.
+      // Sekmeye basmak aynı zamanda ilk kullanıcı dokunuşu: tarayıcı
+      // ses bağlamını ancak bundan sonra açtırıyor.
+      if (window.Ses) { Ses.uyandir(); Ses.sekme(S.sekme); }
       localStorage.setItem("farmbot_sekme", S.sekme);
       // KAMERA ve BAHÇE sekmeleri canlı akışı açıp kapatıyor (biri 5,
       // öteki 1 kare/sn). Canlı akış panelin en pahalı yolu; kimse
@@ -5338,6 +5365,18 @@ function olaylariBagla() {
    * indiğine bakmak. Doğrulama BURADA DA yapılıyor (ajan ve kart da
    * yapıyor) çünkü boş bir alanla düğmeye basmak en sık hata ve cevabı
    * gidiş-dönüş beklemeden vermek gerekiyor. */
+  /* SES AÇ/KAPA. Düğmenin yazısı gerçek hâlden geliyor; localStorage'da
+   * saklanıyor, yani sekme yenilense de seçim duruyor. */
+  const sesDugme = $("#d-ses");
+  if (sesDugme && window.Ses) {
+    const sesYaz = () => {
+      sesDugme.textContent = Ses.acikMi() ? "🔊 Açık" : "🔇 Kapalı";
+      sesDugme.classList.toggle("acik", Ses.acikMi());
+    };
+    sesYaz();
+    sesDugme.onclick = () => { Ses.degistir(); sesYaz(); };
+  }
+
   const aciDugme = $("#d-servo-aci");
   if (aciDugme) {
     aciDugme.onclick = () => {
