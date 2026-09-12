@@ -24,11 +24,6 @@ CREATE TABLE IF NOT EXISTS tarama (
 CREATE TABLE IF NOT EXISTS tespit (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   tarama_id INTEGER NOT NULL REFERENCES tarama(id) ON DELETE CASCADE,
-  -- nesne_id: taramanın KENDİ içindeki sıra numarası. Görselde "#3" diye
-  -- yazan budur. tespit.id ise veritabanı kimliği ve başka bir sayıdır;
-  -- ikisini karıştırmak kullanıcının resimde gördüğünden başka bir tespiti
-  -- etiketlemesine yol açar.
-  nesne_id INTEGER,
   iz_id INTEGER, kayit_id INTEGER,
   sinif TEXT, skor REAL, onayli INTEGER,
   x_mm REAL, y_mm REAL, alan_mm2 REAL, cap_mm REAL,
@@ -37,7 +32,6 @@ CREATE TABLE IF NOT EXISTS tespit (
   insan_zamani TEXT
 );
 CREATE INDEX IF NOT EXISTS ix_tespit_tarama ON tespit(tarama_id);
-CREATE INDEX IF NOT EXISTS ix_tespit_nesne ON tespit(tarama_id, nesne_id);
 CREATE INDEX IF NOT EXISTS ix_tespit_iz ON tespit(iz_id);
 CREATE INDEX IF NOT EXISTS ix_tespit_etiket ON tespit(insan_etiketi);
 
@@ -78,10 +72,10 @@ class Depo:
         for t in s["tespitler"]:
             tb = t.get("taban_mm") or (None, None)
             c.execute(
-                "INSERT INTO tespit(tarama_id,nesne_id,iz_id,kayit_id,sinif,skor,"
-                "onayli,x_mm,y_mm,alan_mm2,cap_mm,piksel_kutu,oznitelik) "
-                "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                (tid, t.get("id"), t.get("iz_id"), t.get("kayit_id"), t["sinif"], t["skor"],
+                "INSERT INTO tespit(tarama_id,iz_id,kayit_id,sinif,skor,onayli,"
+                "x_mm,y_mm,alan_mm2,cap_mm,piksel_kutu,oznitelik) "
+                "VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+                (tid, t.get("iz_id"), t.get("kayit_id"), t["sinif"], t["skor"],
                  int(t.get("onayli", False)), tb[0], tb[1], t.get("alan_mm2"),
                  t.get("cap_mm"), json.dumps(t.get("piksel_kutu")),
                  json.dumps({k: t.get(k) for k in

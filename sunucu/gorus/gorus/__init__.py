@@ -13,15 +13,6 @@ Katmanlar (veri akışı sırasıyla):
     boru      : tüm zinciri yöneten Tarama akışı
     depo      : SQLite kalıcılık
     api       : FastAPI router (sunucu'ya takılır)
-    isci      : taramayı ayrı süreçte koşturan CLI
-    akis      : canlı ffmpeg akışını tarama süresince duraklatan yönetici
-
-Araçlar (sunucusuz, doğrudan çalışır):
-    usb_kamera     : UVC/USB kamera sürücüsü (MX Brio)
-    kamera_denetim : kamera ölçüme uygun mu — odak/pozlama/montaj testi
-    kalibre        : karadan kalibrasyon.json + denetim görselleri
-    tara           : tek kare üstünde tarama denemesi
-    sinama         : sentetik sahneyle uçtan uca doğrulama
 
 Tasarım kuralları:
   1. Ölçülmemiş hiçbir sayı üretilmez. Hesaplanamayan alan None döner ve
@@ -31,10 +22,4 @@ Tasarım kuralları:
   3. Geri alınamaz hiçbir iş bu modülden tetiklenmez; modül yalnız ölçer.
 """
 
-__surum__ = "0.5.0"
-
-# Sürüm denetimi:
-#   python -c "import gorus; print(gorus.__surum__)"
-# 0.3.0 içeriği: usb_kamera, kalibre, tara, isci, kamera_denetim modülleri +
-# enjeksiyon kalıbıyla yazılmış api.py. Daha eski bir sürümdeki api.py
-# `sunucu.ajan_kopru` import ettiği için sunucuya takıldığında patlar.
+__surum__ = "0.1.0"

@@ -284,31 +284,11 @@ def yonlendirici_kur(*, komut_gonder, bitki_kaynagi,
     @router.post("/tespit/{tespit_id}/etiket")
     def etiketle(tespit_id: int,
                  etiket: str = Query(..., pattern="^(filiz|yabani|yok)$")):
-        """
-        Panelde kullanıcı düzeltmesi. Faz 2 eğitim kümesini besler.
-
-        `tespit_id` VERİTABANI kimliğidir — görselde yazan `#3` değil.
-        Görseldeki numaradan gitmek için /tarama/{tid}/tespit/{nesne_id}/etiket
-        kullanın.
-        """
+        """Panelde kullanıcı düzeltmesi. Faz 2 eğitim kümesini besler."""
         depo.insan_etiketle(
             tespit_id, etiket,
             dt.datetime.now().astimezone().isoformat(timespec="seconds"))
         return {"tamam": True}
-
-    @router.post("/tarama/{tid}/tespit/{nesne_id}/etiket")
-    def etiketle_gorselden(tid: int, nesne_id: int,
-                           etiket: str = Query(..., pattern="^(filiz|yabani|yok)$")):
-        """Görselde yazan `#nesne_id` ile etiketleme — panelin kullandığı yol."""
-        r = depo.baglanti.execute(
-            "SELECT id FROM tespit WHERE tarama_id=? AND nesne_id=?",
-            (tid, nesne_id)).fetchone()
-        if not r:
-            raise HTTPException(404, f"tarama {tid} içinde #{nesne_id} yok")
-        depo.insan_etiketle(
-            r["id"], etiket,
-            dt.datetime.now().astimezone().isoformat(timespec="seconds"))
-        return {"tamam": True, "tespit_id": r["id"]}
 
     @router.get("/kalibrasyon")
     def kalibrasyon():

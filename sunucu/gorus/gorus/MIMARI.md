@@ -75,9 +75,6 @@ bu konteynerde ölçüldü).
 | 11 | `depo.py` / `api.py` | SQLite + FastAPI router | → panel |
 | — | `hailo.py` | Faz 2: AI HAT+ üstünde YOLO11n-seg | (opsiyonel) |
 | — | `isci.py` | taramayı alt süreçte koşturan CLI | is.json → sonuc.json |
-| — | `kalibre.py` | kareden kalibrasyon.json + denetim görselleri | CLI |
-| — | `tara.py` | sunucusuz tek kare taraması | CLI |
-| — | `kamera_denetim.py` | kamera ölçüme uygun mu (odak/pozlama/montaj) | CLI |
 | — | `sinama.py` | sentetik sahneyle uçtan uca ölçüm | → rapor |
 
 ---
@@ -298,8 +295,7 @@ Uçlar:
 | GET | `/gorus/tarama/{id}/gorsel.jpg` | daire içine alınmış kamera görünümü |
 | GET | `/gorus/tarama/{id}/ustten.jpg` | ortorektifiye kuşbakışı |
 | GET | `/gorus/tespitler?sinif=` | filiz / yabani / belirsiz listesi |
-| POST | `/gorus/tespit/{id}/etiket` | kullanıcı düzeltmesi, **veritabanı** kimliğiyle |
-| POST | `/gorus/tarama/{tid}/tespit/{nesne_id}/etiket` | **görselde yazan `#numara`** ile |
+| POST | `/gorus/tespit/{id}/etiket` | kullanıcı düzeltmesi (Faz 2 verisi) |
 | GET | `/gorus/kalibrasyon` | H, etiketler, artık, ölçek |
 | GET | `/gorus/saglik` | bağımlılıklar bağlı mı, kalibrasyon yerinde mi |
 
@@ -478,17 +474,7 @@ python -c "import ast,glob; [ast.parse(open(f).read()) for f in glob.glob('gorus
 
 ---
 
-## 12. Numaralar hakkında
-
-Görselde `#3` yazan sayı taramanın kendi içindeki sıra numarasıdır
-(`nesne_id`). Veritabanındaki `tespit.id` bambaşka bir sayıdır. Panelden
-etiketlerken görseldeki numarayı kullanacaksanız
-`/gorus/tarama/{tid}/tespit/{nesne_id}/etiket` ucundan gidin; `tespit.id`
-ile gitmek kullanıcının resimde gördüğünden başka bir tespiti etiketler.
-
----
-
-## 13. İlk gün ne yapmalı
+## 12. İlk gün ne yapmalı
 
 1. `python -m gorus.sinama` çalıştırın — zincirin sağlam olduğunu Pi'ye
    dokunmadan görün, `sureler_ms`'i kaydedin.

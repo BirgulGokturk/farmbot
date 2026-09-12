@@ -25,11 +25,6 @@ from pathlib import Path
 
 KARE_DIZINI = Path("/home/batupi/farmbot/veri/kareler")
 
-# USB (UVC) ölçüm kamerası — kararlı yol, /dev/video0 değil.
-# `python -m gorus.usb_kamera --listele` gerçek yolu yazdırır.
-USB_KAMERA_YOLU = "/dev/v4l/by-id/usb-046d_MX_Brio-video-index0"
-USB_COZUNURLUK = (3840, 2160)
-
 
 def poz_kilitle(picam2, sure_us=None, kazanc=None, renk_kazanclari=None):
     """
@@ -83,37 +78,6 @@ async def kare_cek(kamera, mesaj: dict, portal=None) -> dict:
     KARE_DIZINI.mkdir(parents=True, exist_ok=True)
     ad = f"{etiket}_{dt.datetime.now():%Y%m%d_%H%M%S}_{genislik}.jpg"
     yol = KARE_DIZINI / ad
-
-    # --- USB ölçüm kamerası yolu ---
-    # CSI kamerası ajan'ın canlı görüntüsü olarak kalır; ölçüm karesi USB
-    # kameradan gelir. İkisi ayrı cihaz olduğu için çakışmazlar.
-    if mesaj.get("kaynak", "usb") == "usb":
-        from gorus.akis import CanliAkis
-        from gorus.usb_kamera import UsbKamera
-        akis = CanliAkis(USB_KAMERA_YOLU, durdur=AKIS_DURDUR, baslat=AKIS_BASLAT)
-        try:
-            # Canlı akış duraklar -> 4K kare -> akış geri gelir.
-            async with akis:
-                kam = UsbKamera(USB_KAMERA_YOLU, *USB_COZUNURLUK,
-                                tek_seferlik=False)
-                bilgi = await asyncio.to_thread(kam.hazirla)
-                r = await asyncio.to_thread(kam.cek, str(yol))
-                kam.kapat()
-            return {"tamam": True, "yol": r["yol"], "boyut": r["boyut"],
-                    "cozunurluk": r["cozunurluk"], "kaynak": "usb",
-                    "kilitlenemeyen": bilgi.get("kilitlenemeyen"),
-                    "akis": {"duraklat": getattr(akis, "rapor_duraklat", None),
-                             "devam": getattr(akis, "rapor_devam", None)},
-                    "zaman": dt.datetime.now().astimezone()
-                             .isoformat(timespec="seconds")}
-        except Exception as e:
-            try:
-                await akis.devam()          # hata olsa da paneli geri ver
-            except Exception:
-                pass
-            return {"tamam": False, "hata": f"USB kamera: {e}"}
-
-    # --- CSI (picamera2) yolu ---
     try:
         # Kamera.cek(...) mevcut sınıfınızın yöntemi; genişlik ve hedef dosya
         # alacak şekilde genişletilir. Tek kamera sahibi yine ajan'dır.

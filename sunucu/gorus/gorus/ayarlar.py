@@ -53,21 +53,8 @@ class SinifAyari:
 
 @dataclass
 class KareAyari:
-    """
-    Logitech MX Brio 4K (3840x2160, 16:9) için ölçülmüş denge:
-
-        çözünürlük    mm/px   4mm filiz   süre*    konum hatası
-        1920x1080     0.61      6.5 px     401 ms    1.35 mm
-        2560x1440     0.46      8.7 px     613 ms    1.01 mm
-        3840x2160     0.31     13.1 px    1938 ms    0.78 mm
-        (* Intel Xeon 2.10GHz / 2 çekirdek; Pi 5 rakamı kendi ölçümünüz)
-
-    1920 bu kamerada yeni çıkmış kotiledonu 6.5 piksele düşürüyor — çok az.
-    Varsayılan 2560; en yüksek doğruluk gerektiğinde 3840 yapın.
-    Kalibrasyon her zaman tam çözünürlükte, EN-BOY ORANI AYNI kalmalı;
-    Duzlem.olcekle() farkı kapatır, oran değişirse hata verir.
-    """
-    isleme_genisligi: int = 2560
+    # Kalibrasyon 3840x2880'de yapıldı; tespit yarı çözünürlükte koşar.
+    isleme_genisligi: int = 1920
     kalibrasyon_genisligi: int = 3840
     jpeg_kalitesi: int = 92
     poz_kilitli: bool = True           # picamera2: AeEnable=False, AwbEnable=False
