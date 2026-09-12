@@ -1436,6 +1436,16 @@ class Gantry:
     #: eksende sonsuza kadar beklemiyoruz.
     ANAHTAR_ARAMA_SN = 90.0
 
+    #: Home'un YAKLAŞMA HIZI (mm/s). Ayrı bir sayı, çünkü home ötekilerden
+    #: farklı bir hareket: sonu bir DURAK değil bir ÇARPMA. Eksen anahtara
+    #: dayanarak duruyor ve normal gezinme hızıyla gelmek onu sert
+    #: vurduruyor — kullanıcının gördüğü buydu.
+    #:
+    #: Hem koordinat yaklaşmasında hem anahtar aramasında geçerli:
+    #: yaklaşma da anahtarın bulunduğu uca gidiyor ve sayaç doğruysa
+    #: temas oradan oluyor. Ajan ayardan kuruyor (`home_hizi`).
+    home_arama_hizi = 5.0
+
     def anahtara_sur(self, i: int) -> bool:
         """Ekseni home anahtarına DEĞENE KADAR sürer. -> anahtar bulundu mu
 
@@ -1460,6 +1470,10 @@ class Gantry:
         if anahtar:
             return True                 # zaten üstünde
         reg = EKSENLER[i]["jogb"]
+        # YAVAŞ YAKLAŞ. Jog hızı PLC'nin `jX_jog_hiz` registerından
+        # geliyor ve son hareketten kalma değeri taşıyor; aramaya onunla
+        # girmek anahtara tam gezinme hızıyla çarpmak demekti.
+        self._hiz_ivme_yaz(i, self.home_arama_hizi)
         son = time.time() + self.ANAHTAR_ARAMA_SN
         self.gunluk_cb(
             f"{EKSENLER[i]['ad']} anahtar aranıyor — sayaç "
@@ -1500,6 +1514,13 @@ class Gantry:
             # çıktıktan sonra da sürülmeye devam eder.
             try:
                 self.mb.yaz(reg, 0)
+            except Exception:                            # noqa: BLE001
+                pass
+            # HIZI GERİ KOY. Registerda kalan yavaş değer, panelden
+            # yapılan bir sonraki jog'u da sürüklerdi — "makine neden
+            # birden ağırlaştı" sorusunun sebebi bu olurdu.
+            try:
+                self._hiz_ivme_yaz(i, self.eksen_hizi(i))
             except Exception:                            # noqa: BLE001
                 pass
 
@@ -1645,7 +1666,8 @@ class Gantry:
                     # okusa bile eksen gerçekten orada olmayabilir
                     # (takılma, elle oynatma) ve home o kaymayı
                     # düzeltmeye çalışmanın tek yolu.
-                    self.eksen_git_dogrula(i, hedef, zorla=True)
+                    self.eksen_git_dogrula(i, hedef, zorla=True,
+                                           hiz=self.home_arama_hizi)
                 except PLCHatasi as hata:
                     # SIRAYI KESİYORUZ. Z home'a çıkmadıysa X ve Y'yi
                     # sürmek, uç aşağıdayken yatay hareket demek.
