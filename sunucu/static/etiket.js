@@ -134,6 +134,42 @@
         </div>
         <div id="etiket-hata" class="uyari-kutu gizli"></div>
         <div id="etiket-sonuc" class="gomulu gizli"></div>
+        <h4 class="alt-baslik">Makineyle otomatik kalibrasyon</h4>
+        <p class="ikincil">Yere etiket yapıştırmaya gerek yok ve <b>toprağın
+          düz olması gerekmiyor</b>. Bir AprilTag'i <b>uç kafasına</b>
+          yapıştırın; makine aşağıdaki ızgaranın her noktasına gidip kare
+          alsın. Makinenin nereye gittiği milimetresi milimetresine belli,
+          işaretin karede nereye düştüğü ölçülüyor — ölçek, montaj açısı ve
+          perspektif bu ikisinden çıkıyor.</p>
+        <p class="alt-not">Kalibrasyon <b>işaretin bulunduğu yükseklikte</b>
+          geçerli. Ölçümü toprak yüzeyine yakın bir Z'de yapın: ekim, sulama
+          ve nem ölçümü o düzlemde oluyor.</p>
+        <div class="satir-8 alt-hizali">
+          <div class="alan"><label for="ok-x1">X başlangıç</label>
+            <input type="number" id="ok-x1" step="1" value="100"></div>
+          <div class="alan"><label for="ok-x2">X bitiş</label>
+            <input type="number" id="ok-x2" step="1" value="400"></div>
+          <div class="alan"><label for="ok-y1">Y başlangıç</label>
+            <input type="number" id="ok-y1" step="1" value="100"></div>
+          <div class="alan"><label for="ok-y2">Y bitiş</label>
+            <input type="number" id="ok-y2" step="1" value="400"></div>
+          <div class="alan"><label for="ok-adet">Izgara</label>
+            <select id="ok-adet">
+              <option value="2">2 × 2 (4 nokta)</option>
+              <option value="3" selected>3 × 3 (9 nokta)</option>
+              <option value="4">4 × 4 (16 nokta)</option>
+            </select></div>
+          <div class="alan"><label for="ok-z">Z (boş = değiştirme)</label>
+            <input type="number" id="ok-z" step="1" placeholder="mevcut Z"></div>
+        </div>
+        <div class="satir-8 alt-hizali">
+          <button class="dugme birincil" id="d-ok-basla">Ölçümü başlat</button>
+          <button class="dugme" id="d-ok-hesapla">Hesapla ve kaydet</button>
+          <button class="dugme" id="d-ok-temizle">Toplananı sil</button>
+          <span class="alt-not" id="ok-durum"></span>
+        </div>
+        <div id="ok-hata" class="uyari-kutu gizli"></div>
+
         <div class="etiket-onizleme gizli" id="etiket-onizleme">
           <img id="etiket-kare" alt="Taranan kare">
           <canvas id="etiket-tuval"></canvas>
@@ -141,6 +177,7 @@
         </div>
       </details>`;
 
+    otokalibBagla();
     $("#d-etiket-satir").onclick = () => { satirEkle("", "", "", "", ""); };
     $("#d-etiket-konum-kaydet").onclick = konumlariKaydet;
     $("#d-etiket-kenar-kaydet").onclick = konumlariKaydet;
@@ -276,6 +313,120 @@
     } catch (h) {
       hataYaz(h.message || "Kaydedilemedi");
     }
+  }
+
+  /* ------------------------------------------------- otomatik kalibrasyon
+   *
+   * Sunucu tarafı (`otokalib.py`) baştan beri vardı ve uçları bağlıydı ama
+   * PANELDE HİÇBİR DÜĞMESİ YOKTU — yazılmış ama ulaşılamayan bir özellik.
+   *
+   * NEDEN ETİKET YAPIŞTIRMAKTAN İYİ: yere yapıştırılan etiketler ancak
+   * hepsi AYNI DÜZLEMDE olursa harita veriyor. Bu kurulumda toprak düz
+   * değil ve etiketler kabın eğimli duvarına yapıştığı için harita
+   * bozuldu ("ufuk çizgisi kadraja giriyor"). Burada düzlemi MAKİNE
+   * tanımlıyor: işaret hep aynı Z'de geziyor, yani dört nokta tanım
+   * gereği eş düzlemli.
+   *
+   * NOKTALAR SIRAYLA ve BİRER BİRER isteniyor: her nokta makineyi
+   * hareket ettiriyor ve sunucu hareketin bitmesini bekliyor. Hepsini
+   * paralel yollamak, makineye aynı anda dört hedef vermek olurdu. */
+  function otokalibBagla() {
+    const dur = (m) => { const e = $("#ok-durum"); if (e) e.textContent = m; };
+    const hataYaz2 = (m) => {
+      const e = $("#ok-hata");
+      if (!e) return;
+      e.textContent = m || "";
+      e.classList.toggle("gizli", !m);
+    };
+
+    $("#d-ok-basla").onclick = async () => {
+      const p = P();
+      if (!p) return;
+      const kam = $("#etiket-kamera").value;
+      const sayi = (id) => Number($(id).value);
+      const n = Number($("#ok-adet").value);
+      const [x1, x2, y1, y2] = [sayi("#ok-x1"), sayi("#ok-x2"),
+                               sayi("#ok-y1"), sayi("#ok-y2")];
+      if (![x1, x2, y1, y2].every(Number.isFinite)) {
+        hataYaz2("Izgara sınırları sayı olmalı."); return;
+      }
+      const zHam = $("#ok-z").value;
+      const z = zHam === "" ? null : Number(zHam);
+      const noktalar = [];
+      for (let i = 0; i < n; i++) {
+        for (let j = 0; j < n; j++) {
+          // YILANKAVİ: satır sonunda en yakın uçtan devam, boşuna yol yok.
+          const jj = i % 2 ? n - 1 - j : j;
+          noktalar.push({
+            x: x1 + (x2 - x1) * (n === 1 ? 0 : i / (n - 1)),
+            y: y1 + (y2 - y1) * (n === 1 ? 0 : jj / (n - 1)),
+          });
+        }
+      }
+      hataYaz2("");
+      $("#d-ok-basla").disabled = true;
+      let olculen = 0;
+      try {
+        for (const [i, nk] of noktalar.entries()) {
+          dur(`${i + 1}/${noktalar.length} — X${nk.x.toFixed(0)} Y${nk.y.toFixed(0)}`);
+          const govde = { kamera: kam, x: nk.x, y: nk.y };
+          if (z !== null) govde.z = z;
+          try {
+            await p.apiIste("/api/kamera/otokalib/nokta", {
+              method: "POST", body: JSON.stringify(govde),
+            });
+            olculen++;
+          } catch (h) {
+            /* TEK NOKTA DÜŞERSE TUR DEVAM EDİYOR. İşaret bir durakta
+             * görünmeyebilir (gölge, kadraj dışı); o yüzden bütün turu
+             * atmak, on beş iyi ölçümü bir kötüsü için çöpe atmak olurdu.
+             * Kaçı tutmadığı sonunda yazılıyor. */
+            gunluk(`↷ X${nk.x.toFixed(0)} Y${nk.y.toFixed(0)}: ${h.message || h}`,
+                   "uyari");
+          }
+        }
+        dur(`${olculen}/${noktalar.length} nokta ölçüldü`);
+        if (olculen < 4) {
+          hataYaz2(`Yalnız ${olculen} nokta ölçülebildi. Harita için en az `
+                 + "dört nokta gerekiyor — işaret her durakta karede "
+                 + "görünmeli. Izgarayı daraltın ya da kamerayı ayarlayın.");
+        }
+      } finally {
+        $("#d-ok-basla").disabled = false;
+      }
+    };
+
+    $("#d-ok-hesapla").onclick = async () => {
+      const p = P();
+      if (!p) return;
+      hataYaz2("");
+      try {
+        const y = await p.apiIste("/api/kamera/otokalib/hesapla", {
+          method: "POST",
+          body: JSON.stringify({ kamera: $("#etiket-kamera").value, kaydet: true }),
+        });
+        const s2 = (y && y.sonuc) || {};
+        dur(`kaydedildi · ${Number(s2.mm_px).toFixed(4)} mm/px · `
+          + `dönme ${Number(s2.donme).toFixed(2)}°`
+          + (s2.artik_mm != null ? ` · sapma ${Number(s2.artik_mm).toFixed(2)} mm` : ""));
+        gunluk("✓ Otomatik kalibrasyon kaydedildi", "ok");
+      } catch (h) {
+        hataYaz2(h.message || String(h));
+      }
+    };
+
+    $("#d-ok-temizle").onclick = async () => {
+      const p = P();
+      if (!p) return;
+      if (!confirm("Toplanan ölçüm noktaları silinecek. Onaylıyor musunuz?")) return;
+      try {
+        await p.apiIste("/api/kamera/otokalib/temizle", {
+          method: "POST",
+          body: JSON.stringify({ kamera: $("#etiket-kamera").value }),
+        });
+        dur("toplanan silindi");
+      } catch (h) { hataYaz2(h.message || String(h)); }
+    };
   }
 
   /* -------------------------------------------------------------- tara */
