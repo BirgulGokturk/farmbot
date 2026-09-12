@@ -132,11 +132,12 @@ window.Bahce = (function () {
     sesDugme: null, konumVar: false, hareketSes: false, enable: false, acil: false, hareket: false,
     jog: null, jogBasili: null, jogSayac: null, olcumVeri: null, olcumT: 0,
     olcumHata: "", sensorKutu: null,
-    film: null, gorevKutu: null, kartKutu: null, kartYildiz: null,
+    film: null, gorevKutu: null, kartKutu: null, kartYildiz: null, halkaMerkez: null,
     gorevSatir: [], vurgu: null,
     raf: [], rafKutu: null, rafAcik: false, ekimGoz: "", bosYer: null, bosYerHata: "",
     sonIs: null, sonHasat: null, sonAlt: "",
-    ekimSunucudan: false,
+    ekimSunucudan: false, ekimOturum: null, ekimSayac: null,
+    ekimOnayKutu: null, ekimIptalKutu: null,
     gorevTuval: null, gorevCt: null, gorevDamga: "",
     balonlar: [], parcalar: [], bulutlar: null,
     toz: [], ari: null, mesaj: "", mesajT: 0,
@@ -1087,9 +1088,18 @@ window.Bahce = (function () {
     { k: "film", ad: "Film", renk: "#d9b26a" },
     { k: "kapat", ad: "Bırak", renk: "#8d9089" }
   ];
+  /** Halkanın çizileceği merkez: bitkinin üstünde ama EKRANIN İÇİNDE.
+   *  Yatağın üst kenarındaki bitkide halkanın yarısı tuvalin dışında
+   *  kalıyordu — düğmelerin yarısı görünmüyor, dokunulamıyordu. Merkez
+   *  gerektiğinde içe kaydırılıyor ve bitkiye ince bir çizgiyle
+   *  bağlanıyor; üstte 58 piksel pay var, çünkü orada şeffaf üst bar
+   *  (⚙ ve acil durdurma) duruyor. */
+  function halkaMerkez(gx, gy, R) {
+    var payUst = 58, pay = 10;
+    return { x: kis(gx, R + pay, Math.max(R + pay, S.en - R - pay)),
+             y: kis(gy, R + payUst, Math.max(R + payUst, S.boy - R - pay)) };
+  }
   function eylemCiz(c) {
-    /* Kadran açıkken eylem halkası çizilmiyor: ikisi aynı yarıçapta üst
-       üste biniyor ve hangi daireye dokunduğun belirsizleşiyordu. */
     if (!S.secili || S.ekimNokta) return;
     var b = S.ix[S.secili];
     if (!b) return;
@@ -1100,7 +1110,21 @@ window.Bahce = (function () {
     var enAz = 52 / (2 * Math.sin(Math.PI / EYLEM.length));
     var R = Math.max(enAz, sp.R + 34);
     var bagli = !!(S.veri && S.veri.bagli);
-    halkaCiz(c, px(b.x), py(b.y), EYLEM, R, S.basiliSula ? "sula" : "", bagli,
+    var gx0 = px(b.x), gy0 = py(b.y);
+    var m = halkaMerkez(gx0, gy0, R);
+    S.halkaMerkez = m;
+    if (Math.hypot(m.x - gx0, m.y - gy0) > 2) {
+      /* Halka kaydıysa kime ait olduğu belli olsun. */
+      c.save();
+      c.strokeStyle = "rgba(226,232,222,.45)"; c.lineWidth = 1.2;
+      c.setLineDash([4, 4]);
+      c.beginPath(); c.moveTo(gx0, gy0); c.lineTo(m.x, m.y); c.stroke();
+      c.setLineDash([]);
+      c.strokeStyle = "rgba(246,246,240,.7)"; c.lineWidth = 1.6;
+      c.beginPath(); c.arc(gx0, gy0, sp.R + 6, 0, 6.3); c.stroke();
+      c.restore();
+    }
+    halkaCiz(c, m.x, m.y, EYLEM, R, S.basiliSula ? "sula" : "", bagli,
       function (e) { return e.ad; },
       function (e) {
         if (e.k === "film") {
@@ -1405,6 +1429,7 @@ window.Bahce = (function () {
     isikCiz(c);
     parcaCiz(c);
     tasimaCiz(c);
+    ekimOturumCiz(c);
     filmCiz(c);
     if (!S.insaBitti) {
       c.fillStyle = "rgba(255,255,255,.5)";
@@ -1856,7 +1881,12 @@ window.Bahce = (function () {
         alt = k.taban_ad ? ("taban tür: " + k.taban_ad) : "tür seçilmedi";
       }
       if (k.ertelendi) alt = "yarına ertelendi" + (k.ertelendi_yazi ? " · " + k.ertelendi_yazi : "");
-      return { kimlik: String(k.kimlik), tip: String(k.tip || ""),
+      /* Kartın içinde favori bitki varsa satırda yıldız: "favoriler
+         üstte" kuralının bahçedeki karşılığı — hangi işin senin
+         işaretlediğin bitkilere dokunduğunu gösteriyor. */
+      var favAdet = 0;
+      adlar.forEach(function (a) { if (Favori.var(a)) favAdet++; });
+      return { kimlik: String(k.kimlik), tip: String(k.tip || ""), favori: favAdet,
                metin: String(k.baslik || k.metin || k.tip || "iş"),
                alt: alt, evet: String(k.evet || "Yap"),
                ertelendi: !!k.ertelendi, adet: adlar.length, kart: k };
@@ -1882,7 +1912,8 @@ window.Bahce = (function () {
     if (!kt) return "";
     return kt.x + "x" + kt.y + "x" + kt.w + "x" + kt.h + "|" + XP.puan + "|"
       + gorevListesi().map(function (g) {
-          return g.kimlik + (g.ertelendi ? "e" : "") + g.metin + "|" + g.alt + "|" + g.evet;
+          return g.kimlik + (g.ertelendi ? "e" : "") + g.metin + "|" + g.alt + "|"
+            + g.evet + "|" + g.favori;
         }).join(";");
   }
   /** Dokunma kutuları: tabela önbellekten basılsa bile satırların yeri
@@ -2006,6 +2037,15 @@ window.Bahce = (function () {
       }
       if (metin !== gv.metin) metin += "…";
       c.fillText(metin, sol + 26, yy + 14);
+      if (gv.favori) {
+        var mgen = c.measureText(metin).width;
+        yildizCiz(c, sol + 26 + mgen + 10, yy + 10, 6, true);
+        if (gv.favori > 1) {
+          c.font = "9px ui-monospace,monospace";
+          c.fillStyle = "rgba(246,196,86,.85)";
+          c.fillText("×" + gv.favori, sol + 26 + mgen + 18, yy + 14);
+        }
+      }
       if (gv.ertelendi) {
         c.strokeStyle = "rgba(243,227,198,.45)"; c.lineWidth = 1;
         var mg = c.measureText(metin).width;
@@ -2582,6 +2622,182 @@ window.Bahce = (function () {
     if (sol === false) return;
   }
   /* ==================================================================== *
+   * EKİM OTURUMU — MAKİNENİN GERÇEKTEN YAPTIĞI SIRA
+   *
+   * Ekim ekranda "kayıt" değil: `/api/bahce/ek` noktayı yaratıp işi
+   * kuyruğa koyuyor, kuyruk `islem:"ek"` ile ekim oturumunu başlatıyor ve
+   * makine şu sırayı yürüyor (sunucu: `PARCA_SIRASI`, ajan: `dizi.py`):
+   *
+   *   hazne → haznenin üstüne gidiyor (güvenli Z'de)
+   *   al    → iniyor, TOHUM UCU KENDİ DİKEY EKSENİYLE de iniyor
+   *           (`uc_dikey`, `t_asagi_mm`, toprak_t), VAKUM POMPASI AÇILIYOR
+   *   taşı  → uç çekiliyor, kalkıyor, hedefe gidiyor
+   *           → BURADA DURUYOR VE SORUYOR: "tohum ucta mı?"
+   *   ek    → iniyor, tohum ucu iniyor, POMPA KAPANIYOR, çekiyor, kalkıyor
+   *   home  → hepsi bitince bir kez
+   *
+   * Uç seçici servo açısı, tohum ucunun kayması, Z güvenliği ve hazne
+   * koordinatlarının sınır denetimi `_ekim_coz` içinde çözülüyor; ekran
+   * onların hiçbirini yeniden hesaplamıyor.
+   *
+   * BU PANELİN İŞİ: oturumu GÖSTERMEK ve makinenin beklediği onayı
+   * sormak. Tohum sensörü yok — vakum tohumu tutamazsa yazılım fark
+   * etmiyor; "tohum ucta mı" sorusu bu yüzden duruyor ve gizlenmiyor.
+   * ==================================================================== */
+  var EKIM_ASAMA = [
+    { k: "hazne", ad: "hazneye git" },
+    { k: "al", ad: "tohumu al" },
+    { k: "tasi", ad: "hedefe taşı" },
+    { k: "ek", ad: "ek" }
+  ];
+  var ekimDurumAl = guvenli("ekim durumu", function () {
+    return api("/api/ekim/onay").then(function (c) {
+      S.ekimOturum = c && c.aktif ? c : null;
+      isteKare();
+    }).catch(function (h) {
+      S.ekimOturum = null;
+      notYaz("ekim", "Ekim durumu okunamadı — " + ((h && h.message) || h));
+      isteKare();
+    });
+  });
+  function ekimSayacKur() {
+    var aktif = !!(S.ekimOturum || ((S.veri && S.veri.ekim) || {}).aktif);
+    if (aktif && !S.ekimSayac) {
+      /* Yalnız oturum SÜRERKEN yoklama: boştayken istek yok. */
+      S.ekimSayac = setInterval(function () {
+        if (!S.acik) return;
+        ekimDurumAl();
+      }, 1500);
+    } else if (!aktif && S.ekimSayac) {
+      clearInterval(S.ekimSayac); S.ekimSayac = null;
+    }
+  }
+  function ekimOturumCiz(c) {
+    var e = S.ekimOturum;
+    if (!e || !e.aktif) { S.ekimOnayKutu = null; S.ekimIptalKutu = null; return; }
+    var w = Math.min(420, S.en - 40), h = 104;
+    /* Panel alt şeridin üstünde duruyor: 16 piksel payla düğmelerin alt
+       kenarı kırpılıyordu (ölçüldü). */
+    var x = (S.en - w) / 2, y = Math.max(58, S.boy - h - 46);
+    c.save();
+    c.fillStyle = "rgba(0,0,0,.42)";
+    c.beginPath();
+    if (c.roundRect) c.roundRect(x + 3, y + 5, w, h, 14); else c.rect(x + 3, y + 5, w, h);
+    c.fill();
+    var g = c.createLinearGradient(x, y, x, y + h);
+    g.addColorStop(0, "rgba(34,40,32,.97)"); g.addColorStop(1, "rgba(24,28,22,.97)");
+    c.fillStyle = g;
+    c.beginPath();
+    if (c.roundRect) c.roundRect(x, y, w, h, 14); else c.rect(x, y, w, h);
+    c.fill();
+    c.strokeStyle = e.soru ? "#e0a955" : "rgba(150,180,140,.55)";
+    c.lineWidth = e.soru ? 2 : 1.2; c.stroke();
+
+    c.textAlign = "left"; c.textBaseline = "alphabetic";
+    c.font = "700 12.5px system-ui,sans-serif"; c.fillStyle = "#eef2e8";
+    var bas = "Ekim" + (e.toplam ? " · " + e.sira + "/" + e.toplam : "")
+      + (e.tur_ad ? " · " + e.tur_ad : "")
+      + (e.hazne ? " · " + e.hazne + " haznesi" : "");
+    c.fillText(bas, x + 14, y + 22);
+    /* Aşama şeridi: hangi adımda olduğu. */
+    var sw = (w - 28) / EKIM_ASAMA.length, i;
+    for (i = 0; i < EKIM_ASAMA.length; i++) {
+      var a = EKIM_ASAMA[i];
+      var simdi = e.parca === a.k;
+      var gecti = EKIM_ASAMA.findIndex(function (z) { return z.k === e.parca; }) > i;
+      var bx = x + 14 + i * sw;
+      c.fillStyle = simdi ? "#7bbf5a" : (gecti ? "rgba(123,191,90,.45)" : "rgba(255,255,255,.12)");
+      c.beginPath();
+      if (c.roundRect) c.roundRect(bx, y + 32, sw - 6, 6, 3); else c.rect(bx, y + 32, sw - 6, 6);
+      c.fill();
+      c.font = (simdi ? "600 10px" : "10px") + " system-ui,sans-serif";
+      c.fillStyle = simdi ? "#d8f0cf" : "rgba(201,206,196,.6)";
+      c.fillText(a.ad, bx, y + 52);
+    }
+    /* Ne yaptığı — sunucunun kendi cümlesi. */
+    c.font = "11px system-ui,sans-serif";
+    c.fillStyle = e.soru ? "#f0cd8a" : "rgba(214,226,208,.85)";
+    var alt = e.soru || e.asama || e.mesaj || "";
+    if (e.pompa_acik && !e.soru) alt += (alt ? " · " : "") + "vakum açık";
+    c.fillText(alt.length > 56 ? alt.slice(0, 55) + "…" : alt, x + 14, y + 72);
+    if (e.hata) {
+      c.fillStyle = "#ffb9a6";
+      c.fillText(String(e.hata).slice(0, 56), x + 14, y + 88);
+    }
+    /* Onay ve iptal düğmeleri — makine bekliyorsa onay vurgulu. */
+    var dy = y + h - 30;
+    if (e.soru) {
+      c.font = "600 11px system-ui,sans-serif";
+      var t1 = "Tohum ucta · devam", g1 = c.measureText(t1).width + 22;
+      var x1 = x + w - g1 - 14;
+      S.ekimOnayKutu = { x: x1, y: dy, w: g1, h: 24 };
+      c.fillStyle = "#4f7f3f";
+      c.beginPath();
+      if (c.roundRect) c.roundRect(x1, dy, g1, 24, 12); else c.rect(x1, dy, g1, 24);
+      c.fill();
+      c.strokeStyle = "#a8d68f"; c.lineWidth = 1.2; c.stroke();
+      c.fillStyle = "#eaf7e4"; c.textAlign = "center";
+      c.fillText(t1, x1 + g1 / 2, dy + 16);
+      c.textAlign = "left";
+      var t2 = "İptal", g2 = c.measureText(t2).width + 18;
+      var x2 = x1 - g2 - 8;
+      S.ekimIptalKutu = { x: x2, y: dy, w: g2, h: 24 };
+      c.strokeStyle = "rgba(226,140,120,.8)"; c.lineWidth = 1;
+      c.beginPath();
+      if (c.roundRect) c.roundRect(x2, dy, g2, 24, 12); else c.rect(x2, dy, g2, 24);
+      c.stroke();
+      c.fillStyle = "#e8a79a"; c.textAlign = "center";
+      c.fillText(t2, x2 + g2 / 2, dy + 16);
+      c.textAlign = "left";
+    } else {
+      S.ekimOnayKutu = null;
+      c.font = "600 11px system-ui,sans-serif";
+      var t3 = "İptal", g3 = c.measureText(t3).width + 18;
+      var x3 = x + w - g3 - 14;
+      S.ekimIptalKutu = { x: x3, y: dy, w: g3, h: 24 };
+      c.strokeStyle = "rgba(226,140,120,.7)"; c.lineWidth = 1;
+      c.beginPath();
+      if (c.roundRect) c.roundRect(x3, dy, g3, 24, 12); else c.rect(x3, dy, g3, 24);
+      c.stroke();
+      c.fillStyle = "rgba(232,167,154,.9)"; c.textAlign = "center";
+      c.fillText(t3, x3 + g3 / 2, dy + 16);
+      c.textAlign = "left";
+    }
+    c.restore();
+  }
+  function ekimOturumDokun(p) {
+    var kutu = function (k) {
+      return k && p.x >= k.x && p.x <= k.x + k.w && p.y >= k.y && p.y <= k.y + k.h;
+    };
+    if (kutu(S.ekimOnayKutu)) {
+      Ses.tik();
+      gonder("/api/bahce/onay", {})
+        .then(function () { mesajYaz("Onay geçti — makine ekmeye devam ediyor."); return ekimDurumAl(); })
+        .catch(function (h) {
+          notYaz("ekim", "Onay geçmedi — " + ((h && h.message) || h));
+          Ses.hata(); isteKare();
+        });
+      return true;
+    }
+    if (kutu(S.ekimIptalKutu)) {
+      /* İPTALİN İKİ ANLAMI VAR ve sunucu ikisini ayırıyor: tohum ucta
+         görünüyorsa hazneye geri konuyor, görünmüyorsa olduğu yerde
+         bırakılıyor. Burada "geri_koy" gönderiyoruz — pompa açıkken
+         tohumu rastgele bir yere düşürmek yerine geldiği göze dönmesi
+         daha güvenli. */
+      Ses.tik();
+      gonder("/api/ekim/iptal", { ne: "geri_koy" })
+        .then(function () { mesajYaz("Ekim iptal edildi — tohum hazneye geri konuyor."); return ekimDurumAl(); })
+        .catch(function (h) {
+          notYaz("ekim", "İptal olmadı — " + ((h && h.message) || h));
+          Ses.hata(); isteKare();
+        });
+      return true;
+    }
+    return false;
+  }
+
+  /* ==================================================================== *
    * TOHUM RAFI VE EKİM
    *
    * Akış, makinenin gerçekten yaptığı iş neyse o: TOHUMU SEÇ → BOŞ YERİ
@@ -2698,7 +2914,8 @@ window.Bahce = (function () {
        değiştirmek için alete yeniden dokunmak yetiyor. */
     S.rafAcik = false; S.raf = []; S.rafKutu = null;
     Ses.tik();
-    mesajYaz(turAdi(r.tohum) + " elinde — yanan yerlerden birine dokun.");
+    mesajYaz(turAdi(r.tohum) + " elinde — yanan yerlerden birine dokun. Makine "
+      + r.k + " haznesine gidip vakumla tohumu alacak, buraya getirip ekecek.");
     altYaz(); isteKare();
     api("/api/bahce/bos-yer?tur=" + encodeURIComponent(r.tohum) + "&azami=60")
       .then(function (c) {
@@ -3230,12 +3447,16 @@ window.Bahce = (function () {
     var h = ust + satir.length * satirY + 12;
     /* Kart bitkinin YANINDA duruyor, üstünde değil: eylem halkası orada.
        Hangi yanda yer varsa o yana açılıyor, ekrandan taşmıyor. */
-    var sp = spriteAl(b), gx = px(b.x), gy = py(b.y);
+    var sp = spriteAl(b);
     var R = Math.max(66, sp.R + 40);
+    /* Kart halkanın yanında: halka kaydıysa kart da onunla kayıyor,
+       yoksa ikisi birbirinden kopuyordu. */
+    var mk = S.halkaMerkez || halkaMerkez(px(b.x), py(b.y), R);
+    var gx = mk.x, gy = mk.y;
     var x = gx + R + 16;
     if (x + w > S.en - 8) x = gx - R - 16 - w;
     x = kis(x, 8, Math.max(8, S.en - w - 8));
-    var y = kis(gy - h / 2, 8, Math.max(8, S.boy - h - 8));
+    var y = kis(gy - h / 2, 58, Math.max(58, S.boy - h - 8));
     S.kartKutu = { x: x, y: y, w: w, h: h };
     c.save();
     c.fillStyle = "rgba(0,0,0,.4)";
@@ -3255,6 +3476,9 @@ window.Bahce = (function () {
     c.moveTo(x < gx ? x + w : x, y + h / 2);
     c.lineTo(gx + (x < gx ? -1 : 1) * (R + 2), gy);
     c.stroke();
+    /* Kart hangi bitkinin: bitkinin çevresinde ince halka. */
+    c.strokeStyle = "rgba(140,152,134,.55)"; c.lineWidth = 1.4;
+    c.beginPath(); c.arc(px(b.x), py(b.y), sp.R + 5, 0, 6.3); c.stroke();
 
     c.textAlign = "left"; c.textBaseline = "alphabetic";
     c.font = "700 14px system-ui,sans-serif";
@@ -3446,12 +3670,18 @@ window.Bahce = (function () {
     return null;
   }
   function bitkiBul(p) {
-    var en = null, ed = 1e9;
+    /* Üst üste binen bitkilerde FAVORİ olan kazanıyor: işaretlediğin
+       bitkiye dokunmak, komşusunu seçmekten daha olası olsun. Favori
+       yoksa kural eskisi gibi: merkeze en yakın olan. */
+    var en = null, ed = 1e9, enF = false;
     S.bitki.forEach(function (b) {
       var sp = spriteAl(b);
       var d = Math.hypot(px(b.x) - p.x, py(b.y) - p.y);
       var r = Math.max(18, sp.R);
-      if (d < r && d < ed) { ed = d; en = b; }
+      if (d >= r) return;
+      var f = Favori.var(b.ad);
+      if (en && enF && !f) return;              /* favori olanı bozma */
+      if (!en || (f && !enF) || d < ed) { ed = d; en = b; enF = f; }
     });
     return en;
   }
@@ -3472,6 +3702,9 @@ window.Bahce = (function () {
        kazayla iş yaptırmak istemiyoruz. */
     if (S.film && filmDokun(p)) return;
 
+    /* Ekim oturumu paneli en üstte: makine beklerken onay düğmesinin
+       önüne başka hiçbir şey geçmiyor. */
+    if (S.ekimOturum && ekimOturumDokun(p)) return;
     /* TOHUM RAFI açıkken önce o. */
     if (S.rafAcik && rafDokun(p)) return;
     /* Elde tohum varsa: yanan boş yerlerden birine dokunmak ekiyor. */
@@ -3865,7 +4098,8 @@ window.Bahce = (function () {
                   isteKare();
                 }).catch(function () {});
             }
-            mesajYaz("Nokta yaratıldı, ekim kuyruğa girdi.");
+            mesajYaz("Nokta yaratıldı, ekim kuyruğa girdi — makine hazneye gidip "
+              + "tohumu alacak, sonra buraya ekecek.");
             return veriYukle().then(function () {
               if (yeni && yeni.ad) { S.secili = String(yeni.ad); altYaz(); isteKare(); }
             });
@@ -4424,6 +4658,8 @@ window.Bahce = (function () {
       notYaz("veri", "");
       katalogAl();
       olcumAl();
+      ekimSayacKur();
+      if (((S.veri && S.veri.ekim) || {}).aktif && !S.ekimOturum) ekimDurumAl();
       ustYaz(); altYaz(); isteKare();
     }).catch(function (h) {
       /* SESSİZ BAŞARISIZLIK YOK: sahne boş kalırsa sebebi ekranda. */
@@ -4482,6 +4718,11 @@ window.Bahce = (function () {
       return false;
     }
     S.ct = S.tuval.getContext("2d");
+    /* Favori başka bir panelde (tarla, bitkiler) değiştiğinde bahçe de
+       tazelensin: yıldız ve sıralama üç ekranda aynı anda değişiyor.
+       `Favori` hem aynı sayfadaki dinleyicileri hem başka sekmenin
+       `storage` olayını iletiyor. */
+    Favori.dinle(function () { S.nemDamga = ""; isteKare(); });
     carkKur();
     sakinKur();
     bulutKur();
@@ -4504,6 +4745,7 @@ window.Bahce = (function () {
       document.body.classList.toggle("bahce-acik", S.acik);
       if (!S.acik) {
         carkKapat(); jogBitir();
+        if (S.ekimSayac) { clearInterval(S.ekimSayac); S.ekimSayac = null; }
         Ses.akisDur(); Ses.motorDur(); S.hareketSes = false;
       }
       sayacKur(S.acik);
@@ -4561,7 +4803,11 @@ window.Bahce = (function () {
       ustYaz();
       veriYukle();
     },
-    ekimDegisti: function () { if (S.acik) veriYukle(); },
+    ekimDegisti: function () {
+      if (!S.acik) return;
+      ekimDurumAl(); ekimSayacKur();
+      return veriYukle();
+    },
     baglandi: function () { if (S.acik) veriYukle(); },
     yenile: function () { return veriYukle(); },
     /** Ekrandaki alanların yerleri — ölçüm ve doğrulama için. Hiçbir şeyi
@@ -4586,13 +4832,17 @@ window.Bahce = (function () {
         yildiz: S.kartYildiz ? { x: S.kartYildiz.x, y: S.kartYildiz.y,
                                  w: S.kartYildiz.w, h: S.kartYildiz.h,
                                  favori: S.secili ? Favori.var(S.secili) : false } : null,
+        ekim: S.ekimOturum ? { parca: S.ekimOturum.parca, sira: S.ekimOturum.sira,
+                               toplam: S.ekimOturum.toplam, soru: S.ekimOturum.soru,
+                               onay: !!S.ekimOnayKutu, iptal: !!S.ekimIptalKutu,
+                               kutuOnay: S.ekimOnayKutu, kutuIptal: S.ekimIptalKutu } : null,
         raf: { acik: !!S.rafAcik, gozler: S.raf.map(function (r) {
                  return { k: r.k, ad: r.ad, dolu: r.dolu, x: r.x, y: r.y, w: r.w, h: r.h }; }),
                tur: S.ekimTur, goz: S.ekimGoz,
                bosYer: S.bosYer ? S.bosYer.yerler.length : -1, hata: S.bosYerHata },
         gorev: S.gorevSatir.map(function (g) {
           return { kimlik: g.gorev.kimlik, tip: g.gorev.tip, metin: g.gorev.metin,
-                   alt: g.gorev.alt, evet: g.gorev.evet,
+                   alt: g.gorev.alt, evet: g.gorev.evet, favori: g.gorev.favori,
                    x: g.x, y: g.y, w: g.w, h: g.h };
         }),
         jog: S.jog ? { x: S.jog.x, y: S.jog.y, w: S.jog.w, h: S.jog.h,
