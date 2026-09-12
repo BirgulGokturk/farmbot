@@ -137,6 +137,7 @@
         <div class="etiket-onizleme gizli" id="etiket-onizleme">
           <img id="etiket-kare" alt="Taranan kare">
           <canvas id="etiket-tuval"></canvas>
+          <p class="alt-not gizli" id="etiket-onizleme-not"></p>
         </div>
       </details>`;
 
@@ -403,11 +404,21 @@
        * geliyordu: tuval sıfır boyutlu kalıp çizim hiç görünmüyordu.
        * Bitmap kareyle aynı ölçüde, CSS onu kutuya sığdırıyor; ölçek
        * çarpanı da gerekmiyor, köşeler geldiği koordinatta çiziliyor. */
-      tuval.width = son.genislik_px || im.naturalWidth || 1;
-      tuval.height = son.yukseklik_px || im.naturalHeight || 1;
+      /* TUVAL GÖSTERİLEN KARENİN ÖLÇÜSÜNDE, taramanınkinde değil.
+       *
+       * Köşeler taramanın gördüğü karenin pikselinde geliyor; önizlemede
+       * gösterilen kare BAŞKA ölçüde olabiliyor (kamera genişliği
+       * değiştirildi, kayıtlı kare eski çözünürlükte). O zaman kutular
+       * karenin dışına düşüyor ve ekranda hiçbir şey görünmüyordu —
+       * "buluyor ama göstermiyor" tam bu. Ölçek farkı varsa çiziliyor. */
+      tuval.width = im.naturalWidth || son.genislik_px || 1;
+      tuval.height = im.naturalHeight || son.yukseklik_px || 1;
+      const olcek = (son.genislik_px && im.naturalWidth)
+        ? im.naturalWidth / son.genislik_px : 1;
       const g = tuval.getContext("2d");
       g.clearRect(0, 0, tuval.width, tuval.height);
-      const kalem = Math.max(2, Math.round(tuval.width / 320));
+      if (olcek !== 1) g.scale(olcek, olcek);
+      const kalem = Math.max(2, Math.round((son.genislik_px || tuval.width) / 320));
       for (const e of son.etiketler || []) {
         const kayitli = Object.prototype.hasOwnProperty.call(
           (son.konumlar || {}).etiketler || {}, String(e.kimlik));
@@ -424,6 +435,17 @@
         g.textAlign = "center";
         g.textBaseline = "middle";
         g.fillText(String(e.kimlik), e.merkez[0], e.merkez[1]);
+      }
+    };
+    /* KARE GELMEZSE SEBEBİ YAZILSIN. `/api/kare/son` kayıtlı kare yoksa
+     * 404 veriyor; `onload` hiç tetiklenmiyor ve önizleme sessizce boş
+     * kalıyordu — tarama başarılı olduğu hâlde hiçbir şey görünmüyor. */
+    im.onerror = () => {
+      const not = $("#etiket-onizleme-not");
+      if (not) {
+        not.textContent = "Önizleme karesi alınamadı — bu kameradan henüz "
+          + "kayıtlı kare yok. Kamera sekmesinde bir kare çekip tekrar tarayın.";
+        not.classList.remove("gizli");
       }
     };
     im.src = `/api/kare/son?kamera=${encodeURIComponent(kam)}`
