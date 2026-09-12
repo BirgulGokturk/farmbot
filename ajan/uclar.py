@@ -156,10 +156,6 @@ VARSAYILAN = {
     #: yok ve tek anahtarla açılsaydı T'nin registerı hep 0 okur, her T
     #: home'u "anahtara basmadı" diye reddedilirdi.
     "home_anahtari": [],
-    #: Home'un yaklaşma hızı (mm/s). Ayrı bir sayı çünkü home'un sonu bir
-    #: durak değil bir ÇARPMA: eksen anahtara dayanarak duruyor. Gezinme
-    #: hızıyla gelmek onu sert vurduruyor.
-    "home_hizi": 5.0,
     "prox_baslar": ["sulama", "nem", "tohum"],
     "hiz": None,
     "hiz_eksen": [None, None, None, None],   # [X, Y, Z, T]
@@ -682,14 +678,6 @@ class Uclar:
         except (TypeError, ValueError):
             sure = int(VARSAYILAN["uc_secici"]["sure_ms"])
         return max(1, min(10000, sure))
-
-    def home_hizi(self) -> float:
-        """Home yaklaşma hızı (mm/s). Aralık dışıysa varsayılan."""
-        try:
-            h = float(self.ayar.get("home_hizi"))
-        except (TypeError, ValueError):
-            return 5.0
-        return h if 0.5 <= h <= 50.0 else 5.0
 
     def home_anahtari(self) -> set[str]:
         """Anahtarına güvenilecek eksenlerin adları — {"x", "y", "z"}.

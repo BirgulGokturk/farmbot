@@ -325,7 +325,6 @@ class Ajan:
         """`home_anahtari` ayarını PLC sürücüsüne taşır."""
         try:
             self.plc.home_anahtari = self.uclar.home_anahtari()
-            self.plc.home_arama_hizi = self.uclar.home_hizi()
         except Exception:                                    # noqa: BLE001
             pass
 

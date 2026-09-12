@@ -1436,15 +1436,27 @@ class Gantry:
     #: eksende sonsuza kadar beklemiyoruz.
     ANAHTAR_ARAMA_SN = 90.0
 
-    #: Home'un YAKLAŞMA HIZI (mm/s). Ayrı bir sayı, çünkü home ötekilerden
-    #: farklı bir hareket: sonu bir DURAK değil bir ÇARPMA. Eksen anahtara
-    #: dayanarak duruyor ve normal gezinme hızıyla gelmek onu sert
-    #: vurduruyor — kullanıcının gördüğü buydu.
+    #: Home, o eksenin GEÇERLİ HIZININ bu oranıyla yaklaşıyor.
     #:
-    #: Hem koordinat yaklaşmasında hem anahtar aramasında geçerli:
-    #: yaklaşma da anahtarın bulunduğu uca gidiyor ve sayaç doğruysa
-    #: temas oradan oluyor. Ajan ayardan kuruyor (`home_hizi`).
-    home_arama_hizi = 5.0
+    #: Home ötekilerden farklı bir hareket: sonu bir DURAK değil bir
+    #: ÇARPMA — eksen anahtara dayanarak duruyor ve gezinme hızıyla
+    #: gelmek onu sert vurduruyor.
+    #:
+    #: AYRI BİR AYAR DEĞİL, ORAN. Sabit bir mm/s değeri, hızını
+    #: değiştiren kullanıcıyı ikinci bir sayıyı da güncellemeye
+    #: zorluyordu: X'i 60 mm/s yapan biri için 5 mm/s home sürünme,
+    #: Z'yi 8 yapan için neredeyse tam hız olurdu. Oran her eksende
+    #: kendi hızına göre ölçekleniyor.
+    HOME_HIZ_ORANI = 0.30
+
+    def home_hizi(self, i: int) -> float:
+        """Bu eksenin home yaklaşma hızı (mm/s).
+
+        Taban 0,5: `eksen_hizi` de orada kesiyor ve çok yavaş bir
+        sürünme, takılma denetiminin (5 sn kımıldamazlık) yanlış
+        tetiklenmesine yol açardı.
+        """
+        return max(0.5, self.eksen_hizi(i) * self.HOME_HIZ_ORANI)
 
     def anahtara_sur(self, i: int) -> bool:
         """Ekseni home anahtarına DEĞENE KADAR sürer. -> anahtar bulundu mu
@@ -1473,7 +1485,7 @@ class Gantry:
         # YAVAŞ YAKLAŞ. Jog hızı PLC'nin `jX_jog_hiz` registerından
         # geliyor ve son hareketten kalma değeri taşıyor; aramaya onunla
         # girmek anahtara tam gezinme hızıyla çarpmak demekti.
-        self._hiz_ivme_yaz(i, self.home_arama_hizi)
+        self._hiz_ivme_yaz(i, self.home_hizi(i))
         son = time.time() + self.ANAHTAR_ARAMA_SN
         self.gunluk_cb(
             f"{EKSENLER[i]['ad']} anahtar aranıyor — sayaç "
@@ -1667,7 +1679,7 @@ class Gantry:
                     # (takılma, elle oynatma) ve home o kaymayı
                     # düzeltmeye çalışmanın tek yolu.
                     self.eksen_git_dogrula(i, hedef, zorla=True,
-                                           hiz=self.home_arama_hizi)
+                                           hiz=self.home_hizi(i))
                 except PLCHatasi as hata:
                     # SIRAYI KESİYORUZ. Z home'a çıkmadıysa X ve Y'yi
                     # sürmek, uç aşağıdayken yatay hareket demek.
