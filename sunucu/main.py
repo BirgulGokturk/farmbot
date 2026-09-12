@@ -1738,6 +1738,9 @@ def _ekim_coz(adlar: list[str]) -> dict[str, Any]:
 
     hedefler: list[dict[str, Any]] = []
     eksik: list[str] = []
+    tohum_bas = baslar.bas(durum, "tohum")
+    sinirlar = durum.get("sinirlar") or {}
+    erisilmez: list[str] = []
     for ad in adlar:
         bitki = kayitli.get(ad)
         if bitki is None:
@@ -1752,6 +1755,25 @@ def _ekim_coz(adlar: list[str]) -> dict[str, Any]:
                     else tur.get("sow_depth_mm"))
         if derinlik in (None, ""):
             derinlik = turler.VARSAYILAN.get("sow_depth_mm", 0.0)
+        # ULAŞILABİLİR Mİ — TOHUM UCUNUN KAYMASIYLA BİRLİKTE.
+        #
+        # Bu denetim burada YOKTU. Üç baş aynı anda takılı ve tohum ucunun
+        # kendi kayması var (bu makinede -45/-60 mm): makine hedefin o
+        # kadar ötesine gidiyor ki tohum hedefe düşsün. Yatağın kenarına
+        # yakın bir bitkide bu, makineyi sınırın DIŞINA götürüyor —
+        # Y44,5'teki bir bitki için makine Y-15,5'e gitmeli, sınır ise
+        # [0, 645].
+        #
+        # Eskiden bu ancak ajanın yumuşak sınır denetiminde yakalanıyordu
+        # ve mesaj ham koordinat veriyordu: "3 nokta ajanın denetiminden
+        # geçmedi: X272.8 Y-15.5 ...". Hangi bitki olduğu, neden
+        # olduğu ve ne yapılacağı yazmıyordu. `_nem_olc_baslat` bu
+        # denetimi zaten yapıyor; ekim geride kalmıştı.
+        olur, sebep = baslar.ulasilir_mi(
+            bitki.get("x"), bitki.get("y"), tohum_bas, sinirlar)
+        if not olur:
+            erisilmez.append(f"{ad}: {sebep}")
+            continue
         hedefler.append({"ad": ad, "x": bitki.get("x"), "y": bitki.get("y"),
                          "tur": slug or "", "sow_depth_mm": derinlik})
 
@@ -1781,6 +1803,11 @@ def _ekim_coz(adlar: list[str]) -> dict[str, Any]:
         # "Marul" seciyor, ret sebebinde "marul" okumak kafa karistiriyor.
         tur_adlari={t.get("slug"): t.get("name_tr") or t.get("slug")
                     for t in tur_indeks.values() if t.get("slug")})
+    if erisilmez:
+        # EN BAŞA: kayma yüzünden erişilemeyen bitki, ekimin hiç
+        # başlamamasının en sık sebebi ve kullanıcının önce görmesi
+        # gereken satır.
+        cozum["ret"][:0] = erisilmez
     if eksik:
         cozum["ret"].insert(0, "Bulunamayan nokta: " + ", ".join(sorted(set(eksik))))
     # ADIM SINIRI ARTIK BAĞLAYICI DEĞİL. Her parça ayrı bir dizi ve en
