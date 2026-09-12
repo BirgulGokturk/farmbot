@@ -61,9 +61,11 @@
           <button id="d-isik-oto">Takvime dön</button>
         </div>
         <p class="alt-not">
-          Elle verilen karar <b>bir sonraki takvim değişimine kadar</b>
-          geçerli; o an gelince takvim kendiliğinden devralır. Takvimi
-          büsbütün kapatmak, ertesi gün ışığın hiç yanmaması demek olurdu.
+          Bu üç düğme <b>anında</b> karta yazıyor; takvim tikini
+          beklemiyor. Elle verilen karar <b>bir sonraki takvim
+          değişimine kadar</b> geçerli; o an gelince takvim kendiliğinden
+          devralır. Takvimi büsbütün kapatmak, ertesi gün ışığın hiç
+          yanmaması demek olurdu.
         </p>
         <div id="isik-hata" class="uyari gizli"></div>
       </details>`;
@@ -143,6 +145,10 @@
     } else if (istenen !== null && istenen !== undefined && Number(kart) !== Number(istenen)) {
       h += '<br><span class="uyari">İstenen ile kartın bildirdiği tutmuyor — '
         + 'sunucu komutu yineliyor (en geç 30 sn).</span>';
+    }
+    if (durum && durum.gonderim_hatasi) {
+      h += '<br><span class="uyari">Komut karta ulaşmadı: '
+        + kacisli(durum.gonderim_hatasi) + '</span>';
     }
     y.innerHTML = h;
   }

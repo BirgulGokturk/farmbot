@@ -216,6 +216,52 @@ def durum_ozeti(kart: Any = None) -> dict[str, Any]:
     }
 
 
+def _kart_degeri(olcum_al) -> int | None:
+    olcum = (olcum_al() or {}) if callable(olcum_al) else {}
+    ham = olcum.get("r_isik")
+    if ham is None:
+        return None
+    try:
+        return int(ham)
+    except (TypeError, ValueError):
+        return None
+
+
+async def uygula(komut_yolla, olcum_al, zorla: bool = False) -> dict[str, Any]:
+    """Istenen durumu karta yazar. `zorla` = kartin ne dedigine bakma, gonder.
+
+    ELLE ACMA ANINDA OLMALI. Dongunun tikini beklemek, dugmeye basip
+    otuz saniye isigin yanmasini beklemek demekti; panelde tiklanan bir
+    dugmenin cevabi tikin suresine baglanmamali. Takvim degisimi otuz
+    saniye gecikebilir (dakika cozunurlugunde bir takvim icin gorunmez),
+    elle verilen karar gecikemez.
+    """
+    global _son_hedef, _son_gonderim
+    hedef, gerekce = _hedef()
+    kart = _kart_degeri(olcum_al)
+    simdi = time.time()
+
+    if zorla:
+        gonder = True
+    elif kart is not None:
+        gonder = kart != int(hedef)
+    else:
+        gonder = (_son_hedef != hedef or (simdi - _son_gonderim) >= YENILEME_SN)
+
+    gonderildi = False
+    hata = ""
+    if gonder:
+        try:
+            await komut_yolla("role", {"ad": "isik", "durum": bool(hedef)})
+            _son_hedef = hedef
+            _son_gonderim = simdi
+            gonderildi = True
+        except Exception as h:                              # noqa: BLE001
+            hata = str(getattr(h, "detail", None) or h)
+    return {"hedef": hedef, "gerekce": gerekce, "kart": kart,
+            "gonderildi": gonderildi, "hata": hata}
+
+
 async def dongu(komut_yolla, olcum_al) -> None:
     """`komut_yolla(ad, arg)` ajana komut atıyor, `olcum_al()` son ölçüm.
 
@@ -224,30 +270,9 @@ async def dongu(komut_yolla, olcum_al) -> None:
     aydınlatmadır. (`zamanli.py` bilerek tersini yapıyor — orada tik
     makineyi HAREKET ettiriyor, burada yalnız bir çıkış sürülüyor.)
     """
-    global _son_hedef, _son_gonderim
     while True:
         try:
-            hedef, _ = _hedef()
-            olcum = (olcum_al() or {}) if callable(olcum_al) else {}
-            ham = olcum.get("r_isik")
-            kart = None
-            if ham is not None:
-                try:
-                    kart = int(ham)
-                except (TypeError, ValueError):
-                    kart = None
-
-            simdi = time.time()
-            if kart is not None:
-                gonder = kart != int(hedef)
-            else:
-                gonder = (_son_hedef != hedef
-                          or (simdi - _son_gonderim) >= YENILEME_SN)
-
-            if gonder:
-                await komut_yolla("role", {"ad": "isik", "durum": bool(hedef)})
-                _son_hedef = hedef
-                _son_gonderim = simdi
+            await uygula(komut_yolla, olcum_al)
         except asyncio.CancelledError:
             raise
         except Exception:                                   # noqa: BLE001
@@ -260,13 +285,21 @@ async def dongu(komut_yolla, olcum_al) -> None:
 # --------------------------------------------------------------------------- #
 # HTTP
 # --------------------------------------------------------------------------- #
-def yonlendirici_kur(parola_dogrula, olcum_al):
+def yonlendirici_kur(parola_dogrula, olcum_al, komut_yolla):
     from fastapi import APIRouter, HTTPException, Query
 
     yon = APIRouter()
 
     def _kart() -> Any:
         return ((olcum_al() or {}) if callable(olcum_al) else {}).get("r_isik")
+
+    async def _hemen() -> dict[str, Any]:
+        """Karara aninda karsilik: dugme tikin suresini beklemiyor."""
+        sonuc = await uygula(komut_yolla, olcum_al, zorla=True)
+        ozet = durum_ozeti(_kart())
+        # Ajan kopuksa sessizce "tamam" demiyoruz; panel sebebi yaziyor.
+        ozet["gonderim_hatasi"] = sonuc.get("hata") or ""
+        return ozet
 
     @yon.get("/api/isik")
     async def _durum(jeton: str = Query(default="")):
@@ -283,17 +316,19 @@ def yonlendirici_kur(parola_dogrula, olcum_al):
         # Takvim değişti: elle verilmiş karar da düşüyor, yoksa yeni
         # takvim ilk değişimine kadar hiç uygulanmaz.
         elle_kur(None)
-        return durum_ozeti(_kart())
+        return await _hemen()
 
     @yon.post("/api/isik/elle")
     async def _elle(govde: dict[str, Any] | None = None, jeton: str = Query(default="")):
         parola_dogrula(jeton)
         g = govde or {}
         if g.get("otomatik"):
-            return elle_kur(None)
+            elle_kur(None)
+            return await _hemen()
         if "durum" not in g:
             raise HTTPException(status_code=422,
                                 detail="durum (true/false) ya da otomatik: true gerekli")
-        return elle_kur(bool(g.get("durum")))
+        elle_kur(bool(g.get("durum")))
+        return await _hemen()
 
     return yon

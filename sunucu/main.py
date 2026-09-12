@@ -3505,7 +3505,8 @@ app.include_router(filiz.yonlendirici_kur(_parola_dogrula, _cozumleme_karesi))
 # govdesi. Ikinci bir tespit hatti, ayni yatak icin birbirini tutmayan
 # iki cevap demekti.
 app.include_router(bitkiolcum.yonlendirici_kur(_parola_dogrula, _cozumleme_karesi))
-app.include_router(isik.yonlendirici_kur(_parola_dogrula, lambda: merkez.son_olcum))
+app.include_router(isik.yonlendirici_kur(
+    _parola_dogrula, lambda: merkez.son_olcum, merkez.komut_yolla))
 # BITKI KARTLARI. Kartin EK verisi (sulama suresi, nem egilimi, olay
 # sayaclari) burada; bitkinin kendisi ve susama karari `/api/bahce`de
 # kaliyor ve panel ikisini birlestiriyor. Toprak kalibrasyonu ajandan
