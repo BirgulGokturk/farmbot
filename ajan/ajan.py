@@ -1033,6 +1033,21 @@ class Ajan:
                         "mesaj": f"{len(tanimlar)} kamera kaydedildi ({os.path.basename(yol)})"
                                  + (f"; yeniden açılan: {', '.join(geri)}" if geri else "")}
 
+            if ad == "kamera_denetimleri":
+                # KAMERANIN DESTEKLEDİĞİ DENETİMLER — koda yazılmıyor,
+                # `v4l2-ctl --list-ctrls` ile SORULUYOR. Her kamera başka
+                # denetim sunuyor ve aralıkları farklı (parlaklık bir
+                # kamerada -64..64, ötekinde 0..255). Sabit bir liste,
+                # panelde kameranın kabul etmediği sayıyı ayarlatır ve
+                # v4l2-ctl onu sessizce yok sayardı.
+                kam = self._kamera_sec(arg.get("kamera"))
+                if kam is None:
+                    return {"ok": False,
+                            "mesaj": f"'{arg.get('kamera')}' adlı kamera tanımlı değil"}
+                veri = await asyncio.to_thread(kam.denetimleri_listele)
+                return {"ok": bool(veri.get("ok")), "sessiz": True,
+                        "mesaj": veri.get("sebep", ""), "veri": veri}
+
             if ad == "kamera_cihazlar":
                 # Sistemdeki video cihazları — panelde "kameranın adı ne"
                 # sorusunun cevabı. Kullanıcının /dev/video* numaralarını

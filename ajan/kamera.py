@@ -46,6 +46,7 @@ import base64
 import io
 import logging
 import os
+import re as _re
 import shutil
 import subprocess
 import tempfile
@@ -103,6 +104,24 @@ VARSAYILAN = {
     # sensöre söylemek. `v4l2-ctl --list-ctrls` neyin ayarlanabildiğini
     # yazıyor ve kameradan kameraya değişiyor, o yüzden serbest sözlük.
     "denetimler": {},
+    # GORUNTU DONDURME — 0 / 90 / 180 / 270, saat yonunde derece.
+    #
+    # Kamera fiziksel olarak yan monte edildiginde yazilimda duzeltiliyor.
+    # Kameranin kendi UVC denetimleri dondurme sunmuyor, rpicam/libcamera ise
+    # yalnizca 0 ve 180 kabul ediyor; 90 her iki yolda da bizde donuyor.
+    #
+    # HER YERDE gecerli: canli akis, saatlik kaydedilen kareler ve cozumleme
+    # (AprilTag, filiz bulma) ayni aciyi goruyor. Yalnizca ekrani dondurmek
+    # daha ucuzdu ama piksel->yatak koordinat eslemesi eski acida kalirdi ve
+    # kalibrasyon sessizce yanlis yere bakardi.
+    #
+    # BEDELI: kare Python'da cozulup yeniden sikistiriliyor. Canli akista
+    # bedava (kare zaten `_akis_kucult` icinde cozuluyor); tam cozunurluklu
+    # kare ise ancak ISTENDIGINDE donduruluyor, her karede degil.
+    #
+    # DONDURDUKTEN SONRA KAMERAYI YENIDEN KALIBRE ET: mm/px olcusu ve
+    # kamera merkezinin uctan kaymasi eski aciya gore olculmustu.
+    "dondur": 0,
     # ŞERİT KABLOLU Pi KAMERASININ AYARLARI. `denetimler` UVC (USB) yolunda
     # `v4l2-ctl` ile yazılıyor; rpicam/libcamera o denetimleri HİÇ tanımıyor,
     # kendi komut satırı seçeneklerini istiyor ve ölçekleri de farklı
@@ -355,6 +374,7 @@ class Kamera:
         self._tam_kare: bytes = b""
         self._tam_ts: float = 0.0
         self._kucultme_uyarisi = False
+        self._dondurme_uyarisi = False
 
     # --- kimlik ---
     @property
@@ -386,6 +406,51 @@ class Kamera:
         g = int(self.ayar["genislik"])
         return g, int(g * 3 / 4)
 
+    def _dondurme(self) -> int:
+        """Ayardaki donme acisi; 0/90/180/270 disindaki her sey 0."""
+        try:
+            derece = int(self.ayar.get("dondur", 0) or 0) % 360
+        except (TypeError, ValueError):
+            return 0
+        return derece if derece in (90, 180, 270) else 0
+
+    def _dondur(self, jpeg: bytes) -> bytes:
+        """Kareyi ayardaki aciya cevirir. Ceviremezse OLDUGU GIBI verir.
+
+        Sessiz kalmiyoruz ama akisi da kesmiyoruz - Pillow yoksa goruntu yan
+        gider, yine de gorunur. Sebep gunluge BIR KEZ yaziliyor.
+        """
+        derece = self._dondurme()
+        if not derece or not jpeg:
+            return jpeg
+        try:
+            import io
+
+            from PIL import Image
+        except ImportError:
+            if not self._dondurme_uyarisi:
+                self._dondurme_uyarisi = True
+                self.gunluk_cb(
+                    f"[{self.etiket}] Pillow yok — goruntu dondurulemiyor. "
+                    "Pi'de: sudo apt install -y python3-pil", "uyari")
+            return jpeg
+        try:
+            # PIL'in ROTATE_* adlari SAAT YONUNUN TERSI; kullanicinin
+            # bekledigi "saga 90" saat yonunde, o yuzden esleme ters.
+            kod = {90: Image.ROTATE_270, 180: Image.ROTATE_180,
+                   270: Image.ROTATE_90}[derece]
+            gorsel = Image.open(io.BytesIO(jpeg)).transpose(kod)
+            tampon = io.BytesIO()
+            gorsel.convert("RGB").save(tampon, format="JPEG",
+                                       quality=int(self.ayar.get("kalite", 75)))
+            return tampon.getvalue()
+        except Exception as hata:                          # noqa: BLE001
+            if not self._dondurme_uyarisi:
+                self._dondurme_uyarisi = True
+                self.gunluk_cb(f"[{self.etiket}] kare dondurulemedi: {hata} — "
+                               "goruntu ham aciyla gidiyor", "uyari")
+            return jpeg
+
     def _akis_kucult(self, jpeg: bytes) -> bytes:
         """Canlı akışa gidecek kareyi küçültür. Küçültemezse OLDUĞU GİBİ verir.
 
@@ -398,11 +463,16 @@ class Kamera:
         yazılıyor — her karede yazmak günlüğü doldururdu.
         """
         hedef = int(self.ayar.get("canli_genislik", 0) or 0)
+        derece = self._dondurme()
         if hedef <= 0:
-            return jpeg
-        genislik, _ = self._boyut()
+            return self._dondur(jpeg)
+        genislik, yukseklik = self._boyut()
+        if derece in (90, 270):
+            # Dondukten sonra genislik ile yukseklik yer degistiriyor;
+            # kucultme esigi DONMUS kareye gore olculmeli.
+            genislik = yukseklik
         if genislik <= hedef:
-            return jpeg
+            return self._dondur(jpeg)
         try:
             import io
 
@@ -417,6 +487,12 @@ class Kamera:
             return jpeg
         try:
             gorsel = Image.open(io.BytesIO(jpeg))
+            if derece:
+                # Kare burada ZATEN cozuluyor: dondurmek fazladan hicbir
+                # cozme/sikistirma getirmiyor, yalnizca piksel tasima.
+                gorsel = gorsel.transpose({90: Image.ROTATE_270,
+                                           180: Image.ROTATE_180,
+                                           270: Image.ROTATE_90}[derece])
             gorsel.thumbnail((hedef, hedef * 10), Image.BILINEAR)
             tampon = io.BytesIO()
             gorsel.convert("RGB").save(tampon, format="JPEG",
@@ -443,7 +519,10 @@ class Kamera:
         """
         if self._canli and self._tam_kare:
             if azami_yas <= 0 or (time.time() - self._tam_ts) <= azami_yas:
-                return self._tam_kare
+                # `_tam_kare` HAM saklaniyor: canli akista her kare icin
+                # tam cozunurlukte dondurmek bosuna, cunku o karelerin
+                # cogu hic cozumlenmiyor. Donme burada, ISTENDIGINDE.
+                return self._dondur(self._tam_kare)
         if self._canli:
             # Akış açıkken cihaz meşgul; ikinci bir çekim "device busy"
             # verir ve akışı da düşürebilir. Elimizdeki kare eskiyse
@@ -489,6 +568,64 @@ class Kamera:
         elif ciftler != self._son_denetim:
             self._son_denetim = ciftler
             self.gunluk_cb(f"[{self.etiket}] kamera denetimleri uygulandı: {ciftler}")
+
+    #: `v4l2-ctl --list-ctrls` satırının biçimi:
+    #:     brightness 0x00980900 (int)  : min=-64 max=64 step=1 default=0 value=0
+    #: Ad, tip ve anahtar=değer çiftleri. Menü seçenekleri ayrı satırlarda
+    #: girintili geliyor ve burada okunmuyor — sayı yeterli.
+    _DENETIM_SATIR = _re.compile(
+        r"^\s*(?P<ad>\w+)\s+0x[0-9a-f]+\s+\((?P<tip>\w+)\)\s*:\s*(?P<kalan>.+)$")
+
+    def denetimleri_listele(self) -> dict[str, Any]:
+        """Kameranın DESTEKLEDİĞİ denetimleri ve aralıklarını döner.
+
+        NEDEN OKUNUYOR, KODA YAZILMIYOR: her kamera başka denetim sunuyor
+        ve aralıkları da farklı (parlaklık bu kamerada -64..64, ötekinde
+        0..255). Sabit bir liste, panelde kameranın kabul etmediği bir
+        sayıyı ayarlatırdı ve `v4l2-ctl` onu sessizce yok sayardı.
+
+        Kamera AÇIK OLMAK ZORUNDA DEĞİL: `v4l2-ctl` cihaz düğümünü
+        doğrudan okuyor. Ama cihaz çözülmemişse okunacak bir şey yok.
+        """
+        if not shutil.which("v4l2-ctl"):
+            return {"ok": False, "sebep": "v4l2-ctl kurulu değil "
+                                          "(sudo apt install v4l-utils)",
+                    "denetimler": []}
+        cihaz = self.cihaz_coz()
+        if not cihaz:
+            return {"ok": False, "sebep": "kamera cihazı bulunamadı",
+                    "denetimler": []}
+        try:
+            sonuc = subprocess.run(["v4l2-ctl", "-d", cihaz, "--list-ctrls"],
+                                   capture_output=True, timeout=6)
+        except (OSError, subprocess.SubprocessError) as hata:
+            return {"ok": False, "sebep": str(hata), "denetimler": []}
+        if sonuc.returncode != 0:
+            ayrinti = (sonuc.stderr or b"").decode("utf-8", "replace").strip()
+            return {"ok": False, "sebep": ayrinti[-200:] or "okunamadı",
+                    "denetimler": []}
+
+        liste: list[dict[str, Any]] = []
+        for satir in (sonuc.stdout or b"").decode("utf-8", "replace").splitlines():
+            m = self._DENETIM_SATIR.match(satir)
+            if not m:
+                continue
+            alan: dict[str, Any] = {"ad": m.group("ad"), "tip": m.group("tip")}
+            for parca in m.group("kalan").split():
+                if "=" not in parca:
+                    continue
+                anahtar, _, deger = parca.partition("=")
+                try:
+                    alan[anahtar] = int(deger)
+                except ValueError:
+                    alan[anahtar] = deger
+            # SALT OKUNUR DENETİMLER ATLANIYOR: panelde değiştirilemeyen
+            # bir kaydırağı göstermek, kullanıcıyı işlemeyen bir ayarla
+            # uğraştırmak olurdu.
+            if "flags=read-only" in m.group("kalan"):
+                continue
+            liste.append(alan)
+        return {"ok": True, "sebep": "", "cihaz": cihaz, "denetimler": liste}
 
     def cihaz_coz(self, zorla: bool = False) -> str:
         """USB kamerayı adından bulur; sonucu saklar.
@@ -928,11 +1065,18 @@ class Kamera:
         return ""
 
     def kare_al(self) -> bytes:
+        """Tek kare — DONDURULMUS.
+
+        Iki cagirani var: saatlik kayit dongusu ve akis kapaliyken
+        `tam_kare()`. Ikisi de son goruntuyu istiyor, o yuzden donme burada.
+        `tam_kare()` onbellekteki kareyi kendi donduruyor ve bu yola
+        dusmuyor - cift donme yok.
+        """
         if self._yontem == "sahte":
-            return self._sahte_kare()
+            return self._dondur(self._sahte_kare())
         if self._yontem == "picamera2":
-            return self._picamera2_kare()
-        return self._komut_kare()
+            return self._dondur(self._picamera2_kare())
+        return self._dondur(self._komut_kare())
 
     # --- döngü ---
     def baslat(self) -> None:
@@ -967,6 +1111,7 @@ class Kamera:
             # Ağdan geçen kare bu genişlikte; çekim `genislik`te.
             "canli_genislik": int(self.ayar.get("canli_genislik", 0) or 0),
             "denetimler": dict(self.ayar.get("denetimler") or {}),
+            "dondur": self._dondurme(),
             "pi_secenekleri": dict(self.ayar.get("pi_secenekleri") or {}),
             "yol": str(self.ayar.get("yol") or "oto"),
             "sahte": bool(self.ayar.get("sahte")),
@@ -1157,12 +1302,12 @@ VARSAYILAN_KAMERALAR: list[dict[str, Any]] = [
 #: anahtar sessizce saklanıp sonra "neden çalışmıyor" sorusuna dönüşmesin.
 DUZENLENEBILIR = ("etiket", "hareketli", "aralik_sn", "genislik", "kalite",
                   "cihaz", "cihaz_adi", "yol", "sahte", "aktif",
-                  "cozunurluk", "canli_genislik", "denetimler", "pi_secenekleri")
+                  "cozunurluk", "canli_genislik", "dondur", "denetimler",
+                  "pi_secenekleri")
 
 #: Kamera denetimlerinde kabul edilen ad biçimi — `v4l2-ctl --list-ctrls`
 #: adları harf, rakam ve alt çizgiden ibaret. Kabuk enjeksiyonuna kapı
 #: bırakmamak için beyaz liste; değerler de yalnız sayı.
-import re as _re
 DENETIM_ADI = _re.compile(r"^[a-z][a-z0-9_]{1,40}$")
 
 
@@ -1219,6 +1364,19 @@ def tanim_dogrula(ham: dict[str, Any], sira: int = 0) -> dict[str, Any]:
             f"'{temiz['etiket']}' canlı akış genişliği 160 ile 4096 arasında "
             f"olmalı, ya da küçültmeyi kapatmak için 0 (verilen: {canli_g})")
     temiz["canli_genislik"] = max(0, canli_g)
+
+    # GORUNTU DONDURME. Serbest aci YOK: 90'in kati olmayan bir donme kareyi
+    # ya kirpiyor ya siyah kenar birakiyor, ikisi de cozumlemeyi bozar.
+    try:
+        dondur = int(float(ham.get("dondur", 0) or 0)) % 360
+    except (TypeError, ValueError):
+        raise KameraAyarHatasi(
+            f"'{temiz['etiket']}' goruntu dondurme sayi olmali") from None
+    if dondur not in (0, 90, 180, 270):
+        raise KameraAyarHatasi(
+            f"'{temiz['etiket']}' goruntu dondurme 0, 90, 180 ya da 270 olmali "
+            f"(verilen: {dondur})")
+    temiz["dondur"] = dondur
 
     try:
         aralik = float(ham.get("aralik_sn", 3600.0))

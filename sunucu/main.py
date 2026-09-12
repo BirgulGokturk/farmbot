@@ -96,6 +96,9 @@ IZINLI_KOMUTLAR = {
     "kamera",        # {"kamera":"uc","acik": true|false, "aralik_sn": 3600}
     "kamera_kaydet", # {"kameralar":[{ad,etiket,hareketli,cihaz_adi,genislik,…}]}
     "kamera_cihazlar",  # {} — sistemdeki /dev/video* düğümleri ve adları
+    "kamera_denetimleri",  # {"kamera":"uc"} — o kameranın DESTEKLEDİĞİ
+                     #   v4l2 denetimleri ve aralıkları. Panel kaydırakları
+                     #   buradan kuruluyor; koda gömülü liste yok.
     "kamera_kare",   # {"kamera":"ust"} — TAM çözünürlüklü tek kare (çözümleme)
     "role",          # {"ad": "su_pompasi"|"hava_pompasi", "durum": true}
     "uc_sec",        # {"bas":"sulama"|"nem"|"tohum"} — uç seçici servo.

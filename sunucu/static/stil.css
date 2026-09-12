@@ -2704,3 +2704,17 @@ body.kamera-sekmesi .toplu-cubuk { display: none; }
 .tarla-yildiz:hover { color: #f6c456; }
 .tarla-yildiz.dolu { color: #f6c456; }
 
+/* KAMERA DENETİMLERİ — kamera ayar kartının içinde, KAPALI açılıyor.
+   Liste kameradan geliyor ve uzun olabiliyor (MX Brio bir düzine denetim
+   sunuyor); kartı açıkken göstermek öteki ayarları aşağı itip
+   görünmez yapardı. */
+.kam-denetim-kutu { margin-top: var(--b2); }
+.kam-denetim-kutu > summary { cursor: pointer; font-size: 13px; }
+.kam-denetimler {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+  gap: var(--b2);
+  margin-top: var(--b2);
+}
+.kam-denetimler .alan label { font-size: 12px; }
+

@@ -3871,6 +3871,13 @@ function kamAyarTaslak() {
     genislik: Number(k.genislik) || 1920,
     // Ağdan geçen akışın genişliği; 0 = küçültme yok.
     canli_genislik: Number(k.canli_genislik ?? 640),
+    // Görüntü döndürme (0/90/180/270, saat yönü). Taslakta DURMASI şart:
+    // gönderilmeyen alan ajanda varsayılana düşüp ayarı sessizce sıfırlar.
+    dondur: Number(k.dondur) || 0,
+    // DENETİMLER OLDUĞU GİBİ TAŞINIYOR. Kaydetmede bu alan düşerse
+    // kameranın parlaklık/pozlama ayarı her kayıtta silinirdi.
+    denetimler: (k.denetimler && typeof k.denetimler === "object")
+      ? { ...k.denetimler } : {},
     aralik_sn: Number(k.aralik_sn) || 3600,
     sahte: !!k.sahte,
     // AÇILIŞTA çalışsın mı. Taslakta DURMASI şart: alan gönderilmezse
@@ -3931,6 +3938,11 @@ function kamAyarKartiCiz(k, i) {
           <input type="number" data-alan="canli_genislik" min="0" max="4096" step="16"
                  value="${Number(k.canli_genislik)}"
                  title="Ağdan geçen kare bu genişliğe küçültülüyor. 0 = küçültme yok. Çözümleme yine tam çözünürlüklü kareyi alıyor."></div>
+        <div class="alan"><label>Görüntü döndürme</label>
+          <select data-alan="dondur"
+                  title="Kamera yan monte edildiyse yazılımda düzeltir. Canlı akış, kaydedilen kareler ve çözümleme aynı açıyı görür — döndürdükten sonra kamerayı YENİDEN KALİBRE ET.">
+            ${[0, 90, 180, 270].map((a) => `<option value="${a}"${Number(k.dondur) === a ? " selected" : ""}>${a === 0 ? "yok" : a + "° sağa"}</option>`).join("")}
+          </select></div>
         <div class="alan"><label>Kare aralığı (sn)</label>
           <input type="number" data-alan="aralik_sn" min="2" max="86400" step="1"
                  value="${Number(k.aralik_sn)}"></div>
@@ -3944,6 +3956,21 @@ function kamAyarKartiCiz(k, i) {
           <input type="checkbox" data-alan="aktif"${k.aktif ? " checked" : ""}>
           Açılışta çalışsın</label>
       </div>
+
+      <!-- KAMERA DENETİMLERİ — parlaklık, pozlama, odak…
+           Liste KAMERADAN geliyor (v4l2-ctl --list-ctrls), koda yazılı
+           değil: her kamera başka denetim sunuyor ve aralıkları farklı.
+           Sabit bir liste, kameranın kabul etmediği bir sayıyı
+           ayarlatırdı ve v4l2-ctl onu sessizce yok sayardı. -->
+      <details class="kam-denetim-kutu">
+        <summary>Kamera denetimleri (parlaklık, pozlama, odak…)</summary>
+        <p class="alt-not">Kameranın kendi desteklediği ayarlar. Liste
+          kameradan okunuyor; boşsa <code>v4l2-ctl</code> kurulu değil ya
+          da kamera bağlı değil. Değiştirdikten sonra <b>Kaydet</b>.</p>
+        <button class="dugme" type="button" data-denetim-yukle="${kacisli(k.ad)}">
+          Denetimleri oku</button>
+        <div class="kam-denetimler" data-kamera="${kacisli(k.ad)}"></div>
+      </details>
       <p class="ikincil">${k.hareketli
         ? "Kareleri konumlu: karedeki leke yatak koordinatına çevrilebiliyor."
         : ((S.kalibrasyonlar || {})[k.ad] || {}).harita
@@ -3956,6 +3983,14 @@ function kamAyarKartiCiz(k, i) {
             + "(çap, alan) kendi mm/px'inden çıkıyor."}</p>
     </div>`).join("");
 
+  kap.querySelectorAll("[data-denetim-yukle]").forEach((d) => {
+    d.onclick = () => {
+      const ad = d.dataset.denetimYukle;
+      const kutu = kap.querySelector(`.kam-denetimler[data-kamera="${ad}"]`);
+      if (kutu) kamDenetimYukle(ad, kutu);
+    };
+  });
+
   kap.querySelectorAll(".kam-ayar").forEach((kart) => {
     const sira = Number(kart.dataset.sira);
     kart.querySelectorAll("[data-alan]").forEach((el) => {
@@ -3965,12 +4000,65 @@ function kamAyarKartiCiz(k, i) {
         const alan = el.dataset.alan;
         t[alan] = el.type === "checkbox" ? el.checked
           : (alan === "genislik" || alan === "canli_genislik"
-             || alan === "aralik_sn") ? Number(el.value)
+             || alan === "aralik_sn" || alan === "dondur") ? Number(el.value)
           : el.value;
         // "Hareketli" işareti kartın altındaki açıklamayı değiştiriyor ama
         // odak kutudayken kartı yeniden çizmiyoruz (yazılan silinirdi);
         // kaydedince yerine oturuyor.
       });
+    });
+  });
+}
+
+/** Kameranın denetimlerini ajandan sorup kaydırak olarak çizer.
+ *
+ *  AJANDAN SORULUYOR, KODA YAZILMIYOR. Her kamera başka denetim sunuyor
+ *  (MX Brio odak ve pozlama veriyor, ucuz bir modül yalnız parlaklık) ve
+ *  aralıkları da farklı. Sabit bir liste, kameranın kabul etmediği sayıyı
+ *  ayarlatır ve `v4l2-ctl` onu sessizce yok sayardı.
+ *
+ *  KAYITLI DEĞER KAMERANIN O ANKİ DEĞERİNİ EZİYOR: `denetimler` ayarında
+ *  yazan varsa kaydırak onu gösteriyor. Kameranın `value`su o an başka
+ *  olabilir (ajan henüz uygulamamış) ve kaydedilmiş isteği göstermek,
+ *  kullanıcının yazdığını göstermek demek.
+ */
+async function kamDenetimYukle(ad, kutu) {
+  kutu.innerHTML = '<p class="alt-not">okunuyor…</p>';
+  const y = await komutGonder("kamera_denetimleri", { kamera: ad });
+  const veri = (y && y.veri) || {};
+  const liste = veri.denetimler || [];
+  if (!y || !y.ok || !liste.length) {
+    kutu.innerHTML = `<p class="alt-not">Denetim okunamadı — ${
+      kacisli((y && (y.mesaj || veri.sebep)) || "kamera bağlı değil")}</p>`;
+    return;
+  }
+  const kayitli = ((kamAyarTaslak().find((t) => t.ad === ad) || {}).denetimler) || {};
+  kutu.innerHTML = liste.map((d) => {
+    const su = kayitli[d.ad] !== undefined ? kayitli[d.ad] : d.value;
+    const etiket = `${kacisli(d.ad)} <span class="ikincil">${
+      d.tip === "bool" ? "" : `${d.min ?? ""}–${d.max ?? ""}`}</span>`;
+    if (d.tip === "bool") {
+      return `<label class="onay"><input type="checkbox" data-denetim="${
+        kacisli(d.ad)}"${Number(su) ? " checked" : ""}> ${etiket}</label>`;
+    }
+    return `<div class="alan"><label>${etiket}</label>
+      <input type="number" data-denetim="${kacisli(d.ad)}"
+             min="${d.min ?? ""}" max="${d.max ?? ""}" step="${d.step || 1}"
+             value="${su}"
+             title="varsayılan ${d.default ?? "?"}${
+               d.flags ? " · " + kacisli(String(d.flags)) : ""}"></div>`;
+  }).join("");
+
+  /* Değişiklik doğrudan kamera taslağına yazılıyor — "Kaydet" ötekilerle
+   * aynı yoldan gidiyor (`kamera_kaydet`), ayrı bir kayıt yolu açmak iki
+   * yerde iki kural demekti. */
+  kutu.querySelectorAll("[data-denetim]").forEach((el) => {
+    el.addEventListener("input", () => {
+      const t = kamAyarTaslak().find((x) => x.ad === ad);
+      if (!t) return;
+      if (!t.denetimler || typeof t.denetimler !== "object") t.denetimler = {};
+      t.denetimler[el.dataset.denetim] =
+        el.type === "checkbox" ? (el.checked ? 1 : 0) : Number(el.value);
     });
   });
 }
