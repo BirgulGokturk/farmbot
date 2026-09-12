@@ -3864,11 +3864,24 @@ const KAM_YOLLAR = [
 
 /** Düzenlenen tanımlar; yoksa ajanın bildirdiğinden üretiliyor. */
 function kamAyarTaslak() {
-  if (S.kamAyarTaslak) return S.kamAyarTaslak;
-  S.kamAyarTaslak = kamListe().map((k) => ({
+  /* BOŞ TASLAK ÖNBELLEĞE ALINMIYOR.
+   *
+   * `if (S.kamAyarTaslak)` boş diziyi de doğru sayıyordu: kamera listesi
+   * daha gelmeden bir çizim isteği geldiğinde taslak `[]` olarak
+   * saklanıyor ve bir daha kurulmuyordu. Sonucu, ayar kartının HİÇ
+   * çizilmemesi — kullanıcı çözünürlüğü de döndürmeyi de göremiyordu ve
+   * konsolda hata yoktu, çünkü hata değildi: çizilecek kamera yok
+   * sanılıyordu. */
+  if (S.kamAyarTaslak && S.kamAyarTaslak.length) return S.kamAyarTaslak;
+  const liste = kamListe();
+  if (!liste.length) return [];
+  S.kamAyarTaslak = liste.map((k) => ({
     ad: k.ad, etiket: k.etiket || k.ad, hareketli: !!k.hareketli,
     yol: k.yol || "oto", cihaz_adi: k.cihaz_adi || "", cihaz: k.cihaz || "",
     genislik: Number(k.genislik) || 1920,
+    // Şablon bu alanı okuyor ve kayıtta gönderiliyor; taslakta yoksa
+    // kutu her açılışta boş görünür ve girilen çözünürlük kaybolurdu.
+    cozunurluk: k.cozunurluk || "",
     // Ağdan geçen akışın genişliği; 0 = küçültme yok.
     canli_genislik: Number(k.canli_genislik ?? 640),
     // Görüntü döndürme (0/90/180/270, saat yönü). Taslakta DURMASI şart:
