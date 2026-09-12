@@ -254,10 +254,32 @@ def konumlar_oku() -> dict[str, Any]:
         return dict(VARSAYILAN_KONUMLAR)
     return {
         "kenar_mm": float(veri.get("kenar_mm") or 0.0),
-        "etiketler": {str(a): {"x": float(b.get("x", 0.0)), "y": float(b.get("y", 0.0))}
+        "etiketler": {str(a): _etiket_konumu(b)
                       for a, b in (veri.get("etiketler") or {}).items()
                       if isinstance(b, dict)},
     }
+
+
+def _etiket_konumu(b: dict[str, Any]) -> dict[str, float | None]:
+    """Kayıttaki bir etiketin konumu. Z ve T YOKSA None kalıyor.
+
+    X/Y ZORUNLU, Z/T DEĞİL. Yerleşim hesabı (homografi) yatak DÜZLEMİNDE
+    çalışıyor ve yalnız X/Y istiyor; Z, etiketin o düzlemden ne kadar
+    yukarıda olduğunu söylüyor ve paralaks düzeltmesi için gerekiyor.
+    Ölçülmediyse sıfır YAZMIYORUZ: sıfır "yatak yüzeyinde" demek ve
+    ölçülmemiş bir etiketi yüzeyde saymak, düzeltmeyi yanlış yöne
+    uygulamak olurdu.
+    """
+    def sayi(ad: str) -> float | None:
+        deger = b.get(ad)
+        if deger in (None, ""):
+            return None
+        try:
+            return float(deger)
+        except (TypeError, ValueError):
+            return None
+    return {"x": float(b.get("x", 0.0)), "y": float(b.get("y", 0.0)),
+            "z": sayi("z"), "t": sayi("t")}
 
 
 def konumlar_yaz(ham: dict[str, Any]) -> dict[str, Any]:
@@ -290,7 +312,29 @@ def konumlar_yaz(ham: dict[str, Any]) -> dict[str, Any]:
             raise EtiketHatasi(f"{kimlik} numaralı etiketin X/Y değeri sayı olmalı") from None
         if not (-2000.0 <= x <= 2000.0 and -2000.0 <= y <= 2000.0):
             raise EtiketHatasi(f"{kimlik} numaralı etiketin konumu makul aralıkta değil")
-        etiketler[str(kimlik)] = {"x": x, "y": y}
+        # Z VE T İSTEĞE BAĞLI. Boş bırakılan alan None kalıyor, sıfır
+        # DEĞİL: sıfır "yatak yüzeyinde / eksen çekilmiş" demek ve
+        # ölçülmemiş bir etiketi öyle saymak, sessizce yanlış bir sayı
+        # uydurmaktır. Aralık X/Y ile aynı; makine sınırları dışında bir
+        # etiket zaten yanlış girilmiştir.
+        ek: dict[str, float | None] = {}
+        for alan in ("z", "t"):
+            ham_deger = deger.get(alan)
+            if ham_deger in (None, ""):
+                ek[alan] = None
+                continue
+            try:
+                sayi = float(ham_deger)
+            except (TypeError, ValueError):
+                raise EtiketHatasi(
+                    f"{kimlik} numaralı etiketin {alan.upper()} değeri sayı "
+                    f"olmalı (boş bırakılabilir)") from None
+            if not -2000.0 <= sayi <= 2000.0:
+                raise EtiketHatasi(
+                    f"{kimlik} numaralı etiketin {alan.upper()} değeri makul "
+                    f"aralıkta değil")
+            ek[alan] = sayi
+        etiketler[str(kimlik)] = {"x": x, "y": y, **ek}
 
     veri = {"kenar_mm": kenar, "etiketler": etiketler}
     with _KILIT:

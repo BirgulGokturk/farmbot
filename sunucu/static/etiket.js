@@ -113,7 +113,10 @@
         <p class="ikincil">Her etiketin merkezinin makine koordinatı. En kolay
           yol: probu etiketin ortasına götürüp <b>Şu anki konum</b>a basmak.</p>
         <div class="veri-kutu"><table class="veri">
-          <thead><tr><th>Kimlik</th><th>X (mm)</th><th>Y (mm)</th><th></th></tr></thead>
+          <thead><tr><th>Kimlik</th><th>X (mm)</th><th>Y (mm)</th>
+            <th title="Etiketin yatak düzleminden yüksekliği. Boş = ölçülmedi.">Z (mm)</th>
+            <th title="Tohum ucu ekseninin o andaki değeri. Boş = ilgisiz.">T (mm)</th>
+            <th></th></tr></thead>
           <tbody id="etiket-govde"></tbody>
         </table></div>
         <div class="satir-8">
@@ -137,7 +140,7 @@
         </div>
       </details>`;
 
-    $("#d-etiket-satir").onclick = () => { satirEkle("", "", ""); };
+    $("#d-etiket-satir").onclick = () => { satirEkle("", "", "", "", ""); };
     $("#d-etiket-konum-kaydet").onclick = konumlariKaydet;
     $("#d-etiket-kenar-kaydet").onclick = konumlariKaydet;
     $("#d-etiket-tara").onclick = tara;
@@ -177,11 +180,21 @@
     }
     for (const ad of adlar) {
       const e = konumlar.etiketler[ad];
-      satirEkle(ad, e.x, e.y);
+      satirEkle(ad, e.x, e.y, e.z, e.t);
     }
   }
 
-  function satirEkle(kimlik, x, y) {
+  /* Z VE T İSTEĞE BAĞLI, X/Y ZORUNLU.
+   *
+   * Yerleşim hesabı (homografi) yatak DÜZLEMİNDE çalışıyor ve yalnız X/Y
+   * istiyor. Z, etiketin o düzlemden ne kadar yukarıda olduğunu söylüyor;
+   * paralaks düzeltmesi onsuz yapılamıyor — kamera nadirden uzaktaki bir
+   * cismi yana kaydırıyor ve yükseklik bilinmeden bu kayma çözülmüyor.
+   *
+   * BOŞ BIRAKILAN ALAN SIFIR DEĞİL. Sıfır "yatak yüzeyinde" demek ve
+   * ölçülmemiş bir etiketi yüzeyde saymak, düzeltmeyi yanlış yöne
+   * uygulamak olurdu. Sunucu da boşu `null` saklıyor. */
+  function satirEkle(kimlik, x, y, z, t) {
     const govde = $("#etiket-govde");
     if (!govde) return;
     const bos = govde.querySelector(".alt-not");
@@ -192,9 +205,13 @@
                  value="${kacisli(kimlik)}" placeholder="0"></td>
       <td><input type="number" class="etiket-x" step="0.1" value="${kacisli(x)}"></td>
       <td><input type="number" class="etiket-y" step="0.1" value="${kacisli(y)}"></td>
+      <td><input type="number" class="etiket-z" step="0.1" placeholder="ölçülmedi"
+                 value="${z === null || z === undefined ? "" : kacisli(z)}"></td>
+      <td><input type="number" class="etiket-t" step="0.1" placeholder="—"
+                 value="${t === null || t === undefined ? "" : kacisli(t)}"></td>
       <td class="satir-8">
         <button class="dugme" type="button" data-is="konum"
-                title="Makinenin şu anki X/Y'sini bu satıra yaz">Şu anki konum</button>
+                title="Makinenin şu anki X/Y/Z/T'sini bu satıra yaz">Şu anki konum</button>
         <button class="dugme" type="button" data-is="sil">Sil</button>
       </td>`;
     tr.querySelector('[data-is="sil"]').onclick = () => {
@@ -207,6 +224,15 @@
       if (!k) { gunluk("✕ Makine konumu bilinmiyor — ajan bağlı mı?", "hata"); return; }
       tr.querySelector(".etiket-x").value = Number(k.x).toFixed(1);
       tr.querySelector(".etiket-y").value = Number(k.y).toFixed(1);
+      /* Z ve T de yazılıyor — ama YALNIZ makine bildiriyorsa. Bilinmeyen
+       * bir ekseni sıfırla doldurmak, ölçülmemiş bir sayıyı ölçülmüş gibi
+       * göstermek olurdu. */
+      if (Number.isFinite(Number(k.z))) {
+        tr.querySelector(".etiket-z").value = Number(k.z).toFixed(1);
+      }
+      if (Number.isFinite(Number(k.t))) {
+        tr.querySelector(".etiket-t").value = Number(k.t).toFixed(1);
+      }
     };
     govde.appendChild(tr);
   }
@@ -222,7 +248,14 @@
       const x = tr.querySelector(".etiket-x").value;
       const y = tr.querySelector(".etiket-y").value;
       if (x === "" || y === "") { hatali = kim.value; return; }
-      etiketler[String(parseInt(kim.value, 10))] = { x: Number(x), y: Number(y) };
+      const z = tr.querySelector(".etiket-z").value;
+      const t = tr.querySelector(".etiket-t").value;
+      // Boş alan GÖNDERİLMİYOR; sunucu onu `null` saklıyor. Sıfır
+      // göndermek "yatak yüzeyinde" demek olurdu.
+      const kayit = { x: Number(x), y: Number(y) };
+      if (z !== "") kayit.z = Number(z);
+      if (t !== "") kayit.t = Number(t);
+      etiketler[String(parseInt(kim.value, 10))] = kayit;
     });
     if (hatali) {
       hataYaz(`${hatali} numaralı etiketin X ya da Y'si boş. Konumu bilinmeyen `
