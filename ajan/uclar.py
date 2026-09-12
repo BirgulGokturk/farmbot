@@ -148,7 +148,14 @@ VARSAYILAN = {
     # görüldükten SONRA açılmalı: açıkken home, anahtar basılmadıysa
     # "varmadı" diyor ve ladder yokken bütün registerlar 0 okuduğu için
     # her home başarısız sayılırdı.
-    "home_anahtari": False,
+    #: Boş liste = hiçbirine güvenilmiyor. Ladder kopyalaması yazılıp
+    #: `plc-oku.py 1120 4 -i` ile değiştiği GÖRÜLDÜKTEN sonra eksen
+    #: adları yazılıyor: ["x", "y", "z"].
+    #:
+    #: EKSEN EKSEN, tek anahtarla değil: bu makinede T'de home anahtarı
+    #: yok ve tek anahtarla açılsaydı T'nin registerı hep 0 okur, her T
+    #: home'u "anahtara basmadı" diye reddedilirdi.
+    "home_anahtari": [],
     "prox_baslar": ["sulama", "nem", "tohum"],
     "hiz": None,
     "hiz_eksen": [None, None, None, None],   # [X, Y, Z, T]
@@ -672,9 +679,19 @@ class Uclar:
             sure = int(VARSAYILAN["uc_secici"]["sure_ms"])
         return max(1, min(10000, sure))
 
-    def home_anahtari(self) -> bool:
-        """Home anahtarlarına güvenilsin mi (bkz. VARSAYILAN)."""
-        return bool(self.ayar.get("home_anahtari"))
+    def home_anahtari(self) -> set[str]:
+        """Anahtarına güvenilecek eksenlerin adları — {"x", "y", "z"}.
+
+        Eski biçim (tek `true`/`false`) da okunuyor: `true` girilmişse
+        X, Y ve Z sayılıyor, T hariç — bu makinede T'de anahtar yok ve
+        onu da kapsamak her T home'unu reddettirirdi.
+        """
+        ham = self.ayar.get("home_anahtari")
+        if ham is True:
+            return {"x", "y", "z"}
+        if not isinstance(ham, (list, tuple, set)):
+            return set()
+        return {str(a).strip().lower() for a in ham if str(a).strip()}
 
     def guvenli_t(self) -> float | None:
         """Tohum ucu "yukarıda" sayılma payı (mm); girilmemişse None."""

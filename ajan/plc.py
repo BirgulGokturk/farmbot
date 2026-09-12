@@ -103,7 +103,16 @@ PROX_GIRIS = ("X0", "X5", "X6")   # hangi fiziksel giriş, sırayla
 # gibi. Registerlar aşağıda; ladder yazılana kadar hepsi 0 okur ve
 # `home_anahtari` kapalı kaldığı sürece hiçbir karara girmez.
 HOME_SW_BAS = 1120
-HOME_SW_GIRIS = ("X1", "X2", "X3", "X4")   # sırayla X, Y, Z, T
+#: Hangi fiziksel girişin hangi registera kopyalanacağı — EKSEN SIRASINA
+#: göre (X, Y, Z, T). Kullanıcı doğruladı: X1→X, X2→Y, X3→Z, X4→T.
+#:
+#: Eşleme jog registerlarıyla da tutuyor: Net 15'te X1, D1021 (X'in
+#: jog-geri'si) ile seri; Net 23'te X3, D1051 (Z'nin jog-geri'si) ile.
+#:
+#: REGISTER EKSENLE TANIMLI, PLC değişken adıyla değil. Adlar yanıltıcı
+#: olabiliyor (`j4_switch` gibi) ve hangi girişin hangi registera
+#: kopyalanacağına ladder karar veriyor; burada eksen sırası esas.
+HOME_SW_GIRIS = ("X1", "X2", "X3", "X4")   # X, Y, Z, T
 EKSEN_INDEKS = {"x": 0, "y": 1, "z": 2, "t": 3}
 
 # Tohum ucu ekseninin indeksi — koda sabit sayı yazmamak için.
@@ -1397,10 +1406,15 @@ class Gantry:
                 f"{EKSENLER[i]['ad']} ekseni {mm:.1f} mm'ye ulaşamadı "
                 f"(şu an {self.eksen_konum_mm(i):.1f} mm) — dizi durduruldu")
 
-    #: Home anahtarlarına GÜVENİLSİN Mİ. Ladder kopyalaması yazılana
-    #: kadar bütün registerlar 0 okuyor ve açık bırakılırsa her home
-    #: "anahtara varılmadı" derdi. Ajan bunu ayardan kuruyor.
-    home_anahtari = False
+    #: HANGİ EKSENLERDE anahtar var — eksen adlarından oluşan küme.
+    #:
+    #: Tek bir aç/kapa yetmiyordu: bu makinede X, Y ve Z'de anahtar var,
+    #: T'de yok. Tek anahtarla açılsaydı T'nin registerı hep 0 okur ve
+    #: her T home'u "anahtara basmadı" diye reddedilirdi — var olmayan
+    #: bir anahtarı beklemek.
+    #:
+    #: Boş küme = hiçbirine güvenilmiyor (ladder yazılana kadarki hâl).
+    home_anahtari: set[str] = set()
 
     def home_anahtari_acik(self, i: int) -> bool | None:
         """Eksenin referans anahtarı basılı mı. Bilinmiyorsa None.
@@ -1409,7 +1423,7 @@ class Gantry:
         tek şey: konum sayaçtan geliyor ve geri besleme yok, eksen
         takılsa bile sayaç yürüyor.
         """
-        if not self.home_anahtari:
+        if EKSENLER[i]["ad"].lower() not in self.home_anahtari:
             return None
         try:
             return bool(self.mb.oku(HOME_SW_BAS + i, 1)[0])
