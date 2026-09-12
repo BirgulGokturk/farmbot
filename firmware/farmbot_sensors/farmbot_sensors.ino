@@ -32,6 +32,16 @@
 #define SU_POMPASI_PIN 7
 #define HAVA_POMPASI_PIN 8
 
+/* BITKI ISIGI D11'DE. LED dogrudan surulmuyor olsa bile (MOSFET ya da
+ * role karti) polaritesi POMPALARDAN AYRI tutuluyor: pompalar NC ucunda
+ * ve `ROLE_AKTIF_LOW` onlarin kablolamasini anlatiyor. Isik ayni sayiya
+ * baglansaydi, birini duzeltmek otekini sessizce ters cevirirdi.
+ *
+ * 0 = "ac" dedigimizde pine HIGH gidiyor (dogrudan LED ya da aktif-HIGH
+ * surucu). Aktif-LOW bir role karti kullanirsaniz 1 yapin. */
+#define ISIK_PIN       11
+#define ISIK_AKTIF_LOW 0
+
 /* Tek toprak sensörü var ve tool ucunda: makine nereye giderse ölçüm
  * oradan geliyor. Ölçek: kuru toprakta değer YÜKSEK, ıslakta düşük.
  * Yüzdeye çevirmek panelin işi, ham değer olduğu gibi gidiyor. */
@@ -147,6 +157,7 @@ bool bmpVar = false;
 // Rölelerin gerçek durumu. Panel bunu tahmin etmiyor, kart söylüyor.
 bool suPompasiAcik = false;
 bool havaPompasiAcik = false;
+bool isikAcik = false;
 
 /* ------------------------------------------------------------ UÇ SEÇİCİ --
  * SERVODA GERİ BESLEME YOK. Kart ne KOMUT ETTİĞİNİ bilir, horn'un gerçekte
@@ -214,6 +225,24 @@ void roleYaz(int pin, bool acik) {
   else if (pin == HAVA_POMPASI_PIN) havaPompasiAcik = acik;
 }
 
+// --------------------------------------------------------------- ISIK ----
+/* Roleden ayri iki islev: `roleYaz` NC pompalarin mantigini tasiyor ve
+ * oraya ucuncu bir polarite sokmak, pompa guvenligini isik kablosuna
+ * bagimli hale getirirdi. */
+void isikHazirla() {
+  digitalWrite(ISIK_PIN, ISIK_AKTIF_LOW ? HIGH : LOW);
+  pinMode(ISIK_PIN, OUTPUT);
+}
+
+void isikYaz(bool acik) {
+#if ISIK_AKTIF_LOW
+  digitalWrite(ISIK_PIN, acik ? LOW : HIGH);
+#else
+  digitalWrite(ISIK_PIN, acik ? HIGH : LOW);
+#endif
+  isikAcik = acik;
+}
+
 /** Hangi DHT takılı? Okuma verene karar veriyoruz. */
 void dhtSec() {
   for (int tip = 0; tip < 2; tip++) {
@@ -246,13 +275,15 @@ void setup() {
   roleHazirla(HAVA_POMPASI_PIN);
   roleYaz(SU_POMPASI_PIN, false);
   roleYaz(HAVA_POMPASI_PIN, false);
+  isikHazirla();
+  isikYaz(false);
 
   Serial.begin(9600);
   dhtSec();
   bmpVar = bmp.begin();
   if (!bmpVar) Serial.println(F("UYARI: BMP180 bulunamadi, digerleriyle devam"));
 
-  Serial.println(F("Hazir. Komutlar: ROLE <ad> <0|1> | UC <indeks> <derece> <sure_ms> | KAPAT | OKU | TEST <0|1> | ACI <0-180> | US <544-2400>"));
+  Serial.println(F("Hazir. Komutlar: ROLE <su_pompasi|hava_pompasi|isik> <0|1> | UC <indeks> <derece> <sure_ms> | KAPAT | OKU | TEST <0|1> | ACI <0-180> | US <544-2400>"));
 #if TEST_ACILISTA
   testBasla();
 #endif
@@ -541,6 +572,10 @@ void komutIsle(String komut) {
   if (buyuk == "KAPAT") {
     roleYaz(SU_POMPASI_PIN, false);
     roleYaz(HAVA_POMPASI_PIN, false);
+    /* ISIK DA SONUYOR. "Hepsi kapatildi" derken bir cikisi acik
+     * birakmak, komutun adiyla yaptigi isi ayirir. Sunucu takvimi bir
+     * sonraki bakmada (en gec 30 sn) isigi geri yakiyor. */
+    isikYaz(false);
     Serial.println(F("KOMUT: hepsi kapatildi"));
     sonOlcum = 0;
     return;
@@ -614,7 +649,8 @@ void komutIsle(String komut) {
 
     if (ad == "su_pompasi")        roleYaz(SU_POMPASI_PIN, durum);
     else if (ad == "hava_pompasi") roleYaz(HAVA_POMPASI_PIN, durum);
-    else { Serial.println(F("HATA: ad su_pompasi ya da hava_pompasi olmali")); return; }
+    else if (ad == "isik")         isikYaz(durum);
+    else { Serial.println(F("HATA: ad su_pompasi, hava_pompasi ya da isik olmali")); return; }
 
     Serial.print(F("KOMUT: "));
     Serial.print(ad);
@@ -698,6 +734,7 @@ void olcVeYaz() {
   Serial.print(F("\",\"toprak_nem\":"));         Serial.print(analogRead(TOPRAK_PIN));
   Serial.print(F(",\"r_su_pompasi\":"));         Serial.print(suPompasiAcik ? 1 : 0);
   Serial.print(F(",\"r_hava_pompasi\":"));       Serial.print(havaPompasiAcik ? 1 : 0);
+  Serial.print(F(",\"r_isik\":"));               Serial.print(isikAcik ? 1 : 0);
   /* UÇ SEÇİCİ — KOMUT EDİLEN DEĞER, ÖLÇÜM DEĞİL. Hiç komut verilmediyse
    * ikisi de null gidiyor: sıfır yazmak "0 numaralı uç seçili" demek
    * olurdu ve bu, bilinmeyeni bilinen gibi göstermenin ta kendisi. */

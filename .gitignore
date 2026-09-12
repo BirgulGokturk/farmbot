@@ -12,6 +12,8 @@ sunucu/programlar.json
 # Zamanlanmis gorevler: hangi isin hangi aralikla yapilacagi
 # makineye ozel bir karar, depoya girmiyor.
 sunucu/zamanli.json
+# Bitki isigi takvimi: VERI_YOLU kurulu degilse buraya dusuyor.
+sunucu/isik.json
 sunucu/tur_ezme.json
 sunucu/dikim_alanlari.json
 sunucu/kareler/

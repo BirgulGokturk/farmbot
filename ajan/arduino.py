@@ -96,6 +96,7 @@ class Duzeltici:
     KESIN = {
         "r_su_pompasi": (0, 1),
         "r_hava_pompasi": (0, 1),
+        "r_isik": (0, 1),
         "uc_secili": (0, 2),
         "uc_aci": (0, 180),
         "uc_hareket": (0, 1),
@@ -490,7 +491,8 @@ class SahteArduino(Arduino):
         self.aralik = aralik
         # Kart iki röle tutuyor; sahte kip de aynısını taklit ediyor ki
         # panel gerçekte göreceğimiz hâliyle denenebilsin.
-        self.roleler = {"su_pompasi": False, "hava_pompasi": False}
+        self.roleler = {"su_pompasi": False, "hava_pompasi": False,
+                        "isik": False}
         # Sahte kartta da AÇILIŞTA KONUM BİLİNMİYOR: gerçek kartla aynı
         # davranmazsa panel yalnız sahtede çalışan bir yol izler.
         self.uc = {"secili": None, "aci": None, "varis": 0.0}
@@ -556,6 +558,7 @@ class SahteArduino(Arduino):
                         "dht": "DHT11",
                         "r_su_pompasi": 1 if self.roleler["su_pompasi"] else 0,
                         "r_hava_pompasi": 1 if self.roleler["hava_pompasi"] else 0,
+                        "r_isik": 1 if self.roleler["isik"] else 0,
                         "uc_secili": self.uc["secili"],
                         "uc_aci": self.uc["aci"],
                         "uc_hareket": 1 if time.time() < self.uc["varis"] else 0,

@@ -38,7 +38,8 @@ import bitki
 import depo
 import etiket
 import filiz
-import olcum
+import isik
+import bitkiolcum
 import otokalib
 import dikim
 import egriler
@@ -294,7 +295,15 @@ async def yasam(app: FastAPI):
                 # dongu doner ama hicbir gorev "calisiyor" degildir.
                 asyncio.create_task(zamanli.dongu(
                     _zamanli_engel, _zamanli_adlar, _zamanli_is_ekle,
-                    _zamanli_yayinla))]
+                    _zamanli_yayinla)),
+                # BITKI ISIGI DURMUS BASLAMIYOR — zamanli gorevlerin
+                # tersine. Orada tik makineyi HAREKET ettiriyor ve
+                # kendiliginden baslayan bir makine kotu bir surpriz;
+                # burada yalniz bir cikis suruluyor ve elle baslatilmayi
+                # bekleyen bir gece aydinlatmasi, sabaha kadar karanlik
+                # kalmis bir aydinlatmadir.
+                asyncio.create_task(isik.dongu(
+                    merkez.komut_yolla, lambda: merkez.son_olcum))]
     logger.info("Sunucu hazır. Panel parolası: %s", "var" if PANEL_PAROLA else "yok (açık)")
     yield
     for g in gorevler:
@@ -3495,7 +3504,8 @@ app.include_router(filiz.yonlendirici_kur(_parola_dogrula, _cozumleme_karesi))
 # OLCUM KATMANI ayni tespitleri kullaniyor: `filiz.tara()` ikisinin de
 # govdesi. Ikinci bir tespit hatti, ayni yatak icin birbirini tutmayan
 # iki cevap demekti.
-app.include_router(olcum.yonlendirici_kur(_parola_dogrula, _cozumleme_karesi))
+app.include_router(bitkiolcum.yonlendirici_kur(_parola_dogrula, _cozumleme_karesi))
+app.include_router(isik.yonlendirici_kur(_parola_dogrula, lambda: merkez.son_olcum))
 # BITKI KARTLARI. Kartin EK verisi (sulama suresi, nem egilimi, olay
 # sayaclari) burada; bitkinin kendisi ve susama karari `/api/bahce`de
 # kaliyor ve panel ikisini birlestiriyor. Toprak kalibrasyonu ajandan

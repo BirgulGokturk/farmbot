@@ -201,7 +201,7 @@ def yonlendirici_kur(parola_dogrula, canli_kare):
 
     yon = APIRouter()
 
-    @yon.post("/api/olcum/tara")
+    @yon.post("/api/bitkiolcum/tara")
     async def _tara(govde: dict[str, Any] | None = None, jeton: str = Query(default="")):
         parola_dogrula(jeton)
         g = govde or {}
@@ -227,7 +227,7 @@ def yonlendirici_kur(parola_dogrula, canli_kare):
         f.pop("kare", None)      # taban64 kare iki kez gitmesin
         return {"olcum": sonuc, "filiz": f}
 
-    @yon.get("/api/olcum/gecmis")
+    @yon.get("/api/bitkiolcum/gecmis")
     async def _gecmis(gun: int = Query(default=30), jeton: str = Query(default="")):
         parola_dogrula(jeton)
         try:
@@ -240,7 +240,7 @@ def yonlendirici_kur(parola_dogrula, canli_kare):
                 "son": d.son_tarama(),
                 "kayit_adlari": {str(k): a for k, a in adlar.items()}}
 
-    @yon.post("/api/olcum/etiketle")
+    @yon.post("/api/bitkiolcum/etiketle")
     async def _etiketle(govde: dict[str, Any] | None = None, jeton: str = Query(default="")):
         """İnsan etiketi — 'belirsiz' üzerinde otomatik iş yapılmıyor, soruluyor."""
         parola_dogrula(jeton)
@@ -266,7 +266,7 @@ def yonlendirici_kur(parola_dogrula, canli_kare):
                                 detail="tespit_id ya da (tarama_id, tespit_no) gerekli")
         return {"tamam": True}
 
-    @yon.get("/api/olcum/gorsel")
+    @yon.get("/api/bitkiolcum/gorsel")
     async def _gorsel(ad: str = Query(default=""), jeton: str = Query(default="")):
         parola_dogrula(jeton)
         ad = os.path.basename(str(ad or ""))

@@ -33,7 +33,7 @@ const S = {
   jogSayac: null,        // yenileme zamanlayıcısı
   enable: false,
   grafikler: {},
-  roleDurum: { su_pompasi: false, hava_pompasi: false },
+  roleDurum: { su_pompasi: false, hava_pompasi: false, isik: false },
   kalibElle: {},           // kalibrasyonda elle girilip henüz kaydedilmemiş kutular
   noktalar: [],
   bolgeler: [],
@@ -4833,7 +4833,12 @@ function servoTestSenkron(o) {
 //  duruyordu — ölçüm kartları "—"de donuyor, canlı nokta grafiğe
 //  eklenmiyordu. Grafik yine de dolu görünüyordu: onu açılışta geçmiş
 //  besliyor. "Grafik gösteriyor ama üstte yazmıyor" tam olarak buydu.
-const ROLELER = ["su_pompasi", "hava_pompasi"];
+/* `isik` LISTEDE AMA DUGMESI YOK: durumu buradan senkron tutuluyor
+ * (`S.roleDurum.isik`) ve isik karti onu okuyor. Elle acma orada,
+ * cunku takvimle carpismamasi icin sunucudan gecmesi gerekiyor —
+ * duz bir role dugmesi, 30 saniye sonra takvimin geri aldigi bir
+ * dugme olurdu. */
+const ROLELER = ["su_pompasi", "hava_pompasi", "isik"];
 
 function roleDurumSenkron(o) {
   // Kart yeniden başladıysa çalışma süresi geriye gider. Sessizce
@@ -5408,7 +5413,7 @@ function olaylariBagla() {
     // confirm() bilerek yok: acil durdurma bir soru sormaz, uygular.
     jogDurdur();
     komutGonder("acil");
-    S.roleDurum = { su_pompasi: false, hava_pompasi: false };
+    S.roleDurum = { su_pompasi: false, hava_pompasi: false, isik: false };
     $$(".role").forEach((b) => {
       b.classList.remove("acik");
       const e = b.querySelector(".role-durum");

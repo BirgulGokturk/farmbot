@@ -42,7 +42,8 @@ import dizi as dizi_modulu
 
 #: Karttaki röleler. Tek yerde duruyor ki panel, ajan ve firmware üçü de
 #: aynı listeyi konuşsun; kart bunlardan başkasını tanımıyor.
-ROLELER = {"su_pompasi": "Su pompası", "hava_pompasi": "Hava pompası"}
+ROLELER = {"su_pompasi": "Su pompası", "hava_pompasi": "Hava pompası",
+           "isik": "Bitki ışığı"}
 import hailo as hailo_modulu
 import kamera as kamera_modulu
 import uclar as uc_modulu

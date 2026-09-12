@@ -61,7 +61,7 @@
     kap.innerHTML = `
       <details class="etiket-blok">
         <summary>Bitki ölçümü — filiz mi yabani mi, çıktı mı çıkmadı mı</summary>
-        <p class="ipucu">
+        <p class="alt-not">
           Aynı kareyi "Filizlerin konumu" ile aynı yerden alır, üstüne
           <b>ekim kaydını</b> koyar: her yeşil nesne hangi bitkiye ait,
           hangisi yabani, hangi tohum hâlâ çıkmadı. Sonuç arşive yazılır;
@@ -69,7 +69,7 @@
           Makine hareket etmiyor.
         </p>
         <div class="satir">
-          <button id="d-bitkiolcum-tara" class="birincil">Ölçümü çalıştır</button>
+          <button id="d-bitkiolcum-tara" class="dugme birincil">Ölçümü çalıştır</button>
           <label class="onay"><input type="checkbox" id="bitkiolcum-gorsel" checked> Görsel üret</label>
           <label class="onay"><input type="checkbox" id="bitkiolcum-arsiv" checked> Arşive yaz</label>
         </div>
@@ -96,7 +96,7 @@
     d.textContent = "Ölçülüyor…";
     hataYaz("");
     try {
-      const c = await p.apiIste("/api/olcum/tara", {
+      const c = await p.apiIste("/api/bitkiolcum/tara", {
         method: "POST", body: JSON.stringify(govdeKur()),
       });
       son = c.olcum || null;
@@ -167,7 +167,7 @@
     const iz = {};
     (son.izler || []).forEach((i) => { iz[i.id] = i; });
 
-    let h = `<table class="etiket-tablo"><thead><tr>
+    let h = `<table class="veri"><thead><tr>
       <th>#</th><th>Sınıf</th><th>Skor</th><th>Bitki</th><th>Sapma</th>
       <th>X</th><th>Y</th><th>Alan</th><th>Büyüme</th><th></th>
     </tr></thead><tbody>`;
@@ -204,7 +204,7 @@
       return;
     }
     try {
-      await p.apiIste("/api/olcum/etiketle", {
+      await p.apiIste("/api/bitkiolcum/etiketle", {
         method: "POST",
         body: JSON.stringify({ tarama_id: son.tarama_id, tespit_no: no, etiket }),
       });
@@ -217,7 +217,7 @@
   function gorselYaz() {
     const k = $("#bitkiolcum-gorsel-kap");
     if (!son.gorsel_yolu) { k.classList.add("gizli"); k.innerHTML = ""; return; }
-    const u = (ad) => `/api/olcum/gorsel?ad=${encodeURIComponent(ad)}`
+    const u = (ad) => `/api/bitkiolcum/gorsel?ad=${encodeURIComponent(ad)}`
       + `&jeton=${encodeURIComponent(jeton())}&t=${Date.now()}`;
     let h = `<img src="${u(son.gorsel_yolu)}" alt="ölçüm görseli" class="bitkiolcum-gorsel">`;
     if (son.ustten_yolu) {
