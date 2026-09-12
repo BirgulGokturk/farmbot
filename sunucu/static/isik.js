@@ -75,8 +75,10 @@
     // Lamba ölçüm paketinden besleniyor; kart durumu iki saniyede bir
     // tazeleniyor. Takvim özeti daha seyrek gerekiyor (aşağıda).
     if (sayac) clearInterval(sayac);
-    sayac = setInterval(lambaYaz, 2000);
-    setInterval(yukle, 60000);
+    // Tek kaynak sunucu: kart durumunu da gerekcesini de o veriyor.
+    // Makineyi hic hareket ettirmeyen bir okuma, bes saniyede bir
+    // yenilenebilir.
+    sayac = setInterval(yukle, 5000);
   }
 
   function hataYaz(metin) {
@@ -106,21 +108,43 @@
     }
   }
 
-  /** Kartın bildirdiği gerçek durum + sunucunun gerekçesi. */
+  /** Kartın bildirdiği gerçek durum + sunucunun gerekçesi.
+   *
+   * ÜÇ HÂL VAR, İKİ DEĞİL: yanıyor, sönük ve KART BİLDİRMİYOR. Üçüncüsü
+   * ölçüm paketinde `r_isik` alanının hiç olmaması demek ve tek bir
+   * sebebi var: karttaki sketch bu alanı tanımıyor, yani firmware
+   * yüklenmemiş. Bunu "sönük" diye göstermek, yanlış yerde hata
+   * aratıyordu — komut gidiyor, kart anlamıyor, panel "sönük" diyor.
+   */
   function lambaYaz() {
     const l = $("#isik-lamba");
     const y = $("#isik-yazi");
     if (!l || !y) return;
-    const p = P();
-    const kart = !!(p && p.S && p.S.roleDurum && p.S.roleDurum.isik);
-    l.style.background = kart ? "#ffd166" : "#3a4a3c";
-    l.style.boxShadow = kart ? "0 0 8px 2px rgba(255,209,102,.55)"
+    const kart = durum ? durum.kart : null;      // 1 / 0 / null
+    const bilinmiyor = (kart === null || kart === undefined);
+    const yanik = kart === 1;
+
+    l.style.background = yanik ? "#ffd166" : (bilinmiyor ? "#6b5a2a" : "#3a4a3c");
+    l.style.boxShadow = yanik ? "0 0 8px 2px rgba(255,209,102,.55)"
       : "inset 0 0 0 1px rgba(255,255,255,.15)";
+
     const g = durum ? durum.gerekce : "";
     const el = durum && durum.elle !== null && durum.elle !== undefined;
-    y.innerHTML = `<b>${kart ? "YANIYOR" : "sönük"}</b>`
-      + (g ? ` — ${kacisli(g)}` : "")
-      + (el ? ' <span class="ikincil">(el kipi — sonraki takvim değişiminde düşer)</span>' : "");
+    const istenen = durum ? durum.istenen : null;
+
+    let h = bilinmiyor ? "<b>kart bildirmiyor</b>" : `<b>${yanik ? "YANIYOR" : "sönük"}</b>`;
+    if (g) h += ` — ${kacisli(g)}`;
+    if (el) h += ' <span class="ikincil">(el kipi — sonraki takvim değişiminde düşer)</span>';
+    if (bilinmiyor) {
+      h += '<br><span class="uyari">Karttaki sketch <code>r_isik</code> alanını '
+        + 'göndermiyor: <b>firmware yüklenmemiş.</b> Pi üzerinde '
+        + '<code>bash arduino-yukle.sh</code> çalıştırın — o zamana kadar '
+        + '<code>ROLE isik</code> komutu kart tarafından reddediliyor.</span>';
+    } else if (istenen !== null && istenen !== undefined && Number(kart) !== Number(istenen)) {
+      h += '<br><span class="uyari">İstenen ile kartın bildirdiği tutmuyor — '
+        + 'sunucu komutu yineliyor (en geç 30 sn).</span>';
+    }
+    y.innerHTML = h;
   }
 
   async function kaydet() {
