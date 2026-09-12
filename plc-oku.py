@@ -6,6 +6,8 @@
     python3 plc-oku.py 1110 3 -i  # izle: yarım saniyede bir, Ctrl-C ile çık
     python3 plc-oku.py -x         # BİT tara: giriş ve bobin bitleri 0..31
     python3 plc-oku.py -x -i      # bit taramasını izle
+    python3 plc-oku.py -x 0 16 -i    # X girişleri (X0..X15)
+    python3 plc-oku.py -x 200 48 -i  # M bitleri (M200..M247)
     python3 plc-oku.py -d         # DEĞİŞENİ BUL: D1000-D1200'ü izler ve
                                   # yalnız DEĞİŞEN adresleri yazar
 
@@ -94,7 +96,8 @@ def bit_oku(ip: str, port: int, birim: int, fonksiyon: int,
     return [(ham[n // 8] >> (n % 8)) & 1 for n in range(adet)]
 
 
-def bit_satiri(ip: str, port: int, birim: int, adet: int = 32) -> str:
+def bit_satiri(ip: str, port: int, birim: int, adet: int = 32,
+               bas: int = 0) -> str:
     """Giriş bitleri ve bobinler tek satırda.
 
     Okunamayan fonksiyon atlanıyor: her PLC ikisini de desteklemiyor ve
@@ -103,8 +106,8 @@ def bit_satiri(ip: str, port: int, birim: int, adet: int = 32) -> str:
     parca = []
     for fonksiyon, ad in ((2, "giris"), (1, "bobin")):
         try:
-            b = bit_oku(ip, port, birim, fonksiyon, 0, adet)
-            parca.append(ad + " " + "".join(
+            b = bit_oku(ip, port, birim, fonksiyon, bas, adet)
+            parca.append(ad + f"[{bas}] " + "".join(
                 str(v) + ("|" if (n + 1) % 8 == 0 and n + 1 < adet else "")
                 for n, v in enumerate(b)))
         except Exception as hata:
@@ -158,15 +161,21 @@ def main() -> int:
             time.sleep(0.5)
 
     if bit_tara:
-        print(f"== {ip}:{port} birim {birim} · bit taramasi 0..31")
-        print("   Bir ucu elle indirin; degisen biti arayin. Soldaki ilk bit 0.")
+        # Baslangic ve adet konumsal argumanlardan: `-x 200 48` M200'den
+        # 48 bit okur. Varsayilan 0..31 — X girisleri icin.
+        bit_bas = int(arg[0]) if arg else 0
+        bit_adet = int(arg[1]) if len(arg) > 1 else 32
+        print(f"== {ip}:{port} birim {birim} · bit taramasi "
+              f"{bit_bas}..{bit_bas + bit_adet - 1}")
+        print("   Anahtara basip birakin; degisen biti arayin. "
+              f"Soldaki ilk bit {bit_bas}.")
     else:
         print(f"== {ip}:{port} birim {birim} · D{bas}..D{bas + adet - 1}")
 
     while True:
         try:
             if bit_tara:
-                satir = bit_satiri(ip, port, birim)
+                satir = bit_satiri(ip, port, birim, bit_adet, bit_bas)
                 print(("\r" if izle else "") + satir,
                       end="" if izle else "\n", flush=True)
                 if not izle:
