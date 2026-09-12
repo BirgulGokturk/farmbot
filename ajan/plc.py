@@ -1430,6 +1430,79 @@ class Gantry:
         except Exception:                                    # noqa: BLE001
             return None
 
+    #: Anahtar aramasının üst sınırı (saniye). Eksenin bir ucundan
+    #: ötekine jog hızıyla gitmesi en kötü hâl; 645 mm'lik Y 20 mm/s ile
+    #: 32 saniye. 90 saniye o yolun üstünde kalıyor ve takılmış bir
+    #: eksende sonsuza kadar beklemiyoruz.
+    ANAHTAR_ARAMA_SN = 90.0
+
+    def anahtara_sur(self, i: int) -> bool:
+        """Ekseni home anahtarına DEĞENE KADAR sürer. -> anahtar bulundu mu
+
+        HOME'UN ASIL İŞİ BU. Koordinata gitmek yetmiyor: sayaç kaymışsa
+        (eksen takıldı, elle oynatıldı) kayıt zaten hedefi okuyor ve
+        koordinat hareketi hiçbir şey yapmıyor — makine home'da olmadığı
+        hâlde "vardım" deniyordu. Anahtar, makinenin gerçekten uçta
+        olduğunu söyleyen tek şey; o hâlde oraya kadar SÜRMEK gerekiyor.
+
+        JOG-GERİ İLE SÜRÜLÜYOR ve durdurma işini LADDER yapıyor: PLC'de
+        jog-geri biti anahtarın NC kontağıyla seri (Net 15/19/23/27), yani
+        anahtar kapanır kapanmaz hareket komutu kesiliyor. Eksen anahtara
+        bastırılamıyor; biz geç kalsak bile PLC durduruyor.
+
+        `jog()` KULLANILMIYOR: içinde "hareket sürüyor" ve Z güvenlik
+        kilitleri var ve home'un kendisi bir hareket — kendi kilidine
+        takılırdı. Register doğrudan yazılıyor.
+        """
+        anahtar = self.home_anahtari_acik(i)
+        if anahtar is None:
+            return True                 # anahtar yok/kapalı: karar veremeyiz
+        if anahtar:
+            return True                 # zaten üstünde
+        reg = EKSENLER[i]["jogb"]
+        son = time.time() + self.ANAHTAR_ARAMA_SN
+        self.gunluk_cb(
+            f"{EKSENLER[i]['ad']} anahtar aranıyor — sayaç "
+            f"{self.eksen_konum_mm(i):.2f} mm diyor ama anahtar boşta",
+            "uyari")
+        # TAKILMIŞ EKSENİ 90 SANİYE ZORLAMIYORUZ. Anahtar kapanmıyorsa iki
+        # sebep olabilir: eksen hâlâ yolda ya da takılmış. İkisini ayıran
+        # şey konumun DEĞİŞİP değişmediği. Kımıldamıyorsa beklemenin
+        # anlamı yok ve sürmeye devam etmek mekanizmayı zorluyor.
+        kimildamaz_sn = 5.0
+        son_konum = self.eksen_konum_mm(i)
+        son_kimilti = time.time()
+        try:
+            while time.time() < son:
+                if self._iptal.is_set() or self.acil_mandal["acik"]:
+                    return False
+                # Bit her turda yeniden yazılıyor: tek bir yazma
+                # düşerse (anlık Modbus hatası) eksen yarı yolda kalırdı;
+                # tekrar yazmak o riski kapatıyor ve idempotent.
+                self.mb.yaz(reg, 1)
+                time.sleep(JOG_TICK)
+                if self.home_anahtari_acik(i):
+                    return True
+                simdi_mm = self.eksen_konum_mm(i)
+                if abs(simdi_mm - son_konum) > 0.05:
+                    son_konum = simdi_mm
+                    son_kimilti = time.time()
+                elif time.time() - son_kimilti > kimildamaz_sn:
+                    self.gunluk_cb(
+                        f"{EKSENLER[i]['ad']} {kimildamaz_sn:.0f} saniyedir "
+                        f"kımıldamıyor ({simdi_mm:.2f} mm) — arama kesildi. "
+                        f"Eksen takılmış ya da sürücü komutu almıyor.",
+                        "hata")
+                    return False
+            return False
+        finally:
+            # NE OLURSA OLSUN BIRAK. Bit açık kalırsa eksen, biz
+            # çıktıktan sonra da sürülmeye devam eder.
+            try:
+                self.mb.yaz(reg, 0)
+            except Exception:                            # noqa: BLE001
+                pass
+
     def home_hedefi(self, i: int) -> float:
         """⌂ düğmesinin bu ekseni götüreceği yer.
 
@@ -1590,14 +1663,24 @@ class Gantry:
                 # makine uçta DEĞİL ve bunu söylemek, sessizce "home'da"
                 # yazmaktan iyi. Anahtar okunamıyorsa (ladder yazılmamış,
                 # ayar kapalı) eski davranış sürüyor.
+                # ANAHTARA KADAR SÜR. Uyarıp bırakmak home'un işini
+                # yapmamak demekti: home tam da makineyi uca GÖTÜRME
+                # işidir. Koordinat hareketi kabaca yaklaştırıyor,
+                # bu adım son santimi anahtara dayayarak kapatıyor.
                 anahtar = self.home_anahtari_acik(i)
-                if anahtar is False:
+                if anahtar is False and not self.anahtara_sur(i):
+                    if self._iptal.is_set():
+                        self.gunluk_cb("Home hareketi iptal edildi", "uyari")
+                        return
                     self.gunluk_cb(
-                        f"✕ {ad} home anahtarına BASMADI — sayaç "
-                        f"{self.eksen_konum_mm(i):.2f} mm diyor ama eksen "
-                        f"uçta değil. Eksen takılmış olabilir; sayaç "
-                        f"kaymış durumda.", "hata")
+                        f"✕ {ad} home anahtarına ULAŞAMADI — "
+                        f"{self.ANAHTAR_ARAMA_SN:.0f} sn sürüldü, anahtar "
+                        f"hâlâ boşta (sayaç {self.eksen_konum_mm(i):.2f} mm). "
+                        f"Eksen takılmış ya da anahtar bağlantısı kopmuş "
+                        f"olabilir.", "hata")
                     return
+                if anahtar is False:
+                    anahtar = True      # arama başarılı: artık anahtarda
                 self.gunluk_cb(
                     f"{ad} home'da ({self.eksen_konum_mm(i):.2f} mm)"
                     + (" · anahtar basılı" if anahtar else ""), "bilgi")
