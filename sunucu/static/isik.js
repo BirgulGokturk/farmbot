@@ -18,6 +18,12 @@
   const KAP = "isik-bolum";
   let durum = null;
   let sayac = null;
+  /* KUTULARA DOKUNULDUYSA ÜSTÜNE YAZMIYORUZ. Kart durumu beş saniyede
+   * bir tazeleniyor ve form alanlarını da sunucudaki değere geri
+   * çekiyordu: kullanıcı saati değiştiriyor, odak kutudan çıkar çıkmaz
+   * sayı eski hâline dönüyordu. "Değiştiremiyorum" bu. Odağa bakmak
+   * yetmedi — düzenleme bitince odak da gidiyor. */
+  let kirli = false;
 
   const $ = (s) => document.querySelector(s);
   const kacisli = (m) => String(m == null ? "" : m).replace(/[&<>"']/g,
@@ -69,6 +75,10 @@
         </p>
         <div id="isik-hata" class="uyari gizli"></div>
       </details>`;
+    ["#isik-bas", "#isik-bit", "#isik-acik"].forEach((i) => {
+      const e = $(i);
+      if (e) e.addEventListener("input", () => { kirli = true; kirliYaz(); });
+    });
     $("#d-isik-kaydet").addEventListener("click", kaydet);
     $("#d-isik-ac").addEventListener("click", () => elle({ durum: true }));
     $("#d-isik-kapat").addEventListener("click", () => elle({ durum: false }));
@@ -95,19 +105,29 @@
     if (!p) return;
     try {
       durum = await p.apiIste("/api/isik");
-      const a = durum.ayar || {};
-      const bas = $("#isik-bas");
-      const bit = $("#isik-bit");
-      const ac = $("#isik-acik");
-      // Kullanıcı kutuya yazarken üstüne yazmıyoruz: yarım kalan bir
-      // saat, dakikada bir silinirse doldurulamaz hâle gelir.
-      if (bas && document.activeElement !== bas) bas.value = a.bas || "00:00";
-      if (bit && document.activeElement !== bit) bit.value = a.bit || "06:00";
-      if (ac && document.activeElement !== ac) ac.checked = !!a.acik;
+      if (!kirli) formYaz();
       lambaYaz();
     } catch (h) {
       hataYaz(h.message || String(h));
     }
+  }
+
+  function formYaz() {
+    const a = (durum && durum.ayar) || {};
+    const bas = $("#isik-bas");
+    const bit = $("#isik-bit");
+    const ac = $("#isik-acik");
+    if (bas) bas.value = a.bas || "00:00";
+    if (bit) bit.value = a.bit || "06:00";
+    if (ac) ac.checked = !!a.acik;
+  }
+
+  /** Kaydedilmemiş değişiklik var mı — düğme bunu söylüyor. */
+  function kirliYaz() {
+    const d = $("#d-isik-kaydet");
+    if (!d) return;
+    d.textContent = kirli ? "Kaydet •" : "Kaydet";
+    d.classList.toggle("birincil", kirli);
   }
 
   /** Kartın bildirdiği gerçek durum + sunucunun gerekçesi.
@@ -168,6 +188,9 @@
           bit: $("#isik-bit").value,
         }),
       });
+      kirli = false;
+      kirliYaz();
+      formYaz();
       lambaYaz();
       const a = durum.ayar || {};
       gunluk(`✓ Bitki ışığı ${a.acik ? `${a.bas}–${a.bit}` : "takvimi kapalı"}`, "ok");
