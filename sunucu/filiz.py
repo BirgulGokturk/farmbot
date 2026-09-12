@@ -101,11 +101,20 @@ def cozumle(lekeler_px: list[dict[str, Any]], kalib: dict[str, Any] | None,
         _, ust = cevir(b["cx"], b["y1"])
         _, alt = cevir(b["cx"], b["y2"])
         en, boy = abs(sag - sol), abs(alt - ust)
+        # YAPRAK ALANI mm2. Kutunun alani degil, lekenin kendi piksel
+        # sayisi olceklenerek: yaprak kutuyu doldurmuyor ve "dolgu" zaten
+        # ikisinin orani. Olcek YERELDIR — kutunun kendi mm/px'i
+        # kullaniliyor, karenin ortalamasi degil; egik kamerada uzaktaki
+        # fide aksi halde oldugundan kucuk cikiyor.
+        kutu_px = (b["x2"] - b["x1"]) * (b["y2"] - b["y1"])
+        alan_mm2 = (round(b["alan_px"] * (en * boy) / kutu_px, 1)
+                    if kutu_px > 0 else None)
         cikti.append({
             "no": b["no"],
             "x": round(x, 1), "y": round(y, 1),
             "en_mm": round(en, 1), "boy_mm": round(boy, 1),
             "cap_mm": round(max(en, boy), 1),
+            "alan_mm2": alan_mm2,
             "alan_px": b["alan_px"], "dolgu": b["dolgu"],
             "cx": b["cx"], "cy": b["cy"],
             "kutu": [b["x1"], b["y1"], b["x2"], b["y2"]],
@@ -170,6 +179,11 @@ def kume(lekeler: list[dict[str, Any]], mesafe_mm: float,
             "x": round(sum(b["x"] * b["alan_px"] for b in grup) / toplam, 1),
             "y": round(sum(b["y"] * b["alan_px"] for b in grup) / toplam, 1),
             "cap_mm": round(max(b["cap_mm"] for b in grup), 1),
+            # Kumenin yaprak alani parcalarin TOPLAMI: bir filizin iki
+            # yapragi ayri lekelenmisse alan da ikiye bolunmus oluyor.
+            "alan_mm2": (round(sum(b["alan_mm2"] for b in grup), 1)
+                         if all(b.get("alan_mm2") is not None for b in grup)
+                         else None),
             "alan_px": toplam,
             "parca": len(grup),
             "kutu": [min(b["kutu"][0] for b in grup), min(b["kutu"][1] for b in grup),
@@ -204,6 +218,125 @@ def _rgb(jpeg: bytes):
 # --------------------------------------------------------------------------- #
 # HTTP
 # --------------------------------------------------------------------------- #
+async def tara(g: dict[str, Any], canli_kare) -> dict[str, Any]:
+    """Bir kare al, filizleri bul. HTTP ucunun ve olcum katmaninin ortak govdesi.
+
+    `gorus` olcum katmani da AYNI tespitleri istiyor. Ikinci bir tespit
+    hatti yazmak, ayni yatak icin birbirini tutmayan iki cevap demekti.
+    """
+    import inspect
+
+    from fastapi import HTTPException
+
+    kam = kalibrasyon.ad_temizle(g.get("kamera"))
+
+    try:
+        jpeg = canli_kare(kam)
+        if inspect.isawaitable(jpeg):
+            jpeg = await jpeg
+    except Exception as hata:                       # noqa: BLE001
+        raise HTTPException(status_code=409, detail=str(hata))
+    if not jpeg:
+        raise HTTPException(
+            status_code=409,
+            detail=(f"[{kam}] taze kare alınamadı. Canlı akışın hangi kamerada "
+                    "açık olduğuna bakın: çözümleme listede SEÇİLİ kameradan "
+                    "yapılıyor."))
+
+    try:
+        import goruntu
+    except ImportError as hata:
+        raise HTTPException(status_code=503,
+                            detail=f"Görüntü hattı yüklenemedi: {hata}")
+    try:
+        rgb = _rgb(jpeg)
+    except ImportError as hata:
+        raise HTTPException(status_code=503, detail=f"Görüntü kütüphanesi yok: {hata}")
+    except ValueError as hata:
+        raise HTTPException(status_code=422, detail=str(hata))
+
+    boy, en = int(rgb.shape[0]), int(rgb.shape[1])
+    kalib = kalibrasyon.oku(kam)
+    esik = g.get("esik")
+    esik = goruntu.ESIK if esik in (None, "") else float(esik)
+    birlestir = _sayi(g.get("birlestir_mm"), 25.0)
+    azami = _sayi(g.get("azami_fide_mm"), AZAMI_FIDE_MM)
+    cap_mm = _sayi(g.get("en_kucuk_cap_mm"), 0.0)
+
+    import tespit
+    # EN KÜÇÜK LEKE EŞİĞİ ARTIK MİLİMETREDEN GELİYOR.
+    #
+    # Piksel eşiğini kare alanıyla ölçekliyordum ve doğru görünüyordu,
+    # ama sonucu şuydu: eşiğin FİZİKSEL karşılığı her çözünürlükte
+    # aynı kalıyor (13 mm). Yani çözünürlüğü yükseltmek küçük fideyi
+    # bulmuyordu — fesleğen kotiledonu 8-10 mm ve kapı 13 mm'de.
+    # `tespit.en_az_piksel` kapıyı milimetre olarak koyuyor.
+    if int(_sayi(g.get("en_az_piksel"), 0)):
+        en_az = int(_sayi(g.get("en_az_piksel"), 0))
+    elif cap_mm > 0:
+        en_az = tespit.en_az_piksel(kalib, en, boy, cap_mm=cap_mm)
+    else:
+        en_az = tespit.en_az_piksel(kalib, en, boy)
+
+    # ALAN SÜZGECİ. Yeşil arayan indeks kadrajda ne varsa hepsine
+    # bakıyor: kabın mavi kenarı, tezgâh profili, arka plandaki
+    # çimen. Hiçbiri dikim alanının içinde değil ve alan koordinatı
+    # zaten biliniyor. Renk ölçütü bunların bir kısmını keser; alan
+    # denetimi hepsini birden keser, çünkü sorduğu soru başka:
+    # "bu şey ne renk" değil, "bu şey toprağın üstünde mi".
+    gecerli = tespit.alan_suzgeci(kalib, en, boy)
+
+    # KADRAJ YATAĞA BAKIYOR MU. Alan süzgeci lekeleri eliyorsa iki
+    # ayrı sebep olabilir: leke gerçekten toprağın dışında, ya da
+    # KADRAJIN KENDİSİ yatağın dışında. İkisi panelde aynı görünüyordu
+    # ("hepsi alan dışı") ve ilkini varsayıp fideyi aramak boşuna
+    # emek. Örtüşme sıfırsa hangi eşik konursa konsun fide bulunamaz.
+    try:
+        ortusme = tespit.kadraj_ortusme(kalib, en, boy)
+    except Exception:                                   # noqa: BLE001
+        ortusme = None
+
+    y = goruntu.bul(rgb, esik=esik, en_az_piksel=en_az, gecerli_mi=gecerli)
+    c = cozumle(y["lekeler"], kalib, en, boy)
+    fideler = (kume(c["lekeler"], birlestir, azami)
+               if c["lekeler"] and birlestir > 0 else c["lekeler"])
+    return {
+        "kamera": kam, "genislik_px": en, "yukseklik_px": boy,
+        "esik": esik, "en_az_piksel": en_az, "birlestir_mm": birlestir,
+        "azami_fide_mm": azami,
+        "en_az_kendiliginden": not int(_sayi(g.get("en_az_piksel"), 0)),
+        "en_kucuk_cap_mm": cap_mm or tespit.EN_KUCUK_CAP_MM,
+        "yesil_oran": round(y["oran"], 4),
+        "leke_sayisi": len(y["lekeler"]), "ham_leke": int(y["ham_leke"]),
+        # NEDEN BULAMADI sorusu artık tahminle değil sayıyla
+        # cevaplanıyor.
+        #
+        # `elenen` bir SAYI DEĞİL, sözlük: her renk kapısının
+        # (mavi, kırmızı, exgr, doygunluk) karenin ne kadarını
+        # elediği. Sayıya çevirmeye çalışmak çökertiyordu; olduğu
+        # gibi geçiriyoruz ve panel hangi kapının kestiğini yazıyor
+        # — "yeşil bulunamadı"nın sebebi tam olarak orada duruyor.
+        "elenen": y.get("elenen") or {},
+        "alan_disi": int(y.get("alan_disi") or 0),
+        "denge_kazanc": y.get("denge_kazanc"),
+        "exg_oran": y.get("exg_oran"),
+        "maske_oran": y.get("maske_oran"),
+        # SONUCUN TEK CÜMLELİK GEREKÇESİ. Panel "eşiği düşürün"
+        # diye sabit bir öğüt veriyordu; kare bembeyaz yanmışsa o
+        # öğüt yanlış ve kullanıcıyı boşuna uğraştırıyor. `tani`
+        # önce karenin ölçülebilir olup olmadığına bakıyor.
+        "tani": y.get("tani") or "",
+        "kadraj_oran": (None if not ortusme
+                        else round(float(ortusme.get("oran") or 0), 4)),
+        "kadraj_alan_var": bool(ortusme and ortusme.get("alan_var")),
+        "kare_kalite": y.get("kare") or {},
+        "yontem": c["yontem"], "ret": c["ret"],
+        "lekeler": c["lekeler"], "fideler": fideler,
+        "kare": "data:image/jpeg;base64," + base64.b64encode(jpeg).decode(),
+    }
+
+
+
 def yonlendirici_kur(parola_dogrula, canli_kare):
     """`canli_kare(kamera) -> bytes` taze kare veriyor.
 
@@ -211,120 +344,13 @@ def yonlendirici_kur(parola_dogrula, canli_kare):
     kare isteyen bir eşyordam veriyor (640'ta filiz birkaç piksel kalıp
     eleniyordu), denemeler düz bir işlev veriyor.
     """
-    import inspect
-
-    from fastapi import APIRouter, HTTPException, Query
+    from fastapi import APIRouter, Query
 
     yon = APIRouter()
 
     @yon.post("/api/kamera/filiz/bul")
     async def _bul(govde: dict[str, Any] | None = None, jeton: str = Query(default="")):
         parola_dogrula(jeton)
-        g = govde or {}
-        kam = kalibrasyon.ad_temizle(g.get("kamera"))
-
-        try:
-            jpeg = canli_kare(kam)
-            if inspect.isawaitable(jpeg):
-                jpeg = await jpeg
-        except Exception as hata:                       # noqa: BLE001
-            raise HTTPException(status_code=409, detail=str(hata))
-        if not jpeg:
-            raise HTTPException(
-                status_code=409,
-                detail=("Taze kare alınamadı. Canlı akış yalnız Kamera sekmesi "
-                        "açıkken sürüyor — sekmeyi açık tutun."))
-
-        try:
-            import goruntu
-        except ImportError as hata:
-            raise HTTPException(status_code=503,
-                                detail=f"Görüntü hattı yüklenemedi: {hata}")
-        try:
-            rgb = _rgb(jpeg)
-        except ImportError as hata:
-            raise HTTPException(status_code=503, detail=f"Görüntü kütüphanesi yok: {hata}")
-        except ValueError as hata:
-            raise HTTPException(status_code=422, detail=str(hata))
-
-        boy, en = int(rgb.shape[0]), int(rgb.shape[1])
-        kalib = kalibrasyon.oku(kam)
-        esik = g.get("esik")
-        esik = goruntu.ESIK if esik in (None, "") else float(esik)
-        birlestir = _sayi(g.get("birlestir_mm"), 25.0)
-        azami = _sayi(g.get("azami_fide_mm"), AZAMI_FIDE_MM)
-        cap_mm = _sayi(g.get("en_kucuk_cap_mm"), 0.0)
-
-        import tespit
-        # EN KÜÇÜK LEKE EŞİĞİ ARTIK MİLİMETREDEN GELİYOR.
-        #
-        # Piksel eşiğini kare alanıyla ölçekliyordum ve doğru görünüyordu,
-        # ama sonucu şuydu: eşiğin FİZİKSEL karşılığı her çözünürlükte
-        # aynı kalıyor (13 mm). Yani çözünürlüğü yükseltmek küçük fideyi
-        # bulmuyordu — fesleğen kotiledonu 8-10 mm ve kapı 13 mm'de.
-        # `tespit.en_az_piksel` kapıyı milimetre olarak koyuyor.
-        if int(_sayi(g.get("en_az_piksel"), 0)):
-            en_az = int(_sayi(g.get("en_az_piksel"), 0))
-        elif cap_mm > 0:
-            en_az = tespit.en_az_piksel(kalib, en, boy, cap_mm=cap_mm)
-        else:
-            en_az = tespit.en_az_piksel(kalib, en, boy)
-
-        # ALAN SÜZGECİ. Yeşil arayan indeks kadrajda ne varsa hepsine
-        # bakıyor: kabın mavi kenarı, tezgâh profili, arka plandaki
-        # çimen. Hiçbiri dikim alanının içinde değil ve alan koordinatı
-        # zaten biliniyor. Renk ölçütü bunların bir kısmını keser; alan
-        # denetimi hepsini birden keser, çünkü sorduğu soru başka:
-        # "bu şey ne renk" değil, "bu şey toprağın üstünde mi".
-        gecerli = tespit.alan_suzgeci(kalib, en, boy)
-
-        # KADRAJ YATAĞA BAKIYOR MU. Alan süzgeci lekeleri eliyorsa iki
-        # ayrı sebep olabilir: leke gerçekten toprağın dışında, ya da
-        # KADRAJIN KENDİSİ yatağın dışında. İkisi panelde aynı görünüyordu
-        # ("hepsi alan dışı") ve ilkini varsayıp fideyi aramak boşuna
-        # emek. Örtüşme sıfırsa hangi eşik konursa konsun fide bulunamaz.
-        try:
-            ortusme = tespit.kadraj_ortusme(kalib, en, boy)
-        except Exception:                                   # noqa: BLE001
-            ortusme = None
-
-        y = goruntu.bul(rgb, esik=esik, en_az_piksel=en_az, gecerli_mi=gecerli)
-        c = cozumle(y["lekeler"], kalib, en, boy)
-        fideler = (kume(c["lekeler"], birlestir, azami)
-                   if c["lekeler"] and birlestir > 0 else c["lekeler"])
-        return {
-            "kamera": kam, "genislik_px": en, "yukseklik_px": boy,
-            "esik": esik, "en_az_piksel": en_az, "birlestir_mm": birlestir,
-            "azami_fide_mm": azami,
-            "en_az_kendiliginden": not int(_sayi(g.get("en_az_piksel"), 0)),
-            "en_kucuk_cap_mm": cap_mm or tespit.EN_KUCUK_CAP_MM,
-            "yesil_oran": round(y["oran"], 4),
-            "leke_sayisi": len(y["lekeler"]), "ham_leke": int(y["ham_leke"]),
-            # NEDEN BULAMADI sorusu artık tahminle değil sayıyla
-            # cevaplanıyor.
-            #
-            # `elenen` bir SAYI DEĞİL, sözlük: her renk kapısının
-            # (mavi, kırmızı, exgr, doygunluk) karenin ne kadarını
-            # elediği. Sayıya çevirmeye çalışmak çökertiyordu; olduğu
-            # gibi geçiriyoruz ve panel hangi kapının kestiğini yazıyor
-            # — "yeşil bulunamadı"nın sebebi tam olarak orada duruyor.
-            "elenen": y.get("elenen") or {},
-            "alan_disi": int(y.get("alan_disi") or 0),
-            "denge_kazanc": y.get("denge_kazanc"),
-            "exg_oran": y.get("exg_oran"),
-            "maske_oran": y.get("maske_oran"),
-            # SONUCUN TEK CÜMLELİK GEREKÇESİ. Panel "eşiği düşürün"
-            # diye sabit bir öğüt veriyordu; kare bembeyaz yanmışsa o
-            # öğüt yanlış ve kullanıcıyı boşuna uğraştırıyor. `tani`
-            # önce karenin ölçülebilir olup olmadığına bakıyor.
-            "tani": y.get("tani") or "",
-            "kadraj_oran": (None if not ortusme
-                            else round(float(ortusme.get("oran") or 0), 4)),
-            "kadraj_alan_var": bool(ortusme and ortusme.get("alan_var")),
-            "kare_kalite": y.get("kare") or {},
-            "yontem": c["yontem"], "ret": c["ret"],
-            "lekeler": c["lekeler"], "fideler": fideler,
-            "kare": "data:image/jpeg;base64," + base64.b64encode(jpeg).decode(),
-        }
+        return await tara(govde or {}, canli_kare)
 
     return yon

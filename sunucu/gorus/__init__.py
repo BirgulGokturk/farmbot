@@ -1,40 +1,33 @@
 """
-gorus — FarmBot görüntü işleme modülü.
+gorus — ölçüm kamerası ve bitki ölçüm katmanı.
 
-Katmanlar (veri akışı sırasıyla):
-    kare      : ajan'dan gelen JPEG karesi (tek kamera sahibi ajan'dır)
-    duzlem    : piksel -> yatak (mm) dönüşümü, AprilTag homografisi + paralaks
-    isik      : pozlama/beyaz denge normalizasyonu
-    bolutle   : bitki örtüsü maskesi (ExG + L*a*b*, Otsu)
-    nesne     : maske -> ayrık bitki nesneleri + mm cinsinden öznitelikler
-    eslestir  : nesneleri sunucudaki ekim kaydına (X,Y) bağla
-    siniflandir: filiz / yabani / belirsiz kararı
-    cizim     : tespitleri kare üzerine çizen görsel (daire, etiket, yatak sınırı)
-    boru      : tüm zinciri yöneten Tarama akışı
-    depo      : SQLite kalıcılık
-    api       : FastAPI router (sunucu'ya takılır)
-    isci      : taramayı ayrı süreçte koşturan CLI
-    akis      : canlı ffmpeg akışını tarama süresince duraklatan yönetici
+KAPSAM BİLEREK DAR. Kalibrasyon, piksel→mm dönüşümü, AprilTag okuma ve
+filiz TESPİTİ sunucuda zaten var (sunucu/etiket.py, kalibrasyon.py,
+filiz.py + panelin "AprilTag ile kalibre et" bölümü). Bu paket onları
+TEKRAR ETMEZ — tespitleri GİRDİ alır, üstüne ölçüm ve karar koyar.
 
-Araçlar (sunucusuz, doğrudan çalışır):
-    usb_kamera     : UVC/USB kamera sürücüsü (MX Brio)
-    kamera_denetim : kamera ölçüme uygun mu — odak/pozlama/montaj testi
-    kalibre        : karadan kalibrasyon.json + denetim görselleri
-    tara           : tek kare üstünde tarama denemesi
-    sinama         : sentetik sahneyle uçtan uca doğrulama
+Kamera katmanı
+    usb_kamera     : UVC kontrollerini kilitler, tam çözünürlükte kare çeker
+    akis           : panelin ffmpeg akışını tarama süresince duraklatır
+    kamera_denetim : odak/pozlama/montaj kararlılık testi (kalibrasyon öncesi)
+    etiket_bas     : yazdırılabilir AprilTag 36h11 sayfası üretir
+    ajan_kanca     : ajan'a eklenecek "kare_cek" komutu
 
-Tasarım kuralları:
-  1. Ölçülmemiş hiçbir sayı üretilmez. Hesaplanamayan alan None döner ve
-     sebebi `tani` (diagnostics) sözlüğüne yazılır.
-  2. Kalibrasyon her taramada yeniden doğrulanır; artık hata eşiği aşarsa
-     tarama "güvenilmez" damgasıyla biter, koordinat yayımlanmaz.
-  3. Geri alınamaz hiçbir iş bu modülden tetiklenmez; modül yalnız ölçer.
+Ölçüm katmanı  (girdi: filiz.py tespitleri + bitki.veri() ekim kaydı)
+    girdi          : filiz.py çıktısını Tespit'e çevirir (alan adı sezgisiyle)
+    eslestir       : ekim kaydıyla global atama + çimlenme raporu      [2]
+    siniflandir    : filiz / yabani / belirsiz                         [3]
+    izle           : taramalar arası takip, mm²/gün büyüme             [4]
+    cizim          : daire içine alma + ortorektifiye kuşbakışı        [5]
+    depo           : SQLite arşiv, zaman serisi, insan etiketi         [6]
+    ortu           : yaprak alanı, yatak kapsama yüzdesi               [7]
+    tarama         : hepsini birleştiren tek giriş noktası
+
+Üç değişmez kural:
+  1. Ölçülemeyen hiçbir sayı üretilmez. Eksik öznitelik "kullanılamadı"
+     olarak raporlanır, nötr sayılır; uydurulmaz.
+  2. Geri alınamaz hiçbir iş bu paketten tetiklenmez. Yalnız ölçer.
+  3. "belirsiz" sınıfı üzerinde otomatik işlem yapılmaz; kullanıcıya sorulur.
 """
 
-__surum__ = "0.5.0"
-
-# Sürüm denetimi:
-#   python -c "import gorus; print(gorus.__surum__)"
-# 0.3.0 içeriği: usb_kamera, kalibre, tara, isci, kamera_denetim modülleri +
-# enjeksiyon kalıbıyla yazılmış api.py. Daha eski bir sürümdeki api.py
-# `sunucu.ajan_kopru` import ettiği için sunucuya takıldığında patlar.
+__surum__ = "2.0.0"

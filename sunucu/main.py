@@ -38,6 +38,7 @@ import bitki
 import depo
 import etiket
 import filiz
+import olcum
 import otokalib
 import dikim
 import egriler
@@ -3423,7 +3424,47 @@ async def _cozumleme_karesi(kamera: str) -> bytes:
             ham = b""
         if ham:
             return ham
-    return merkez.canli_kare_taze(kamera, COZUMLEME_KARE_YAS_SN)
+    kucuk = merkez.canli_kare_taze(kamera, COZUMLEME_KARE_YAS_SN)
+    if kucuk:
+        return kucuk
+    raise ValueError(_kare_yok_gerekce(kamera, cevap))
+
+
+def _kare_yok_gerekce(kamera: str, cevap: dict[str, Any] | None) -> str:
+    """Kare NEDEN gelmedi — tahminle degil, olculen durumla.
+
+    Eski metin her durumda "Kamera sekmesini acik tutun" diyordu. Sekme
+    acikken de aliniyordu: canli akis BASKA kamerada olunca secili
+    kameranin hic karesi olmuyor ve kullanici dogru yere bakmiyordu.
+    """
+    ad = kareler.ad_temizle(kamera)
+    simdi = time.time()
+    k = merkez.canli_kareler.get(ad) or {}
+    yas = (simdi - float(k.get("ts") or 0)) if k.get("kare") else None
+
+    canli = []
+    for a, d in (merkez.canli_kareler or {}).items():
+        if d.get("kare") and (simdi - float(d.get("ts") or 0)) <= COZUMLEME_KARE_YAS_SN:
+            canli.append(a)
+
+    parca = [f"[{ad}] taze kare yok."]
+    ajan_mesaj = str((cevap or {}).get("mesaj") or "").strip()
+    if cevap is None:
+        parca.append("Ajan cevap vermedi (baglanti yok ya da zaman asimi).")
+    elif not (cevap or {}).get("ok") and ajan_mesaj:
+        parca.append(f"Ajan: {ajan_mesaj}")
+    if yas is None:
+        parca.append("Sunucunun bellegindeki son kare de yok.")
+    else:
+        parca.append(f"Bellekteki son kare {yas:.0f} sn once "
+                     f"(sinir {COZUMLEME_KARE_YAS_SN:.0f} sn).")
+    if canli and ad not in canli:
+        parca.append("Su an canli olan kamera: " + ", ".join(canli)
+                     + f" — listeden onu secin, cozumleme '{ad}' kamerasinda yapiliyor.")
+    elif not canli:
+        parca.append("Hicbir kameranin canli akisi yok: Kamera sekmesini acin "
+                     "ve akisi baslatin.")
+    return " ".join(parca)
 
 
 def _makine_xy() -> tuple[float | None, float | None]:
@@ -3451,6 +3492,10 @@ def _kamera_hareketli(ad: str) -> bool:
 app.include_router(etiket.yonlendirici_kur(
     _parola_dogrula, _cozumleme_karesi, _makine_xy, _kamera_hareketli))
 app.include_router(filiz.yonlendirici_kur(_parola_dogrula, _cozumleme_karesi))
+# OLCUM KATMANI ayni tespitleri kullaniyor: `filiz.tara()` ikisinin de
+# govdesi. Ikinci bir tespit hatti, ayni yatak icin birbirini tutmayan
+# iki cevap demekti.
+app.include_router(olcum.yonlendirici_kur(_parola_dogrula, _cozumleme_karesi))
 # BITKI KARTLARI. Kartin EK verisi (sulama suresi, nem egilimi, olay
 # sayaclari) burada; bitkinin kendisi ve susama karari `/api/bahce`de
 # kaliyor ve panel ikisini birlestiriyor. Toprak kalibrasyonu ajandan

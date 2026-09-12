@@ -1,20 +1,17 @@
 """
-ajan_kanca — AJAN tarafına eklenecek parça (kamera sahibi ajan'dır, öyle kalır).
+ajan_kanca — AJAN'a eklenecek "kare_cek" komutu.
 
-Mevcut yapı: ajan/kamera.py içindeki Kamera sınıfı picamera2 -> rpicam-still ->
-sahte kare sırasıyla deniyor ve 640 px'lik JPEG'i WebSocket ile sunucuya
-yolluyor. Görüntü işleme için iki eksik var:
+Sunucu tarama isteyince ajan'a `{"komut": "kare_cek"}` gelir; bu kanca
+canlı akışı duraklatır, tam çözünürlükte kare çeker, akışı geri açar ve
+dosya yolunu döndürür.
 
-  1) 640 px yetmez. Kalibrasyon 3840x2880'de yapıldı; tespit karesi tam ya da
-     yarı çözünürlükte olmalı. WebSocket'ten 3-5 MB base64 geçirmek yerine,
-     ajan ve sunucu AYNI Pi'de olduğu için kare ORTAK DİZİNE yazılır ve
-     sadece yol duyurulur.
-  2) Otomatik pozlama/beyaz denge açıkken eşikler kayıyor. Tespit karesi
-     kilitli pozlamayla çekilmelidir.
+ajan.py'nin komut çözücüsüne tek satır:
 
-ajan.py'nin komut çözücüsüne tek satır eklenir:
     elif komut == "kare_cek":
-        cevap = await kare_cek(kamera, mesaj, portal)
+        cevap = await kare_cek(kamera_yok_farketmez, mesaj, portal)
+
+Üst kamera (CSI/picamera2) bu paketin işi değil — ajan'ın kendi
+kamera.py'sinde kalıyor, ikinci bir kopyası tutulmuyor.
 """
 
 from __future__ import annotations
@@ -25,51 +22,32 @@ from pathlib import Path
 
 KARE_DIZINI = Path("/home/batupi/farmbot/veri/kareler")
 
-# USB (UVC) ölçüm kamerası — kararlı yol, /dev/video0 değil.
-# `python -m gorus.usb_kamera --listele` gerçek yolu yazdırır.
-USB_KAMERA_YOLU = "/dev/v4l/by-id/usb-046d_MX_Brio-video-index0"
+# Ölçüm kamerasının KARARLI yolu. /dev/video0 kullanmayın: MX Brio takılınca
+# video0 oldu ve panelin akışı CSI yerine onu kaptı. USB sırası değişince
+# hangi kameranın açılacağı kurayla belirlenir.
+# Gerçek yolu `python -m gorus.usb_kamera --listele` yazdırır.
+USB_KAMERA_YOLU = "/dev/v4l/by-id/usb-046d_MX_Brio_2613ZBA0H858-video-index0"
 USB_COZUNURLUK = (3840, 2160)
 
-
-def poz_kilitle(picam2, sure_us=None, kazanc=None, renk_kazanclari=None):
-    """
-    Tespit karesi için otomatik pozlama/AWB kapatılır. Değerler bir kez
-    ölçülür (aşağıdaki `poz_ogren`) ve kalibrasyon dosyasının yanında saklanır.
-    """
-    ayar = {"AeEnable": False, "AwbEnable": False}
-    if sure_us:
-        ayar["ExposureTime"] = int(sure_us)
-    if kazanc:
-        ayar["AnalogueGain"] = float(kazanc)
-    if renk_kazanclari:
-        ayar["ColourGains"] = tuple(float(x) for x in renk_kazanclari)
-    picam2.set_controls(ayar)
-
-
-def poz_ogren(picam2, bekleme_s=2.0) -> dict:
-    """Otomatiği bir kez çalıştırıp yakınsadığı değerleri okur ve kilitler."""
-    import time
-    picam2.set_controls({"AeEnable": True, "AwbEnable": True})
-    time.sleep(bekleme_s)
-    m = picam2.capture_metadata()
-    d = {"sure_us": int(m.get("ExposureTime", 0)),
-         "kazanc": float(m.get("AnalogueGain", 1.0)),
-         "renk_kazanclari": list(m.get("ColourGains", (1.0, 1.0)))}
-    poz_kilitle(picam2, **d)
-    return d
+# Panelin canlı akışı (ffmpeg) aynı kamerayı tutuyor. UVC tekil erişimli
+# olduğu için 4K kare çekilirken duraklatılmalı. Ajan'ın kendi başlat/durdur
+# çağrılarını buraya bağlayın — akışı dışarıdan öldürüp yeniden doğurmak,
+# ffmpeg stdout'unu WebSocket'e bağlayan boruyu koparır.
+AKIS_DURDUR = None      # ör. ajan.akisi_durdur
+AKIS_BASLAT = None      # ör. ajan.akisi_baslat
 
 
 async def kare_cek(kamera, mesaj: dict, portal=None) -> dict:
     """
-    Sunucudan gelen {"komut":"kare_cek","genislik":3840,"portal_park":true}
-    komutunu karşılar.
-
-    portal_park: Portal yatağın üstündeyse kadrajı kapatır ve gölge düşürür.
-    Kare çekmeden önce portal park konumuna sürülür ve DURDUĞU DOĞRULANIR.
-    Bu adım atlanırsa tespitlerin yarısı portalın altında kaybolur — sistemin
-    "çalışmıyor" görünmesinin sık bir sebebi budur.
+    portal_park: Portal yatağın üstündeyse kadrajı kapatır ve gölge düşürür;
+    bir AprilTag'i örterse kalibrasyon doğrulaması da düşer. Kare çekmeden
+    önce park edilir ve DURDUĞU doğrulanır.
     """
-    genislik = int(mesaj.get("genislik", 3840))
+    from .akis import CanliAkis
+    from .usb_kamera import UsbKamera
+
+    genislik = int(mesaj.get("genislik", USB_COZUNURLUK[0]))
+    yukseklik = int(mesaj.get("yukseklik", USB_COZUNURLUK[1]))
     etiket = str(mesaj.get("etiket", "tarama"))
 
     if mesaj.get("portal_park") and portal is not None:
@@ -81,64 +59,40 @@ async def kare_cek(kamera, mesaj: dict, portal=None) -> dict:
             return {"tamam": False, "hata": f"portal park edilemedi: {e}"}
 
     KARE_DIZINI.mkdir(parents=True, exist_ok=True)
-    ad = f"{etiket}_{dt.datetime.now():%Y%m%d_%H%M%S}_{genislik}.jpg"
-    yol = KARE_DIZINI / ad
+    yol = KARE_DIZINI / f"{etiket}_{dt.datetime.now():%Y%m%d_%H%M%S}_{genislik}.jpg"
 
-    # --- USB ölçüm kamerası yolu ---
-    # CSI kamerası ajan'ın canlı görüntüsü olarak kalır; ölçüm karesi USB
-    # kameradan gelir. İkisi ayrı cihaz olduğu için çakışmazlar.
-    if mesaj.get("kaynak", "usb") == "usb":
-        from gorus.akis import CanliAkis
-        from gorus.usb_kamera import UsbKamera
-        akis = CanliAkis(USB_KAMERA_YOLU, durdur=AKIS_DURDUR, baslat=AKIS_BASLAT)
-        try:
-            # Canlı akış duraklar -> 4K kare -> akış geri gelir.
-            async with akis:
-                kam = UsbKamera(USB_KAMERA_YOLU, *USB_COZUNURLUK,
-                                tek_seferlik=False)
-                bilgi = await asyncio.to_thread(kam.hazirla)
-                r = await asyncio.to_thread(kam.cek, str(yol))
-                kam.kapat()
-            return {"tamam": True, "yol": r["yol"], "boyut": r["boyut"],
-                    "cozunurluk": r["cozunurluk"], "kaynak": "usb",
-                    "kilitlenemeyen": bilgi.get("kilitlenemeyen"),
-                    "akis": {"duraklat": getattr(akis, "rapor_duraklat", None),
-                             "devam": getattr(akis, "rapor_devam", None)},
-                    "zaman": dt.datetime.now().astimezone()
-                             .isoformat(timespec="seconds")}
-        except Exception as e:
-            try:
-                await akis.devam()          # hata olsa da paneli geri ver
-            except Exception:
-                pass
-            return {"tamam": False, "hata": f"USB kamera: {e}"}
-
-    # --- CSI (picamera2) yolu ---
+    akis = CanliAkis(USB_KAMERA_YOLU, durdur=AKIS_DURDUR, baslat=AKIS_BASLAT)
     try:
-        # Kamera.cek(...) mevcut sınıfınızın yöntemi; genişlik ve hedef dosya
-        # alacak şekilde genişletilir. Tek kamera sahibi yine ajan'dır.
-        bilgi = await asyncio.to_thread(kamera.cek, genislik=genislik,
-                                        hedef=str(yol), kalite=92)
+        async with akis:                      # canlı akış durur
+            kam = UsbKamera(USB_KAMERA_YOLU, genislik, yukseklik,
+                            tek_seferlik=False)
+            bilgi = await asyncio.to_thread(kam.hazirla)
+            r = await asyncio.to_thread(kam.cek, str(yol))
+            kam.kapat()
+                                              # çıkışta akış geri gelir
+        return {"tamam": True, "yol": r["yol"], "boyut": r["boyut"],
+                "cozunurluk": r["cozunurluk"],
+                "kilitlenemeyen": bilgi.get("kilitlenemeyen"),
+                "akis": {"duraklat": getattr(akis, "rapor_duraklat", None),
+                         "devam": getattr(akis, "rapor_devam", None)},
+                "zaman": dt.datetime.now().astimezone().isoformat(timespec="seconds")}
     except Exception as e:
-        return {"tamam": False, "hata": f"çekim başarısız: {e}"}
-
-    if not yol.exists() or yol.stat().st_size < 10_000:
-        return {"tamam": False, "hata": "kare yazılamadı ya da boş"}
-
-    return {"tamam": True, "yol": str(yol), "boyut": yol.stat().st_size,
-            "zaman": dt.datetime.now().astimezone().isoformat(timespec="seconds"),
-            "kamera": bilgi if isinstance(bilgi, dict) else None}
+        try:
+            await akis.devam()                # hata olsa da paneli geri ver
+        except Exception:
+            pass
+        return {"tamam": False, "hata": f"{type(e).__name__}: {e}"}
 
 
 def eski_kareleri_temizle(gun: int = 21, en_az_birak: int = 50) -> int:
-    """Kare deposu SD kartı doldurmasın. Eğitim verisi olanları elle ayırın."""
+    """Kare deposu SD kartı doldurmasın. Saklamak istediklerinizi ayırın."""
     import time
     if not KARE_DIZINI.exists():
         return 0
     kareler = sorted(KARE_DIZINI.glob("*.jpg"), key=lambda p: p.stat().st_mtime)
     sinir = time.time() - gun * 86400
     silinen = 0
-    for p in kareler[:-en_az_birak] if len(kareler) > en_az_birak else []:
+    for p in (kareler[:-en_az_birak] if len(kareler) > en_az_birak else []):
         if p.stat().st_mtime < sinir:
             p.unlink(); silinen += 1
     return silinen
