@@ -86,6 +86,14 @@
   position: absolute;
   inset: 0;
   pointer-events: none;
+  /* GERİLMESİ ŞART. `inset: 0` tek başına tuvali germiyor: canvas
+     yerine geçen (replaced) bir öge ve genişliği `auto` kalınca KENDİ
+     bitmap ölçüsünü kullanıyor — 3840 piksellik tuval 640'lık kutuya
+     sığmıyor, kap `overflow: hidden` ile kırpıyor ve çizilen kutular
+     görünür alanın dışında kalıyordu. Kamera 640'tayken fark küçüktü,
+     3840'a çıkınca hiçbir şey görünmez oldu. */
+  width: 100%;
+  height: 100%;
 }
 
 #etiket-govde input {

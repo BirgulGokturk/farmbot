@@ -404,21 +404,16 @@
        * geliyordu: tuval sıfır boyutlu kalıp çizim hiç görünmüyordu.
        * Bitmap kareyle aynı ölçüde, CSS onu kutuya sığdırıyor; ölçek
        * çarpanı da gerekmiyor, köşeler geldiği koordinatta çiziliyor. */
-      /* TUVAL GÖSTERİLEN KARENİN ÖLÇÜSÜNDE, taramanınkinde değil.
-       *
-       * Köşeler taramanın gördüğü karenin pikselinde geliyor; önizlemede
-       * gösterilen kare BAŞKA ölçüde olabiliyor (kamera genişliği
-       * değiştirildi, kayıtlı kare eski çözünürlükte). O zaman kutular
-       * karenin dışına düşüyor ve ekranda hiçbir şey görünmüyordu —
-       * "buluyor ama göstermiyor" tam bu. Ölçek farkı varsa çiziliyor. */
-      tuval.width = im.naturalWidth || son.genislik_px || 1;
-      tuval.height = im.naturalHeight || son.yukseklik_px || 1;
-      const olcek = (son.genislik_px && im.naturalWidth)
-        ? im.naturalWidth / son.genislik_px : 1;
+      /* TUVAL TARAMANIN GÖRDÜĞÜ KARENİN PİKSELİNDE; köşeler de o
+       * koordinatta geliyor, ölçek çarpanı gerekmiyor. Tuvali kutuya
+       * sığdırmak CSS'in işi (`.etiket-onizleme canvas { width:100% }`)
+       * ve o kural bir süre eksikti: tuval kendi bitmap ölçüsünde
+       * duruyor, kap kırpıyor ve kutular görünmez oluyordu. */
+      tuval.width = son.genislik_px || im.naturalWidth || 1;
+      tuval.height = son.yukseklik_px || im.naturalHeight || 1;
       const g = tuval.getContext("2d");
       g.clearRect(0, 0, tuval.width, tuval.height);
-      if (olcek !== 1) g.scale(olcek, olcek);
-      const kalem = Math.max(2, Math.round((son.genislik_px || tuval.width) / 320));
+      const kalem = Math.max(2, Math.round(tuval.width / 320));
       for (const e of son.etiketler || []) {
         const kayitli = Object.prototype.hasOwnProperty.call(
           (son.konumlar || {}).etiketler || {}, String(e.kimlik));
