@@ -6,6 +6,8 @@
     python3 plc-oku.py 1110 3 -i  # izle: yarım saniyede bir, Ctrl-C ile çık
     python3 plc-oku.py -x         # BİT tara: giriş ve bobin bitleri 0..31
     python3 plc-oku.py -x -i      # bit taramasını izle
+    python3 plc-oku.py -d         # DEĞİŞENİ BUL: D1000-D1200'ü izler ve
+                                  # yalnız DEĞİŞEN adresleri yazar
 
 BİT TARAMA (-x) NİYE VAR: D registerları, PLC'nin fiziksel girişi oraya
 KOPYALAMASINA bağlı. Ladder'da o kopyalama satırı yoksa register sonsuza
@@ -14,6 +16,12 @@ kadar 0 kalır ve dışarıdan "sensör ölü" gibi görünür — sahada tam bu
 fonksiyonlarıyla doğrudan okunabiliyor olabilir. Tarama, bir ucu elle
 indirdiğinizde HANGİ BİTİN değiştiğini gösteriyor; bulunursa PLC'de
 kopyalama satırı yazmaya hiç gerek kalmıyor.
+
+DEĞİŞEN TARAMASI (-d) NİYE VAR: bir anahtarın hangi D registerına
+yansıdığını bilmiyorsanız tek tek denemek yerine hepsini izleyip
+değişeni yakalamak gerekiyor. Betik bir taban okuma alıyor, sonra yarım
+saniyede bir tekrar okuyup FARK EDEN adresi yazıyor. Anahtara basın;
+ekranda çıkan adres aradığınız registerdır.
 
 NEDEN AYRI BİR ARAÇ: "panelde lamba yanmıyor" dendiğinde zincirde dört
 halka var — PLC registerı yazıyor mu, Modbus okuması geliyor mu, ajan
@@ -108,6 +116,7 @@ def main() -> int:
     arg = [a for a in sys.argv[1:] if not a.startswith("-")]
     izle = any(a in ("-i", "--izle") for a in sys.argv[1:])
     bit_tara = any(a in ("-x", "--bit") for a in sys.argv[1:])
+    degisen = any(a in ("-d", "--degisen") for a in sys.argv[1:])
     bas = int(arg[0]) if arg else VARSAYILAN_BAS
     adet = int(arg[1]) if len(arg) > 1 else VARSAYILAN_ADET
 
@@ -118,6 +127,36 @@ def main() -> int:
     if p.get("sahte"):
         print("UYARI: ayarda plc.sahte = true — gerçek PLC'ye bakmıyorsunuz.",
               file=sys.stderr)
+    if degisen:
+        # ARALIK: makinenin kullandigi butun D bolgesi. Tek istekte 125
+        # register okunabiliyor (Modbus siniri), o yuzden bloklara
+        # bolunuyor. Okunamayan blok atlaniyor — bir blok patlayinca
+        # otekiler kaybolmasin.
+        bas_d, son_d = 1000, 1200
+        print(f"== {ip}:{port} birim {birim} · D{bas_d}-D{son_d} degisen taramasi")
+        print("   Anahtara basin / ekseni home'a surun. Degisen adres asagida.")
+        taban = {}
+        while True:
+            simdi = {}
+            a = bas_d
+            while a <= son_d:
+                n = min(100, son_d - a + 1)
+                try:
+                    for k, v in enumerate(oku(ip, port, birim, a, n)):
+                        simdi[a + k] = v
+                except Exception:
+                    pass
+                a += n
+            if not taban:
+                taban = dict(simdi)
+                print(f"   taban alindi ({len(taban)} register)")
+            else:
+                for adres in sorted(simdi):
+                    if adres in taban and simdi[adres] != taban[adres]:
+                        print(f"   D{adres}: {taban[adres]} -> {simdi[adres]}")
+                        taban[adres] = simdi[adres]
+            time.sleep(0.5)
+
     if bit_tara:
         print(f"== {ip}:{port} birim {birim} · bit taramasi 0..31")
         print("   Bir ucu elle indirin; degisen biti arayin. Soldaki ilk bit 0.")
