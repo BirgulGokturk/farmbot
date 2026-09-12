@@ -140,6 +140,15 @@ VARSAYILAN = {
     # ve yalnız `ajan/ayar.json`da düzenlenebilirdi; panelde yoktu.
     # None = girilmemiş, `ayar.json`daki değer geçerli.
     "guvenli_t": None,
+    # HOME ANAHTARLARINA GÜVENİLSİN Mİ (D1120-D1123).
+    #
+    # Kapalıyken anahtarlar yalnız PANELDE görünüyor, hiçbir karara
+    # girmiyor. PLC'de X1/X2/X3/X4 girişlerini o registerlara kopyalayan
+    # ladder satırları yazıldıktan ve `plc-oku.py 1120 4` ile değiştiği
+    # görüldükten SONRA açılmalı: açıkken home, anahtar basılmadıysa
+    # "varmadı" diyor ve ladder yokken bütün registerlar 0 okuduğu için
+    # her home başarısız sayılırdı.
+    "home_anahtari": False,
     "prox_baslar": ["sulama", "nem", "tohum"],
     "hiz": None,
     "hiz_eksen": [None, None, None, None],   # [X, Y, Z, T]
@@ -662,6 +671,10 @@ class Uclar:
         except (TypeError, ValueError):
             sure = int(VARSAYILAN["uc_secici"]["sure_ms"])
         return max(1, min(10000, sure))
+
+    def home_anahtari(self) -> bool:
+        """Home anahtarlarına güvenilsin mi (bkz. VARSAYILAN)."""
+        return bool(self.ayar.get("home_anahtari"))
 
     def guvenli_t(self) -> float | None:
         """Tohum ucu "yukarıda" sayılma payı (mm); girilmemişse None."""

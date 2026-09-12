@@ -85,6 +85,25 @@ ENABLE_REG = 1010
 PROX_BAS = 1110
 PROX_ADET = 3
 PROX_GIRIS = ("X0", "X5", "X6")   # hangi fiziksel giriş, sırayla
+
+# HOME (REFERANS) ANAHTARLARI — eksen başına bir switch.
+#
+# PLC projesinde `j1_switch` = X1, `j2_switch` = X2, `j3_switch` = X3,
+# `j4_switch` = X4 (j1→X ekseni, j2→Y, j3→Z, j4→T; eşleme jog
+# registerlarından doğrulandı: hmi_jogf_j1 = D1020 = X'in jogf'u).
+#
+# NEDEN LAZIM: bu makinede konum SAYAÇTAN geliyor ve geri besleme yok.
+# Eksen mekanik olarak takılsa bile PLC sayacı yürüyor; konum hedefi
+# okuyor ve "home'a vardı" deniyor. Anahtar, makinenin GERÇEKTEN uçta
+# olduğunu söyleyen tek şey.
+#
+# X GİRİŞLERİ MODBUS'A AÇIK DEĞİL — proksimitelerde ölçüldü: fonksiyon 1
+# ve 2 ile 0..31 arası bütün bitler sıfır ve hiç değişmiyor. PLC'nin
+# bunları D registerlarına kopyalaması gerekiyor, prox için yapıldığı
+# gibi. Registerlar aşağıda; ladder yazılana kadar hepsi 0 okur ve
+# `home_anahtari` kapalı kaldığı sürece hiçbir karara girmez.
+HOME_SW_BAS = 1120
+HOME_SW_GIRIS = ("X1", "X2", "X3", "X4")   # sırayla X, Y, Z, T
 EKSEN_INDEKS = {"x": 0, "y": 1, "z": 2, "t": 3}
 
 # Tohum ucu ekseninin indeksi — koda sabit sayı yazmamak için.
@@ -609,6 +628,11 @@ class Gantry:
                 prox_ham = list(self.mb.oku(PROX_BAS, PROX_ADET))
             except Exception:                                # noqa: BLE001
                 prox_ham = [None] * PROX_ADET
+            # HOME ANAHTARLARI — dört eksen, ardışık, tek blok okuma.
+            try:
+                home_ham = list(self.mb.oku(HOME_SW_BAS, N))
+            except Exception:                                # noqa: BLE001
+                home_ham = [None] * N
             with self._jog_kilit:
                 jog_acik = sorted({f"{EKSENLER[i]['ad']}{'+' if k == 'jogf' else '-'}" for (i, k) in self._jog})
             self.son_hata = None
@@ -635,6 +659,16 @@ class Gantry:
                      "reg": PROX_BAS + n, "ham": h,
                      "acik": None if h is None else bool(h)}
                     for n, h in enumerate(prox_ham)
+                ],
+                # Eksen başına referans anahtarı. `acik` True ise eksen
+                # fiziksel olarak uçta. Ladder kopyalamayı yazana kadar
+                # hepsi 0 okuyor; `home_anahtari` kapalıyken hiçbir
+                # karara girmiyor, yalnız görünüyor.
+                "home_switch": [
+                    {"eksen": EKSENLER[n]["ad"], "giris": HOME_SW_GIRIS[n],
+                     "reg": HOME_SW_BAS + n, "ham": h,
+                     "acik": None if h is None else bool(h)}
+                    for n, h in enumerate(home_ham)
                 ],
                 "hareket": self.hareket_ediyor or bool(jog_acik),
                 "jog": jog_acik,
@@ -1363,6 +1397,25 @@ class Gantry:
                 f"{EKSENLER[i]['ad']} ekseni {mm:.1f} mm'ye ulaşamadı "
                 f"(şu an {self.eksen_konum_mm(i):.1f} mm) — dizi durduruldu")
 
+    #: Home anahtarlarına GÜVENİLSİN Mİ. Ladder kopyalaması yazılana
+    #: kadar bütün registerlar 0 okuyor ve açık bırakılırsa her home
+    #: "anahtara varılmadı" derdi. Ajan bunu ayardan kuruyor.
+    home_anahtari = False
+
+    def home_anahtari_acik(self, i: int) -> bool | None:
+        """Eksenin referans anahtarı basılı mı. Bilinmiyorsa None.
+
+        Anahtar, bu makinede makinenin GERÇEKTEN uçta olduğunu söyleyen
+        tek şey: konum sayaçtan geliyor ve geri besleme yok, eksen
+        takılsa bile sayaç yürüyor.
+        """
+        if not self.home_anahtari:
+            return None
+        try:
+            return bool(self.mb.oku(HOME_SW_BAS + i, 1)[0])
+        except Exception:                                    # noqa: BLE001
+            return None
+
     def home_hedefi(self, i: int) -> float:
         """⌂ düğmesinin bu ekseni götüreceği yer.
 
@@ -1516,8 +1569,24 @@ class Gantry:
                 # olabiliyor. Hemen okunan değer hedeften birkaç yüzde bir
                 # sapık çıkıyor ve günlükte "hâlâ yanlış" gibi duruyor.
                 time.sleep(0.3)
+                # ANAHTAR SORULUYOR — varsa son söz onun.
+                #
+                # Sayaç "vardım" diyebilir ve yanılabilir: eksen takılıyken
+                # PLC sayacı yürümeye devam ediyor. Anahtar basılı değilse
+                # makine uçta DEĞİL ve bunu söylemek, sessizce "home'da"
+                # yazmaktan iyi. Anahtar okunamıyorsa (ladder yazılmamış,
+                # ayar kapalı) eski davranış sürüyor.
+                anahtar = self.home_anahtari_acik(i)
+                if anahtar is False:
+                    self.gunluk_cb(
+                        f"✕ {ad} home anahtarına BASMADI — sayaç "
+                        f"{self.eksen_konum_mm(i):.2f} mm diyor ama eksen "
+                        f"uçta değil. Eksen takılmış olabilir; sayaç "
+                        f"kaymış durumda.", "hata")
+                    return
                 self.gunluk_cb(
-                    f"{ad} home'da ({self.eksen_konum_mm(i):.2f} mm)", "bilgi")
+                    f"{ad} home'da ({self.eksen_konum_mm(i):.2f} mm)"
+                    + (" · anahtar basılı" if anahtar else ""), "bilgi")
         except Exception as hata:
             self.gunluk_cb(f"Referans arama hatası: {hata}", "hata")
         finally:

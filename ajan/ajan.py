@@ -191,6 +191,7 @@ class Ajan:
         self._guvenli_z_ofset_uygula()
         self._guvenli_z_uygula()
         self._guvenli_t_uygula()
+        self._home_anahtari_uygula()
         self._hiz_uygula()
         ard = ayar["arduino"]
         # Medyan penceresi: kaç örneğin ortancası gösterilsin. 5 örnek,
@@ -317,6 +318,13 @@ class Ajan:
                     for yeni, eski in zip(eksen, simdiki)]
             logger.info("Hızlar ayardan yüklendi: genel=%s eksen=%s",
                         genel, eksen)
+        except Exception:                                    # noqa: BLE001
+            pass
+
+    def _home_anahtari_uygula(self) -> None:
+        """`home_anahtari` ayarını PLC sürücüsüne taşır."""
+        try:
+            self.plc.home_anahtari = self.uclar.home_anahtari()
         except Exception:                                    # noqa: BLE001
             pass
 
@@ -810,6 +818,7 @@ class Ajan:
                 self._guvenli_z_ofset_uygula()
                 self._guvenli_z_uygula()
                 self._guvenli_t_uygula()
+                self._home_anahtari_uygula()
                 return {"ok": True, "mesaj": "Kafa ayarları kaydedildi",
                         "veri": {"ayar": yeni,
                                  "baslar": self.uclar.baslar()}}
