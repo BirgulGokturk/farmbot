@@ -1306,7 +1306,8 @@ class Gantry:
         return self._iptal.is_set() or self.acil_mandal["acik"]
 
     def eksen_git_dogrula(self, i: int, mm: float, hiz: float | None = None,
-                          tolerans: float = 0.6, bolge_denetle: bool = True) -> None:
+                          tolerans: float = 0.6, bolge_denetle: bool = True,
+                          zorla: bool = False) -> None:
         """Tek ekseni mutlak konuma götürür ve VARDIĞINI DOĞRULAR.
 
         Referanstaki uç değiştirme dizisinde bazı adımların dönüş değeri
@@ -1341,7 +1342,17 @@ class Gantry:
             self._bolge_plani_denetle(simdiki, [(i, mm, EKSENLER[i]["ad"])])
 
         simdi_mm = simdiki[i] if i < len(simdiki) else self.eksen_konum_mm(i)
-        if abs(simdi_mm - mm) < 0.2:
+        # ZATEN ORADAYSA HAREKET YOK — ama `zorla` bunu devre dışı bırakıyor.
+        #
+        # Kısayol sıradan bir gidişte doğru: hedefte duran ekseni yeniden
+        # sürmek boşuna. HOME'DA YANLIŞ, çünkü home tam da sayaca
+        # güvenilmemesi gereken iştir.
+        #
+        # Sahada görülen: Z takıldı, eksen kımıldamadı ama sayaç hedefe
+        # yürüdü; konum "home" okudu. Sonrasında ⌂'ye basmak hiçbir şey
+        # yapmıyordu — kısayol "zaten oradasın" deyip çıkıyordu ve
+        # kullanıcının makineyi yeniden home'a göndermesinin YOLU KALMADI.
+        if not zorla and abs(simdi_mm - mm) < 0.2:
             return
         eh = self.eksen_hizi(i, hiz)
         self._eksen_git(i, mm, eh)
@@ -1478,16 +1489,23 @@ class Gantry:
                 onceki_mm = (simdi[i] if i < len(simdi)
                              else self.eksen_konum_mm(i))
                 if abs(onceki_mm - hedef) < 0.2:
+                    # ARTIK YİNE DE SÜRÜLÜYOR (`zorla=True`); uyarı
+                    # kayıtla gerçeğin ayrışmış OLABİLECEĞİNİ söylüyor.
                     self.gunluk_cb(
-                        f"⚠ {ad} zaten {onceki_mm:.2f} mm okuyor — hiç "
-                        f"hareket etmeyecek. Eksen elle oynatıldıysa sayaç "
-                        f"kaymıştır: makine home'da olmadığı hâlde home'da "
-                        f"sanılır. Bu hareket gerçek referanslama değil.",
+                        f"⚠ {ad} zaten {onceki_mm:.2f} mm okuyor — yine de "
+                        f"sürülüyor. Eksen takıldıysa ya da elle "
+                        f"oynatıldıysa sayaç kaymış olabilir: makine "
+                        f"home'da olmadığı hâlde home'da sanılır. Bu "
+                        f"hareket gerçek referanslama değil.",
                         "uyari")
                 try:
                     # Doğrulamalı gidiş: varmadıysa istisna atıyor, yani
                     # "gitti" denip geçilmiyor. Bölge denetimi de burada.
-                    self.eksen_git_dogrula(i, hedef)
+                    # ZORLA: home her zaman komut verir. Sayaç hedefi
+                    # okusa bile eksen gerçekten orada olmayabilir
+                    # (takılma, elle oynatma) ve home o kaymayı
+                    # düzeltmeye çalışmanın tek yolu.
+                    self.eksen_git_dogrula(i, hedef, zorla=True)
                 except PLCHatasi as hata:
                     # SIRAYI KESİYORUZ. Z home'a çıkmadıysa X ve Y'yi
                     # sürmek, uç aşağıdayken yatay hareket demek.
