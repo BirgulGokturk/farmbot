@@ -6,12 +6,19 @@ filiz TESPİTİ sunucuda zaten var (sunucu/etiket.py, kalibrasyon.py,
 filiz.py + panelin "AprilTag ile kalibre et" bölümü). Bu paket onları
 TEKRAR ETMEZ — tespitleri GİRDİ alır, üstüne ölçüm ve karar koyar.
 
+Elle ızgara kalibrasyonu (AprilTag yerine)
+    izgara         : dörtgen bölgeler, elle köşe + mm girişi, kuşbakışı
+    izgara_arac    : ızgara oluştur / önizle / bağımsız noktalarla doğrula
+    lens           : satranç tahtasıyla bozulma düzeltmesi (gerekiyorsa)
+    yolo           : kuşbakışı üzerinde tespit (YOLO/Hailo/eşik)
+    boru           : kare -> kuşbakışı -> tespit -> mm zinciri
+
 Kamera katmanı
     usb_kamera     : UVC kontrollerini kilitler, tam çözünürlükte kare çeker
     akis           : panelin ffmpeg akışını tarama süresince duraklatır
     kamera_denetim : odak/pozlama/montaj kararlılık testi (kalibrasyon öncesi)
     etiket_bas     : yazdırılabilir AprilTag 36h11 sayfası üretir
-    ajan_kanca     : ajan'a eklenecek "kare_cek" komutu
+    ajan_kanca     : ajan'ın "kamera_kare" komutuna USB desteği
 
 Ölçüm katmanı  (girdi: filiz.py tespitleri + bitki.veri() ekim kaydı)
     girdi          : filiz.py çıktısını Tespit'e çevirir (alan adı sezgisiyle)
@@ -30,4 +37,4 @@ Kamera katmanı
   3. "belirsiz" sınıfı üzerinde otomatik işlem yapılmaz; kullanıcıya sorulur.
 """
 
-__surum__ = "2.0.0"
+__surum__ = "3.0.0"

@@ -95,8 +95,63 @@
           <img id="filiz-kare" alt="Çözümlenen kare">
           <canvas id="filiz-tuval"></canvas>
         </div>
+        <div id="filiz-secim" class="gizli">
+          <p class="alt-not">
+            Önizlemeye tıklayınca o noktanın <b>kare pikseli</b> yazılıyor —
+            ızgara kalibrasyonunda köşe köşe girilen sayı bu. Tıklanan
+            nokta ölçekli görüntünün değil, çözümlenen TAM çözünürlüklü
+            karenin pikseli.
+          </p>
+          <div class="satir">
+            <span class="mono" id="filiz-secim-liste">—</span>
+            <button id="d-filiz-secim-kopya">Kopyala</button>
+            <button id="d-filiz-secim-temizle">Temizle</button>
+          </div>
+        </div>
       </details>`;
     $("#d-filiz-bul").onclick = bul;
+    $("#filiz-onizleme").addEventListener("click", pikselSec);
+    $("#d-filiz-secim-kopya").onclick = () => {
+      const m = secimler.map(([u, v]) => `${u},${v}`).join(" ");
+      if (!m) return;
+      if (navigator.clipboard) navigator.clipboard.writeText(m);
+      gunluk(`✓ Köşe pikselleri kopyalandı: ${m}`, "ok");
+    };
+    $("#d-filiz-secim-temizle").onclick = () => { secimler = []; secimYaz(); };
+  }
+
+  /* KÖŞE PİKSELİ OKUMA. `gorus.izgara_arac` dörtgenin dört köşesinin
+   * piksel konumunu istiyor ve bu sayıyı bir yerden okumak gerekiyor.
+   * Kareyi bilgisayara indirip bir resim programında imleç konumuna
+   * bakmak işe yarıyordu ama her denemede scp turu demekti; önizleme
+   * zaten burada duruyor.
+   *
+   * ÖLÇEK DÜZELTMESİ ŞART: img ekrana sığacak kadar küçültülmüş
+   * gösteriliyor, aracın istediği sayı ise TAM çözünürlüklü karenin
+   * pikseli. Ekran pikselini olduğu gibi vermek, 4K karede dört kat
+   * yanlış köşe demek olurdu. */
+  let secimler = [];
+
+  function pikselSec(olay) {
+    if (!son || !son.genislik_px) return;
+    const im = $("#filiz-kare");
+    const r = im.getBoundingClientRect();
+    if (!r.width || !r.height) return;
+    const u = Math.round((olay.clientX - r.left) * (son.genislik_px / r.width));
+    const v = Math.round((olay.clientY - r.top) * (son.yukseklik_px / r.height));
+    if (u < 0 || v < 0 || u > son.genislik_px || v > son.yukseklik_px) return;
+    secimler.push([u, v]);
+    if (secimler.length > 4) secimler.shift();   // dörtgen dört köşe
+    secimYaz();
+  }
+
+  function secimYaz() {
+    const k = $("#filiz-secim-liste");
+    if (!k) return;
+    k.textContent = secimler.length
+      ? secimler.map(([u, v]) => `${u},${v}`).join("  ")
+      : "—";
+    tuvalCiz();
   }
 
   function hataYaz(metin) {
@@ -271,7 +326,21 @@
     const im = $("#filiz-kare");
     const t = $("#filiz-tuval");
     if (!o || !im || !t || !son || !son.kare) return;
-    im.onload = () => {
+    im.onload = tuvalCiz;
+    im.src = son.kare;
+    // AYNI src YENIDEN YÜKLENMİYOR. Tıklanan köşeyi çizmek için
+    // `onizleme`yi tekrar çağırmak yetmiyordu: tarayıcı değişmeyen bir
+    // src'de `load` olayını bir daha vermiyor ve işaret hiç görünmüyordu.
+    if (im.complete) tuvalCiz();
+    o.classList.remove("gizli");
+    $("#filiz-secim").classList.remove("gizli");
+  }
+
+  function tuvalCiz() {
+    const im = $("#filiz-kare");
+    const t = $("#filiz-tuval");
+    if (!t || !im || !son) return;
+    {
       t.width = son.genislik_px;
       t.height = son.yukseklik_px;
       const c = t.getContext("2d");
@@ -289,9 +358,17 @@
         c.fillStyle = "#8ef08e";
         c.fillText(yazi, x1 + 4, Math.max(13, y1 - 6));
       });
-    };
-    im.src = son.kare;
-    o.classList.remove("gizli");
+      // Tıklanan köşeler: fide kutularından ayrı renk, sırayla numaralı.
+      const r = Math.max(6, son.genislik_px / 250);
+      secimler.forEach(([u, v], i) => {
+        c.strokeStyle = "#ffd166";
+        c.beginPath(); c.moveTo(u - r * 2, v); c.lineTo(u + r * 2, v);
+        c.moveTo(u, v - r * 2); c.lineTo(u, v + r * 2); c.stroke();
+        c.beginPath(); c.arc(u, v, r, 0, Math.PI * 2); c.stroke();
+        c.fillStyle = "#ffd166";
+        c.fillText(String(i + 1), u + r * 2 + 4, v - 4);
+      });
+    }
   }
 
   if (document.readyState === "loading") {

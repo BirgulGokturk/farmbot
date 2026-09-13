@@ -132,22 +132,40 @@ DEV=/dev/v4l/by-id/usb-046d_MX_Brio_2613ZBA0H858-video-index0
 Adım 2 ve 3 kamerayı tek başına açar; panelin akışı çalışıyorsa önce
 duraklatın (`gorus.akis`) ya da paneldeki akışı kapatın.
 
-## Ajan'a bağlama
+## Ajan'a bağlama — mevcut `kamera_kare` protokolüne
 
-`ajan.py` komut çözücüsüne:
+Yeni komut YOK. Sunucu zaten `kamera_kare` yolluyor (main.py
+`_cozumleme_karesi`); eksik olan, ajanın bu komutu USB kamera için
+karşılayamaması. Ajan tam çözünürlüklü kareyi bellekten veriyor; CSI'da o
+kare var (picamera2 tam çözünürlükte çekiyor), USB'de yok — elde yalnız
+ffmpeg'in 640x480 akışı var.
+
+`ajan.py` komut çözücüsünde (`if ad == "kamera_kare":` satırı):
 
 ```python
-from gorus.ajan_kanca import kare_cek
-...
-elif komut == "kare_cek":
-    cevap = await kare_cek(None, mesaj, portal)
+if ad == "kamera_kare":
+    from gorus.ajan_kanca import kamera_kare_usb, USB_KAMERALAR
+    if arg.get("kamera") in USB_KAMERALAR:
+        return await kamera_kare_usb(arg)
+    ...                       # mevcut CSI yolu olduğu gibi kalır
 ```
 
-`gorus/ajan_kanca.py` başındaki `AKIS_DURDUR` / `AKIS_BASLAT` değerlerine
-ajan'ın kendi akış başlat/durdur çağrılarını verin. Boş bırakılırsa modül
-cihazı tutan ffmpeg süreçlerini bulup sonlandırır ve komut satırını
-kaydedip geri başlatır — ama ffmpeg'in stdout'u WebSocket'e bağlıysa o boru
-kopar ve panel görüntüsü dönmez.
+Kanca protokolü birebir karşılar: `{"kamera", "azami_yas_sn"}` alır,
+`{"ok": True, "veri": {"kare": "<base64 JPEG>"}}` döner. Başarısız olursa
+`ok: False` döner ve sunucu kendi yedeğine (küçük canlı kare) düşer —
+akış zinciri bozulmaz.
+
+Yaptığı: canlı akışı duraklat → 3840x2160 kare çek → akışı geri aç.
+`azami_yas_sn` gözetilir; ölçüm arka arkaya çağrıldığında kamerayı
+gereksiz açıp kapatmamak için o süre içindeki kare önbellekten verilir.
+
+`AKIS_DURDUR` / `AKIS_BASLAT` değerlerine ajan'ın kendi akış çağrılarını
+verin. Boş bırakılırsa modül cihazı tutan ffmpeg süreçlerini bulup
+sonlandırır ve komut satırını kaydedip geri başlatır — ama ffmpeg'in
+stdout'u WebSocket'e bağlıysa o boru kopar ve panel görüntüsü dönmez.
+
+`USB_KAMERALAR` içindeki ad, sunucudaki kamera kaydıyla aynı olmalı
+(panelde "Uç kamerası" görünen kamera).
 
 ## Panelde yapılacak iki düzeltme
 
