@@ -474,8 +474,13 @@ def coz_yerlesim(bulunanlar: list[dict[str, Any]], konumlar: dict[str, Any],
             {"harita": harita, "genislik_px": genislik_px,
              "yukseklik_px": yukseklik_px})
 
+    # KOORDİNAT YANLIŞ GİRİLMİŞ Mİ. Harita dört noktada kendini tam
+    # çözdüğü için sapması 0 çıkıyor ve yanlış bir koordinatı gizliyor.
+    tutarlilik = _tutarlilik(p, q, [e["kimlik"] for e, _ in eslesen])
+
     aci = math.degrees(en_iyi["aci"])
     return {
+        "tutarlilik": tutarlilik,
         "harita": harita,
         "harita_artik_mm": None if harita_artik is None else round(harita_artik, 2),
         "harita_artik_notu": harita_artik_notu,
@@ -494,6 +499,66 @@ def coz_yerlesim(bulunanlar: list[dict[str, Any]], konumlar: dict[str, Any],
         "artik_notu": ("" if len(eslesen) >= 3 else
                        "İki etiketle sapma ölçülemez — üçüncü bir etiket "
                        "eklerseniz kalibrasyonun ne kadar tuttuğunu söyleyebilirim."),
+    }
+
+
+def _tutarlilik(p: list[tuple[float, float]], q: list[tuple[float, float]],
+                kimlikler: list[Any]) -> dict[str, Any] | None:
+    """Girilen koordinatlar karedeki düzenle uyuşuyor mu — model kurmadan.
+
+    NEDEN GEREKLİ. Dört etiketle harita tam belirleniyor ve sapması ~0
+    çıkıyor; bir etiketin koordinatı YANLIŞ GİRİLMİŞ olsa bile panel
+    kusursuz görünüyor. Sahada tam bu oldu: alt sağ etiketin X'i 485
+    yerine 285 yazıldı, dörtgenin alt kenarı 250 mm yerine 50 mm oldu,
+    harita bütün kareyi eğdi ve hiçbir uyarı çıkmadı.
+
+    ÖLÇÜ: her ETİKET ÇİFTİ için mm mesafesi / piksel mesafesi. Kamera
+    dik baksa hepsi eşit çıkardı; eğik bakışta perspektif bunu yumuşakça
+    oynatıyor — ölçülen 1,2 kat. Bir koordinat yanlışsa o etiketin
+    girdiği çiftler hem en küçük hem en büyük oranı tutuyor ve kat
+    birden büyüyor (aynı sahada 6,4 kat).
+
+    Model uydurmuyoruz: "birini dışarıda bırak" denemesi bu hatayı
+    maskeliyor, çünkü yanlış nokta öteki üç uydurmanın hepsinde içeride
+    kalıyor ve hepsini birden bozuyor.
+    """
+    n = len(p)
+    if n < 4:
+        return None
+    ciftler = []
+    for i in range(n):
+        for j in range(i + 1, n):
+            d_px = math.dist(p[i], p[j])
+            d_mm = math.dist(q[i], q[j])
+            if d_px < 1e-6:
+                continue
+            ciftler.append((d_mm / d_px, i, j))
+    if len(ciftler) < 4:
+        return None
+
+    ciftler.sort()
+    en_kucuk, en_buyuk = ciftler[0], ciftler[-1]
+    kat = en_buyuk[0] / en_kucuk[0] if en_kucuk[0] > 1e-9 else float("inf")
+
+    # SUÇLU: hem en küçük hem en büyük orana giren etiket. Yalnız o
+    # etiketin mesafeleri ötekilerle ters yönde bozuluyor.
+    ortak = {en_kucuk[1], en_kucuk[2]} & {en_buyuk[1], en_buyuk[2]}
+    supheli = kimlikler[ortak.pop()] if (len(ortak) == 1 and kat > 2.0) else None
+
+    return {
+        "kat": round(kat, 2),
+        "supheli_kimlik": supheli,
+        "en_uzak_cift": [kimlikler[en_kucuk[1]], kimlikler[en_kucuk[2]]],
+        "en_yakin_cift": [kimlikler[en_buyuk[1]], kimlikler[en_buyuk[2]]],
+        "uyari": ("" if kat <= 2.0 else
+                  (f"Etiket {supheli} için girilen koordinat ötekilerle "
+                   "tutmuyor — mm/piksel oranı bu etikette ters yönde "
+                   f"{round(kat, 1)} kat oynuyor. Yazım hatası olabilir."
+                   if supheli is not None else
+                   f"Girilen koordinatlar karedeki düzenle tutmuyor: mm/piksel "
+                   f"oranı etiketten etikete {round(kat, 1)} kat oynuyor. "
+                   "Etiketler aynı düzlemde değilse ya da bir koordinat "
+                   "yanlış girildiyse böyle olur.")),
     }
 
 

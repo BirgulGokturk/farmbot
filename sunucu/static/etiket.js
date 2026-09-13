@@ -505,6 +505,22 @@
         : `<div class="etiket-satir${y.artik_mm > 3 ? " uyari" : ""}"><span>Sapma</span>
              <span class="mono">${sayi(y.artik_mm, 2)} mm</span></div>`;
 
+      /* KOORDİNAT TUTARLILIĞI. Dört etikette sapma her zaman ~0 çıkıyor
+       * ve yanlış girilmiş bir koordinatı gizliyor: bu satır modele
+       * bakmadan, mm/piksel oranının etiketten etikete kaç kat
+       * oynadığını söylüyor. Dik bakışta 1'e yakın, eğik bakışta 1,2;
+       * bir koordinat yanlışsa katlarca. */
+      const t = y.tutarlilik;
+      if (t && Number.isFinite(Number(t.kat))) {
+        g += `<div class="etiket-satir${t.uyari ? " uyari" : ""}">
+                <span>Koordinat tutarlılığı</span>
+                <span class="mono">${sayi(t.kat, 2)} kat</span></div>`;
+        if (t.uyari) {
+          g += `<div class="etiket-satir uyari"><span>—</span>
+                  <span>${kacisli(t.uyari)}</span></div>`;
+        }
+      }
+
       /* HARİTA AYRI BİR SATIR. Yukarıdaki sapma BENZERLİK modelinin;
        * harita ondan bağımsız ve kendi ölçüsü var. Dörtte sapma
        * ölçülemiyor — "±0,0 mm" yazmaktansa neden ölçülemediğini
