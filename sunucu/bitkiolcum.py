@@ -227,6 +227,39 @@ def yonlendirici_kur(parola_dogrula, canli_kare):
         f.pop("kare", None)      # taban64 kare iki kez gitmesin
         return {"olcum": sonuc, "filiz": f}
 
+    @yon.post("/api/bitkiolcum/kare_kaydet")
+    async def _kare_kaydet(govde: dict[str, Any] | None = None,
+                           jeton: str = Query(default="")):
+        """Çözümleme karesini Pi'ye dosya olarak yazar.
+
+        `gorus.izgara_arac` bir JPEG dosyası istiyor ve o dosyanın,
+        köşelerini tıkladığınız kareyle AYNI kare olması gerekiyor:
+        başka bir çözünürlük ya da başka bir odak, girdiğiniz köşe
+        piksellerini sessizce geçersiz kılar. Kamerayı ikinci kez açmak
+        yerine panelin zaten aldığı kareyi yazıyoruz — hem aynı kare
+        olduğu garanti, hem UVC'nin tekil erişimiyle çakışmıyor.
+        """
+        parola_dogrula(jeton)
+        g = govde or {}
+        kam = kalibrasyon.ad_temizle(g.get("kamera"))
+        try:
+            jpeg = canli_kare(kam)
+            if hasattr(jpeg, "__await__"):
+                jpeg = await jpeg
+        except Exception as hata:                           # noqa: BLE001
+            raise HTTPException(status_code=409, detail=str(hata))
+        if not jpeg:
+            raise HTTPException(status_code=409,
+                                detail=f"[{kam}] taze kare alınamadı.")
+        import datetime as dt
+        dizin = os.path.join(_veri_dizin(), "kareler")
+        os.makedirs(dizin, exist_ok=True)
+        ad = f"izgara_{kam}_{dt.datetime.now():%Y%m%d_%H%M%S}.jpg"
+        yol = os.path.join(dizin, ad)
+        with open(yol, "wb") as d:
+            d.write(jpeg)
+        return {"yol": yol, "boyut": len(jpeg)}
+
     @yon.get("/api/bitkiolcum/gecmis")
     async def _gecmis(gun: int = Query(default=30), jeton: str = Query(default="")):
         parola_dogrula(jeton)

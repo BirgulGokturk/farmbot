@@ -106,7 +106,9 @@
             <span class="mono" id="filiz-secim-liste">—</span>
             <button id="d-filiz-secim-kopya">Kopyala</button>
             <button id="d-filiz-secim-temizle">Temizle</button>
+            <button id="d-filiz-kare-kaydet">Kareyi Pi'ye kaydet</button>
           </div>
+          <p class="alt-not mono" id="filiz-kare-yol"></p>
         </div>
       </details>`;
     $("#d-filiz-bul").onclick = bul;
@@ -118,6 +120,26 @@
       gunluk(`✓ Köşe pikselleri kopyalandı: ${m}`, "ok");
     };
     $("#d-filiz-secim-temizle").onclick = () => { secimler = []; secimYaz(); };
+    /* Izgara aracı bir JPEG dosyası istiyor ve o dosyanın, köşelerini
+     * tıkladığınız kareyle AYNI kare olması gerekiyor: başka bir
+     * çözünürlük girdiğiniz köşe piksellerini sessizce geçersiz kılar. */
+    $("#d-filiz-kare-kaydet").onclick = async () => {
+      const p = P();
+      if (!p) return;
+      const d = $("#d-filiz-kare-kaydet");
+      d.disabled = true;
+      try {
+        const c = await p.apiIste("/api/bitkiolcum/kare_kaydet", {
+          method: "POST", body: JSON.stringify({ kamera: seciliKamera() }),
+        });
+        $("#filiz-kare-yol").textContent = c.yol || "";
+        gunluk(`✓ Kare Pi'ye yazıldı: ${c.yol}`, "ok");
+      } catch (h) {
+        hataYaz(h.message || String(h));
+      } finally {
+        d.disabled = false;
+      }
+    };
   }
 
   /* KÖŞE PİKSELİ OKUMA. `gorus.izgara_arac` dörtgenin dört köşesinin
