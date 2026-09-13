@@ -3452,8 +3452,14 @@ def _kare_yok_gerekce(kamera: str, cevap: dict[str, Any] | None) -> str:
     yas = (simdi - float(k.get("ts") or 0)) if k.get("kare") else None
 
     canli = []
+    yaslar = []
     for a, d in (merkez.canli_kareler or {}).items():
-        if d.get("kare") and (simdi - float(d.get("ts") or 0)) <= COZUMLEME_KARE_YAS_SN:
+        if not d.get("kare"):
+            yaslar.append(f"{a}: kare yok")
+            continue
+        y = simdi - float(d.get("ts") or 0)
+        yaslar.append(f"{a}: {y:.0f} sn")
+        if y <= COZUMLEME_KARE_YAS_SN:
             canli.append(a)
 
     parca = [f"[{ad}] taze kare yok."]
@@ -3473,6 +3479,13 @@ def _kare_yok_gerekce(kamera: str, cevap: dict[str, Any] | None) -> str:
     elif not canli:
         parca.append("Hicbir kameranin canli akisi yok: Kamera sekmesini acin "
                      "ve akisi baslatin.")
+    # SUNUCUNUN GORDUGU HER KAMERA, YASIYLA. "Akisi actim ama ayni hata"
+    # denildiginde tartisma buradan cikiyor: panelde goruntu akiyor
+    # gorunse bile sunucuya kare ULASMIYOR olabilir (ajan akisi hic
+    # baslatamamis, kamerayi baska bir surec tutuyor). Sayiyi yazmak,
+    # hangisinin dogru oldugunu tahmine birakmiyor.
+    parca.append("Sunucudaki kareler — " + ("; ".join(yaslar) if yaslar
+                                            else "hicbir kameradan kare gelmemis"))
     return " ".join(parca)
 
 
