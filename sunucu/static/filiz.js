@@ -209,6 +209,9 @@
       son = null;
       $("#filiz-sonuc").classList.add("gizli");
       $("#filiz-onizleme").classList.add("gizli");
+      // Önizleme gidince köşe seçici de gitmeli: altında kare olmayan
+      // bir "tıklayıp piksel okuyun" kutusu, tıklanacak yer arattırıyor.
+      $("#filiz-secim").classList.add("gizli");
       hataYaz(h.message || String(h));
     } finally {
       d.disabled = false;
