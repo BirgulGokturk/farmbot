@@ -500,6 +500,15 @@ class Gantry:
         threading.Thread(target=self._jog_bekcisi, daemon=True).start()
 
     # --- birim dönüşümü --------------------------------------------------
+    #: Diske EN SON yazılan ofset. Bellekteki değerden ayrı tutuluyor:
+    #: her ⌂'de bellekte düzeltiyoruz ama diske yalnız anlamlı bir kayma
+    #: birikince yazıyoruz.
+    _yazili_ofset: list[float] | None = None
+
+    def _yazili_ofset_kur(self) -> None:
+        if self._yazili_ofset is None:
+            self._yazili_ofset = [self.sifir_ofset(j) for j in range(N)]
+
     def sifir_ofset(self, i: int) -> float:
         """Sayacın gerçeğe göre kaymışlığı, mm. Anahtarda ölçülüyor.
 
@@ -532,10 +541,16 @@ class Gantry:
         return (k.get("dir", 1) * ham / (k.get("cpm", 1) or 1)
                 + k.get("home", 0.0) + self.sifir_ofset(i))
 
-    #: Ofset bu eşiğin altındaysa yazılmıyor. Anahtarın kendi
-    #: tekrarlanabilirliği ve okuma gürültüsü bu mertebede; her ⌂'de
-    #: dosyaya yazmak SD kartı boşuna yorardı.
-    SIFIR_OFSET_ESIGI_MM = 0.1
+    #: Düzeltme bu kadardan küçükse hiç uygulanmıyor. Pratikte tek
+    #: sayımın altı: X'te bir sayım 0.058 mm ve ondan ince bir doğruluk
+    #: yok.
+    SIFIR_UYGULAMA_ESIGI_MM = 0.005
+
+    #: DİSKE bu kadardan büyük değişimlerde yazılıyor. Anahtar her
+    #: kapanışta ±1 sayım farklı yerde duruyor; her ⌂'de dosyaya yazmak
+    #: SD kartı boşuna yorardı. Bellekteki düzeltme yine de uygulanıyor,
+    #: yani panel doğru sayıyı gösteriyor.
+    SIFIR_YAZMA_ESIGI_MM = 0.1
 
     def _anahtarda_sifirla(self, i: int) -> float:
         """Anahtar kapandı: sayacın kaymışlığını ölç ve düzelt. -> düzeltme mm.
@@ -547,21 +562,31 @@ class Gantry:
         hedef = self.home_hedefi(i)
         simdi = self.eksen_konum_mm(i)
         fark = hedef - simdi
-        if abs(fark) < self.SIFIR_OFSET_ESIGI_MM:
+        if abs(fark) < self.SIFIR_UYGULAMA_ESIGI_MM:
             return 0.0
-        yeni = round(self.sifir_ofset(i) + fark, 3)
+        self._yazili_ofset_kur()
+        eski = self.sifir_ofset(i)
+        yeni = round(eski + fark, 3)
         self.kalib[i]["sifir_ofset"] = yeni
-        try:
-            self._kalib_dosyaya_yaz(self.kalib)
-        except Exception as hata:                            # noqa: BLE001
-            # Yazılamadıysa bellekteki düzeltme duruyor ama ajan yeniden
-            # başlayınca kaybolur; sessizce geçmek, sebebi aranmayan bir
-            # kayma demek.
-            self.gunluk_cb(f"Sıfır ofseti diske yazılamadı: {hata}", "uyari")
-        self.gunluk_cb(
-            f"{EKSENLER[i]['ad']} anahtarda: sayaç {simdi:.2f} mm diyordu, "
-            f"anahtar {hedef:.2f} mm'de. Sayaç {fark:+.2f} mm kaymış, "
-            f"düzeltildi (toplam ofset {yeni:+.2f} mm).", "ok")
+        # DİSKE HER SEFERİNDE YAZILMIYOR ama BELLEKTE HER SEFERİNDE
+        # uygulanıyor. Anahtar her kapanışta ±1 sayım farklı yerde
+        # duruyor; o farkı diske yazmak SD kartı boşuna yorar, ama
+        # panelde 0,00 yerine -0,06 göstermek de kullanıcıya "home
+        # tutmadı" dedirtiyor. İkisi ayrı karar.
+        if abs(yeni - self._yazili_ofset[i]) >= self.SIFIR_YAZMA_ESIGI_MM:
+            try:
+                self._kalib_dosyaya_yaz(self.kalib)
+                self._yazili_ofset[i] = yeni
+            except Exception as hata:                        # noqa: BLE001
+                # Yazılamadıysa bellekteki düzeltme duruyor ama ajan
+                # yeniden başlayınca kaybolur; sessizce geçmek, sebebi
+                # aranmayan bir kayma demek.
+                self.gunluk_cb(f"Sıfır ofseti diske yazılamadı: {hata}", "uyari")
+        if abs(fark) >= self.SIFIR_YAZMA_ESIGI_MM:
+            self.gunluk_cb(
+                f"{EKSENLER[i]['ad']} anahtarda: sayaç {simdi:.2f} mm diyordu, "
+                f"anahtar {hedef:.2f} mm'de. Sayaç {fark:+.2f} mm kaymış, "
+                f"düzeltildi (toplam ofset {yeni:+.2f} mm).", "ok")
         return fark
 
     def sinir_icinde(self, i: int, mm: float) -> bool:
@@ -1781,6 +1806,16 @@ class Gantry:
                     return
                 if anahtar is False:
                     anahtar = True      # arama başarılı: artık anahtarda
+                # SAYACI BURADA DÜZELTİYORUZ, `anahtara_sur`DA DEĞİL.
+                #
+                # `anahtara_sur` yalnız anahtar BOŞTAYKEN çağrılıyor.
+                # Olağan durumda koordinat hareketi ekseni zaten anahtara
+                # dayıyor, arama hiç çalışmıyor ve düzeltme de hiç
+                # çalışmıyordu: panel ⌂'den sonra -0,06 mm yazmaya devam
+                # ediyordu. Doğru yer burası — anahtarın basılı olduğu
+                # KESİNLEŞTİĞİ an, hangi yoldan gelindiğinden bağımsız.
+                if anahtar:
+                    self._anahtarda_sifirla(i)
                 self.gunluk_cb(
                     f"{ad} home'da ({self.eksen_konum_mm(i):.2f} mm)"
                     + (" · anahtar basılı" if anahtar else ""), "bilgi")
