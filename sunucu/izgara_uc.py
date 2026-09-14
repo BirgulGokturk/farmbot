@@ -217,6 +217,13 @@ def yonlendirici_kur(parola_dogrula, canli_kare, git_ve_bekle,
             "t_yon": 1.0 if _sayi(g.get("t_yon"), 1.0) >= 0 else -1.0,
             "isaret_yeri": ("t_ucu" if str(g.get("isaret_yeri") or "kafa") == "t_ucu"
                             else "kafa"),
+            # İŞARETİN TAKILI OLDUĞU BAŞLIK. Üç başlık aynı X/Y'de
+            # durmuyor; her birinin kendi kayması var. Komut edilen
+            # makine koordinatı ile işaretin GERÇEKTEN bulunduğu yer
+            # arasındaki fark bu kaymadır ve modele girmezse bütün
+            # harita o kadar ötelenir.
+            "bas": str(g.get("bas") or ""),
+            "bas_dx": 0.0, "bas_dy": 0.0,
         }
         # DURAKLARA T EKLENİYOR. `tur_planla` üç eksen biliyor; T bu
         # projeye özgü ve yılankavi sırayı bozmadan her durağa
@@ -257,6 +264,14 @@ def yonlendirici_kur(parola_dogrula, canli_kare, git_ve_bekle,
             uyarilar.append(
                 "Tek yükseklik: 'uzay' modeli kurulamaz, paralaks çözülmez. "
                 "Topraktan yüksekteki yaprak boyu kadar kayar.")
+        if any(0 <= v <= 5 for v in yukler):
+            # İŞARET TOPRAĞA DEĞECEK KADAR ALÇAK. Tur 24 durakta bu
+            # yükseklikten geçiyor; sıfır yükseklik, işaretin toprak
+            # yüzeyinde sürünmesi demek.
+            uyarilar.append(
+                f"En alçak yükseklik {min(yukler):.1f} mm — işaret neredeyse "
+                "toprağa değiyor. O Z'yi yükseltin ya da işaret ofsetini "
+                "ölçün; ofset 0 girilmişse gerçek değeri kumpasla alın.")
         if any(v < 0 for v in yukler):
             # Z YÖNÜ TERS OLABİLİR. Bu makinede Z yukarı doğru BÜYÜYOR;
             # negatif yükseklik, işaretin toprağın altında olduğunu
@@ -265,6 +280,25 @@ def yonlendirici_kur(parola_dogrula, canli_kare, git_ve_bekle,
             uyarilar.append(
                 f"Yükseklik negatif çıktı ({yukler}). Girilen Z değerleri "
                 "toprak Z'sinin ALTINDA kalıyor ya da toprak Z'si yanlış.")
+        # BAŞLIK KAYMASI AJANDAN OKUNUYOR, ELLE GİRİLMİYOR.
+        #
+        # `bas-git` düğmelerinin kuralı: başlığı (x, y)'ye koymak için
+        # makineye (x+dx, y+dy) komut ediliyor. Tersi de doğru — makineye
+        # (X, Y) dersek işaret (X−dx, Y−dy)'de durur. Kayma zaten uç
+        # ayarlarında ölçülü; ikinci bir kutuya elle yazdırmak, iki sayının
+        # ayrışacağı bir yer daha açmak olurdu.
+        if ayar["bas"] and komut_gonder is not None:
+            try:
+                cv = await komut_gonder("uc_listele", {})
+                b_ = (((cv or {}).get("veri") or {}).get("baslar")
+                      or {}).get(ayar["bas"]) or {}
+                ayar["bas_dx"] = _sayi(b_.get("dx"))
+                ayar["bas_dy"] = _sayi(b_.get("dy"))
+            except Exception as hata:                       # noqa: BLE001
+                uyarilar.append(
+                    f"Başlık kayması okunamadı ({hata}); 0 sayıldı. İşaret "
+                    "kafanın referans noktasında değilse harita o kadar ötelenir.")
+
         # ÇARPMA ÖNLENİYOR: HER DURAK MAKİNEYE SORULUYOR.
         #
         # Yumuşak sınırları ve yasak bölgeleri sunucuda KOPYALAMIYORUZ —
@@ -317,6 +351,8 @@ def yonlendirici_kur(parola_dogrula, canli_kare, git_ve_bekle,
                          for x, y, z_, tv in plan],
                 "durak": len(plan), "yukseklikler_mm": yukler,
                 "engelli": len(engelli), "uyarilar": uyarilar,
+                "bas": ayar["bas"],
+                "bas_kayma": [round(ayar["bas_dx"], 1), round(ayar["bas_dy"], 1)],
                 "durum": _durum()}
 
     @yon.post("/api/izgara/nokta")
@@ -341,6 +377,16 @@ def yonlendirici_kur(parola_dogrula, canli_kare, git_ve_bekle,
         except (KeyError, TypeError, ValueError):
             raise HTTPException(status_code=422, detail="x, y, z sayı olmalı")
         t_hedef = None if g.get("t") in (None, "") else _sayi(g.get("t"))
+
+        # BAŞLIK TURUN BAŞINDA BİR KEZ SEÇİLİYOR. İşaret sulama ucuna
+        # takıldıysa servo başka bir başlıktayken tur atmak, işareti
+        # kadrajda bambaşka bir yerde aramak demek.
+        if g.get("ilk") and ayar.get("bas") and komut_gonder is not None:
+            cevap = await komut_gonder("uc_sec", {"bas": ayar["bas"]})
+            if not (cevap or {}).get("ok", True):
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"Başlık seçilemedi: {(cevap or {}).get('mesaj') or ''}")
 
         # SIRA ŞART: T YUKARI -> YATAY HAREKET -> T AŞAĞI.
         #
@@ -402,9 +448,14 @@ def yonlendirici_kur(parola_dogrula, canli_kare, git_ve_bekle,
                 _oturum["kacirilan"].append({"x_mm": x, "y_mm": y,
                                              "z_mm": z, "t_mm": t_hedef})
             else:
+                # İŞARETİN GERÇEK YERİ KOMUT EDİLEN NOKTA DEĞİL.
+                # Makineye (X, Y) dendiğinde başlık (X−dx, Y−dy)'de
+                # duruyor; modele giren mm, işaretin durduğu yer olmalı.
                 _oturum["noktalar"].append(
                     m.Nokta(u_px=float(bulgu.u_px), v_px=float(bulgu.v_px),
-                            x_mm=x, y_mm=y, h_mm=h, etiket=str(bulgu.not_ or "")))
+                            x_mm=x - _sayi(ayar.get("bas_dx")),
+                            y_mm=y - _sayi(ayar.get("bas_dy")),
+                            h_mm=h, etiket=str(bulgu.not_ or "")))
 
         return {"bulundu": bulgu is not None,
                 "u_px": None if bulgu is None else round(float(bulgu.u_px), 2),

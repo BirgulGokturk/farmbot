@@ -76,6 +76,14 @@
           <label>Bekleme (sn) <input type="number" id="iz-bekleme" value="1.2" step="0.1"></label>
         </div>
         <div class="satir">
+          <label>İşaret hangi başlıkta
+            <select id="iz-bas">
+              <option value="">Seçme (kayma 0 sayılır)</option>
+              <option value="sulama">💧 Sulama başlığı</option>
+              <option value="nem">🌡️ Nem probu</option>
+              <option value="tohum">🌱 Tohum ucu</option>
+            </select>
+          </label>
           <label>İşaret nerede
             <select id="iz-yer">
               <option value="kafa">Kafada (T oynamıyor)</option>
@@ -94,6 +102,13 @@
             </select>
           </label>
         </div>
+        <p class="alt-not">
+          <b>Başlık seçimi iki iş yapıyor:</b> turun başında servo o
+          başlığa alınıyor, ve o başlığın <b>kayması</b> modele işleniyor.
+          Üç başlık aynı X/Y'de durmuyor — makineye X/Y dendiğinde başlık
+          kayması kadar ötede oluyor; bu modele girmezse bütün harita o
+          kadar ötelenir. Kayma uç ayarlarından okunuyor, elle girilmiyor.
+        </p>
         <p class="alt-not">
           <b>Toprağa T ile ulaşmak</b> ölçümü kolaylaştırıyor: prob kendi
           ekseniyle iniyor, kafayı toprağa yaklaştırmak gerekmiyor. Ama
@@ -196,6 +211,7 @@
       t_toprak_mm: ($("#iz-ttoprak").value === "" ? null : s("#iz-ttoprak")),
       t_yon: Number($("#iz-tyon").value),
       isaret_yeri: $("#iz-yer").value,
+      bas: $("#iz-bas").value,
       z_toprak_mm: s("#iz-ztoprak"),
       isaret_ofset_mm: s("#iz-ofset"),
       bekleme_sn: s("#iz-bekleme"),
@@ -214,6 +230,10 @@
       durum = c.durum || durum;
       let h = `<b>${c.durak}</b> durak · yükseklikler ${(c.yukseklikler_mm || []).join(", ")} mm`;
       if (c.engelli) h += ` · <span class="uyari">${c.engelli} durak elendi</span>`;
+      if (c.bas) {
+        h += `<br>başlık <b>${kacisli(c.bas)}</b> · kayma `
+          + `${(c.bas_kayma || []).join(" / ")} mm (modele işlendi)`;
+      }
       (c.uyarilar || []).forEach((u) => {
         h += `<br><span class="uyari">${kacisli(u)}</span>`;
       });
@@ -244,7 +264,7 @@
         try {
           const c = await p.apiIste("/api/izgara/nokta", {
             method: "POST",
-            body: JSON.stringify({ x, y, z, t: tv, onay: true }),
+            body: JSON.stringify({ x, y, z, t: tv, onay: true, ilk: i === 0 }),
           });
           durum = c.durum || durum;
           if (c.bulundu) bulunan++; else kacan++;
