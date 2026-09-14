@@ -77,14 +77,36 @@ def _sayi(deger: Any, varsayilan: float = 0.0) -> float:
         return varsayilan
 
 
-def yukseklik(z_makine: float, z_toprak_mm: float, isaret_ofset_mm: float) -> float:
-    """İşaretin toprak YÜZEYİNDEN yüksekliği — paketin `Tur.yukseklik`i.
+def yukseklik(z_makine: float, z_toprak_mm: float, isaret_ofset_mm: float,
+              t_makine: float | None = None, t_toprak_mm: float | None = None,
+              t_yon: float = 1.0, isaret_yeri: str = "kafa") -> float:
+    """İşaretin toprak YÜZEYİNDEN yüksekliği.
 
-    Ayrı yazıldı çünkü tur burada nokta nokta sürülüyor; `Tur` sınıfı
-    bütün turu kendi döngüsünde çalıştırıyor ve o döngü HTTP'ye uymuyor.
-    Formül birebir aynı tutuldu.
+    Paketin `Tur.yukseklik`i ile aynı temel: `(Z − Z_toprak) + ofset`.
+    Tur burada nokta nokta sürüldüğü için ayrı yazıldı.
+
+    T NEREDE FARK EDİYOR — ve nerede etmiyor.
+
+    Toprağa T ile ulaşmak ölçümü kolaylaştırıyor: prob kendi ekseniyle
+    iniyor, kafayı toprağa yaklaştırmak gerekmiyor. Ama işaret KAFADA
+    duruyorsa T'nin konumu işareti oynatmıyor — işaretin yüksekliği
+    yalnız kafanın Z'sine bağlı. `isaret_ofset_mm` zaten "prob toprağa
+    DEĞERKEN işaretin toprak yüzeyinden yüksekliği" diye ölçülüyor, yani
+    o andaki T uzamasını içinde taşıyor. Bu durumda T'yi formüle ikinci
+    kez sokmak, aynı mesafeyi iki kez saymak olurdu.
+
+    İşaret T ARABASINA (ucun kendisine) yapıştırılmışsa durum tersine
+    dönüyor: T indikçe işaret de iniyor ve T, Z'den daha ince bir
+    yükseklik ekseni oluyor. O zaman katkı gerçek.
+
+    `t_yon`: T sayısı BÜYÜRKEN uç aşağı iniyorsa +1, yukarı çıkıyorsa −1.
+    Bu eksenin yönü kalibrasyondan geliyor ve makineye göre değişiyor;
+    varsayıp yanlış işaretle kurmaktansa soruyoruz.
     """
-    return (float(z_makine) - float(z_toprak_mm)) + float(isaret_ofset_mm)
+    h = (float(z_makine) - float(z_toprak_mm)) + float(isaret_ofset_mm)
+    if isaret_yeri == "t_ucu" and t_makine is not None and t_toprak_mm is not None:
+        h += float(t_yon) * (float(t_toprak_mm) - float(t_makine))
+    return h
 
 
 def _bgr_coz(jpeg: bytes):
@@ -125,7 +147,8 @@ def temizle() -> dict[str, Any]:
 # --------------------------------------------------------------------------- #
 # HTTP
 # --------------------------------------------------------------------------- #
-def yonlendirici_kur(parola_dogrula, canli_kare, git_ve_bekle):
+def yonlendirici_kur(parola_dogrula, canli_kare, git_ve_bekle,
+                     komut_gonder=None):
     """`git_ve_bekle(x, y, z)` hareketi yapıp BİTMESİNİ bekliyor, sorunu döner.
 
     `otokalib` ile aynı iki bağımlılık: ikinci bir hareket yolu açmak,
@@ -175,12 +198,32 @@ def yonlendirici_kur(parola_dogrula, canli_kare, git_ve_bekle):
             "ny": int(_sayi(g.get("ny"), 6)),
             "pay_mm": _sayi(g.get("pay_mm"), 40.0),
             "z": z,
+            # T: turun her durağında bu konum uygulanıyor. Boş bırakılırsa
+            # T hiç sürülmüyor ve yukarıda kalıyor.
+            "t": [_sayi(v) for v in (g.get("t") or [])],
+            "t_toprak_mm": (None if g.get("t_toprak_mm") in (None, "")
+                            else _sayi(g.get("t_toprak_mm"))),
+            "t_yon": 1.0 if _sayi(g.get("t_yon"), 1.0) >= 0 else -1.0,
+            "isaret_yeri": ("t_ucu" if str(g.get("isaret_yeri") or "kafa") == "t_ucu"
+                            else "kafa"),
         }
-        plan = t.tur_planla(yatak_mm=tuple(ayar["yatak"][:2]),
-                            nx=ayar["nx"], ny=ayar["ny"],
-                            pay_mm=ayar["pay_mm"], z_listesi=tuple(z))
+        # DURAKLARA T EKLENİYOR. `tur_planla` üç eksen biliyor; T bu
+        # projeye özgü ve yılankavi sırayı bozmadan her durağa
+        # kopyalanıyor. İşaret T arabasındaysa yükseklik çeşitliliğini
+        # T veriyor, o zaman her T değeri için ayrı bir tur geçiliyor.
+        tl = ayar["t"] or [None]
+        plan = []
+        for tv in tl:
+            for x_, y_, z_ in t.tur_planla(yatak_mm=tuple(ayar["yatak"][:2]),
+                                           nx=ayar["nx"], ny=ayar["ny"],
+                                           pay_mm=ayar["pay_mm"],
+                                           z_listesi=tuple(z)):
+                plan.append((x_, y_, z_, tv))
         yukler = sorted({round(yukseklik(v, ayar["z_toprak_mm"],
-                                         ayar["isaret_ofset_mm"]), 2) for v in z})
+                                         ayar["isaret_ofset_mm"], tv,
+                                         ayar["t_toprak_mm"], ayar["t_yon"],
+                                         ayar["isaret_yeri"]), 2)
+                         for v in z for tv in tl})
         uyarilar = []
         if len(yukler) < 2:
             uyarilar.append(
@@ -194,10 +237,16 @@ def yonlendirici_kur(parola_dogrula, canli_kare, git_ve_bekle):
             uyarilar.append(
                 f"Yükseklik negatif çıktı ({yukler}). Girilen Z değerleri "
                 "toprak Z'sinin ALTINDA kalıyor ya da toprak Z'si yanlış.")
+        if ayar["isaret_yeri"] == "t_ucu" and (
+                not ayar["t"] or ayar["t_toprak_mm"] is None):
+            uyarilar.append(
+                "İşaret T ucunda seçildi ama T değerleri ya da toprak T'si "
+                "girilmedi: T'nin yükseklik katkısı hesaplanamaz.")
         with _KILIT:
             _oturum["ayar"] = ayar
-        return {"plan": [[round(x, 2), round(y, 2), round(z_, 2)]
-                         for x, y, z_ in plan],
+        return {"plan": [[round(x, 2), round(y, 2), round(z_, 2),
+                          None if tv is None else round(tv, 2)]
+                         for x, y, z_, tv in plan],
                 "durak": len(plan), "yukseklikler_mm": yukler,
                 "uyarilar": uyarilar, "durum": _durum()}
 
@@ -222,10 +271,33 @@ def yonlendirici_kur(parola_dogrula, canli_kare, git_ve_bekle):
             x, y, z = (float(g["x"]), float(g["y"]), float(g["z"]))
         except (KeyError, TypeError, ValueError):
             raise HTTPException(status_code=422, detail="x, y, z sayı olmalı")
+        t_hedef = None if g.get("t") in (None, "") else _sayi(g.get("t"))
+
+        # SIRA ŞART: T YUKARI -> YATAY HAREKET -> T AŞAĞI.
+        #
+        # Tohum ucu aşağıdayken X/Y sürmek ucu toprağa sürtmek demek ve
+        # ajan bunu zaten reddediyor (`t_yatay_engel`). Reddi hataya
+        # çevirip turu düşürmektense doğru sırayı burada kuruyoruz.
+        if komut_gonder is not None:
+            try:
+                await komut_gonder("tohum_ucu", {"yukari": True})
+            except Exception as hata:                       # noqa: BLE001
+                raise HTTPException(status_code=409,
+                                    detail=f"Tohum ucu yukarı çekilemedi: {hata}")
 
         sorun = await git_ve_bekle(x, y, z, GIT_ZAMAN_ASIMI_SN)
         if sorun:
             raise HTTPException(status_code=409, detail=sorun)
+
+        if t_hedef is not None and komut_gonder is not None:
+            # `t_git` ajanda SENKRON: dönünce eksen yerine oturmuş olur,
+            # ayrıca bir bekleme yolu kurmaya gerek yok.
+            cevap = await komut_gonder("tohum_ucu", {"mm": t_hedef})
+            if not (cevap or {}).get("ok", True):
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"Tohum ucu {t_hedef} mm'ye inemedi: "
+                           f"{(cevap or {}).get('mesaj') or ''}")
         # Titreşim sönsün: hareket biter bitmez alınan kare bulanık olur
         # ve bulanıklık doğrudan işaret merkezini kaydırır.
         await asyncio.sleep(ayar.get("bekleme_sn", VARSAYILAN_BEKLEME_SN))
@@ -249,14 +321,17 @@ def yonlendirici_kur(parola_dogrula, canli_kare, git_ve_bekle):
 
         bulucu = AprilTagBulucu(kimlik=ayar["kimlik"])
         bulgu = await asyncio.to_thread(bulucu.bul, kare)
-        h = yukseklik(z, ayar["z_toprak_mm"], ayar["isaret_ofset_mm"])
+        h = yukseklik(z, ayar["z_toprak_mm"], ayar["isaret_ofset_mm"],
+                      t_hedef, ayar.get("t_toprak_mm"), ayar.get("t_yon", 1.0),
+                      ayar.get("isaret_yeri", "kafa"))
 
         with _KILIT:
             _oturum["kare_boyu"] = [int(kare.shape[1]), int(kare.shape[0])]
             if _oturum["baslangic"] is None:
                 _oturum["baslangic"] = time.time()
             if bulgu is None:
-                _oturum["kacirilan"].append({"x_mm": x, "y_mm": y, "z_mm": z})
+                _oturum["kacirilan"].append({"x_mm": x, "y_mm": y,
+                                             "z_mm": z, "t_mm": t_hedef})
             else:
                 _oturum["noktalar"].append(
                     m.Nokta(u_px=float(bulgu.u_px), v_px=float(bulgu.v_px),

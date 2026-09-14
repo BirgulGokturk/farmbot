@@ -3575,7 +3575,7 @@ app.include_router(otokalib.yonlendirici_kur(
 # TAM cozunurlukten aliniyor: isaretin merkezi piksel altinda olculuyor
 # ve kucultulmus bir karede o hassasiyet bastan kayboluyor.
 app.include_router(izgara_uc.yonlendirici_kur(
-    _parola_dogrula, _cozumleme_karesi, _git_ve_bekle))
+    _parola_dogrula, _cozumleme_karesi, _git_ve_bekle, merkez.komut_gonder))
 
 
 # --------------------------------------------------------------------------- #

@@ -68,6 +68,40 @@
           <label>Z yüksek <input type="number" id="iz-z2" step="1"></label>
           <label>Bekleme (sn) <input type="number" id="iz-bekleme" value="1.2" step="0.1"></label>
         </div>
+        <div class="satir">
+          <label>İşaret nerede
+            <select id="iz-yer">
+              <option value="kafa">Kafada (T oynamıyor)</option>
+              <option value="t_ucu">T ucunda (T ile iniyor)</option>
+            </select>
+          </label>
+          <label>T alçak <input type="number" id="iz-t1" step="0.1"></label>
+          <label>T yüksek <input type="number" id="iz-t2" step="0.1"></label>
+        </div>
+        <div class="satir">
+          <label>Toprak T'si (mm) <input type="number" id="iz-ttoprak" step="0.1"></label>
+          <label>T yönü
+            <select id="iz-tyon">
+              <option value="1">T büyürken uç iniyor</option>
+              <option value="-1">T büyürken uç çıkıyor</option>
+            </select>
+          </label>
+        </div>
+        <p class="alt-not">
+          <b>Toprağa T ile ulaşmak</b> ölçümü kolaylaştırıyor: prob kendi
+          ekseniyle iniyor, kafayı toprağa yaklaştırmak gerekmiyor. Ama
+          işaret <b>kafadaysa</b> T'nin konumu işareti oynatmıyor —
+          <i>İşaret ofseti</i> zaten prob toprağa değerken ölçüldüğü için
+          o uzamayı içinde taşıyor; ikinci kez saymak aynı mesafeyi iki kez
+          saymak olurdu. İşaret <b>T ucundaysa</b> katkı gerçek ve T,
+          Z'den daha ince bir yükseklik ekseni oluyor.
+        </p>
+        <p class="alt-not">
+          T alanları boş bırakılırsa T hiç sürülmüyor, yukarıda kalıyor.
+          Dolu ise her durakta sıra şu: <b>T yukarı → yatay hareket →
+          T aşağı</b>. Tohum ucu aşağıdayken X/Y sürmek ucu toprağa
+          sürtmek demek ve ajan bunu zaten reddediyor.
+        </p>
         <p class="alt-not">
           <b>İki yükseklik şart.</b> Tek yükseklikte model yalnız o düzlem
           için geçerli olur ve topraktan yüksekteki yaprak <b>boyu kadar</b>
@@ -151,6 +185,10 @@
       nx: s("#iz-nx"), ny: s("#iz-ny"), pay_mm: s("#iz-pay"),
       kimlik: s("#iz-kimlik"),
       z: [s("#iz-z1"), s("#iz-z2")].filter((v) => Number.isFinite(v)),
+      t: [s("#iz-t1"), s("#iz-t2")].filter((v) => Number.isFinite(v)),
+      t_toprak_mm: ($("#iz-ttoprak").value === "" ? null : s("#iz-ttoprak")),
+      t_yon: Number($("#iz-tyon").value),
+      isaret_yeri: $("#iz-yer").value,
       z_toprak_mm: s("#iz-ztoprak"),
       isaret_ofset_mm: s("#iz-ofset"),
       bekleme_sn: s("#iz-bekleme"),
@@ -191,13 +229,14 @@
     try {
       for (let i = 0; i < plan.length; i++) {
         if (durdurUlsun) { gunluk("Izgara turu durduruldu", "uyari"); break; }
-        const [x, y, z] = plan[i];
+        const [x, y, z, tv] = plan[i];
         ilerlemeYaz(`Durak <b>${i + 1}/${plan.length}</b> — X${x} Y${y} Z${z}`
+          + (tv == null ? "" : ` T${tv}`)
           + `<br>bulunan ${bulunan} · kaçan ${kacan}`);
         try {
           const c = await p.apiIste("/api/izgara/nokta", {
             method: "POST",
-            body: JSON.stringify({ x, y, z, onay: true }),
+            body: JSON.stringify({ x, y, z, t: tv, onay: true }),
           });
           durum = c.durum || durum;
           if (c.bulundu) bulunan++; else kacan++;
