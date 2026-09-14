@@ -500,13 +500,69 @@ class Gantry:
         threading.Thread(target=self._jog_bekcisi, daemon=True).start()
 
     # --- birim dönüşümü --------------------------------------------------
+    def sifir_ofset(self, i: int) -> float:
+        """Sayacın gerçeğe göre kaymışlığı, mm. Anahtarda ölçülüyor.
+
+        NEDEN VAR. Eksen kayınca (kayış atlaması, sürücü adım kaçırması)
+        PLC sayacı yanlış kalıyor ve ⌂ eksenı anahtara götürse bile panel
+        eski, yanlış sayıyı yazıyor — sahada X anahtardayken eksi
+        okunuyordu. Anahtar FİZİKSEL bir yer: kapandığı anda eksenin
+        gerçekte nerede olduğu biliniyor, o yüzden ölçülebilen tek şey
+        sayacın ne kadar kaydığı.
+
+        AYRI BİR ALAN, `home`A EKLENMİYOR. `home` ölçeğin kaydırması ve
+        `min`/`max` denetimleri ona göre yazılmış: `dir` pozitifken
+        `min >= home` isteniyor, çünkü sayaç negatif olmaz varsayılıyor.
+        Kaymış bir eksende sayaç NEGATİF olabiliyor ve düzeltmeyi `home`a
+        yazmak o denetimi kırıp geçerli bir kalibrasyonu reddettiriyordu.
+        Ofset ayrı durunca `home`, `min`, `max` hiç değişmiyor.
+        """
+        try:
+            return float(self.kalib[i].get("sifir_ofset") or 0.0)
+        except (TypeError, ValueError):
+            return 0.0
+
     def mm_den_ham(self, i: int, mm: float) -> float:
         k = self.kalib[i]
-        return k.get("dir", 1) * (mm - k.get("home", 0.0)) * (k.get("cpm", 1) or 1)
+        return (k.get("dir", 1) * (mm - k.get("home", 0.0) - self.sifir_ofset(i))
+                * (k.get("cpm", 1) or 1))
 
     def ham_dan_mm(self, i: int, ham: float) -> float:
         k = self.kalib[i]
-        return k.get("dir", 1) * ham / (k.get("cpm", 1) or 1) + k.get("home", 0.0)
+        return (k.get("dir", 1) * ham / (k.get("cpm", 1) or 1)
+                + k.get("home", 0.0) + self.sifir_ofset(i))
+
+    #: Ofset bu eşiğin altındaysa yazılmıyor. Anahtarın kendi
+    #: tekrarlanabilirliği ve okuma gürültüsü bu mertebede; her ⌂'de
+    #: dosyaya yazmak SD kartı boşuna yorardı.
+    SIFIR_OFSET_ESIGI_MM = 0.1
+
+    def _anahtarda_sifirla(self, i: int) -> float:
+        """Anahtar kapandı: sayacın kaymışlığını ölç ve düzelt. -> düzeltme mm.
+
+        `home_hedefi(i)` anahtarın FİZİKSEL olarak bulunduğu mm. Anahtar
+        kapalıyken konum o değeri okumalı; okumuyorsa aradaki fark
+        sayacın kaymasıdır.
+        """
+        hedef = self.home_hedefi(i)
+        simdi = self.eksen_konum_mm(i)
+        fark = hedef - simdi
+        if abs(fark) < self.SIFIR_OFSET_ESIGI_MM:
+            return 0.0
+        yeni = round(self.sifir_ofset(i) + fark, 3)
+        self.kalib[i]["sifir_ofset"] = yeni
+        try:
+            self._kalib_dosyaya_yaz(self.kalib)
+        except Exception as hata:                            # noqa: BLE001
+            # Yazılamadıysa bellekteki düzeltme duruyor ama ajan yeniden
+            # başlayınca kaybolur; sessizce geçmek, sebebi aranmayan bir
+            # kayma demek.
+            self.gunluk_cb(f"Sıfır ofseti diske yazılamadı: {hata}", "uyari")
+        self.gunluk_cb(
+            f"{EKSENLER[i]['ad']} anahtarda: sayaç {simdi:.2f} mm diyordu, "
+            f"anahtar {hedef:.2f} mm'de. Sayaç {fark:+.2f} mm kaymış, "
+            f"düzeltildi (toplam ofset {yeni:+.2f} mm).", "ok")
+        return fark
 
     def sinir_icinde(self, i: int, mm: float) -> bool:
         k = self.kalib[i]
@@ -649,6 +705,11 @@ class Gantry:
                 "plc": "bagli",
                 "konum": {"x": konum[0], "y": konum[1], "z": konum[2],
                           "t": konum[3]},
+                # SAYACIN KAYMIŞLIĞI. Sıfırdan farklıysa eksen bir yerde
+                # kaymış ve anahtarda düzeltilmiş demek; panelde görünmesi
+                # "makine neden başka bir sayı yazıyordu" sorusunun cevabı.
+                "sifir_ofset": {EKSENLER[i]["ad"].lower(): self.sifir_ofset(i)
+                                for i in range(N)},
                 # TOHUM UCU: kendi ekseni, kendi hâli. Panel ve 3B sahne
                 # buradan okuyor; "aşağıda mı" sorusunun cevabı ölçülen
                 # konumdan geliyor, hatırlanan bir bayraktan değil.
@@ -1480,7 +1541,11 @@ class Gantry:
         if anahtar is None:
             return True                 # anahtar yok/kapalı: karar veremeyiz
         if anahtar:
-            return True                 # zaten üstünde
+            # ZATEN ÜSTÜNDE OLMAK DA BİR ÖLÇÜMDÜR. Eksen anahtardaysa
+            # gerçek konumu biliyoruz; sayaç başka bir şey diyorsa
+            # düzeltilecek yer burası.
+            self._anahtarda_sifirla(i)
+            return True
         reg = EKSENLER[i]["jogb"]
         # YAVAŞ YAKLAŞ. Jog hızı PLC'nin `jX_jog_hiz` registerından
         # geliyor ve son hareketten kalma değeri taşıyor; aramaya onunla
@@ -1508,6 +1573,7 @@ class Gantry:
                 self.mb.yaz(reg, 1)
                 time.sleep(JOG_TICK)
                 if self.home_anahtari_acik(i):
+                    self._anahtarda_sifirla(i)
                     return True
                 simdi_mm = self.eksen_konum_mm(i)
                 if abs(simdi_mm - son_konum) > 0.05:
