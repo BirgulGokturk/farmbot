@@ -552,7 +552,8 @@ class Gantry:
     #: yani panel doğru sayıyı gösteriyor.
     SIFIR_YAZMA_ESIGI_MM = 0.1
 
-    def _anahtarda_sifirla(self, i: int) -> float:
+    def _anahtarda_sifirla(self, i: int,
+                           olculen: float | None = None) -> float:
         """Anahtar kapandı: sayacın kaymışlığını ölç ve düzelt. -> düzeltme mm.
 
         `home_hedefi(i)` anahtarın FİZİKSEL olarak bulunduğu mm. Anahtar
@@ -560,7 +561,10 @@ class Gantry:
         sayacın kaymasıdır.
         """
         hedef = self.home_hedefi(i)
-        simdi = self.eksen_konum_mm(i)
+        # KONUM DIŞARIDAN GELEBİLİR. Durum döngüsü dört ekseni zaten tek
+        # blokta okuyor; aynı değeri ikinci kez sormak boşuna Modbus
+        # trafiği ve saniyede beş kez yapılıyor.
+        simdi = self.eksen_konum_mm(i) if olculen is None else float(olculen)
         fark = hedef - simdi
         if abs(fark) < self.SIFIR_UYGULAMA_ESIGI_MM:
             return 0.0
@@ -588,6 +592,45 @@ class Gantry:
                 f"anahtar {hedef:.2f} mm'de. Sayaç {fark:+.2f} mm kaymış, "
                 f"düzeltildi (toplam ofset {yeni:+.2f} mm).", "ok")
         return fark
+
+    #: Anahtar kapalıyken sayaç KAÇ KEZ sıfırlanır: bir kez, kapanma
+    #: başına. Her turda yeniden yazmak, anahtarın kapalı kaldığı
+    #: mesafe boyunca konumu 0'a çakılı tutar ve eksen gerçekte
+    #: kımıldarken panel kımıldamıyor gösterirdi.
+    _anahtar_uygulandi: list[bool] | None = None
+
+    def _anahtarda_sayaci_tut(self, konum: list[float], home_ham: list[Any],
+                              jog_var: bool) -> list[float]:
+        """Anahtarı kapalı olan eksende sayacı anahtarın mm'sine oturtur.
+
+        KENARDA DEĞİL, DURUNCA. Anahtar kapandığı ilk anda eksen hâlâ
+        yavaşlıyor olabiliyor ve o an okunan konum, duracağı yer değil.
+        Hareket bitip anahtar hâlâ kapalıysa düzeltiliyor; kapanma başına
+        BİR KEZ, çünkü her turda yeniden yazmak anahtarın kapalı kaldığı
+        mesafe boyunca konumu sıfıra çakılı tutardı.
+        """
+        if self._anahtar_uygulandi is None:
+            self._anahtar_uygulandi = [False] * N
+        hareketli = self.hareket_ediyor or jog_var
+        for i in range(N):
+            h = home_ham[i] if i < len(home_ham) else None
+            if h is None or EKSENLER[i]["ad"].lower() not in self.home_anahtari:
+                continue
+            if not bool(h):
+                # Anahtar açıldı: bir sonraki kapanışta yeniden ölçülecek.
+                self._anahtar_uygulandi[i] = False
+                continue
+            if hareketli or self._anahtar_uygulandi[i] or kalibresiz_mi(self.kalib[i]):
+                continue
+            try:
+                self._anahtarda_sifirla(i, konum[i] if i < len(konum) else None)
+            except Exception as hata:                        # noqa: BLE001
+                self.gunluk_cb(f"Sayaç sıfırlanamadı: {hata}", "uyari")
+                continue
+            self._anahtar_uygulandi[i] = True
+            if i < len(konum):
+                konum[i] = round(self.home_hedefi(i), 2)
+        return konum
 
     def sinir_icinde(self, i: int, mm: float) -> bool:
         k = self.kalib[i]
@@ -725,6 +768,13 @@ class Gantry:
                 home_ham = [None] * N
             with self._jog_kilit:
                 jog_acik = sorted({f"{EKSENLER[i]['ad']}{'+' if k == 'jogf' else '-'}" for (i, k) in self._jog})
+            # ANAHTAR BASILIYSA SAYAÇ ORADA SIFIRLANIR — ⌂ dizisini
+            # beklemeden. Düzeltme önce yalnız home işçisinde vardı ve
+            # soru haklı olarak şuydu: anahtara basıldıysa konum zaten
+            # bilinir, neden 0,00 yazmıyor? Anahtarlar bu döngüde zaten
+            # okunuyor (tek blok, fazladan Modbus trafiği yok), konum da
+            # burada; düzeltmenin yeri burası.
+            konum = self._anahtarda_sayaci_tut(konum, home_ham, bool(jog_acik))
             self.son_hata = None
             return {
                 "plc": "bagli",
