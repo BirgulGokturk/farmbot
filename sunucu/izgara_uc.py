@@ -126,6 +126,35 @@ def _bgr_coz(jpeg: bytes):
     return cv2.imdecode(np.frombuffer(jpeg, dtype=np.uint8), cv2.IMREAD_COLOR)
 
 
+def _aralik(bas: float, son: float, adet: int) -> list[float]:
+    """`bas` ile `son` arasında eşit aralıklı `adet` sayı (uçlar dahil)."""
+    adet = max(2, int(adet))
+    adim = (float(son) - float(bas)) / (adet - 1)
+    return [round(float(bas) + i * adim, 2) for i in range(adet)]
+
+
+def _kutu_coz(ayar: dict[str, Any], g: dict[str, Any]) -> tuple[float, float, float, float]:
+    """Izgaranın gezeceği dikdörtgen: dikim alanı, açık kutu ya da yatak.
+
+    Sıra önemli: kullanıcı bir alan seçtiyse onun sınırları kazanıyor.
+    Yatak ölçüsü yalnız hiçbiri verilmediğinde kullanılıyor ve o da
+    başlangıç noktasından sayıyor.
+    """
+    ad = ayar.get("alan") or ""
+    if ad:
+        import dikim
+        for a_ in dikim.listele():
+            if str(a_.get("ad")) == ad:
+                return (float(a_["x1"]), float(a_["y1"]),
+                        float(a_["x2"]), float(a_["y2"]))
+        raise ValueError(f"'{ad}' adlı dikim alanı yok")
+    if all(k in g and g[k] not in (None, "") for k in ("x1", "y1", "x2", "y2")):
+        x1, x2 = sorted((_sayi(g["x1"]), _sayi(g["x2"])))
+        y1, y2 = sorted((_sayi(g["y1"]), _sayi(g["y2"])))
+        return (x1, y1, x2, y2)
+    return (0.0, 0.0, float(ayar["yatak"][0]), float(ayar["yatak"][1]))
+
+
 def _durum() -> dict[str, Any]:
     with _KILIT:
         n = list(_oturum["noktalar"])
@@ -189,6 +218,25 @@ def yonlendirici_kur(parola_dogrula, canli_kare, git_ve_bekle,
         d["model_var"] = bool(kam) and os.path.exists(_model_yolu(kam))
         return d
 
+    @yon.get("/api/izgara/alanlar")
+    async def _alanlar(jeton: str = Query(default="")):
+        """Dikim alanları — ızgara bunlardan birinin İÇİNDE geziyor.
+
+        Yatağın tamamını taramak yerine alan seçmek, kalibrasyonu
+        gerçekten kullanılacak bölgeye yoğunlaştırıyor. Paketin kendi
+        uyarısı da bu yönde: kalibre edilen bölgenin dışı UZATMADIR,
+        hatası ölçülmemiştir.
+        """
+        parola_dogrula(jeton)
+        try:
+            import dikim
+            alanlar = dikim.listele()
+        except Exception as hata:                           # noqa: BLE001
+            raise HTTPException(status_code=503, detail=str(hata))
+        return {"alanlar": [{"ad": a_.get("ad"), "x1": a_.get("x1"),
+                             "y1": a_.get("y1"), "x2": a_.get("x2"),
+                             "y2": a_.get("y2")} for a_ in alanlar]}
+
     @yon.post("/api/izgara/plan")
     async def _plan(govde: dict[str, Any] | None = None, jeton: str = Query(default="")):
         """Durakları üretir. HAREKET YOK — plan görülmeden tur başlamasın."""
@@ -205,6 +253,7 @@ def yonlendirici_kur(parola_dogrula, canli_kare, git_ve_bekle,
             "isaret_ofset_mm": _sayi(g.get("isaret_ofset_mm")),
             "bekleme_sn": max(0.0, _sayi(g.get("bekleme_sn"), VARSAYILAN_BEKLEME_SN)),
             "yatak": [_sayi(v) for v in (g.get("yatak") or [495.0, 610.0])],
+            "alan": str(g.get("alan") or ""),
             "nx": int(_sayi(g.get("nx"), 4)),
             "ny": int(_sayi(g.get("ny"), 6)),
             "pay_mm": _sayi(g.get("pay_mm"), 40.0),
@@ -247,13 +296,30 @@ def yonlendirici_kur(parola_dogrula, canli_kare, git_ve_bekle,
                 detail=f"{durak_sayisi} durak çok fazla (en çok {EN_COK_DURAK}). "
                        "Sütun/satır sayısını ya da yükseklik sayısını azaltın.")
 
+        # IZGARA BİR DİKDÖRTGENİN İÇİNDE. `tur_planla` yatağı hep
+        # başlangıçtan sayıyor; dikim alanı ise yatağın ortasında bir
+        # yerde duruyor ve kalibrasyonu oraya yoğunlaştırmak istiyoruz.
+        # Yılankavi sıra aynen korunuyor: yatay yolu en aza indiriyor.
+        try:
+            kutu = _kutu_coz(ayar, g)
+        except ValueError as hata:
+            raise HTTPException(status_code=422, detail=str(hata))
+        x1, y1, x2, y2 = kutu
+        pay = ayar["pay_mm"]
+        if (x2 - x1) <= 2 * pay or (y2 - y1) <= 2 * pay:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Kenar payı {pay:.0f} mm, {x2 - x1:.0f}x{y2 - y1:.0f} mm'lik "
+                       "alan için fazla — payı küçültün ya da daha büyük alan seçin.")
+        xs = _aralik(x1 + pay, x2 - pay, ayar["nx"])
+        ys = _aralik(y1 + pay, y2 - pay, ayar["ny"])
+
         plan = []
         for tv in tl:
-            for x_, y_, z_ in t.tur_planla(yatak_mm=tuple(ayar["yatak"][:2]),
-                                           nx=ayar["nx"], ny=ayar["ny"],
-                                           pay_mm=ayar["pay_mm"],
-                                           z_listesi=tuple(z)):
-                plan.append((x_, y_, z_, tv))
+            for z_ in z:
+                for j, y_ in enumerate(ys):
+                    for x_ in (xs if j % 2 == 0 else list(reversed(xs))):
+                        plan.append((x_, y_, z_, tv))
         yukler = sorted({round(yukseklik(v, ayar["z_toprak_mm"],
                                          ayar["isaret_ofset_mm"], tv,
                                          ayar["t_toprak_mm"], ayar["t_yon"],
@@ -351,6 +417,7 @@ def yonlendirici_kur(parola_dogrula, canli_kare, git_ve_bekle,
                          for x, y, z_, tv in plan],
                 "durak": len(plan), "yukseklikler_mm": yukler,
                 "engelli": len(engelli), "uyarilar": uyarilar,
+                "kutu": [round(v, 1) for v in kutu],
                 "bas": ayar["bas"],
                 "bas_kayma": [round(ayar["bas_dx"], 1), round(ayar["bas_dy"], 1)],
                 "durum": _durum()}

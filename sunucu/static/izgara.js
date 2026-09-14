@@ -54,11 +54,21 @@
           gizlenir.
         </p>
         <div class="satir">
+          <label>Dikim alanı
+            <select id="iz-alan"><option value="">(yatağın tamamı)</option></select>
+          </label>
+          <span class="alt-not" id="iz-alan-not"></span>
+        </div>
+        <div class="satir">
           <label>Yatak en (mm) <input type="number" id="iz-en" value="495" step="1"></label>
           <label>Yatak boy (mm) <input type="number" id="iz-boy" value="610" step="1"></label>
           <label>Kenar payı (mm) <input type="number" id="iz-pay" value="40" step="1"></label>
         </div>
         <p class="alt-not">
+          <b>Dikim alanı seçilirse</b> ızgara yalnız onun içinde geziyor ve
+          yatak kutuları kullanılmıyor. Kalibrasyonu gerçekten
+          kullanacağınız bölgeye yoğunlaştırmak doğru olanı: kalibre
+          edilen bölgenin dışı uzatmadır, hatası ölçülmemiştir.
           Yatak ölçüsü <b>yukarıdaki</b> iki kutu; aşağıdakiler kaç durak
           olacağı (4 sütun × 6 satır = 24 durak, iki yükseklikte 48).
           Duraklar makineye <b>tek tek soruluyor</b>: yumuşak sınır ya da
@@ -155,6 +165,7 @@
     $("#d-iz-dur").onclick = () => { durdurUlsun = true; };
     $("#d-iz-kur").onclick = modelKur;
     $("#d-iz-temizle").onclick = temizle;
+    alanlariYukle();
     durumYukle();
   }
 
@@ -189,6 +200,27 @@
         ? ' <span class="uyari">(tek yükseklik — paralaks çözülmez)</span>' : "");
   }
 
+  async function alanlariYukle() {
+    const p = P();
+    if (!p) return;
+    try {
+      const c = await p.apiIste("/api/izgara/alanlar");
+      const sec = $("#iz-alan");
+      (c.alanlar || []).forEach((a) => {
+        const o = document.createElement("option");
+        o.value = a.ad;
+        o.textContent = `${a.ad} (${a.x1}–${a.x2} × ${a.y1}–${a.y2} mm)`;
+        sec.appendChild(o);
+      });
+      sec.onchange = () => {
+        const a = (c.alanlar || []).find((v) => v.ad === sec.value);
+        $("#iz-alan-not").textContent = a
+          ? `${(a.x2 - a.x1).toFixed(0)} × ${(a.y2 - a.y1).toFixed(0)} mm`
+          : "";
+      };
+    } catch (h) { /* alan yoksa yatak kutuları kullanılır */ }
+  }
+
   async function durumYukle() {
     const p = P();
     if (!p) return;
@@ -203,6 +235,7 @@
     const s = (id) => Number($(id).value);
     return {
       kamera: kamera(),
+      alan: $("#iz-alan").value,
       yatak: [s("#iz-en"), s("#iz-boy")],
       nx: s("#iz-nx"), ny: s("#iz-ny"), pay_mm: s("#iz-pay"),
       kimlik: s("#iz-kimlik"),
@@ -230,6 +263,7 @@
       durum = c.durum || durum;
       let h = `<b>${c.durak}</b> durak · yükseklikler ${(c.yukseklikler_mm || []).join(", ")} mm`;
       if (c.engelli) h += ` · <span class="uyari">${c.engelli} durak elendi</span>`;
+      if (c.kutu) h += `<br>alan X${c.kutu[0]}–${c.kutu[2]} · Y${c.kutu[1]}–${c.kutu[3]} mm`;
       if (c.bas) {
         h += `<br>başlık <b>${kacisli(c.bas)}</b> · kayma `
           + `${(c.bas_kayma || []).join(" / ")} mm (modele işlendi)`;
