@@ -45,6 +45,17 @@ GIT_ZAMAN_ASIMI_SN = 60.0
 #: kaydırıyor ve o kayma doğrudan kalibrasyon hatası oluyor.
 VARSAYILAN_BEKLEME_SN = 1.2
 
+#: Izgara boyutu sınırları. Üstü makul değil: 12x12 = 144 durak ve her
+#: durak hareket + bekleme + kare demek. ALTI 2: tek satır/sütun bir
+#: ızgara değil, bir çizgidir ve homografiyi belirlemez.
+EN_AZ_BOL = 2
+EN_COK_BOL = 12
+
+#: Bir turda gidilebilecek en çok durak. Paketin ölçtüğü tabloda 12
+#: noktadan sonrası konum doğruluğuna az katıyor; 200 durak saatler
+#: süren ve hiçbir şey kazandırmayan bir tur olurdu.
+EN_COK_DURAK = 200
+
 #: İşaretin varsayılan kimliği. Yataktaki kalibrasyon etiketleri (0, 1, 8,
 #: 9) ile ÇAKIŞMAMALI: aynı kimlik iki yerde görünürse hangisinin kafada
 #: olduğu bilinemez.
@@ -212,6 +223,23 @@ def yonlendirici_kur(parola_dogrula, canli_kare, git_ve_bekle,
         # kopyalanıyor. İşaret T arabasındaysa yükseklik çeşitliliğini
         # T veriyor, o zaman her T değeri için ayrı bir tur geçiliyor.
         tl = ayar["t"] or [None]
+        # IZGARA BOYUTU ÖNCE DENETLENİYOR. Sahada yatak ölçüsü yanlışlıkla
+        # sütun/satır kutularına yazıldı (495 x 275) ve plan yüz binlerce
+        # durak üretmeye kalktı; istek ne döndü ne de bir şey söyledi.
+        for ad_, v in (("Sütun (nx)", ayar["nx"]), ("Satır (ny)", ayar["ny"])):
+            if not (EN_AZ_BOL <= v <= EN_COK_BOL):
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"{ad_} {v} olamaz — {EN_AZ_BOL} ile {EN_COK_BOL} "
+                           "arasında olmalı. Yatak ölçüsünü yukarıdaki "
+                           "'Yatak en/boy' kutularına yazın.")
+        durak_sayisi = ayar["nx"] * ayar["ny"] * len(z) * max(1, len(ayar["t"]))
+        if durak_sayisi > EN_COK_DURAK:
+            raise HTTPException(
+                status_code=422,
+                detail=f"{durak_sayisi} durak çok fazla (en çok {EN_COK_DURAK}). "
+                       "Sütun/satır sayısını ya da yükseklik sayısını azaltın.")
+
         plan = []
         for tv in tl:
             for x_, y_, z_ in t.tur_planla(yatak_mm=tuple(ayar["yatak"][:2]),
@@ -237,6 +265,46 @@ def yonlendirici_kur(parola_dogrula, canli_kare, git_ve_bekle,
             uyarilar.append(
                 f"Yükseklik negatif çıktı ({yukler}). Girilen Z değerleri "
                 "toprak Z'sinin ALTINDA kalıyor ya da toprak Z'si yanlış.")
+        # ÇARPMA ÖNLENİYOR: HER DURAK MAKİNEYE SORULUYOR.
+        #
+        # Yumuşak sınırları ve yasak bölgeleri sunucuda KOPYALAMIYORUZ —
+        # kuralların ikinci bir kopyası, biri düzeltilip öteki unutulduğu
+        # gün sessizce çarpan bir makine demek. `nokta_denetle` ajanda
+        # hareket anında kullanılan işlevlerin ta kendisini çağırıyor.
+        #
+        # Sınır dışı duraklar plandan ÇIKARILIYOR, gizlenmiyor: kaçının
+        # neden çıktığı yazılıyor. Yatak ölçüsü makinenin erişiminden
+        # büyükse bunu turun ortasında değil burada görmek gerekiyor.
+        engelli = []
+        if komut_gonder is not None and plan:
+            try:
+                cevap = await komut_gonder(
+                    "nokta_denetle",
+                    {"noktalar": [{"x": x_, "y": y_, "z": z_}
+                                  for x_, y_, z_, _ in plan]})
+            except Exception as hata:                       # noqa: BLE001
+                uyarilar.append(
+                    f"Sınır ön denetimi yapılamadı ({hata}). Plan denetlenmeden "
+                    "üretildi — turu başlatmadan önce yolu gözle kontrol edin.")
+                cevap = None
+            for d in (((cevap or {}).get("veri") or {}).get("noktalar") or []):
+                if d.get("engel"):
+                    engelli.append({"sira": d.get("sira"), "engel": d["engel"]})
+            if engelli:
+                kalan = [p_ for i_, p_ in enumerate(plan)
+                         if i_ not in {d["sira"] for d in engelli}]
+                sebepler = sorted({d["engel"] for d in engelli})[:3]
+                uyarilar.append(
+                    f"{len(engelli)} durak makinenin erişemeyeceği yerde ve "
+                    "plandan çıkarıldı: " + " · ".join(sebepler))
+                plan = kalan
+                if not plan:
+                    raise HTTPException(
+                        status_code=422,
+                        detail="Hiçbir durak makinenin sınırları içinde değil. "
+                               "Yatak ölçüsü ya da Z değerleri yanlış: "
+                               + " · ".join(sebepler))
+
         if ayar["isaret_yeri"] == "t_ucu" and (
                 not ayar["t"] or ayar["t_toprak_mm"] is None):
             uyarilar.append(
@@ -248,7 +316,8 @@ def yonlendirici_kur(parola_dogrula, canli_kare, git_ve_bekle,
                           None if tv is None else round(tv, 2)]
                          for x, y, z_, tv in plan],
                 "durak": len(plan), "yukseklikler_mm": yukler,
-                "uyarilar": uyarilar, "durum": _durum()}
+                "engelli": len(engelli), "uyarilar": uyarilar,
+                "durum": _durum()}
 
     @yon.post("/api/izgara/nokta")
     async def _nokta(govde: dict[str, Any] | None = None, jeton: str = Query(default="")):

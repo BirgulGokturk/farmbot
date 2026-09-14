@@ -58,9 +58,16 @@
           <label>Yatak boy (mm) <input type="number" id="iz-boy" value="610" step="1"></label>
           <label>Kenar payı (mm) <input type="number" id="iz-pay" value="40" step="1"></label>
         </div>
+        <p class="alt-not">
+          Yatak ölçüsü <b>yukarıdaki</b> iki kutu; aşağıdakiler kaç durak
+          olacağı (4 sütun × 6 satır = 24 durak, iki yükseklikte 48).
+          Duraklar makineye <b>tek tek soruluyor</b>: yumuşak sınır ya da
+          yasak bölge dışında kalanlar plandan çıkarılıyor, böylece tur
+          çarpma riski taşımıyor.
+        </p>
         <div class="satir">
-          <label>Sütun (nx) <input type="number" id="iz-nx" value="4" min="2" max="10"></label>
-          <label>Satır (ny) <input type="number" id="iz-ny" value="6" min="2" max="10"></label>
+          <label>Sütun SAYISI <input type="number" id="iz-nx" value="4" min="2" max="12"></label>
+          <label>Satır SAYISI <input type="number" id="iz-ny" value="6" min="2" max="12"></label>
           <label>İşaret kimliği <input type="number" id="iz-kimlik" value="23" min="0" max="586"></label>
         </div>
         <div class="satir">
@@ -206,6 +213,7 @@
       plan = c.plan || [];
       durum = c.durum || durum;
       let h = `<b>${c.durak}</b> durak · yükseklikler ${(c.yukseklikler_mm || []).join(", ")} mm`;
+      if (c.engelli) h += ` · <span class="uyari">${c.engelli} durak elendi</span>`;
       (c.uyarilar || []).forEach((u) => {
         h += `<br><span class="uyari">${kacisli(u)}</span>`;
       });
