@@ -1816,6 +1816,17 @@ class Gantry:
                 # KESİNLEŞTİĞİ an, hangi yoldan gelindiğinden bağımsız.
                 if anahtar:
                     self._anahtarda_sifirla(i)
+                elif anahtar is None:
+                    # ANAHTAR TANIMSIZ = DÜZELTME YOK, ve bu sessiz
+                    # kalmamalı: kullanıcı ⌂'ye basıp hâlâ eksi bir sayı
+                    # görüyor ve sebebini arayacak yer yok. Burada
+                    # yazılmazsa "düzeltme çalışmıyor" ile "bu eksende
+                    # anahtar yok" birbirinden ayrılamıyor.
+                    self.gunluk_cb(
+                        f"{ad} için home anahtarı tanımlı değil — sayacın "
+                        f"kayması ölçülemiyor, okunan {self.eksen_konum_mm(i):.2f} mm "
+                        f"düzeltilmeden bırakıldı. Ayarlar → uç ayarları → "
+                        f"home anahtarı.", "uyari")
                 self.gunluk_cb(
                     f"{ad} home'da ({self.eksen_konum_mm(i):.2f} mm)"
                     + (" · anahtar basılı" if anahtar else ""), "bilgi")
