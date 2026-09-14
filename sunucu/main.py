@@ -39,6 +39,7 @@ import depo
 import etiket
 import filiz
 import isik
+import izgara_uc
 import bitkiolcum
 import otokalib
 import dikim
@@ -3570,6 +3571,11 @@ async def _git_ve_bekle(x: float, y: float, z: float | None,
 
 app.include_router(otokalib.yonlendirici_kur(
     _parola_dogrula, merkez.canli_kare_taze, _git_ve_bekle))
+# IZGARA KALIBRASYONU. `otokalib` ile ayni iki bagimlilik ama kare
+# TAM cozunurlukten aliniyor: isaretin merkezi piksel altinda olculuyor
+# ve kucultulmus bir karede o hassasiyet bastan kayboluyor.
+app.include_router(izgara_uc.yonlendirici_kur(
+    _parola_dogrula, _cozumleme_karesi, _git_ve_bekle))
 
 
 # --------------------------------------------------------------------------- #
