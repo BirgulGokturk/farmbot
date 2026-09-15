@@ -11,12 +11,16 @@
  * Gerekçe: burada tablo okunuyor, satıra tıklanıyor, ayar deneniyor —
  * altındaki görüntü saniyede beş kez değişseydi hiçbiri okunamazdı.
  *
- * YÜZEN KUTULARDA canlı akışın üstüne çiziliyor. Orada soru "makine şu
- * an neye bakıyor" ve görüntüyü dondurmak onu kaybettirirdi. Kaymaya
- * karşı koruma başka: makine kımıldadığı anda kutular siliniyor, çünkü
- * çözümleme bir konuma ait. Ekranda kalmalarına izin vermek yanlış yeri
- * bitki diye göstermek olurdu — üstelik kimsenin fark etmeyeceği
- * biçimde.
+ * YÜZEN KUTULARDA ÇİZİM YOK — GERİ ALINDI. Kutuları canlı akışın
+ * üstüne çizmek için görüntüyü konumlandırılmış bir sarmalayıcıya
+ * almıştık. Bedeli ağır çıktı: `app.js`in kamera kutusu düzeni
+ * görüntünün `.kamera-yuzen`in DOĞRUDAN çocuğu olmasına dayanıyor,
+ * araya bir öğe girince esneme ona gidiyor ve görüntü kutudan taşıyor.
+ * Sahada "kamera bozuldu" diye ortaya çıktı.
+ *
+ * Yüzen kutuda kalan tek şey ◎ düğmesi: çözümlemeyi başlatıyor, sonuç
+ * bölümde görünüyor. Çizim, `app.js`in düzenine dokunmayan bir yol
+ * bulunduğunda geri gelecek.
  *
  * MİLİMETRE YOK. Kamera kalibrasyonu olmadığı için bütün sayılar piksel.
  * Panelde "mm" yazan tek bir yer yok; kalibrasyon geldiğinde eklenecek.
@@ -538,6 +542,19 @@
     kap.querySelectorAll(".kamera-yuzen").forEach(yuzeniDonat);
   }
 
+  /* YÜZEN KUTULARIN DOM'UNA DOKUNULMUYOR — GERİ ALINDI.
+   *
+   * Görüntüyü konumlandırılmış bir sarmalayıcıya almıştık ki kutular
+   * tam üstüne otursun. Bedeli ağır çıktı: `app.js`in kamera kutusu
+   * düzeni görüntünün `.kamera-yuzen`in DOĞRUDAN çocuğu olmasına
+   * dayanıyor; araya bir öğe girince esneme ona gidiyor ve görüntü
+   * kutudan taşıyor. Sahada "kamera bozuldu" diye ortaya çıktı.
+   *
+   * Çizim şimdilik YALNIZ bölümde (orada kare kendi kabında ve kimsenin
+   * düzenine karışmıyor). Yüzen kutuda kalan tek şey ◎ düğmesi:
+   * çözümlemeyi başlatıyor, sonuç bölümde görünüyor. Kutuların yüzen
+   * kutuda da çizilmesi, `app.js`in düzenini bozmayan bir yol
+   * bulunduğunda geri gelecek. */
   function yuzeniDonat(kutu) {
     const ad = kutu && kutu.dataset ? kutu.dataset.kam : "";
     if (!ad || YUZEN.has(ad)) return;
@@ -545,17 +562,9 @@
     const araclar = kutu.querySelector(".kamera-yuzen-araclar");
     if (!img || !araclar) return;
 
-    /* Görüntüyü konumlandırılmış bir kaba sarıyoruz ki SVG tam üstüne
-     * otursun. `app.js` görüntüyü `[data-rol="kare"]` ile buluyor —
-     * derinlik değiştiği hâlde seçici çalışmaya devam ediyor. */
-    const sarmal = document.createElement("div");
-    sarmal.style.cssText = "position:relative;display:block;line-height:0";
-    img.parentNode.insertBefore(sarmal, img);
-    sarmal.appendChild(img);
+    // DOM'a eklenmeyen boş bir SVG: çizim kodu değişmeden duruyor ama
+    // hiçbir yere bağlı olmadığı için görünmüyor ve bir şeyi bozmuyor.
     const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-    svg.setAttribute("preserveAspectRatio", "none");
-    svg.style.cssText = "position:absolute;inset:0;width:100%;height:100%;pointer-events:none";
-    sarmal.appendChild(svg);
 
     const dugme = document.createElement("button");
     dugme.type = "button";
