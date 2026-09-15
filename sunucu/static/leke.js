@@ -4,12 +4,19 @@
  * bir oturumda sürekli değişiyor; oraya blok eklemek her yamada çakışma
  * demek. Buraya yalnız boş bir kap giriyor.
  *
- * KUTULAR ÇÖZÜMLENEN KARENİN ÜSTÜNE ÇİZİLİYOR, CANLI AKIŞIN DEĞİL.
- * Canlı akış saniyede beş kare atıyor; kutuları onun üstüne koysaydık
- * makine ya da bir yaprak kımıldadığı anda kutular kaymış görünürdü — ve
- * bu kayma sessiz olurdu, kimse fark etmezdi. Sunucu çözümlediği kareyi
- * belleğinde tutuyor (`/api/leke/kare`), burada onu çekip donmuş
- * görüntünün üstüne çiziyoruz.
+ * İKİ YER, İKİ DAVRANIŞ — ve fark bilerek:
+ *
+ * BÖLÜMDE kare DONDURULUYOR. Sunucu çözümlediği kareyi belleğinde
+ * tutuyor (`/api/leke/kare`), burada onu çekip üstüne çiziyoruz.
+ * Gerekçe: burada tablo okunuyor, satıra tıklanıyor, ayar deneniyor —
+ * altındaki görüntü saniyede beş kez değişseydi hiçbiri okunamazdı.
+ *
+ * YÜZEN KUTULARDA canlı akışın üstüne çiziliyor. Orada soru "makine şu
+ * an neye bakıyor" ve görüntüyü dondurmak onu kaybettirirdi. Kaymaya
+ * karşı koruma başka: makine kımıldadığı anda kutular siliniyor, çünkü
+ * çözümleme bir konuma ait. Ekranda kalmalarına izin vermek yanlış yeri
+ * bitki diye göstermek olurdu — üstelik kimsenin fark etmeyeceği
+ * biçimde.
  *
  * MİLİMETRE YOK. Kamera kalibrasyonu olmadığı için bütün sayılar piksel.
  * Panelde "mm" yazan tek bir yer yok; kalibrasyon geldiğinde eklenecek.
@@ -74,6 +81,17 @@
             <button id="d-leke-bul">Lekeleri bul</button>
             <span class="ikincil" id="leke-durum"></span>
           </div>
+          <div class="satir">
+            <label class="onay" title="Makine DURDUĞUNDA açık yüzen kamera kutularını kendiliğinden çözümler. Hareket hâlinde değil: o kare bulanık ve hangi konuma ait olduğu belirsiz.">
+              <input type="checkbox" id="leke-oto"> Makine durunca yüzen kutularda otomatik çözümle
+            </label>
+          </div>
+          <p class="alt-not">
+            Yüzen kamera kutularındaki <b>◎</b> düğmesi de aynı işi yapıyor;
+            kutular canlı görüntünün üstüne çiziliyor ve <b>makine kımıldadığı
+            anda siliniyor</b> — çözümleme bir konuma ait, makine oradan
+            ayrılınca artık başka bir yeri gösterirlerdi.
+          </p>
           <details class="etiket-blok">
             <summary>Ayarlar (bu çağrıya özel, kaydedilmiyor)</summary>
             <div class="satir">
@@ -124,6 +142,10 @@
      * ancak yüklenince biliniyor. */
     const img = $("#leke-kare");
     if (img) img.addEventListener("load", kutulariCiz);
+
+    otoKur();
+    yuzenleriTara();
+    setInterval(saat, 500);
   }
 
   function kamerayiDoldur() {
@@ -156,18 +178,9 @@
 
     /* Ayar alanları boş ya da saçma bırakılmışsa GÖNDERİLMİYOR: sunucuya
      * 0 yollayıp ajandaki varsayılanı ezmek, "neden hiçbir şey bulmuyor"
-     * sorusunun sessiz cevabı olurdu. */
-    const ayar = {};
-    const pay = sayi("#leke-esik-payi");
-    if (pay !== null) ayar.esik_payi = pay;
-    const enKucuk = sayi("#leke-en-kucuk");
-    if (enKucuk !== null && enKucuk > 0) ayar.en_kucuk_oran = 1 / enKucuk;
-    const islem = sayi("#leke-islem-px");
-    if (islem !== null && islem >= 160) ayar.islem_genislik = islem;
-    const tonAlt = sayi("#leke-ton-alt");
-    const tonUst = sayi("#leke-ton-ust");
-    if (tonAlt !== null) ayar.ton_alt = tonAlt;
-    if (tonUst !== null) ayar.ton_ust = tonUst;
+     * sorusunun sessiz cevabı olurdu. Toplama `ayarTopla` içinde — yüzen
+     * kutular da aynı alanları kullanıyor, iki kopya ayrışırdı. */
+    const ayar = ayarTopla();
 
     try {
       const y = await p.apiIste("/api/leke/bul", {
@@ -319,6 +332,231 @@
         seciliLeke = (seciliLeke === no) ? -1 : no;
         kutulariCiz();
       });
+    });
+  }
+
+  /* ===================================================================
+   * YÜZEN KAMERA KUTULARI
+   *
+   * Düğme ve kutular buradan ENJEKTE ediliyor; `app.js` ve `index.html`
+   * hiç değişmiyor. Şablona düğme eklemek o iki dosyaya dokunmak
+   * demekti ve ikisi de başka bir oturumda sürekli değişiyor.
+   *
+   * KUTULAR CANLI AKIŞIN ÜSTÜNE ÇİZİLİYOR — bölümdekinin aksine. Orada
+   * kare donduruluyor çünkü inceleme uzun sürüyor; burada amaç "makine
+   * şu an neye bakıyor" ve canlı görüntüyü dondurmak onu kaybettirirdi.
+   *
+   * KAYMA SESSİZ KALMIYOR: çözümleme bir konuma ait. Makine kımıldadığı
+   * anda kutular siliniyor, çünkü artık başka bir yeri gösteriyorlar.
+   * Ekranda kalmalarına izin vermek, yanlış yeri bitki diye göstermek
+   * olurdu — hem de kimsenin fark etmeyeceği biçimde.
+   * =================================================================== */
+
+  const YUZEN = new Map();   // kamera -> {kutu, svg, dugme, sonuc, konum}
+  let otoAcik = false;
+  /* Konum sabitlendikten sonra bu kadar beklenip çözümleniyor. Hareket
+   * HÂLİNDEKİ kare bulanık ve hangi konuma ait olduğu belirsiz; durmayı
+   * beklemek ikisini de çözüyor. 1.5 sn: PLC konumu yarım saniyede bir
+   * bildiriyor, üç okuma boyunca sabitse hareket gerçekten bitmiştir. */
+  const DURGUNLUK_SN = 1.5;
+  const KONUM_ESIK_MM = 0.5;
+  let sonImza = null;
+  let durgunBasi = 0;
+  let otoCalisiyor = false;
+
+  function konumImzasi() {
+    const p = P();
+    const k = (p && p.S && p.S.sonKonum) || null;
+    if (!k || k.x == null || k.y == null) return null;
+    return { x: +k.x, y: +k.y, z: (k.z == null ? null : +k.z) };
+  }
+
+  function konumAyni(a, b) {
+    if (!a || !b) return false;
+    const fark = (u, v) => (u == null || v == null) ? 0 : Math.abs(u - v);
+    return fark(a.x, b.x) <= KONUM_ESIK_MM
+        && fark(a.y, b.y) <= KONUM_ESIK_MM
+        && fark(a.z, b.z) <= KONUM_ESIK_MM;
+  }
+
+  function yuzenleriTara() {
+    const kap = document.getElementById("kamera-yuzenler");
+    if (!kap) return;
+    // Kamera listeden düşünce `app.js` kutusunu siliyor; kaydı da
+    // bırakmıyoruz, yoksa kopmuş bir DOM düğümüne yazmaya çalışırdık.
+    [...YUZEN.keys()].forEach((ad) => {
+      const kayit = YUZEN.get(ad);
+      if (!kayit.kutu.isConnected) YUZEN.delete(ad);
+    });
+    kap.querySelectorAll(".kamera-yuzen").forEach(yuzeniDonat);
+  }
+
+  function yuzeniDonat(kutu) {
+    const ad = kutu && kutu.dataset ? kutu.dataset.kam : "";
+    if (!ad || YUZEN.has(ad)) return;
+    const img = kutu.querySelector('[data-rol="kare"]');
+    const araclar = kutu.querySelector(".kamera-yuzen-araclar");
+    if (!img || !araclar) return;
+
+    /* Görüntüyü konumlandırılmış bir kaba sarıyoruz ki SVG tam üstüne
+     * otursun. `app.js` görüntüyü `[data-rol="kare"]` ile buluyor —
+     * derinlik değiştiği hâlde seçici çalışmaya devam ediyor. */
+    const sarmal = document.createElement("div");
+    sarmal.style.cssText = "position:relative;display:block;line-height:0";
+    img.parentNode.insertBefore(sarmal, img);
+    sarmal.appendChild(img);
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("preserveAspectRatio", "none");
+    svg.style.cssText = "position:absolute;inset:0;width:100%;height:100%;pointer-events:none";
+    sarmal.appendChild(svg);
+
+    const dugme = document.createElement("button");
+    dugme.type = "button";
+    dugme.className = "kapat";
+    dugme.textContent = "◎";
+    dugme.title = "Lekeleri bul — sonuç görüntünün üstüne çizilir, "
+                + "makine kımıldayınca silinir";
+    dugme.setAttribute("aria-label", "Lekeleri bul");
+    dugme.addEventListener("click", (o) => {
+      o.stopPropagation();
+      yuzendeCozumle(ad);
+    });
+    // Ölçek/büyüt/kapat düğmelerinin SOLUNA: onlar kutunun kendi
+    // penceresini yönetiyor, bu görüntüyle ilgili — gruplar ayrı dursun.
+    araclar.insertBefore(dugme, araclar.firstChild);
+
+    YUZEN.set(ad, { kutu, svg, dugme, sonuc: null, konum: null });
+  }
+
+  async function yuzendeCozumle(ad) {
+    const kayit = YUZEN.get(ad);
+    const p = P();
+    if (!kayit || !p || !p.apiIste) return;
+    if (kayit.dugme.disabled) return;
+    kayit.dugme.disabled = true;
+    kayit.dugme.textContent = "…";
+    // Çözümlemenin ait olduğu konum, İSTEK GÖNDERİLMEDEN ÖNCE alınıyor:
+    // sonra almak, gidiş-dönüş sırasında başlayan bir hareketi
+    // kaçırmak olurdu.
+    const konum = konumImzasi();
+    try {
+      const y = await p.apiIste("/api/leke/bul", {
+        method: "POST",
+        body: JSON.stringify({ kamera: ad, ayar: ayarTopla() }),
+      });
+      kayit.sonuc = y;
+      kayit.konum = konum;
+      yuzendeCiz(ad);
+      notYaz(ad, `${(y.lekeler || []).length} leke`
+        + (y.sebep ? ` — ${y.sebep}` : ""));
+    } catch (hata) {
+      kayit.sonuc = null;
+      yuzendeCiz(ad);
+      notYaz(ad, "çözümleme başarısız: " + ((hata && hata.message) || hata));
+    } finally {
+      kayit.dugme.disabled = false;
+      kayit.dugme.textContent = "◎";
+    }
+  }
+
+  function notYaz(ad, metin) {
+    const kayit = YUZEN.get(ad);
+    if (!kayit) return;
+    const not = kayit.kutu.querySelector('[data-rol="not"]');
+    if (!not) return;
+    not.textContent = metin || "";
+    not.classList.toggle("gizli", !metin);
+  }
+
+  function yuzendeCiz(ad) {
+    const kayit = YUZEN.get(ad);
+    if (!kayit) return;
+    const y = kayit.sonuc;
+    const kare = (y && y.kare_px) || null;
+    if (!y || !kare || !kare[0] || !kare[1]) { kayit.svg.innerHTML = ""; return; }
+    kayit.svg.setAttribute("viewBox", `0 0 ${kare[0]} ${kare[1]}`);
+    const kalinlik = Math.max(2, Math.round(kare[0] / 250));
+    const r = Math.max(3, Math.round(kare[0] / 200));
+    kayit.svg.innerHTML = (y.lekeler || []).map((l) => {
+      const [x1, y1, x2, y2] = l.kutu || [0, 0, 0, 0];
+      return `<rect x="${x1}" y="${y1}" width="${x2 - x1}" height="${y2 - y1}"
+                fill="none" stroke="#ff4d4d" stroke-width="${kalinlik}"/>
+              <circle cx="${l.x}" cy="${l.y}" r="${r}" fill="#ff4d4d"/>`;
+    }).join("");
+  }
+
+  function yuzenleriSil(sebep) {
+    YUZEN.forEach((kayit, ad) => {
+      if (!kayit.sonuc) return;
+      kayit.sonuc = null;
+      kayit.konum = null;
+      kayit.svg.innerHTML = "";
+      notYaz(ad, sebep);
+    });
+  }
+
+  function ayarTopla() {
+    const ayar = {};
+    const pay = sayi("#leke-esik-payi");
+    if (pay !== null) ayar.esik_payi = pay;
+    const enKucuk = sayi("#leke-en-kucuk");
+    if (enKucuk !== null && enKucuk > 0) ayar.en_kucuk_oran = 1 / enKucuk;
+    const islem = sayi("#leke-islem-px");
+    if (islem !== null && islem >= 160) ayar.islem_genislik = islem;
+    const tonAlt = sayi("#leke-ton-alt");
+    const tonUst = sayi("#leke-ton-ust");
+    if (tonAlt !== null) ayar.ton_alt = tonAlt;
+    if (tonUst !== null) ayar.ton_ust = tonUst;
+    return ayar;
+  }
+
+  /* Saat: hem yeni yüzen kutuları donatıyor hem hareketi izliyor.
+   * MutationObserver yerine yoklama, çünkü `app.js` kutuları durum
+   * paketiyle (saniyede iki kez) yeniden kurabiliyor ve gözlemci o
+   * akışta gereksiz yere sık tetikleniyordu. Yarım saniye, hareketi
+   * kaçırmayacak kadar sık. */
+  function saat() {
+    yuzenleriTara();
+
+    const simdi = konumImzasi();
+    const oncekiImza = sonImza;
+    sonImza = simdi;
+    if (!simdi) return;
+
+    if (oncekiImza && !konumAyni(oncekiImza, simdi)) {
+      // HAREKET BAŞLADI. Ekrandaki kutular başka bir konuma ait;
+      // durmalarına izin vermek yanlış yeri göstermek olurdu.
+      durgunBasi = 0;
+      yuzenleriSil("makine kımıldadı — kutular geçersiz");
+      return;
+    }
+
+    if (!otoAcik || otoCalisiyor) return;
+    const t = Date.now() / 1000;
+    if (!durgunBasi) { durgunBasi = t; return; }
+    if (t - durgunBasi < DURGUNLUK_SN) return;
+
+    // Bu durakta zaten çözümlediysek tekrar etmiyoruz: makine
+    // beklerken saniyede bir kare çekmek ağı boşuna yorardı.
+    const bekleyen = [...YUZEN.entries()].filter(
+      ([, k]) => !k.sonuc && !k.dugme.disabled
+                 && !k.kutu.classList.contains("gizli"));
+    if (!bekleyen.length) return;
+    otoCalisiyor = true;
+    Promise.all(bekleyen.map(([ad]) => yuzendeCozumle(ad)))
+      .finally(() => { otoCalisiyor = false; });
+  }
+
+  function otoKur() {
+    const kutu = $("#leke-oto");
+    if (!kutu) return;
+    kutu.addEventListener("change", () => {
+      otoAcik = kutu.checked;
+      durgunBasi = 0;
+      if (!otoAcik) return;
+      // Açar açmaz bir kez çalışsın: kullanıcı kutuyu işaretleyip
+      // makinenin kımıldamasını beklemek zorunda kalmasın.
+      durgunBasi = Date.now() / 1000 - DURGUNLUK_SN;
     });
   }
 
