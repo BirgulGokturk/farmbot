@@ -233,7 +233,13 @@ def bul(ham: bytes, ayar: dict[str, Any] | None = None) -> dict[str, Any]:
     if ton_alt or ton_ust:
         alt = max(0, min(179, ton_alt))
         ust = max(0, min(179, ton_ust)) or 179
-        ton_maske = cv2.inRange(hsv[:, :, 0], np.uint8(alt), np.uint8(ust))
+        # `cv2.inRange` DEĞİL: tek kanallı bir dilime skaler sınır
+        # geçmek OpenCV bağlamasında "lowerb is not a numpy array,
+        # neither a scalar" ile patlıyor (5.0.0'da doğrulandı). NumPy
+        # karşılaştırması bağlamaya hiç dokunmuyor ve aynı sonucu
+        # veriyor.
+        ton_k = hsv[:, :, 0]
+        ton_maske = ((ton_k >= alt) & (ton_k <= ust)).astype(np.uint8) * 255
         onceki = int(np.count_nonzero(maske))
         maske = cv2.bitwise_and(maske, ton_maske)
         ton_elenen = onceki - int(np.count_nonzero(maske))
