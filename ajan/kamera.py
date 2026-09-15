@@ -395,12 +395,26 @@ class Kamera:
         4:3 TÜRETMESİ HER KAMERADA DOĞRU DEĞİL. USB kameraların çoğu
         1280x720 veriyor; 1280x960 isteyince sürücü ya reddediyor ya da
         sessizce başka bir kipe düşüyor ve görüntü bozuluyor.
+
+        SAHADA GÖRÜLDÜ: `cozunurluk` boşken 3840'tan 3840x2880 türetildi
+        ve 16:9 bir USB kamera (MX Brio) bunu YANLARDAN KIRPARAK verdi —
+        panelde görüş alanı daralmış, "kameranın tamamını göremiyorum"
+        hâli. Çaresi bu türetmeyi düzeltmek değil, kameranın kendi
+        kipini `cozunurluk` alanına yazmak; türetme yalnızca hiçbir şey
+        bilinmediğinde başvurulan son çare.
+
+        ÜST SINIR DOĞRULAMAYLA AYNI OLMAK ZORUNDA. Eskiden burada
+        3840x2160 yazıyordu ama `tanim_dogrula` 4096x3072'ye izin
+        veriyor: IMX477'nin tam alanı (4056x3040) girilebiliyor, sonra
+        burada sessizce 2160'a kırpılıyordu. Sessizce ezilen bir ayar,
+        reddedilen ayardan kötü — kullanıcı doğru değeri girip yanlış
+        sonucu görüyor.
         """
         ham = str(self.ayar.get("cozunurluk") or "").strip().lower().replace(" ", "")
         if "x" in ham:
             g, _, y = ham.partition("x")
             try:
-                return (max(160, min(3840, int(g))), max(120, min(2160, int(y))))
+                return (max(160, min(4096, int(g))), max(120, min(3072, int(y))))
             except ValueError:
                 pass
         g = int(self.ayar["genislik"])
