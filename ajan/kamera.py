@@ -230,6 +230,55 @@ def _surucu_oku(dugum: str) -> str:
     return os.path.basename(hedef) if hedef else ""
 
 
+#: Cihaz yolu -> desteklenen MJPG kip ölçüleri. `v4l2-ctl` çağrısı yüz
+#: milisaniyelerce sürüyor ve kip listesi kamera takılı kaldığı sürece
+#: değişmiyor; her karede sormanın anlamı yok.
+_KIP_ONBELLEK: dict[str, list[tuple[int, int]]] = {}
+
+
+def v4l2_kipler(cihaz: str, bicim: str = "MJPG") -> list[tuple[int, int]]:
+    """Cihazın o biçimde desteklediği kip ölçüleri.
+
+    NEDEN GEREKLİ: `cozunurluk` boşken kod `genislik`ten 4:3 türetiyor ve
+    bu, 16:9 bir kamerada HİÇ OLMAYAN bir kip demek. Sürücü o zaman ya
+    reddediyor ya da en yakınına düşüp kareyi KIRPIYOR.
+
+    Sahada görüldü: MX Brio'dan 3840x2880 istendi; kameranın 4:3
+    kipleri 800x600'de bitiyor, 4K yalnızca 3840x2160 olarak var.
+    Sonuç panelde "kameranın tamamını göremiyorum" diye ortaya çıktı.
+
+    `v4l2-ctl` yoksa BOŞ dönüyor ve çağıran eski davranışa düşüyor —
+    kip listesi bir iyileştirme, zorunluluk değil.
+    """
+    if not cihaz:
+        return []
+    onbellek = _KIP_ONBELLEK.get(cihaz)
+    if onbellek is not None:
+        return onbellek
+    kipler: list[tuple[int, int]] = []
+    try:
+        cikti = subprocess.run(
+            ["v4l2-ctl", "-d", cihaz, "--list-formats-ext"],
+            capture_output=True, text=True, timeout=5).stdout
+    except (OSError, subprocess.SubprocessError):
+        _KIP_ONBELLEK[cihaz] = []
+        return []
+    icinde = False
+    for satir in cikti.splitlines():
+        kirpik = satir.strip()
+        if kirpik.startswith("["):
+            # "[1]: 'MJPG' (Motion-JPEG, compressed)"
+            icinde = f"'{bicim}'" in kirpik
+            continue
+        if not icinde:
+            continue
+        eslesme = _re.search(r"Size:\s+Discrete\s+(\d+)x(\d+)", kirpik)
+        if eslesme:
+            kipler.append((int(eslesme.group(1)), int(eslesme.group(2))))
+    _KIP_ONBELLEK[cihaz] = kipler
+    return kipler
+
+
 def v4l2_cihazlar() -> list[dict[str, Any]]:
     """Sistemdeki video düğümleri — [{"yol","no","ad","index","surucu","alinabilir"}].
 
@@ -418,7 +467,34 @@ class Kamera:
             except ValueError:
                 pass
         g = int(self.ayar["genislik"])
+
+        # KAMERAYA SORUYORUZ. 4:3 türetmesi yalnızca son çare; USB
+        # kamerada gerçek kip listesi okunabiliyorsa istenen genişliğe
+        # UYAN bir kip seçiliyor. Panelde çözünürlük alanı yok, yani
+        # kullanıcı bunu elle düzeltemiyor — türetmenin doğru olması
+        # gerekiyor.
+        if self._usb_yontem_mi():
+            kipler = v4l2_kipler(self._cihaz or "")
+            if kipler:
+                # Önce istenen genişlikte olanlar: aralarında EN YÜKSEK
+                # olan, çünkü aynı genişlikte iki kip varsa yüksek olan
+                # daha geniş görüş alanı demek (16:9 yerine 4:3).
+                tam = [k for k in kipler if k[0] == g]
+                if tam:
+                    return max(tam, key=lambda k: k[1])
+                # Yoksa istenenden BÜYÜK OLMAYAN en büyük genişlik.
+                # Büyüğüne çıkmıyoruz: kullanıcı 1920 istediyse 4K
+                # çekmek bant genişliğini ve CPU'yu ikiye katlardı.
+                kucuk = [k for k in kipler if k[0] <= g]
+                if kucuk:
+                    en_genis = max(k[0] for k in kucuk)
+                    return max([k for k in kucuk if k[0] == en_genis],
+                               key=lambda k: k[1])
         return g, int(g * 3 / 4)
+
+    def _usb_yontem_mi(self) -> bool:
+        """Kip listesi yalnız v4l2 cihazlarında okunabiliyor."""
+        return str(self.ayar.get("yol") or "oto").lower() in ("usb", "oto")
 
     def _dondurme(self) -> int:
         """Ayardaki donme acisi; 0/90/180/270 disindaki her sey 0."""

@@ -542,6 +542,11 @@
   function saat() {
     yuzenleriTara();
     wsBagla();
+    /* Kamera listesi ajan bağlanınca geliyor ve bölüm ondan önce
+     * kurulmuş oluyor: seçicide "(kamera yok)" yazıp öylece kalıyordu.
+     * Seçiciye dokunulunca tazelemek yetmedi — kullanıcı önce o yazıyı
+     * görüyor ve kameraların gelmediğini sanıyor. */
+    if (!$("#leke-kamera") || !$("#leke-kamera").value) kamerayiDoldur();
 
     const simdi = konumImzasi();
     const oncekiImza = sonImza;
