@@ -1003,11 +1003,13 @@
     <section class="sayfa" id="sayfa-kamera">
       <div class="kam-tahta" id="kam-tahta"></div>
 
-      <!-- KAMERA KALİBRASYONU VE GÖRÜNTÜ İŞLEME KALDIRILDI.
-           Kalibrasyon yöntemleri, elle giriş, filiz bulma, bitki ölçümü
-           ve görüntü çözümleme birlikte silindi; mimari baştan
-           kurulacak. Geriye kare çekme/saklama ve kameranın kendisi
-           kaldı. -->
+      <!-- KAMERA KALİBRASYONU KALDIRILDI. Kalibrasyon yöntemleri ve
+           elle giriş silindi; mimari baştan kurulacak.
+
+           Bitki lekeleri bölümü kendi dosyasında kuruluyor (leke.js) —
+           buraya yalnız boş bir kap giriyor. Kalibrasyon İSTEMİYOR:
+           çıktısı piksel, kamera nereye takılırsa takılsın çalışıyor. -->
+      <div id="leke-bolum"></div>
       </section>
       </div>
 
@@ -1876,6 +1878,7 @@
 <script src="/statik/bahce.js"></script>
 <script src="/statik/app.js"></script>
 <script src="/statik/isik.js"></script>
+<script src="/statik/leke.js"></script>
 <!-- `nem.js` BILEREK YUKLENMIYOR. Tarla'daki nem tablosu her sutunuyla
      Bitkiler sekmesinin kartina tasindi (prob bekleme suresi ve
      "olculmeyenleri olc" dahil); iki yerde duran ayni sayi, hangisinin

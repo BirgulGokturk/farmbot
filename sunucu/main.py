@@ -43,6 +43,7 @@ import ekim
 import geri_al
 import kareler
 import kuyruk as kuyruk_modul
+import leke
 import noktalar
 import programlar
 import sulama
@@ -97,6 +98,10 @@ IZINLI_KOMUTLAR = {
                      #   v4l2 denetimleri ve aralıkları. Panel kaydırakları
                      #   buradan kuruluyor; koda gömülü liste yok.
     "kamera_kare",   # {"kamera":"ust"} — TAM çözünürlüklü tek kare (çözümleme)
+    "leke_bul",      # {"kamera":"uc","ayar":{…}} — TÜRDEN BAĞIMSIZ bitki
+                     #   lekeleri. İş ajanda: kare orada, OpenCV orada ve
+                     #   bu sunucu bulutta çalışabiliyor. Çıktı PİKSEL;
+                     #   kalibrasyon yok, milimetre üretilmiyor.
     "role",          # {"ad": "su_pompasi"|"hava_pompasi", "durum": true}
     "uc_sec",        # {"bas":"sulama"|"nem"|"tohum"} — uç seçici servo.
                      #   Açı ayardan (`baslar.<bas>.servo_aci`), Z kilidi
@@ -2898,6 +2903,11 @@ app.include_router(isik.yonlendirici_kur(
 # geliyor, o yuzden buradan veriliyor.
 app.include_router(bitki.yonlendirici_kur(
     _parola_dogrula, lambda: (merkez.durum().get("toprak_kalib") or {})))
+# BITKI LEKELERI. Goruntu ISLENMIYOR burada: is ajanda (ajan/lekeler.py),
+# bu modul komutu iletip cozumlenen kareyi arsive yaziyor. Kare
+# saklaniyor ki panel kutulari DOGRU karenin ustune cizsin.
+app.include_router(leke.yonlendirici_kur(
+    merkez.komut_gonder, _parola_dogrula))
 
 
 async def _git_ve_bekle(x: float, y: float, z: float | None,

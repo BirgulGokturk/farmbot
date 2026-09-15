@@ -45,6 +45,7 @@ import dizi as dizi_modulu
 ROLELER = {"su_pompasi": "Su pompası", "hava_pompasi": "Hava pompası",
            "isik": "Bitki ışığı"}
 import hailo as hailo_modulu
+import lekeler as lekeler_modulu
 import kamera as kamera_modulu
 import uclar as uc_modulu
 
@@ -1008,6 +1009,53 @@ class Ajan:
                 return {"ok": True, "sessiz": True,
                         "mesaj": f"[{kam.etiket}] {g}x{y} kare",
                         "veri": {"kamera": kam.ad, "genislik": g, "yukseklik": y,
+                                 "kare": base64.b64encode(ham).decode("ascii")}}
+
+            if ad == "leke_bul":
+                # BİTKİ LEKELERİ — türden bağımsız, kalibrasyonsuz.
+                #
+                # Neden ajanda: kare zaten burada ve OpenCV burada kurulu.
+                # Sunucuda yapmak kareyi ağdan bir kez daha geçirmek
+                # olurdu; ayrıca sunucu bulutta çalışabiliyor ve orada
+                # OpenCV'nin bulunacağı garanti değil.
+                #
+                # Kare de birlikte dönüyor: kutular HANGİ kareye ait
+                # olduğu belli olsun diye. Panel kendi canlı karesinin
+                # üstüne çizseydi, iki kare arasında makine ya da yaprak
+                # kımıldadığında kutular kaymış görünürdü.
+                kam = self._kamera_sec(arg.get("kamera"))
+                if kam is None:
+                    return {"ok": False,
+                            "mesaj": f"'{arg.get('kamera')}' adlı kamera tanımlı değil"}
+                try:
+                    yas = float(arg.get("azami_yas_sn", 5.0))
+                except (TypeError, ValueError):
+                    yas = 5.0
+                try:
+                    ham = await asyncio.to_thread(kam.tam_kare, yas)
+                except Exception as hata:                  # noqa: BLE001
+                    return {"ok": False,
+                            "mesaj": f"[{kam.etiket}] kare alınamadı: {hata}"}
+                if not ham:
+                    return {"ok": False,
+                            "mesaj": (f"[{kam.etiket}] taze kare yok. Canlı akış "
+                                      "açıksa son kare eskimiş; kapalıysa kamera "
+                                      "kare veremedi.")}
+                ayar_lekeler = arg.get("ayar") if isinstance(arg.get("ayar"), dict) else None
+                try:
+                    sonuc = await asyncio.to_thread(
+                        lekeler_modulu.bul, ham, ayar_lekeler)
+                except Exception as hata:                  # noqa: BLE001
+                    return {"ok": False,
+                            "mesaj": f"[{kam.etiket}] leke bulunamadı: {hata}"}
+                sayi = len(sonuc.get("lekeler") or [])
+                # Sebep varsa mesaja giriyor: boş liste tek başına "bitki
+                # yok" demek değil, nedeni görünsün.
+                mesaj = f"[{kam.etiket}] {sayi} leke"
+                if sonuc.get("sebep"):
+                    mesaj += f" — {sonuc['sebep']}"
+                return {"ok": True, "sessiz": True, "mesaj": mesaj,
+                        "veri": {"kamera": kam.ad, "leke": sonuc,
                                  "kare": base64.b64encode(ham).decode("ascii")}}
 
             if ad == "kamera_kaydet":
