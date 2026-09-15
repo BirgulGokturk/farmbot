@@ -2718,3 +2718,22 @@ body.kamera-sekmesi .toplu-cubuk { display: none; }
 }
 .kam-denetimler .alan label { font-size: 12px; }
 
+
+/* SARMALAYICI DÜZELTMESİ — görüntü `.kamera-yuzen`in doğrudan çocuğu
+   değilse esneme araya giren öğeye gidiyor ve `.buyuk img` kuralı
+   etkisiz kalıyor: div içerik boyunu alıp kutudan taşıyor, görüntünün
+   üst %40'ı görünüyor. Esnemeyi sarmalayıcıya veriyoruz, görüntü de onu
+   dolduruyor. Ölçüldü (1227x912, kutu 880, kare 2160x3840):
+   yamasız img 1179x2096 (%40 görünür) → yamalı 1179x824 (%100). */
+.kamera-yuzen.buyuk > *:has(> img[data-rol="kare"]) {
+  flex: 1 1 0%;
+  min-height: 0;
+  display: flex;
+}
+.kamera-yuzen.buyuk img[data-rol="kare"] {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}

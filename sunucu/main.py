@@ -4335,3 +4335,66 @@ async def anasayfa():
     yanit = FileResponse(os.path.join(_STATIK, "index.html"))
     yanit.headers["Cache-Control"] = "no-store, must-revalidate"
     return yanit
+def _yaricaplar(bitkiler: list[dict[str, Any]]
+                ) -> tuple[dict[str, float], dict[str, bool]]:
+    """(yarıçap, yaşa_göre_mi) — sulamanın kullandığı zincirin AYNISI.
+
+    Kopyalamıyoruz: `sulama.guncel_yaricap_mm` neyse o. İkisi ayrışırsa
+    haritada eşleşen bir leke sulamada eşleşmeyebilirdi.
+
+    İkinci sözlük, yarıçapın BİR YAYILIM EĞRİSİNDEN gelip gelmediğini
+    söylüyor. Gelmiyorsa değer katalogdaki olgun çap ve "beklenen"
+    kelimesi yaşa göre bir beklenti anlamına GELMİYOR.
+    """
+    tur_indeks = {t.get("slug"): t for t in turler.hepsi()}
+    egri_listesi = egriler.hepsi()
+    simdi = time.time()
+    cikti: dict[str, float] = {}
+    yasa: dict[str, bool] = {}
+    for b in bitkiler:
+        gun = sulama.yas_gun(b, simdi)
+        yaricap, egriden = sulama.guncel_yaricap_mm(
+            b, tur_indeks.get(b.get("tur")), gun, egri_listesi)
+        cikti[b.get("ad")] = float(yaricap)
+        yasa[b.get("ad")] = bool(egriden)
+    return cikti, yasa
+
+
+_GORUNTU: dict[str, Any] = {"hazir": None, "hata": ""}
+
+
+def _goruntu_yukle():
+    """(goruntu, tespit, numpy, Image) ya da None — eksikse sebebi `_GORUNTU`da."""
+    if _GORUNTU["hazir"] is not None:
+        return _GORUNTU["hazir"] or None
+    try:
+        import numpy as _np
+        from PIL import Image as _Image
+        import goruntu as _goruntu
+        import tespit as _tespit
+        _GORUNTU["hazir"] = (_goruntu, _tespit, _np, _Image)
+    except Exception as hata:                    # ImportError ve türevleri
+        _GORUNTU["hazir"] = False
+        _GORUNTU["hata"] = (
+            f"Görüntü işleme için numpy ve Pillow gerekiyor ({hata}). "
+            "Pi'de: sunucu/.venv/bin/pip install numpy Pillow")
+        logger.warning("Görüntü işleme kapalı: %s", _GORUNTU["hata"])
+    return _GORUNTU["hazir"] or None
+
+
+def _kamera_etiket(ad: str) -> str:
+    return str(_kamera_bilgi(ad).get("etiket") or ad)
+
+
+def _kamera_bilgi(ad: str) -> dict[str, Any]:
+    """Ajanın bildirdiği kamera künyesi — etiket, hareketli mi.
+
+    Ajan kopukken boş dönüyor; çağıranlar "bilmiyorum"u karenin konumunun
+    olup olmamasından ayırt edebilsin diye sözlük boş kalıyor, uydurma bir
+    varsayılan konmuyor.
+    """
+    kam = kareler.ad_temizle(ad)
+    for k in (merkez.son_durum.get("kameralar") or []):
+        if kareler.ad_temizle(k.get("ad")) == kam:
+            return k
+    return {}

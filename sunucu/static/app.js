@@ -2079,6 +2079,7 @@ function kameraDurumYaz(k) {
     : sn >= 60 ? `${Math.round(sn / 60)} dakikada`
     : `${Math.round(sn)} saniyede`;
   const canli = !!k.canli;
+  const dondu = !!(S.kamDondu && S.kamDondu[ad]);
   rozet.textContent = !acik ? "kapalı"
     : canli ? `canlı · ${k.yontem || "?"}`
     : `açık · ${k.yontem || "?"} · ${aralik} bir kare`;
