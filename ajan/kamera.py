@@ -474,7 +474,11 @@ class Kamera:
         # kullanıcı bunu elle düzeltemiyor — türetmenin doğru olması
         # gerekiyor.
         if self._usb_yontem_mi():
-            kipler = v4l2_kipler(self._cihaz or "")
+            # Ayardaki yol YEDEK: çağrı sırası ne olursa olsun kip
+            # listesi okunabilsin. `self._cihaz` yalnız cihaz
+            # çözüldükten sonra doluyor.
+            kipler = v4l2_kipler(
+                self._cihaz or str(self.ayar.get("cihaz") or ""))
             if kipler:
                 # Önce istenen genişlikte olanlar: aralarında EN YÜKSEK
                 # olan, çünkü aynı genişlikte iki kip varsa yüksek olan
@@ -894,12 +898,18 @@ class Kamera:
         return "mjpeg" in cikti
 
     def _canli_komutu(self) -> list[str]:
-        genislik, yukseklik = self._boyut()
+        # CİHAZ ÖNCE ÇÖZÜLÜYOR. `_boyut` kip listesini cihazdan okuyor;
+        # bu satırlar ters sıradayken cihaz yolu henüz boş oluyordu,
+        # liste boş dönüyordu ve ölçü sessizce 4:3 türetmesine
+        # düşüyordu — yani kırpma düzeltmesi hiç devreye girmiyordu.
+        cihaz = ""
         if self._yontem in ("fswebcam", "ffmpeg"):
-            # USB kamera: ffmpeg v4l2'den okuyup stdout'a MJPEG basıyor.
             cihaz = self.cihaz_coz(zorla=True)
             if not cihaz:
                 raise RuntimeError(self.cihaz_not or "USB kamera bulunamadı")
+        genislik, yukseklik = self._boyut()
+        if self._yontem in ("fswebcam", "ffmpeg"):
+            # USB kamera: ffmpeg v4l2'den okuyup stdout'a MJPEG basıyor.
             temel = ["ffmpeg", "-hide_banner", "-loglevel", "error", "-f", "v4l2"]
             if self.mjpeg_verebilir_mi(cihaz):
                 # KAMERA ZATEN JPEG VERİYOR: kopyalayıp geçiyoruz, Pi hiçbir
@@ -1070,6 +1080,9 @@ class Kamera:
 
     def _komut_kare(self) -> bytes:
         """libcamera-still, fswebcam ya da ffmpeg ile tek kare."""
+        # Cihaz ÖNCE: gerekçesi `_canli_komutu` içinde.
+        if self._yontem in ("fswebcam", "ffmpeg"):
+            self.cihaz_coz()
         genislik, yukseklik = self._boyut()
         gecici = tempfile.NamedTemporaryFile(suffix=".jpg", delete=False)
         gecici.close()
