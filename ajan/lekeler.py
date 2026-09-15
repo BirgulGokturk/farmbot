@@ -43,6 +43,9 @@ VARSAYILAN: dict[str, Any] = {
     # bir filiz 1280 px'de de onlarca piksel kaplıyor. Sonuç koordinatları
     # gerçek karenin ölçeğine geri çevriliyor, yani küçültme dışarıdan
     # görünmüyor. 0 = küçültme yok.
+    #
+    # Bu değer JPEG ÇÖZMEYİ de etkiliyor (`_kare_coz`): düşürmek kareyi
+    # daha küçük DCT ölçeğinde çözdürüyor ve asıl kazanç orada.
     "islem_genislik": 1280,
 
     # EN KÜÇÜK LEKE — karenin alanına ORAN olarak. Piksel vermek
@@ -73,6 +76,54 @@ VARSAYILAN: dict[str, Any] = {
 
 def _kutu_olcekle(deger: float, olcek: float) -> int:
     return int(round(deger * olcek))
+
+
+def _kare_coz(ham: bytes, hedef_genislik: int, cv2, np):
+    """JPEG'i çözer — mümkünse ZATEN KÜÇÜLTÜLMÜŞ olarak.
+
+    ÖLÇÜLDÜ: 3840x2880 bir kareyi `cv2.imdecode` ile tam çözmek Pi 5'te
+    bütün işlemin yarısından fazlasını yiyordu (toplam ~1000 ms). Oysa
+    leke bulma 1280 px'de yapılıyor; tam çözümde üretilen piksellerin
+    dörtte üçü çözülür çözülmez atılıyordu.
+
+    PIL'in `draft` kipi JPEG'i DCT seviyesinde 1/2, 1/4, 1/8 ölçekte
+    çözebiliyor: atılacak piksel hiç üretilmiyor. Tam hedefe inmiyor
+    (yalnız ikinin katları), kalanı `bul` içindeki resize tamamlıyor.
+
+    PIL yoksa ya da dosya JPEG değilse OpenCV'ye düşüyoruz — yavaş ama
+    çalışıyor. Hangi yolun kullanıldığı çıktıda yazıyor; "neden bu kadar
+    sürdü" sorusunun cevabı görünür olsun.
+    """
+    import io
+
+    try:
+        from PIL import Image
+    except ImportError:
+        kare = cv2.imdecode(np.frombuffer(ham, dtype=np.uint8),
+                            cv2.IMREAD_COLOR)
+        if kare is None:
+            return None, 0, 0, "opencv"
+        return kare, kare.shape[1], kare.shape[0], "opencv"
+
+    try:
+        gorsel = Image.open(io.BytesIO(ham))
+        tam_g, tam_y = gorsel.size
+        if hedef_genislik and tam_g > hedef_genislik:
+            # draft en yakın ikinin katını seçiyor; hedefin altına
+            # DÜŞMÜYOR, yani çözünürlük kaybı yaşanmıyor.
+            oran = hedef_genislik / float(tam_g)
+            gorsel.draft("RGB", (hedef_genislik,
+                                 max(1, int(round(tam_y * oran)))))
+        gorsel = gorsel.convert("RGB")
+        # PIL RGB veriyor, buradan sonrası OpenCV ve o BGR bekliyor.
+        kare = np.asarray(gorsel)[:, :, ::-1].copy()
+        return kare, tam_g, tam_y, "pil-draft"
+    except Exception:
+        kare = cv2.imdecode(np.frombuffer(ham, dtype=np.uint8),
+                            cv2.IMREAD_COLOR)
+        if kare is None:
+            return None, 0, 0, "opencv"
+        return kare, kare.shape[1], kare.shape[0], "opencv"
 
 
 def bul(ham: bytes, ayar: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -106,18 +157,20 @@ def bul(ham: bytes, ayar: dict[str, Any] | None = None) -> dict[str, Any]:
         # Sessiz kapanmıyor: sebep çağırana gidiyor, oradan panele.
         return {**bos, "sebep": f"OpenCV/NumPy yok: {hata}"}
 
-    dizi = np.frombuffer(ham, dtype=np.uint8)
-    kare = cv2.imdecode(dizi, cv2.IMREAD_COLOR)     # BGR
+    hedef = int(a.get("islem_genislik") or 0)
+    coz_basi = time.monotonic()
+    kare, tam_g, tam_y, coz_yolu = _kare_coz(ham, hedef, cv2, np)
+    coz_ms = round((time.monotonic() - coz_basi) * 1000.0, 1)
     if kare is None:
         return {**bos, "sebep": "kare çözülemedi (bozuk ya da boş JPEG)"}
-    tam_y, tam_g = kare.shape[:2]
     bos["kare_px"] = [tam_g, tam_y]
 
     # --- küçültme ---------------------------------------------------------
-    hedef = int(a.get("islem_genislik") or 0)
-    if hedef and tam_g > hedef:
-        oran = hedef / float(tam_g)
-        kare = cv2.resize(kare, (hedef, int(round(tam_y * oran))),
+    # `_kare_coz` yalnız ikinin katlarına inebiliyor; kalan farkı burada
+    # kapatıyoruz. Zaten hedefteyse bu adım atlanıyor.
+    if hedef and kare.shape[1] > hedef:
+        oran = hedef / float(kare.shape[1])
+        kare = cv2.resize(kare, (hedef, max(1, int(round(kare.shape[0] * oran)))),
                           interpolation=cv2.INTER_AREA)
     yuk, gen = kare.shape[:2]
     # Küçültülmüş piksel -> gerçek piksel. Sonuçlar bununla geri ölçekleniyor.
@@ -150,6 +203,7 @@ def bul(ham: bytes, ayar: dict[str, Any] | None = None) -> dict[str, Any]:
         return {**bos, "sebep": (
             f"karede bitki görünmüyor — ayrılan yeşil alan %{yesil_oran*100:.3f}, "
             f"eşik %{float(a['en_az_yesil_oran'])*100:.3f}"),
+            "coz_yolu": coz_yolu, "coz_ms": coz_ms,
             "sure_ms": round((time.monotonic() - basladi) * 1000.0, 1)}
 
     # --- morfoloji --------------------------------------------------------
@@ -212,6 +266,10 @@ def bul(ham: bytes, ayar: dict[str, Any] | None = None) -> dict[str, Any]:
         "esik": round(float(esik), 1),
         "yesil_oran": round(yesil_oran, 5),
         "elenen": {"kucuk": elenen_kucuk, "buyuk": elenen_buyuk},
+        # Çözme ayrı yazılıyor: toplam süre yükseldiğinde suçlunun JPEG
+        # çözme mi yoksa leke bulma mı olduğu tahmin edilmesin.
+        "coz_yolu": coz_yolu,
+        "coz_ms": coz_ms,
         "sure_ms": round((time.monotonic() - basladi) * 1000.0, 1),
         "sebep": sebep,
     }
@@ -249,7 +307,9 @@ if __name__ == "__main__":
         ozet = {k: v for k, v in sonuc.items() if k != "lekeler"}
         print(f"\n=== {yol} ===")
         print(json.dumps(ozet, ensure_ascii=False))
-        print(f"leke: {len(sonuc['lekeler'])}")
+        print(f"leke: {len(sonuc['lekeler'])}  "
+              f"(cozme {sonuc.get('coz_ms')} ms / toplam {sonuc.get('sure_ms')} ms, "
+              f"yol={sonuc.get('coz_yolu')})")
         for leke in sonuc["lekeler"][:15]:
             print(f"  ({leke['x']:5d},{leke['y']:5d})  alan={leke['alan_px']:7d} "
                   f"dolgu={leke['dolgu']:.2f} en/boy={leke['en_boy']:.2f}")
