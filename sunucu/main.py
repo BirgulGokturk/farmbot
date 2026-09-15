@@ -36,12 +36,9 @@ import bahce
 import baslar
 import bitki
 import depo
-import etiket
 import filiz
 import isik
-import izgara_uc
 import bitkiolcum
-import otokalib
 import dikim
 import egriler
 import ekim
@@ -3398,9 +3395,17 @@ async def api_kalibrasyon_kaydet(govde: dict[str, Any], jeton: str = Query(defau
 # /api/kamera/kalibrasyon`) duruyor: ölçüleni görmenin ve gerektiğinde bir
 # değeri zorlamanın yolu o.
 
-# AprilTag ile kalibrasyon AYRI BİR DOSYADA ve kendi yönlendiricisinde
-# (`etiket.py`). Uç noktalarını buraya yazmak, `main.py` sürekli değiştiği
-# için her yamada çakışma demekti; tek satırla bağlanıyor.
+# KAMERA KALİBRASYON YÖNTEMLERİ KALDIRILDI.
+#
+# AprilTag (`etiket.py`), makineyle otomatik (`otokalib.py`) ve ızgara
+# turu (`izgara/`, `izgara_uc.py`) — üçü de silindi. Sebep yöntemlerin
+# tek tek başarısızlığı değil, mimarinin yeniden kurulacak olması.
+#
+# ÇEVİRİ KATMANI DURUYOR: `kalibrasyon.py` kaydı ve `tespit.py`nin
+# piksel→mm işlevleri yerinde. Kalibrasyon yokken `filiz.py` koordinat
+# üretmiyor ve sebebini yazıyor (`YOK_KALIBRASYON`) — sessizce sıfır
+# vermiyor. Yeni yöntem bu boş kancaya bağlanacak: `kalibrasyon.kaydet`
+# ile bir kayıt yazmak yeterli.
 #: Çözümleme karesi ne kadar eskiye kadar kabul ediliyor. Canlı akışın son
 #: karesi bellekte duruyor; akış durunca orada kalıyor ve donmuş kareyi
 #: ölçen kalibrasyon aynı görüntüyü tekrar tekrar ölçüp "kamera çalışıyor"
@@ -3505,15 +3510,6 @@ def _makine_xy() -> tuple[float | None, float | None]:
         return (None, None)
 
 
-def _kamera_hareketli(ad: str) -> bool:
-    return bool(_kamera_bilgi(ad).get("hareketli", False))
-
-
-# KARE KAYNAĞI `_cozumleme_karesi`: ajandan TAM çözünürlüklü kare istiyor,
-# ağdan geçen küçültülmüş akış karesini değil. Etiket okuma ve filiz bulma
-# için çözünürlük doğrudan sonucu belirliyor.
-app.include_router(etiket.yonlendirici_kur(
-    _parola_dogrula, _cozumleme_karesi, _makine_xy, _kamera_hareketli))
 app.include_router(filiz.yonlendirici_kur(_parola_dogrula, _cozumleme_karesi))
 # OLCUM KATMANI ayni tespitleri kullaniyor: `filiz.tara()` ikisinin de
 # govdesi. Ikinci bir tespit hatti, ayni yatak icin birbirini tutmayan
@@ -3569,13 +3565,6 @@ async def _git_ve_bekle(x: float, y: float, z: float | None,
             "ulaşamadı — sınır dışı ya da bir hareket engeli olabilir.")
 
 
-app.include_router(otokalib.yonlendirici_kur(
-    _parola_dogrula, merkez.canli_kare_taze, _git_ve_bekle))
-# IZGARA KALIBRASYONU. `otokalib` ile ayni iki bagimlilik ama kare
-# TAM cozunurlukten aliniyor: isaretin merkezi piksel altinda olculuyor
-# ve kucultulmus bir karede o hassasiyet bastan kayboluyor.
-app.include_router(izgara_uc.yonlendirici_kur(
-    _parola_dogrula, _cozumleme_karesi, _git_ve_bekle, merkez.komut_gonder))
 
 
 # --------------------------------------------------------------------------- #

@@ -36,7 +36,9 @@
    *  ayrı seçim, bir gün ayrışacak iki ölçüm demekti. */
   function govdeKur() {
     const g = {};
-    const sec = $("#etiket-kamera");
+    // Kamera seçimi "Filizlerin konumu" kartından: tespit orada
+    // yapılıyor ve iki ayrı seçici, bir gün ayrışacak iki ölçüm demekti.
+    const sec = $("#filiz-kamera");
     g.kamera = (sec && sec.value) || "ust";
     const say = (id, ad) => {
       const e = $(id);

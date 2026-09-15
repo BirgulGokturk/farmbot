@@ -1069,24 +1069,16 @@
             <button class="dugme birincil" id="d-kalib-kaydet">Kaydet</button>
           </div>
 
-          <!-- TIKLAMA TABANLI İKİ YÖNTEM KALDIRILDI: "iki kare" ve
-               "ölçek". İkisi de bir piksele tıklamaya dayanıyordu ve
-               tıklama 3-5 piksel şaşıyor; o şaşma bütün kareye yayılıyor.
-               AprilTag aynı bilgiyi alt piksel hassasiyetiyle veriyor,
-               üstüne dört etiketle perspektifi de çözüyor. Tarama kendi
-               önizlemesini kendi çiziyor (etiket.js). -->
-          <!-- AprilTag bolumu kendi dosyasinda kuruluyor (etiket.js);
-               burada yalniz kabi duruyor ki bu dosyada catisma yuzeyi
-               uc satirda kalsin. -->
-          <div id="etiket-bolum"></div>
+          <!-- KALIBRASYON YONTEMLERI KALDIRILDI: AprilTag, makineyle
+               otomatik ve izgara turu. Yukarıdaki elle giris DURUYOR —
+               `kalibrasyon.py` kaydina yazan tek yol o ve yeni mimari
+               ayni kancaya baglanacak. -->
 
           <!-- Filiz konumlari kendi dosyasinda kuruluyor (filiz.js);
                burada yalniz bos kap duruyor. -->
           <div id="filiz-bolum"></div>
           <!-- Bitki olcumu (gorus katmani) kendi dosyasinda: bitkiolcum.js -->
           <div id="bitkiolcum-bolum"></div>
-          <!-- Izgara kalibrasyonu kendi dosyasinda: izgara.js -->
-          <div id="izgara-bolum"></div>
         </div>
       </section>
       </div>
@@ -2071,11 +2063,9 @@
 <script src="/statik/ses.js"></script>
 <script src="/statik/bahce.js"></script>
 <script src="/statik/app.js"></script>
-<script src="/statik/etiket.js"></script>
 <script src="/statik/filiz.js"></script>
 <script src="/statik/bitkiolcum.js"></script>
 <script src="/statik/isik.js"></script>
-<script src="/statik/izgara.js"></script>
 <!-- `nem.js` BILEREK YUKLENMIYOR. Tarla'daki nem tablosu her sutunuyla
      Bitkiler sekmesinin kartina tasindi (prob bekleme suresi ve
      "olculmeyenleri olc" dahil); iki yerde duran ayni sayi, hangisinin

@@ -30,11 +30,31 @@
     if (p && p.gunluk) p.gunluk(metin, seviye);
   }
 
-  /** Etiket bölümüyle AYNI kamerayı işliyor: ikisi de üst kamerayı
-   *  konuşuyor ve iki ayrı seçici, bir gün ayrışacak iki seçim demekti. */
+  /** Hangi kameradan ölçülüyor.
+   *
+   * SEÇİCİ ARTIK BURADA. Eskiden AprilTag kalibrasyon bölümünün
+   * seçicisini (`#etiket-kamera`) okuyordu; o bölüm kaldırıldı ve
+   * seçici onunla birlikte gitti. Ödünç alınan bir kutuya bağlı kalmak,
+   * o kutunun sahibi kalktığında sessizce "ust"a düşmek demekti.
+   */
   function seciliKamera() {
-    const sec = $("#etiket-kamera");
+    const sec = $("#filiz-kamera");
     return (sec && sec.value) || "ust";
+  }
+
+  async function kameralariYukle() {
+    const sec = $("#filiz-kamera");
+    if (!sec) return;
+    let liste = [];
+    try {
+      const y = await P().apiIste("/api/durum");
+      liste = ((y.durum || {}).kameralar || [])
+        .map((k) => ({ ad: k.ad, etiket: k.etiket || k.ad }));
+    } catch (h) { /* aşağıdaki yedek devreye giriyor */ }
+    if (!liste.length) liste = [{ ad: "ust", etiket: "Üst kamera" },
+                                { ad: "uc", etiket: "Uç kamerası" }];
+    sec.innerHTML = liste.map((k) =>
+      `<option value="${kacisli(k.ad)}">${kacisli(k.etiket)}</option>`).join("");
   }
 
   function kur() {
@@ -51,6 +71,8 @@
         </p>
 
         <div class="satir-8 alt-hizali">
+          <div class="alan"><label for="filiz-kamera">Kamera</label>
+            <select id="filiz-kamera"></select></div>
           <button class="dugme birincil" id="d-filiz-bul">Filizleri bul</button>
           <div class="alan">
             <label for="filiz-esik">Yeşil eşiği</label>
@@ -95,85 +117,9 @@
           <img id="filiz-kare" alt="Çözümlenen kare">
           <canvas id="filiz-tuval"></canvas>
         </div>
-        <div id="filiz-secim" class="gizli">
-          <p class="alt-not">
-            Önizlemeye tıklayınca o noktanın <b>kare pikseli</b> yazılıyor —
-            ızgara kalibrasyonunda köşe köşe girilen sayı bu. Tıklanan
-            nokta ölçekli görüntünün değil, çözümlenen TAM çözünürlüklü
-            karenin pikseli.
-          </p>
-          <div class="satir">
-            <span class="mono" id="filiz-secim-liste">—</span>
-            <button id="d-filiz-secim-kopya">Kopyala</button>
-            <button id="d-filiz-secim-temizle">Temizle</button>
-            <button id="d-filiz-kare-kaydet">Kareyi Pi'ye kaydet</button>
-          </div>
-          <p class="alt-not mono" id="filiz-kare-yol"></p>
-        </div>
       </details>`;
+    kameralariYukle();
     $("#d-filiz-bul").onclick = bul;
-    $("#filiz-onizleme").addEventListener("click", pikselSec);
-    $("#d-filiz-secim-kopya").onclick = () => {
-      const m = secimler.map(([u, v]) => `${u},${v}`).join(" ");
-      if (!m) return;
-      if (navigator.clipboard) navigator.clipboard.writeText(m);
-      gunluk(`✓ Köşe pikselleri kopyalandı: ${m}`, "ok");
-    };
-    $("#d-filiz-secim-temizle").onclick = () => { secimler = []; secimYaz(); };
-    /* Izgara aracı bir JPEG dosyası istiyor ve o dosyanın, köşelerini
-     * tıkladığınız kareyle AYNI kare olması gerekiyor: başka bir
-     * çözünürlük girdiğiniz köşe piksellerini sessizce geçersiz kılar. */
-    $("#d-filiz-kare-kaydet").onclick = async () => {
-      const p = P();
-      if (!p) return;
-      const d = $("#d-filiz-kare-kaydet");
-      d.disabled = true;
-      try {
-        const c = await p.apiIste("/api/bitkiolcum/kare_kaydet", {
-          method: "POST", body: JSON.stringify({ kamera: seciliKamera() }),
-        });
-        $("#filiz-kare-yol").textContent = c.yol || "";
-        gunluk(`✓ Kare Pi'ye yazıldı: ${c.yol}`, "ok");
-      } catch (h) {
-        hataYaz(h.message || String(h));
-      } finally {
-        d.disabled = false;
-      }
-    };
-  }
-
-  /* KÖŞE PİKSELİ OKUMA. `gorus.izgara_arac` dörtgenin dört köşesinin
-   * piksel konumunu istiyor ve bu sayıyı bir yerden okumak gerekiyor.
-   * Kareyi bilgisayara indirip bir resim programında imleç konumuna
-   * bakmak işe yarıyordu ama her denemede scp turu demekti; önizleme
-   * zaten burada duruyor.
-   *
-   * ÖLÇEK DÜZELTMESİ ŞART: img ekrana sığacak kadar küçültülmüş
-   * gösteriliyor, aracın istediği sayı ise TAM çözünürlüklü karenin
-   * pikseli. Ekran pikselini olduğu gibi vermek, 4K karede dört kat
-   * yanlış köşe demek olurdu. */
-  let secimler = [];
-
-  function pikselSec(olay) {
-    if (!son || !son.genislik_px) return;
-    const im = $("#filiz-kare");
-    const r = im.getBoundingClientRect();
-    if (!r.width || !r.height) return;
-    const u = Math.round((olay.clientX - r.left) * (son.genislik_px / r.width));
-    const v = Math.round((olay.clientY - r.top) * (son.yukseklik_px / r.height));
-    if (u < 0 || v < 0 || u > son.genislik_px || v > son.yukseklik_px) return;
-    secimler.push([u, v]);
-    if (secimler.length > 4) secimler.shift();   // dörtgen dört köşe
-    secimYaz();
-  }
-
-  function secimYaz() {
-    const k = $("#filiz-secim-liste");
-    if (!k) return;
-    k.textContent = secimler.length
-      ? secimler.map(([u, v]) => `${u},${v}`).join("  ")
-      : "—";
-    tuvalCiz();
   }
 
   function hataYaz(metin) {
@@ -209,9 +155,6 @@
       son = null;
       $("#filiz-sonuc").classList.add("gizli");
       $("#filiz-onizleme").classList.add("gizli");
-      // Önizleme gidince köşe seçici de gitmeli: altında kare olmayan
-      // bir "tıklayıp piksel okuyun" kutusu, tıklanacak yer arattırıyor.
-      $("#filiz-secim").classList.add("gizli");
       hataYaz(h.message || String(h));
     } finally {
       d.disabled = false;
@@ -358,7 +301,6 @@
     // src'de `load` olayını bir daha vermiyor ve işaret hiç görünmüyordu.
     if (im.complete) tuvalCiz();
     o.classList.remove("gizli");
-    $("#filiz-secim").classList.remove("gizli");
   }
 
   function tuvalCiz() {
@@ -382,16 +324,6 @@
         c.fillRect(x1, Math.max(0, y1 - 20), en, 18);
         c.fillStyle = "#8ef08e";
         c.fillText(yazi, x1 + 4, Math.max(13, y1 - 6));
-      });
-      // Tıklanan köşeler: fide kutularından ayrı renk, sırayla numaralı.
-      const r = Math.max(6, son.genislik_px / 250);
-      secimler.forEach(([u, v], i) => {
-        c.strokeStyle = "#ffd166";
-        c.beginPath(); c.moveTo(u - r * 2, v); c.lineTo(u + r * 2, v);
-        c.moveTo(u, v - r * 2); c.lineTo(u, v + r * 2); c.stroke();
-        c.beginPath(); c.arc(u, v, r, 0, Math.PI * 2); c.stroke();
-        c.fillStyle = "#ffd166";
-        c.fillText(String(i + 1), u + r * 2 + 4, v - 4);
       });
     }
   }
