@@ -3356,56 +3356,16 @@ async def api_goruntu_maske(damga: str = Query(...), esik: float = Query(default
 # yarıyor. Hesap `kalibrasyon.py` içinde; panel yalnızca tıklanan pikselleri
 # gönderiyor.
 # --------------------------------------------------------------------------- #
-@app.get("/api/kamera/kalibrasyon")
-async def api_kalibrasyon(jeton: str = Query(default=""),
-                          kamera: str = Query(default=kalibrasyon.VARSAYILAN_KAMERA)):
-    """Seçili kameranın kalibrasyonu + hepsi.
-
-    `kalibrasyon` tekili duruyor: haritanın kare katmanı ve eski panel
-    doğrudan onu okuyor ve o her zaman UÇ kamerasının sayısı olmalı — harita
-    yalnızca konumu bilinen kareleri çiziyor, onlar da uç kamerasından.
-    """
-    _parola_dogrula(jeton)
-    kam = kalibrasyon.ad_temizle(kamera)
-    return {"kalibrasyon": await asyncio.to_thread(kalibrasyon.oku, kam),
-            "kamera": kam,
-            "kalibrasyonlar": await asyncio.to_thread(kalibrasyon.hepsi)}
-
-
-@app.post("/api/kamera/kalibrasyon")
-async def api_kalibrasyon_kaydet(govde: dict[str, Any], jeton: str = Query(default="")):
-    _parola_dogrula(jeton)
-    try:
-        veri = await asyncio.to_thread(kalibrasyon.kaydet, govde,
-                                       kalibrasyon.ad_temizle(govde.get("kamera")))
-    except kalibrasyon.KalibrasyonHatasi as hata:
-        raise HTTPException(status_code=400, detail=str(hata))
-    except (TypeError, ValueError) as hata:
-        raise HTTPException(status_code=400, detail=f"Geçersiz kalibrasyon: {hata}")
-    return {"ok": True, "kalibrasyon": veri}
-
-
-# TIKLAMA TABANLI İKİ YÖNTEM KALDIRILDI.
+# KAMERA KALİBRASYONU UÇLARI KALDIRILDI.
 #
-# `/api/kamera/kalibrasyon/coz` (iki kare) ve `/api/kamera/kalibrasyon/olcek`
-# (bilinen mesafe) buradaydı. İkisi de kullanıcının bir piksele tıklamasına
-# dayanıyordu; tıklama 3-5 piksel şaşıyor ve o şaşma bütün kareye yayılıyor.
-# AprilTag aynı iki bilgiyi alt piksel hassasiyetiyle veriyor ve dört
-# etiketle üstüne perspektifi de çözüyor. Elle sayı girme (`POST
-# /api/kamera/kalibrasyon`) duruyor: ölçüleni görmenin ve gerektiğinde bir
-# değeri zorlamanın yolu o.
+# Üç ölçüm yöntemi (AprilTag, makineyle otomatik, ızgara turu) ve elle
+# giriş formu birlikte silindi; mimari baştan kurulacak.
+#
+# `kalibrasyon.py` DURUYOR ve `filiz.py` ile `bitkiolcum.py` onu okumaya
+# devam ediyor: kayıt yoksa koordinat üretilmiyor ve sebebi yazılıyor
+# (`YOK_KALIBRASYON`). Yeni yöntem `kalibrasyon.kaydet` ile aynı kayda
+# yazacak; okuma tarafında değiştirilecek bir şey yok.
 
-# KAMERA KALİBRASYON YÖNTEMLERİ KALDIRILDI.
-#
-# AprilTag (`etiket.py`), makineyle otomatik (`otokalib.py`) ve ızgara
-# turu (`izgara/`, `izgara_uc.py`) — üçü de silindi. Sebep yöntemlerin
-# tek tek başarısızlığı değil, mimarinin yeniden kurulacak olması.
-#
-# ÇEVİRİ KATMANI DURUYOR: `kalibrasyon.py` kaydı ve `tespit.py`nin
-# piksel→mm işlevleri yerinde. Kalibrasyon yokken `filiz.py` koordinat
-# üretmiyor ve sebebini yazıyor (`YOK_KALIBRASYON`) — sessizce sıfır
-# vermiyor. Yeni yöntem bu boş kancaya bağlanacak: `kalibrasyon.kaydet`
-# ile bir kayıt yazmak yeterli.
 #: Çözümleme karesi ne kadar eskiye kadar kabul ediliyor. Canlı akışın son
 #: karesi bellekte duruyor; akış durunca orada kalıyor ve donmuş kareyi
 #: ölçen kalibrasyon aynı görüntüyü tekrar tekrar ölçüp "kamera çalışıyor"

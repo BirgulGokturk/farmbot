@@ -1003,83 +1003,27 @@
     <section class="sayfa" id="sayfa-kamera">
       <div class="kam-tahta" id="kam-tahta"></div>
 
-      <!-- KALİBRASYON TEK KOPYA. Kalibre edilen kameranın yarısının altına
-           TAŞINIYOR (aynı öğe, `appendChild` ile); iki kopya açmak aynı
-           id'leri ikiye katlar ve hangisinin geçerli olduğunu bilinmez
-           yapardı. Hiçbir yarı seçili değilken burada duruyor. -->
-      <div id="kam-kalib-yuva">
-      <section class="bolum kapali" id="bolum-kamera-kalib">
+      <!-- KAMERA KALİBRASYONU BÖLÜMÜ KALDIRILDI.
+           Üç ölçüm yöntemi (AprilTag, makineyle otomatik, ızgara turu) ve
+           elle giriş formu birlikte silindi; mimari baştan kurulacak.
+           `kalibrasyon.py` kaydı ve `tespit.py`nin piksel->mm işlevleri
+           yerinde duruyor — kalibrasyon yokken `filiz.py` koordinat
+           üretmiyor ve sebebini yazıyor. -->
+      <section class="bolum kapali" id="bolum-goruntu-isleme">
         <div class="bolum-ust">
           <button class="bolum-bas" aria-expanded="false">
             <svg class="ikon ok"><use href="#i-ok"/></svg>
-            <span class="bolum-ad">Kamera kalibrasyonu</span>
-            <span class="bolum-not" id="kalib-durum"></span>
+            <span class="bolum-ad">Görüntü işleme</span>
           </button>
-          <button class="yardim" type="button" aria-expanded="false"
-                  aria-controls="yardim-kalib" aria-label="Açıklama">?</button>
         </div>
         <div class="bolum-govde">
-          <p class="yardim-metin gizli" id="yardim-kalib">
-            Kareyi haritanın doğru yerine, doğru ölçekte ve açıda koyabilmek
-            için bir pikselin kaç mm olduğunu ve kameranın makine eksenine
-            göre nasıl durduğunu bilmek gerekiyor. Ölçüm yolu tek:
-            <b>AprilTag</b> (aşağıdaki bölüm). Etiketin dört köşesi
-            matematiksel olarak tanımlı ve yazılım onları alt piksel
-            hassasiyetiyle buluyor — hiçbir yere tıklamıyorsunuz.<br><br>
-            <b>Dört etiket perspektifi de çözüyor.</b> Ölçek + açı modeli
-            kameranın yatağa dik baktığını varsayıyor; bu kurulumda kamera
-            eğik bakıyor ve sahada ölçüldü: o model 52 mm, dört etiketten
-            çıkan <b>harita</b> 9 mm yanıldı. Harita varsa çözümleme onu
-            kullanıyor, yoksa eski model aynen geçerli.<br><br>
-            <b>Sabit kameranın karesi artık yatağa oturuyor.</b> Etiketler
-            yatağa yapıştırılı ve koordinatları biliniyor, dolayısıyla
-            haritadan çıkan koordinat doğrudan yatak koordinatı — karenin
-            bir makine konumu olmasına gerek yok. Eskiden "karenin makine
-            konumu yok" diye koordinat verilmiyordu; o eksik kapandı.<br><br>
-            <b>Aşağıdaki sayılar</b> ölçümün sonucu. Elle de girilebiliyor
-            ama olağan yol taramanın kaydetmesi; elle girilen değer
-            ölçüleni ezer.<br><br>
-            <b>mm/piksel her kamera için AYRIDIR.</b> Uç kamerası yatağa
-            yakın, sabit kamera uzaktan tümünü görüyor; aynı sayıyı ikisine
-            birden uygulamak ölçüleri kat kat yanlış yapar ve yanlış olduğu
-            belli olmaz. Bu yüzden kalibrasyon kamera başına saklanıyor ve
-            çözümleme, karenin geldiği kameranın sayısını kullanıyor.
-          </p>
-
-          <div class="araclar kam-sekmeler gizli" id="kalib-sekmeler"
-               role="group" aria-label="Kalibre edilecek kamera"></div>
-          <p class="ikincil" id="kalib-kamera-not"></p>
-
-          <div class="satir-8 alt-hizali">
-            <div class="alan"><label for="kalib-mmpx">mm / piksel</label>
-              <input type="number" id="kalib-mmpx" step="0.001" min="0" max="20" value="0"></div>
-            <div class="alan"><label for="kalib-donme">Açı (°)</label>
-              <input type="number" id="kalib-donme" step="0.1" min="-180" max="180" value="0"></div>
-          </div>
-          <div class="satir-8 alt-hizali">
-            <div class="alan"><label for="kalib-ofx">Kayma X (mm)</label>
-              <input type="number" id="kalib-ofx" step="0.5" min="-500" max="500" value="0"></div>
-            <div class="alan"><label for="kalib-ofy">Kayma Y (mm)</label>
-              <input type="number" id="kalib-ofy" step="0.5" min="-500" max="500" value="0"></div>
-          </div>
-          <div class="satir-8">
-            <label class="onay"><input type="checkbox" id="kalib-ayna-x"> Yatay ayna</label>
-            <label class="onay"><input type="checkbox" id="kalib-ayna-y"> Dikey ayna</label>
-            <span class="esnek"></span>
-            <button class="dugme birincil" id="d-kalib-kaydet">Kaydet</button>
-          </div>
-
-          <!-- KALIBRASYON YONTEMLERI KALDIRILDI: AprilTag, makineyle
-               otomatik ve izgara turu. Yukarıdaki elle giris DURUYOR —
-               `kalibrasyon.py` kaydina yazan tek yol o ve yeni mimari
-               ayni kancaya baglanacak. -->
-
           <!-- Filiz konumlari kendi dosyasinda kuruluyor (filiz.js);
                burada yalniz bos kap duruyor. -->
           <div id="filiz-bolum"></div>
           <!-- Bitki olcumu (gorus katmani) kendi dosyasinda: bitkiolcum.js -->
           <div id="bitkiolcum-bolum"></div>
         </div>
+      </section>
       </section>
       </div>
 
@@ -1177,12 +1121,6 @@
             <button class="dugme birincil" data-rol="kaydet" type="button">Kaydet</button>
           </div>
           <div class="uyari-kutu gizli" data-rol="hata"></div>
-          <div class="satir-8 alt-hizali">
-            <span class="ikincil" data-rol="kalib-ozet"></span>
-            <span class="esnek"></span>
-            <button class="dugme" data-rol="kalib" type="button">
-              Kalibrasyonu buraya getir</button>
-          </div>
         </details>
       </section>
     </template>

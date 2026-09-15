@@ -26,7 +26,6 @@ const S = {
   kamMaskeler: {},          // ad -> maske katmanı açık mı
   kamFps: {},               // ad -> {damga:[], yazi} — kare/sn sayacı
   kamCanliElle: {},         // ad -> kullanıcı canlıyı elle kapattı mı
-  kalibrasyonlar: {},       // ad -> kalibrasyon (yarı altındaki özet için)
   dakika: 60,
   ws: null,
   jogAktif: null,        // {eksen, yon, dugme} — şu an basılı tutulan jog
@@ -42,7 +41,6 @@ const S = {
   sonGozler: null,      // tohumluk gözleri imzası
   gozDuzenleniyor: false,
   kamAyarTaslak: null,  // Kameralar bölümünde düzenlenen, henüz kaydedilmemiş tanımlar
-  kalibSecim: "",       // kalibrasyon bölümünün işlediği kamera
   tepsiler: [],         // gözlü dikim alanları, gözleriyle
   tepsiSecim: [],       // seçili göz adları
   ucDurum: null,        // ajandan gelen son kafa durumu (üç baş, tohumluk)
@@ -1535,121 +1533,28 @@ async function gozTablosuKaydet() {
 }
 
 
-/* ================================================== kamera kalibrasyonu
+/* ====================================================== kamera secimi
  *
- * Fotoğrafı haritaya oturtan sayılar. Hesap sunucuda (kalibrasyon.py,
- * etiket.py); panelin işi sayıları göstermek ve taramayı başlatmak.
+ * KALİBRASYON BÖLÜMÜ BURADAYDI, KALDIRILDI. Üç ölçüm yöntemi (AprilTag,
+ * makineyle otomatik, ızgara turu) ve elle giriş formu birlikte silindi;
+ * mimari baştan kurulacak. Sunucuda `kalibrasyon.py` kaydı ve
+ * `tespit.py`nin piksel->mm işlevleri duruyor — kayıt yokken `filiz.py`
+ * koordinat üretmiyor ve sebebini yazıyor.
  *
- * TIKLAMA TABANLI İKİ YÖNTEM KALDIRILDI ("iki kare" ve "ölçek"). İkisi de
- * kullanıcının bir piksele tıklamasına dayanıyordu; tıklama 3-5 piksel
- * şaşıyor ve o şaşma bütün kareye yayılıyor — 640 piksellik karede 4
- * piksel, 535 mm'lik yatakta 3 mm. AprilTag'in dört köşesi matematiksel
- * olarak tanımlı, algılayıcı onları alt piksel hassasiyetiyle buluyor ve
- * dört etiketle perspektif de çözülüyor. Tarama arayüzü `etiket.js`
- * içinde, kendi önizlemesiyle.
- *
- * Burada kalan: kayıtlı sayıları göstermek, elle girmek (ölçüleni ezmenin
- * ve görmenin yolu) ve kamera seçimini yönetmek.
+ * Burada kalan tek iş: panelin hangi kameraya baktığını yönetmek.
+ * Seçim TEK: iki ayrı şerit iki farklı kamerayı gösterebilir ve
+ * kullanıcı hangi kameranın ölçüldüğünü ancak dikkatle bakarak
+ * anlayabilirdi.
  */
 
-/* Kalibrasyon bölümünün işlediği kamera — PANELİN SEÇİMİYLE AYNI.
- *
- * Ayrı bir seçim tutmayı denemeye değmez: iki şerit iki farklı kamerayı
- * gösterebilirdi ve kullanıcı, ölçtüğü sayının hangi kameraya yazıldığını
- * ancak dikkatle bakarak anlardı. Yanlış kameraya yazılmış bir mm/px,
- * bulunması en zor hatalardan biri. Tek seçim, tek doğru. */
-function kalibSecili() {
-  return kamSecili() || "uc";
-}
-
-function kalibSekmeleriYaz() {
-  const serit = $("#kalib-sekmeler");
-  if (!serit) return;
-  const hepsi = kamListe();
-  serit.classList.toggle("gizli", hepsi.length < 2);
-  serit.innerHTML = hepsi.map((k) => `
-    <button class="ikon-dugme kam-sekme${k.ad === kalibSecili() ? " secili" : ""}"
-      type="button" data-kam="${kacisli(k.ad)}"
-      >${kacisli(k.etiket || k.ad)}</button>`).join("");
-  serit.querySelectorAll(".kam-sekme").forEach((d) => {
-    d.onclick = () => kamSecimDegistir(d.dataset.kam);
-  });
-  kalibYontemYaz();
-}
-
-/** Panelin kamera seçimini değiştirir; kart, kalibrasyon ve görüntü
- *  bölümü hep aynı kameraya bakıyor. */
+/** Panelin kamera seçimini değiştirir; kart ve görüntü bölümü hep
+ *  aynı kameraya bakıyor. */
 function kamSecimDegistir(ad) {
   if (!ad || ad === S.kamSecim) return;
   S.kamSecim = ad;
-  kalibSekmeleriYaz();
-  kalibrasyonYukle();
   goruntuDurumYukle();
 }
 
-/* Seçili kameranın kalibrasyon notu.
- *
- * SABİT KAMERADA AÇI VE KAYMA ARTIK ANLAMSIZ DEĞİL. Eskiden bu alanlar
- * kilitliydi, çünkü sabit kameranın karesinin makine koordinatı yoktu.
- * AprilTag etiketleri yatağa yapıştırılıyor ve koordinatları biliniyor;
- * çözümden çıkan kayma doğrudan "karenin merkezi yatağın şurası"
- * anlamına geliyor. Kilit kalktı. */
-function kalibYontemYaz() {
-  const ad = kalibSecili();
-  const hareketli = kamHareketli(ad);
-  const not = $("#kalib-kamera-not");
-  const k = S.kalibrasyon || {};
-  if (not) {
-    not.textContent = hareketli
-      ? `${kamEtiket(ad)} uçla birlikte hareket ediyor: kareleri konumlu ve `
-        + "kayma, kamera merkezinin UÇTAN uzaklığı."
-      : `${kamEtiket(ad)} sabit: kayma, karenin merkezinin YATAKTAKİ yeri. `
-        + (k.harita
-           ? "Harita kayıtlı — bu kameranın her pikseli yatak koordinatı veriyor."
-           : "Dört etiketi yatağa yapıştırıp tarayın; harita çıkınca kare "
-             + "yatağa oturur ve koordinat verilmeye başlar.");
-  }
-  ["#kalib-donme", "#kalib-ofx", "#kalib-ofy"].forEach((sec) => {
-    const el = $(sec);
-    if (!el) return;
-    el.disabled = false;
-    el.title = "";
-  });
-}
-
-/* Başlıktaki özet.
- *
- * HANGİ MODELİN GEÇERLİ OLDUĞU YAZIYOR. İkisi de kayıtlı olabiliyor ve
- * aralarında sahada 40 mm fark ölçüldü; kullanıcı hangi sayıya baktığını
- * bilmeli. Harita varsa sapması da yazıyor — "kalibre" demek, ne kadar
- * yanlış olduğunu bilmeden bir şey söylememeli. */
-function kalibDurumYaz(k) {
-  const rozet = $("#kalib-durum");
-  if (!rozet) return;
-  const etiket = kamListe().length > 1 ? `${kamEtiket(kalibSecili())}: ` : "";
-  let metin = "kalibre edilmedi";
-  if (k && k.harita) {
-    const sapma = Number(k.harita_sapma_mm);
-    metin = `harita · ${Number(k.harita_nokta) || 0} etiket`
-      + (Number.isFinite(sapma) ? ` · ±${sapma.toFixed(1)} mm` : "");
-  } else if (k && Number(k.mm_px) > 0) {
-    metin = `${Number(k.mm_px).toFixed(3)} mm/px`
-      + (kamHareketli(kalibSecili()) ? ` · ${Number(k.donme).toFixed(1)}°` : "");
-  }
-  rozet.textContent = etiket + metin;
-}
-
-/* ------------------------------------------------ görüntü çözümleme
- *
- * `goruntu.py` (piksel) + `tespit.py` (milimetre) sunucuda çalışıyor;
- * burası yalnız sonucu gösteriyor. Hesabın panelde İKİNCİ bir kopyası
- * YOK — olsaydı ekranda okunan ölçü ile haritaya çizilen ölçü sessizce
- * ayrışabilirdi.
- *
- * Harita katmanı (`katmanlar/65-tespitler.js`) veriyi `Tarla._tespitVeri`
- * üzerinden alıyor. Ortak veri havuzuna koymuyoruz: çözümleme kullanıcı
- * istediğinde çalışan bir işlem, her durum paketinde değil.
- */
 function goruntuDurumYaz(d) {
   const not = $("#goruntu-durum");
   const uyari = $("#goruntu-uyari");
@@ -1677,7 +1582,7 @@ function goruntuDurumYaz(d) {
       + "ölçüler piksel olarak yazılıyor. "
       + (d.hareketli
         ? "Kalibrasyon bölümünden iki kare yöntemiyle ölçün."
-        : "Bu kamera sabit; kalibrasyon bölümündeki ölçek yöntemiyle ölçün.");
+        : "Bu kamera sabit; yatak koordinatı için kalibrasyon gerekiyor.");
     uyari.classList.remove("gizli");
   } else if (!d.hareketli) {
     // Bu bir eksiklik değil, kameranın doğası: söyleyip geçiyoruz ki
@@ -1892,91 +1797,6 @@ async function goruntuCimlenme() {
     gunluk(`✕ Çimlenme: ${h.message}`, "hata");
   }
 }
-
-async function kalibrasyonYukle() {
-  try {
-    const y = await apiIste("/api/kamera/kalibrasyon?kamera="
-                            + encodeURIComponent(kalibSecili()));
-    const k = y.kalibrasyon || {};
-    S.kalibrasyonlar = y.kalibrasyonlar || {};
-    kamKalibOzetYaz();       // her yarının altındaki mm/px özeti
-    S.kalibrasyon = k;
-    $("#kalib-mmpx").value = k.mm_px ?? 0;
-    $("#kalib-donme").value = k.donme ?? 0;
-    $("#kalib-ofx").value = k.ofset_x ?? 0;
-    $("#kalib-ofy").value = k.ofset_y ?? 0;
-    $("#kalib-ayna-x").checked = !!k.ayna_x;
-    $("#kalib-ayna-y").checked = !!k.ayna_y;
-    kalibDurumYaz(k);
-    kalibYontemYaz();
-  } catch (hata) { /* kalibrasyon yoksa sorun değil */ }
-}
-
-function kalibBagla() {
-  // Kamera tanımları bölümü.
-  // Kamera ayarları artık kendi yarılarında bağlanıyor (`kamYariBagla`);
-  // burada bağlanacak tek kopya yok.
-  // Görüntü çözümleme. Bölüm ilk açıldığında durumu çekiyoruz: kapalıyken
-  // istek atmanın anlamı yok, Pi'de numpy yoksa zaten kullanılamıyor.
-  const grBolum = $("#bolum-goruntu");
-  if (grBolum) {
-    const bas = grBolum.querySelector(".bolum-bas");
-    if (bas) bas.addEventListener("click", () => {
-      if (!grBolum.classList.contains("kapali")) goruntuDurumYukle();
-    });
-  }
-  const grCoz = $("#d-gr-coz");
-  if (grCoz) grCoz.onclick = goruntuCoz;
-  const grFark = $("#d-gr-fark");
-  if (grFark) grFark.onclick = goruntuFark;
-  const grCim = $("#d-gr-cimlenme");
-  if (grCim) grCim.onclick = goruntuCimlenme;
-  const grMaske = $("#gr-maske");
-  if (grMaske) grMaske.onchange = () => {
-    const m = $("#gr-maske-im");
-    if (m) m.classList.toggle("gizli", !grMaske.checked);
-  };
-  // Kamera kutusundaki tek tuşluk çözümleme — aynı uç noktalar, ayrı sunum.
-  kameraCozumBagla();
-
-  // Ekim onayı ve ayarları.
-  ekimOnayBagla();
-  const ekimKaydet = $("#d-ekim-ayar-kaydet");
-  if (ekimKaydet) ekimKaydet.onclick = ekimAyarKaydet;
-  const ekimBolum = $("#bolum-ekim");
-  if (ekimBolum) {
-    const bas = ekimBolum.querySelector(".bolum-bas");
-    if (bas) bas.addEventListener("click", () => {
-      if (!ekimBolum.classList.contains("kapali")) ekimAyarYukle();
-    });
-  }
-  // Bölüm kapalıyken de bir kez okuyoruz: başlıktaki "onaylı/onaysız"
-  // notu, bölümü hiç açmayan kullanıcının da göreceği tek işaret.
-  ekimAyarYukle();
-
-  $("#d-kalib-kaydet").onclick = async () => {
-    try {
-      const y = await apiIste("/api/kamera/kalibrasyon", {
-        method: "POST",
-        body: JSON.stringify({
-          mm_px: Number($("#kalib-mmpx").value),
-          donme: Number($("#kalib-donme").value),
-          ofset_x: Number($("#kalib-ofx").value),
-          ofset_y: Number($("#kalib-ofy").value),
-          ayna_x: $("#kalib-ayna-x").checked,
-          ayna_y: $("#kalib-ayna-y").checked,
-          kamera: kalibSecili(),
-          yontem: "elle", guncelleme: Date.now() / 1000,
-        }),
-      });
-      S.kalibrasyon = y.kalibrasyon;
-      kalibDurumYaz(y.kalibrasyon);
-      gunluk("✓ Kamera kalibrasyonu kaydedildi", "ok");
-      if (window.Tarla && window.Tarla.kalibrasyonDegisti) window.Tarla.kalibrasyonDegisti();
-    } catch (hata) { gunluk(`✕ ${hata.message}`, "hata"); }
-  };
-}
-
 
 /* ============================================================== eğriler
  *
@@ -2268,7 +2088,6 @@ function kameralarYaz(liste) {
     S.kameralar = yeni;
     kamYarilariKur();
     kamKutulariKur();
-    kalibSekmeleriYaz();
     // LİSTE SONRADAN GELİYOR. Sayfa açıldığında kamera listesi henüz
     // yoktu, dolayısıyla açılıştaki `izleSekmesi(true)` hiçbir kameraya
     // ulaşamıyordu. Liste değiştiği anda akış isteğini yineliyoruz;
@@ -2489,8 +2308,6 @@ function kamYariBagla(yari, ad) {
   }
   const tara = rol("cihazlar");
   if (tara) tara.onclick = kamCihazTara;
-  const kalibD = rol("kalib");
-  if (kalibD) kalibD.onclick = () => kalibYariyaTasi(ad);
 }
 
 /** Sistemdeki video cihazlarını listeler — cihaz adı kutusuna öneri. */
@@ -2511,40 +2328,6 @@ async function kamCihazTara() {
       ? "Bağlı: " + liste.map((c) => `${c.yol} (${c.ad || "adsız"})`).join(", ")
       : "Sistemde video cihazı görünmüyor.";
   }
-}
-
-/** Kalibrasyon bölümünü BU kameranın yarısına taşır.
- *
- * Tek kopya, `appendChild` ile yer değiştiriyor: iki kopya açmak
- * `#kalib-mmpx` gibi id'leri ikiye katlar ve hangisinin geçerli olduğunu
- * bilinmez yapardı. Taşınan öğe bütün olay bağlarını koruyor. */
-function kalibYariyaTasi(ad) {
-  const bolum = $("#bolum-kamera-kalib");
-  const hedef = kamRol(ad, "ayar-kutu");
-  if (!bolum || !hedef) return;
-  hedef.open = true;
-  hedef.appendChild(bolum);
-  bolum.classList.remove("kapali");
-  const bas = bolum.querySelector(".bolum-bas");
-  if (bas) bas.setAttribute("aria-expanded", "true");
-  // Kalibrasyon SEÇİLİ kameraya işliyor; taşımak seçimi de değiştiriyor,
-  // yoksa kutu bir yarının altında durup başka bir kamerayı ölçerdi.
-  kamSecimDegistir(ad);
-  kalibrasyonYukle();
-  bolum.scrollIntoView({ block: "nearest" });
-}
-
-/** Kalibrasyon özeti — her yarının kendi mm/px'i kendi altında. */
-function kamKalibOzetYaz() {
-  const hepsi = S.kalibrasyonlar || {};
-  kamListe().forEach((k) => {
-    const el = kamRol(k.ad, "kalib-ozet");
-    if (!el) return;
-    const mm = Number((hepsi[k.ad] || {}).mm_px || 0);
-    el.textContent = mm > 0
-      ? `${mm.toFixed(3)} mm/piksel`
-      : "kalibre edilmedi — ölçüler piksel";
-  });
 }
 
 function kameraDurumYaz(k) {
@@ -2761,7 +2544,6 @@ function kamSekmesi(acik, hedef = "") {
   if (acik) {
     S.kamCanliElle = {};        // yeni ziyaret, yeni sayfa
     kamAyarKartlariYaz();
-    kamKalibOzetYaz();
   } else {
     // Sekmeden çıkarken donmuş ekran bırakmıyoruz: geri gelindiğinde eski
     // bir kareye bakıp canlı sanmak, bu sekmenin en pahalı yanlışı olurdu.
@@ -3909,7 +3691,6 @@ function kamAyarTaslak() {
 function kamAyarKartlariYaz() {
   const taslak = kamAyarTaslak();
   taslak.forEach((k, i) => kamAyarKartiCiz(k, i));
-  kamKalibOzetYaz();
 }
 
 function kamAyarKartiCiz(k, i) {
@@ -3986,11 +3767,7 @@ function kamAyarKartiCiz(k, i) {
       </details>
       <p class="ikincil">${k.hareketli
         ? "Kareleri konumlu: karedeki leke yatak koordinatına çevrilebiliyor."
-        : ((S.kalibrasyonlar || {})[k.ad] || {}).harita
-          ? "Kareleri konumsuz ama HARİTALI: AprilTag kalibrasyonu yatağa "
-            + "yapıştırılmış etiketlerden çıktığı için her piksel doğrudan "
-            + "yatak koordinatı veriyor."
-          : "Kareleri KONUMSUZ: sabit kamera makineyle gitmiyor. Yatak "
+        : "Kareleri KONUMSUZ: sabit kamera makineyle gitmiyor. Yatak "
             + "koordinatı ancak AprilTag haritasıyla çıkar — dört etiketi "
             + "yatağa yapıştırıp tarayın. O zamana kadar yalnız ölçüler "
             + "(çap, alan) kendi mm/px'inden çıkıyor."}</p>
@@ -6083,8 +5860,6 @@ async function basla() {
   olaylariBagla();
   $("#d-geri-al").onclick = geriAlUygula;
   $("#d-geri-al-kapat").onclick = geriAlKapat;
-  kalibBagla();
-  kalibrasyonYukle();
   // Tarla sahnesi kendi dosyasında; three.js yüklenmediyse panel yine çalışsın.
   try {
     if (window.Tarla) await window.Tarla.kur();
