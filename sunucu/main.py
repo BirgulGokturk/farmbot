@@ -3757,8 +3757,9 @@ async def api_bahce_foto(govde: dict[str, Any], jeton: str = Query(default="")):
     adlar = [str(a) for a in (govde.get("noktalar") or []) if str(a).strip()]
     sonuc = await asyncio.to_thread(_bahce_foto_cek, adlar, True)
     if not sonuc["ok"]:
-        raise HTTPException(status_code=409, detail=_ARSIV_SEBEP.get(
-            sonuc["sebep"], "Fotoğraf çekilemedi"))
+        raise HTTPException(status_code=409, detail=(
+            sonuc.get("mesaj")
+            or _ARSIV_SEBEP.get(sonuc["sebep"], "Fotoğraf çekilemedi")))
     await merkez.yayinla({"tip": "bahce", "kuyruk": kuyruk.goruntu()})
     return sonuc
 
@@ -3776,7 +3777,12 @@ _ARSIV_SEBEP = {
 def _bahce_foto_cek(adlar: list[str] | None = None, zorla: bool = False) -> dict[str, Any]:
     yuklu = _goruntu_yukle()
     if not yuklu:
-        return {"ok": False, "sebep": "kutuphane-yok", "cekilen": [], "atlanan": []}
+        # ÖLÇÜLEN sebep geçiyor, sabit metin değil: `_goruntu_yukle` artık
+        # "kütüphane yok" ile "modül yok"u ayırıyor ve ikisini tek metne
+        # indirmek o ayrımı çöpe atardı.
+        return {"ok": False, "sebep": "kutuphane-yok",
+                "mesaj": str(_GORUNTU.get("hata") or ""),
+                "cekilen": [], "atlanan": []}
     _, _, _, Image = yuklu
     hepsi = bahce.bitkiler(noktalar.hepsi())
     if adlar:
@@ -3784,11 +3790,16 @@ def _bahce_foto_cek(adlar: list[str] | None = None, zorla: bool = False) -> dict
         hepsi = [b for b in hepsi if str(b.get("ad")) in istenen]
     if not hepsi:
         return {"ok": True, "sebep": "", "cekilen": [], "atlanan": []}
-    return # KALİBRASYON YOK: `arsiv.cek` boş kayıtla "kalibrasyon-yok" diyor ve
-    # kırpma yapmıyor. Uydurma bir ölçekle kırpmak, yanlış yeri bitki
-    # diye göstermek olurdu.
-    arsiv.cek(hepsi, _bahce_tur_indeks(), {}, Image,
-                     kamera="ust", zorla=zorla)
+    # KALİBRASYON YOK: kırpma yapılamıyor, çünkü karenin hangi
+    # milimetreye denk geldiği bilinmiyor. Uydurma bir ölçekle kırpmak,
+    # yanlış yeri bitki diye göstermek olurdu.
+    #
+    # BURADA ÇIPLAK BİR `return` VARDI ve fonksiyon None döndürüyordu;
+    # çağıran `sonuc["ok"]` deyince TypeError alıp 500 veriyordu. Yani
+    # panelin "Fotoğraf" düğmesi "kalibrasyon yok" demek yerine
+    # çöküyordu. Sebep artık düzgün dönüyor.
+    return {"ok": False, "sebep": "kalibrasyon-yok",
+            "cekilen": [], "atlanan": [str(b.get("ad")) for b in hepsi]}
 
 
 # --------------------------------------------------------------------------- #
@@ -4367,19 +4378,37 @@ def _goruntu_yukle():
     """(goruntu, tespit, numpy, Image) ya da None — eksikse sebebi `_GORUNTU`da."""
     if _GORUNTU["hazir"] is not None:
         return _GORUNTU["hazir"] or None
+    # İKİ AYRI TRY, İKİ AYRI SEBEP. Tek blokta toplandığında `goruntu`
+    # ve `tespit` modülleri yokken de "numpy ve Pillow gerekiyor"
+    # yazıyordu; o iki kütüphane kuruluyken bile. Yanlış teşhis,
+    # teşhissiz kalmaktan kötü: kullanıcı olmayan bir sorunu çözmeye
+    # çalışıyor.
     try:
         import numpy as _np
         from PIL import Image as _Image
-        import goruntu as _goruntu
-        import tespit as _tespit
-        _GORUNTU["hazir"] = (_goruntu, _tespit, _np, _Image)
     except Exception as hata:                    # ImportError ve türevleri
         _GORUNTU["hazir"] = False
         _GORUNTU["hata"] = (
             f"Görüntü işleme için numpy ve Pillow gerekiyor ({hata}). "
             "Pi'de: sunucu/.venv/bin/pip install numpy Pillow")
         logger.warning("Görüntü işleme kapalı: %s", _GORUNTU["hata"])
-    return _GORUNTU["hazir"] or None
+        return None
+    try:
+        import goruntu as _goruntu
+        import tespit as _tespit
+    except Exception as hata:                    # ImportError ve türevleri
+        # BEKLENEN DURUM. `goruntu.py` ve `tespit.py` 13f399b'de
+        # kaldırıldı; görüntü işleme mimarisi baştan kuruluyor. Kurulacak
+        # bir şey yok, bu yüzden "pip install" demiyoruz.
+        _GORUNTU["hazir"] = False
+        _GORUNTU["hata"] = (
+            "Görüntü işleme modülleri yok (goruntu.py, tespit.py) — "
+            "mimari baştan kuruluyor. Leke bulma bunlardan bağımsız "
+            f"çalışıyor (Kamera sekmesi > Bitki lekeleri). [{hata}]")
+        logger.warning("Görüntü işleme kapalı: %s", _GORUNTU["hata"])
+        return None
+    _GORUNTU["hazir"] = (_goruntu, _tespit, _np, _Image)
+    return _GORUNTU["hazir"]
 
 
 def _kamera_etiket(ad: str) -> str:
