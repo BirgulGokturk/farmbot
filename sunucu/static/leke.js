@@ -87,6 +87,16 @@
                 İşleme px <input type="number" id="leke-islem-px" value="1280" step="160" style="width:6rem">
               </label>
             </div>
+            <div class="satir">
+              <label title="HSV ton alt sınırı (0-179). Sarı hortum ve turkuaz kablo ExG'yi geçiyor; ton kapısı onları eliyor.">
+                Ton alt <input type="number" id="leke-ton-alt" value="0" min="0" max="179" style="width:5rem">
+              </label>
+              <label title="HSV ton üst sınırı (0-179). İkisi de 0 iken kapı KAPALI.">
+                Ton üst <input type="number" id="leke-ton-ust" value="0" min="0" max="179" style="width:5rem">
+              </label>
+              <span class="ikincil">İkisi de 0 = kapalı. Önce tablodaki <b>ton</b> sütununa bakın:
+                yaprak ile kablo hangi değerlerde ayrışıyor?</span>
+            </div>
           </details>
           <div class="rozet-uyari gizli" id="leke-uyari"></div>
           <div id="leke-sahne" style="position:relative;display:inline-block;max-width:100%">
@@ -153,6 +163,10 @@
     if (enKucuk !== null && enKucuk > 0) ayar.en_kucuk_oran = 1 / enKucuk;
     const islem = sayi("#leke-islem-px");
     if (islem !== null && islem >= 160) ayar.islem_genislik = islem;
+    const tonAlt = sayi("#leke-ton-alt");
+    const tonUst = sayi("#leke-ton-ust");
+    if (tonAlt !== null) ayar.ton_alt = tonAlt;
+    if (tonUst !== null) ayar.ton_ust = tonUst;
 
     try {
       const y = await p.apiIste("/api/leke/bul", {
@@ -219,6 +233,10 @@
     if (y.elenen && (y.elenen.kucuk || y.elenen.buyuk)) {
       notlar.push(`elenen: ${y.elenen.kucuk} küçük, ${y.elenen.buyuk} büyük`);
     }
+    if (y.ton_kapisi) {
+      notlar.push(`ton kapısı ${y.ton_kapisi[0]}-${y.ton_kapisi[1]}`
+        + ((y.elenen && y.elenen.ton_px) ? `, ${y.elenen.ton_px} piksel eledi` : ""));
+    }
     uyari(notlar.join(" · "));
 
     const img = $("#leke-kare");
@@ -280,6 +298,8 @@
         <td>${l.alan_px}</td>
         <td>${l.dolgu}</td>
         <td>${l.en_boy}</td>
+        <td>${l.ton == null ? "—" : l.ton}</td>
+        <td>${l.doygunluk == null ? "—" : l.doygunluk}</td>
       </tr>`).join("");
     kap.innerHTML = `
       <table class="tablo dar">
@@ -287,6 +307,8 @@
           <th>#</th><th>merkez (px)</th><th>alan (px²)</th>
           <th title="Lekenin kendi kutusunu ne kadar doldurduğu. Yuvarlak bir fide yüksek; ince bir kablo ya da kenar çizgisi düşük.">dolgu</th>
           <th title="Genişlik / yükseklik. 1'e yakın = yuvarlak.">en/boy</th>
+          <th title="ÖLÇÜLEN HSV tonu (0-179), medyan. Ton kapısını bu sütuna bakarak seçin — yaprak ile sarı hortum/turkuaz kablo burada ayrışıyor.">ton</th>
+          <th title="ÖLÇÜLEN doygunluk (0-255), medyan. Kablolar genelde yapraklardan daha doygun.">doyg.</th>
         </tr></thead>
         <tbody>${satirlar}</tbody>
       </table>`;

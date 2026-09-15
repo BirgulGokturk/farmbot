@@ -71,6 +71,18 @@ VARSAYILAN: dict[str, Any] = {
     # eklenen güvenlik payı (ExG ölçeğinde, -255..255). Pozitif = daha
     # seçici. 0 = Otsu'ya dokunma.
     "esik_payi": 0.0,
+
+    # TON KAPISI (HSV hue, OpenCV ölçeği 0-179). ExG "yeşil" bulmuyor,
+    # "R'den fazla G" buluyor: sarı bir hortumda R ve G birlikte yüksek,
+    # B düşük — 2G-R-B güçlü pozitif çıkıyor. Turkuaz bir kabloda da
+    # aynısı oluyor. Sahada tam bu görüldü: sarı sulama hortumu ve mavi
+    # kablolar bitki sanıldı.
+    #
+    # Ton kapısı bunları eliyor ama SINIRLARI UYDURULMUYOR: her lekenin
+    # ölçülen tonu çıktıda yazıyor (`ton`), önce bakılıyor sonra
+    # kapatılıyor. İkisi de 0 iken kapı KAPALI ve hiçbir şey elenmiyor.
+    "ton_alt": 0,
+    "ton_ust": 0,
 }
 
 
@@ -196,6 +208,21 @@ def bul(ham: bytes, ayar: dict[str, Any] | None = None) -> dict[str, Any]:
                                  cv2.THRESH_BINARY)
         esik = esik + pay
 
+    # --- ton kapısı -------------------------------------------------------
+    # HSV her koşulda hesaplanıyor: kapı kapalı olsa bile her lekenin
+    # ölçülen tonu çıktıya giriyor. "Önce ölç, sonra eşik koy" ancak
+    # ölçüm hep elde olursa işliyor.
+    hsv = cv2.cvtColor(kare, cv2.COLOR_BGR2HSV)
+    ton_alt, ton_ust = int(a.get("ton_alt") or 0), int(a.get("ton_ust") or 0)
+    ton_elenen = 0
+    if ton_alt or ton_ust:
+        alt = max(0, min(179, ton_alt))
+        ust = max(0, min(179, ton_ust)) or 179
+        ton_maske = cv2.inRange(hsv[:, :, 0], np.uint8(alt), np.uint8(ust))
+        onceki = int(np.count_nonzero(maske))
+        maske = cv2.bitwise_and(maske, ton_maske)
+        ton_elenen = onceki - int(np.count_nonzero(maske))
+
     yesil_oran = float(np.count_nonzero(maske)) / float(gen * yuk)
     bos["esik"] = round(float(esik), 1)
     bos["yesil_oran"] = round(yesil_oran, 5)
@@ -216,7 +243,7 @@ def bul(ham: bytes, ayar: dict[str, Any] | None = None) -> dict[str, Any]:
     maske = cv2.morphologyEx(maske, cv2.MORPH_CLOSE, cekirdek)
 
     # --- bileşenler -------------------------------------------------------
-    sayi, _, istatistik, merkezler = cv2.connectedComponentsWithStats(
+    sayi, etiketli, istatistik, merkezler = cv2.connectedComponentsWithStats(
         maske, connectivity=8)
     kare_alan = float(gen * yuk)
     en_kucuk = kare_alan * float(a["en_kucuk_oran"])
@@ -233,6 +260,16 @@ def bul(ham: bytes, ayar: dict[str, Any] | None = None) -> dict[str, Any]:
             elenen_buyuk += 1
             continue
         mx, my = merkezler[no]
+        # Ölçüm YALNIZ kutunun içinde: bütün karede maske kurmak leke
+        # başına bir tam kare taraması demekti (75 leke = 75 tarama).
+        pencere = etiketli[y0:y0 + h, x:x + w] == no
+        hsv_p = hsv[y0:y0 + h, x:x + w]
+        if pencere.any():
+            ton_d = int(np.median(hsv_p[:, :, 0][pencere]))
+            doy_d = int(np.median(hsv_p[:, :, 1][pencere]))
+            par_d = int(np.median(hsv_p[:, :, 2][pencere]))
+        else:
+            ton_d = doy_d = par_d = None
         lekeler.append({
             "x": _kutu_olcekle(mx, geri),
             "y": _kutu_olcekle(my, geri),
@@ -246,6 +283,14 @@ def bul(ham: bytes, ayar: dict[str, Any] | None = None) -> dict[str, Any]:
             # çizgi mi" sorusuna veri veriyor.
             "dolgu": round(float(alan) / float(max(1, w * h)), 3),
             "en_boy": round(float(w) / float(max(1, h)), 3),
+            # ÖLÇÜLEN RENK — eşik koymak için değil, eşiği SEÇMEK için.
+            # Sahada sarı hortum ve turkuaz kablo bitki sanıldı; hangi
+            # tonda olduklarını tahmin etmek yerine burada yazıyoruz.
+            # Medyan, ortalama değil: tek parlak piksel ortalamayı
+            # kaydırıyor, medyan kaydırmıyor.
+            "ton": ton_d,
+            "doygunluk": doy_d,
+            "parlaklik": par_d,
         })
 
     # Büyükten küçüğe: panelde ve eşleştirmede önce belirgin olan.
@@ -265,7 +310,9 @@ def bul(ham: bytes, ayar: dict[str, Any] | None = None) -> dict[str, Any]:
         "yontem": "exg-otsu",
         "esik": round(float(esik), 1),
         "yesil_oran": round(yesil_oran, 5),
-        "elenen": {"kucuk": elenen_kucuk, "buyuk": elenen_buyuk},
+        "elenen": {"kucuk": elenen_kucuk, "buyuk": elenen_buyuk,
+                   "ton_px": ton_elenen},
+        "ton_kapisi": ([ton_alt, ton_ust] if (ton_alt or ton_ust) else None),
         # Çözme ayrı yazılıyor: toplam süre yükseldiğinde suçlunun JPEG
         # çözme mi yoksa leke bulma mı olduğu tahmin edilmesin.
         "coz_yolu": coz_yolu,
@@ -312,7 +359,9 @@ if __name__ == "__main__":
               f"yol={sonuc.get('coz_yolu')})")
         for leke in sonuc["lekeler"][:15]:
             print(f"  ({leke['x']:5d},{leke['y']:5d})  alan={leke['alan_px']:7d} "
-                  f"dolgu={leke['dolgu']:.2f} en/boy={leke['en_boy']:.2f}")
+                  f"dolgu={leke['dolgu']:.2f} en/boy={leke['en_boy']:.2f} "
+                  f"ton={leke.get('ton')} doyg={leke.get('doygunluk')} "
+                  f"parl={leke.get('parlaklik')}")
 
         if isaret_yolu and sonuc["lekeler"]:
             import cv2
