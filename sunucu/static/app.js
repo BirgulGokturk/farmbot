@@ -21,8 +21,6 @@ const S = {
   kamSecim: "",             // Ayarlar kartının işlediği kamera
   kamKutuKapali: {},        // ad -> sahnedeki yüzen kutu kullanıcı tarafından gizlendi mi
   sonKare: {},              // ad -> {adres, canli, ts}
-  kamCozler: {},            // ad -> son çözümleme (yok = kutu boş)
-  kamDondu: {},             // ad -> ekran çözümlenen karede donduruldu mu
   kamMaskeler: {},          // ad -> maske katmanı açık mı
   kamFps: {},               // ad -> {damga:[], yazi} — kare/sn sayacı
   kamCanliElle: {},         // ad -> kullanıcı canlıyı elle kapattı mı
@@ -1535,16 +1533,14 @@ async function gozTablosuKaydet() {
 
 /* ====================================================== kamera secimi
  *
- * KALİBRASYON BÖLÜMÜ BURADAYDI, KALDIRILDI. Üç ölçüm yöntemi (AprilTag,
- * makineyle otomatik, ızgara turu) ve elle giriş formu birlikte silindi;
- * mimari baştan kurulacak. Sunucuda `kalibrasyon.py` kaydı ve
- * `tespit.py`nin piksel->mm işlevleri duruyor — kayıt yokken `filiz.py`
- * koordinat üretmiyor ve sebebini yazıyor.
+ * KALİBRASYON VE GÖRÜNTÜ İŞLEME BURADAYDI, İKİSİ DE KALDIRILDI.
+ * Ölçüm yöntemleri, elle giriş, filiz bulma, bitki ölçümü, görüntü
+ * çözümleme ve maske katmanı birlikte silindi; sunucudaki karşılıkları
+ * da (`kalibrasyon.py`, `tespit.py`, `goruntu.py`, `filiz.py`,
+ * `bitkiolcum.py`, `gorus/`, `tanima.py`) gitti. Mimari baştan
+ * kurulacak.
  *
  * Burada kalan tek iş: panelin hangi kameraya baktığını yönetmek.
- * Seçim TEK: iki ayrı şerit iki farklı kamerayı gösterebilir ve
- * kullanıcı hangi kameranın ölçüldüğünü ancak dikkatle bakarak
- * anlayabilirdi.
  */
 
 /** Panelin kamera seçimini değiştirir; kart ve görüntü bölümü hep
@@ -1552,250 +1548,6 @@ async function gozTablosuKaydet() {
 function kamSecimDegistir(ad) {
   if (!ad || ad === S.kamSecim) return;
   S.kamSecim = ad;
-  goruntuDurumYukle();
-}
-
-function goruntuDurumYaz(d) {
-  const not = $("#goruntu-durum");
-  const uyari = $("#goruntu-uyari");
-  if (!not || !uyari) return;
-  S.goruntuDurum = d;
-
-  if (!d.hazir) {
-    not.textContent = "kapalı";
-    uyari.textContent = d.hata || "Görüntü işleme kullanılamıyor.";
-    uyari.classList.remove("gizli");
-    return;
-  }
-  // Etiket ÖNEMLİ: iki kameranın kalibrasyonu ayrı ve "kalibre edilmedi"
-  // hangisi için söylendiği yazmazsa yanlış kamerayı ölçmeye götürür.
-  const etiket = kamListe().length > 1 ? `${d.kamera_etiket || d.kamera}: ` : "";
-  not.textContent = etiket + (d.kalibre
-    ? (d.hareketli
-      ? `${d.konumlu_kare}/${d.kare_sayisi} konumlu kare · ${Number(d.mm_px).toFixed(3)} mm/px`
-      : `${d.kare_sayisi} kare · ${Number(d.mm_px).toFixed(3)} mm/px · sabit`)
-    : `${d.kare_sayisi} kare · kalibre edilmedi`);
-
-  if (!d.kalibre) {
-    uyari.textContent = `${d.kamera_etiket || d.kamera} kalibre edilmemiş `
-      + "(mm_px = 0). Lekeler bulunuyor ama milimetreye çevrilemiyor — "
-      + "ölçüler piksel olarak yazılıyor. "
-      + (d.hareketli
-        ? "Kalibrasyon bölümünden iki kare yöntemiyle ölçün."
-        : "Bu kamera sabit; yatak koordinatı için kalibrasyon gerekiyor.");
-    uyari.classList.remove("gizli");
-  } else if (!d.hareketli) {
-    // Bu bir eksiklik değil, kameranın doğası: söyleyip geçiyoruz ki
-    // "konumlu kare yok" diye aranmasın.
-    uyari.textContent = `${d.kamera_etiket || d.kamera} sabit bir kamera: `
-      + "makineyle hareket etmediği için karelerinin makine konumu yok. "
-      + "Ölçüler (çap, alan) veriliyor, yatak koordinatı ve kayıtlı "
-      + "bitkilerle eşleştirme verilmiyor.";
-    uyari.classList.remove("gizli");
-  } else if (!d.konumlu_kare) {
-    uyari.textContent = "Hiçbir karenin makine konumu yok. Konum kareye "
-      + "çekildiği anda ekleniyor; PLC kopukken çekilen kareler haritaya "
-      + "konamıyor.";
-    uyari.classList.remove("gizli");
-  } else {
-    uyari.classList.add("gizli");
-  }
-
-  // Kare listesi: en yeni başta. Kullanıcı seçimini koruyoruz.
-  const sec = $("#gr-kare");
-  if (sec) {
-    const onceki = sec.value;
-    sec.innerHTML = (d.kareler || []).map((k) => {
-      const saat = new Date(k.ts * 1000).toLocaleTimeString("tr-TR");
-      const yer = k.x == null ? "konumsuz" : `X${Math.round(k.x)} Y${Math.round(k.y)}`;
-      return `<option value="${kacisli(k.damga)}">${saat} · ${yer}</option>`;
-    }).join("");
-    if (onceki && [...sec.options].some((o) => o.value === onceki)) sec.value = onceki;
-  }
-}
-
-async function goruntuDurumYukle() {
-  // Kareler ve kalibrasyon kamera başına: bölüm SEÇİLİ kamerayı gösteriyor
-  // (Kamera kartındaki seçim ile aynı). Karışık bir kare listesi, hangi
-  // kalibrasyonun geçerli olduğunu belirsiz bırakırdı.
-  try {
-    goruntuDurumYaz(await apiIste("/api/goruntu/durum?kamera="
-                                  + encodeURIComponent(kamSecili())));
-  } catch (h) { /* bölüm açılmamışsa sorun değil */ }
-}
-
-/** Kareyi ve maskesini üst üste gösterir. */
-function goruntuOnizle(damga, esik, kamera) {
-  const kutu = $("#gr-onizleme");
-  if (!kutu) return;
-  const jeton = encodeURIComponent(S.jeton || "");
-  const kam = encodeURIComponent(kamera || kamSecili());
-  $("#gr-kare-im").src =
-    `/api/kare/${encodeURIComponent(damga)}?kamera=${kam}&jeton=${jeton}`;
-  const m = $("#gr-maske-im");
-  m.src = `/api/goruntu/maske?damga=${encodeURIComponent(damga)}&kamera=${kam}`
-    + `&esik=${esik == null ? -9 : esik}&jeton=${jeton}&t=${Date.now()}`;
-  m.classList.toggle("gizli", !$("#gr-maske").checked);
-  kutu.classList.remove("gizli");
-}
-
-function goruntuSonucYaz(y) {
-  const ozet = $("#gr-ozet");
-  const liste = $("#gr-liste");
-  if (!ozet || !liste) return;
-
-  const parca = [
-    `eşik ${Number(y.esik).toFixed(2)}`,
-    `%${(100 * y.oran).toFixed(1)} yeşil`,
-    `${y.ham_leke} ham leke → ${y.lekeler_px.length} kalan`,
-  ];
-  // Otsu ayrımı: 0.75 altındaysa otomatik eşik bu sahnede güvenilmez.
-  if (y.otsu_ayrim != null) {
-    parca.push(`ayrım ${y.otsu_ayrim}${y.otsu_ayrim < 0.75 ? " (sabit eşik doğru)" : ""}`);
-  }
-  ozet.innerHTML = `<div class="alt-not">${parca.join(" · ")}</div>`
-    + (y.ret && y.ret.length
-      ? `<div class="rozet-uyari" style="display:block;margin-top:6px">${
-        y.ret.map(kacisli).join("<br>")}</div>`
-      : `<div class="alt-not" style="margin-top:4px">
-          <b>${y.eslesen.length}</b> eşleşen ·
-          <b>${y.yabani_aday.length}</b> yabani aday ·
-          <b>${y.gorunmeyen.length}</b> bulunamayan</div>`);
-  ozet.classList.remove("gizli");
-
-  /* İKİ SATIR. Beş sütun 380 piksellik yan panele sığmıyor; ekran
-   * görüntüsünde etiketler soldan kırpılıyordu ve kırpılmış bir ölçü
-   * yanlış okunan bir ölçüdür. Üstte kim, altta ne kadar. */
-  const satir = (etiket, sinif, ad, l) => `
-    <div class="gr-satir ${sinif}">
-      <div class="gr-bas">
-        <span class="gr-etiket">${etiket}</span>
-        <span class="gr-ad">${kacisli(ad || "—")}</span>
-      </div>
-      <div class="gr-alt">
-        <span>X${Math.round(l.x)} Y${Math.round(l.y)}</span>
-        <span>⌀${Number(l.cap_mm).toFixed(0)} mm</span>
-        <span>${Number(l.alan_mm2).toFixed(0)} mm²</span>
-      </div>
-    </div>`;
-
-  liste.innerHTML =
-    y.eslesen.map((e) => satir("eşleşen", "gr-yesil", e.ad, e.leke)).join("")
-    + y.yabani_aday.map((b) => satir("yabani aday", "gr-turuncu", "", b)).join("")
-    + y.gorunmeyen.map((b) => `
-      <div class="gr-satir gr-kirmizi">
-        <div class="gr-bas">
-          <span class="gr-etiket">bulunamadı</span>
-          <span class="gr-ad">${kacisli(b.ad)}</span>
-        </div>
-        <div class="gr-alt" title="Ölmüş demek değil — çimlenmemiş ya da kare kaçırmış olabilir">
-          <span>X${Math.round(b.x)} Y${Math.round(b.y)}</span>
-          <span>leke yok</span>
-        </div>
-      </div>`).join("");
-
-  // Haritaya ver. `noktalarDegisti(true)` katmanları yeniden çizdiriyor.
-  if (window.Tarla) {
-    Tarla._tespitVeri = y;
-    if (Tarla.noktalarDegisti) Tarla.noktalarDegisti(true);
-  }
-}
-
-async function goruntuCoz() {
-  const damga = ($("#gr-kare") || {}).value || "";
-  const esik = $("#gr-esik").value === "" ? null : Number($("#gr-esik").value);
-  const enAz = $("#gr-enaz").value === "" ? null : Number($("#gr-enaz").value);
-  try {
-    const y = await apiIste("/api/goruntu/coz", {
-      method: "POST",
-      body: JSON.stringify({ damga, esik, en_az_piksel: enAz,
-                             kamera: kamSecili() }),
-    });
-    goruntuOnizle(y.damga, esik, y.kamera);
-    goruntuSonucYaz(y);
-    gunluk(`✓ ${y.damga}: ${y.lekeler_px.length} leke`
-      + (y.hareketli ? `, ${(y.eslesen || []).length} eşleşme`
-        : " (sabit kamera — yatak koordinatı yok)"), "ok");
-  } catch (h) {
-    gunluk(`✕ Çözümleme: ${h.message}`, "hata");
-  }
-}
-
-/** Seçili kare ile ondan bir öncekinin farkı — aynı noktada çekilmişlerse. */
-async function goruntuFark() {
-  const sec = $("#gr-kare");
-  const i = sec.selectedIndex;
-  if (i < 0 || i + 1 >= sec.options.length) {
-    gunluk("Karşılaştırılacak daha eski bir kare yok", "uyari");
-    return;
-  }
-  try {
-    const y = await apiIste("/api/goruntu/fark", {
-      method: "POST",
-      body: JSON.stringify({ a: sec.options[i + 1].value, b: sec.options[i].value,
-                             kamera: kamSecili() }),
-    });
-    const yon = (ad, etiket) => {
-      const k = y[ad];
-      if (!k) return `${etiket}: yok`;
-      // Sabit kamerada koordinat YOK — ölçü var. Olmayan bir X/Y yazmak
-      // yerine yalnızca ölçüyü yazıyoruz.
-      const olcu = `${Number(k.en_mm).toFixed(0)}×${Number(k.boy_mm).toFixed(0)} mm`;
-      return k.x == null ? `${etiket}: ${olcu} (konum yok)`
-        : `${etiket}: X${Math.round(k.x)} Y${Math.round(k.y)}, ${olcu}`;
-    };
-    $("#gr-ozet").innerHTML = `<div class="alt-not">
-      gürültü σ ${y.sigma} → eşik ${y.esik} · ${y.kayma_mm == null
-        ? "sabit kamera — konum kayması ölçülmüyor"
-        : `konum kayması ${y.kayma_mm} mm`}<br>
-      <b>koyulaşan</b> %${(100 * y.koyulasan_oran).toFixed(1)} — ${yon("koyulasan", "yer")}<br>
-      <b>açılan</b> %${(100 * y.acilan_oran).toFixed(1)} — ${yon("acilan", "yer")}
-      </div>
-      <div class="alt-not" style="margin-top:4px">Koyulaşma ıslanma ya da
-      yeni gölge; açılma kuruma ya da yeni açık renkli bir nesne.</div>`;
-    $("#gr-ozet").classList.remove("gizli");
-    gunluk(`✓ Fark: %${(100 * y.koyulasan_oran).toFixed(1)} koyulaşma`, "ok");
-  } catch (h) {
-    gunluk(`✕ Fark: ${h.message}`, "hata");
-  }
-}
-
-async function goruntuCimlenme() {
-  const secim = (window.Tarla && Tarla.secimDurumu && Tarla.secimDurumu()) || [];
-  if (!secim.length) {
-    gunluk("Önce Tarla sayfasından nokta seçin", "uyari");
-    return;
-  }
-  const damga = ($("#gr-kare") || {}).value || "";
-  const esik = $("#gr-esik").value === "" ? null : Number($("#gr-esik").value);
-  try {
-    const y = await apiIste("/api/goruntu/cimlenme", {
-      method: "POST",
-      body: JSON.stringify({ damga, noktalar: secim, esik,
-                             kamera: kamSecili() }),
-    });
-    const kutu = $("#gr-cimlenme");
-    kutu.innerHTML = `<div class="alt-not">eşik ${Number(y.esik).toFixed(2)} ·
-      pencere yarıçapı ${y.yaricap_mm} mm</div>`
-      + y.noktalar.map((n) => {
-        if (n.durum !== "ölçüldü") {
-          return `<div class="gr-satir">
-            <div class="gr-bas"><span class="gr-ad">${kacisli(n.ad)}</span></div>
-            <div class="gr-alt"><span>${kacisli(n.durum)}</span></div></div>`;
-        }
-        const yuzde = 100 * n.yesil_oran;
-        // Sınıf değil, SAYI gösteriyoruz: tek ölçüm "çimlendi" demez.
-        return `<div class="gr-satir ${yuzde > 2 ? "gr-yesil" : ""}">
-          <div class="gr-bas"><span class="gr-ad">${kacisli(n.ad)}</span>
-            <span class="gr-etiket">%${yuzde.toFixed(1)} yeşil</span></div>
-          <div class="gr-alt"><span>${n.yesil_px}/${n.pencere_px} px</span>
-            <span>${n.tam ? "" : "pencere kırpıldı"}</span></div>
-        </div>`;
-      }).join("");
-    kutu.classList.remove("gizli");
-  } catch (h) {
-    gunluk(`✕ Çimlenme: ${h.message}`, "hata");
-  }
 }
 
 /* ============================================================== eğriler
@@ -2064,8 +1816,7 @@ function kameraGoruntuTemizle(ad) {
   if (kutu) kutu.classList.add("gizli");
   // Görüntü gitti, tespit kutuları da gitmeli: boş bir kutuda asılı
   // kalan kutular neyin üstünde olduğu bilinmeyen kutulardır.
-  kamOrtuTemizle(ad);
-}
+  }
 
 /** "Sahnede" düğmesinin hâli — yüzen kutu gizli mi değil mi. */
 function kamSahnedeYaz(ad) {
@@ -2156,8 +1907,7 @@ function kamYarilariKur() {
     if (bas) { bas.textContent = kamEtiket(ad); bas.title = kamEtiket(ad); }
   });
   kamAyarKartlariYaz();
-  kamGozcuTazele();
-}
+  }
 
 /** Bir yarının denetimleri. */
 function kamYariBagla(yari, ad) {
@@ -2249,23 +1999,6 @@ function kamYariBagla(yari, ad) {
     };
   }
 
-  const cozD = rol("coz");
-  if (cozD) cozD.onclick = () => kameraCozumle(ad);
-  const cozKapat = rol("coz-kapat");
-  if (cozKapat) {
-    cozKapat.onclick = () => {
-      kamOrtuTemizle(ad);          // dondurmayı da kaldırıyor
-      const son = S.sonKare[ad];   // donarken kaçırılan kare varsa ekrana
-      if (son) kareyiTazele(son.ts, son.canli, ad);
-      gunluk(`${kamEtiket(ad)} akışa döndü`);
-    };
-  }
-  const maskeD = rol("maske");
-  if (maskeD) maskeD.onclick = () => kamMaskeAlSat(ad);
-  const esik = rol("esik");
-  if (esik) {
-    esik.onchange = () => { if (S.kamCozler[ad]) kameraCozumle(ad); };
-  }
   yari.querySelectorAll(".kam-aralik").forEach((d) => {
     // Aralık komutu kamerayı da açık tutuyor: kapalıyken aralık seçmek
     // "hiçbir şey olmadı" demek olurdu.
@@ -2346,10 +2079,7 @@ function kameraDurumYaz(k) {
     : sn >= 60 ? `${Math.round(sn / 60)} dakikada`
     : `${Math.round(sn)} saniyede`;
   const canli = !!k.canli;
-  // Donmuş ekranı "canlı" diye göstermek yalan olurdu: görüntü ilerlemiyor.
-  const dondu = !!S.kamDondu[ad];
   rozet.textContent = !acik ? "kapalı"
-    : dondu ? "donduruldu · çözümleme ekranda"
     : canli ? `canlı · ${k.yontem || "?"}`
     : `açık · ${k.yontem || "?"} · ${aralik} bir kare`;
   rozet.className = "kam-rozet "
@@ -2358,7 +2088,6 @@ function kameraDurumYaz(k) {
     ? "Çözümlenen kare ekranda duruyor; akış arkada sürüyor."
     : (k.cihaz || "");
 
-  kamDugmeler(ad, "coz-kapat").forEach((d) => d.classList.toggle("gizli", !dondu));
 
   const canliD = kamRol(ad, "canli");
   if (canliD) {
@@ -2547,8 +2276,7 @@ function kamSekmesi(acik, hedef = "") {
   } else {
     // Sekmeden çıkarken donmuş ekran bırakmıyoruz: geri gelindiğinde eski
     // bir kareye bakıp canlı sanmak, bu sekmenin en pahalı yanlışı olurdu.
-    Object.keys(S.kamDondu).forEach((a) => kamOrtuTemizle(a));
-  }
+      }
   // İZLE'YE GEÇİYORSAK AKIŞI KAPATMIYORUZ. Kapatıp hemen ardından 1
   // kare/sn ile yeniden açmak, ajanda cihazı kapat-aç ettirmek demek:
   // akış iş parçacığı bitiyor, periyodik döngü açılıyor ve hemen tekrar
@@ -2556,8 +2284,7 @@ function kamSekmesi(acik, hedef = "") {
   if (acik || hedef !== "izle") kamCanliIste(acik);
   // Yerleşim değişti: çözümleme katmanları görüntünün üstüne yeniden
   // otursun.
-  setTimeout(kamKatmanHizala, 60);
-}
+  }
 
 /* KARE/SN SAYACI. Ölçülebilir olması gerekiyordu: "ikisi de canlı aksın"
  * denetlenebilir bir söz ancak sayıyla oluyor. Son iki saniyedeki kare
@@ -2644,10 +2371,6 @@ function kareyiTazele(ts, canli = false, ad = "") {
   // ilerliyor ne kutular kayıyor. Rozet "donduruldu" yazıyor, Çözümle'ye
   // yeniden basmak en yeni kareyi çözümleyip ekranı oraya taşıyor,
   // Maske'yi kapatmak ya da sekmeden çıkmak çözmeyi bitirip akışa dönüyor.
-  if (S.kamDondu[kam]) {
-    kamFpsSay(kam);   // akış sürüyor, ekran duruyor; sayaç akışı sayıyor
-    return;
-  }
   // Canlı kare sunucunun BELLEĞİNDEN geliyor, periyodik kare diskten.
   const uc = canli ? "canli" : "son";
   const adres = `/api/kare/${uc}?kamera=${encodeURIComponent(kam)}`
@@ -2689,8 +2412,7 @@ function kareyiTazele(ts, canli = false, ad = "") {
   // Yeni kare geldi: eski tespitler artık BU görüntüye ait değil.
   // Üstlerinde bırakmak, bakan kişiye yeni karede bulunmuş gibi görünürdü.
   // Yalnız BU kameranın tespitleri siliniyor.
-  kamOrtuTemizle(kam);
-  // Bahçe zemini de aynı kareyi kullanıyor. Aynı adres, tek istek:
+    // Bahçe zemini de aynı kareyi kullanıyor. Aynı adres, tek istek:
   // tarayıcı iki <img> için ikinci kez indirmiyor.
   if (window.Bahce) window.Bahce.kareGeldi(kam);
 }
@@ -2980,455 +2702,15 @@ async function ekimAyarKaydet() {
   }
 }
 
-/* -------------------------------------- kamera kutusunda tek tuşla çözümleme
+/* GÖRÜNTÜ ÇÖZÜMLEME KALDIRILDI.
  *
- * YENİ BİR HAT YOK. Aynı `/api/goruntu/coz` ve `/api/goruntu/maske`;
- * `goruntu.py` yeşili topraktan ayırıyor, `tespit.py` pikseli milimetreye
- * çevirip kayıtlı bitkilerle eşliyor. Burada değişen tek şey SUNUM:
- * Görüntü bölümündeki satır listesi yerine karenin üstünde kutu.
+ * Kamera kutusundaki tek tuşla çözümleme, maske katmanı, leke kutuları
+ * ve Görüntü bölümü birlikte silindi; sunucu tarafı da (`goruntu.py`,
+ * `tespit.py`, `filiz.py`, `bitkiolcum.py`, `gorus/`, `tanima.py`)
+ * kaldırıldı. Mimari baştan kurulacak.
  *
- * TAHMİN KONUSUNDA DÜRÜSTLÜK, bu bölümün asıl kuralı:
- *
- *   ExG segmentasyonu TÜR TANIMIYOR. Yeşili topraktan ayırıyor, o kadar.
- *   Bir lekeye bakıp "bu marul" diyemeyiz — elimizdeki tek çıkarım,
- *   lekenin konumu kayıtlı bir bitkinin yayılım çemberine düşüyorsa o
- *   bitki olma ihtimalinin yüksek olduğu. Düşmüyorsa BİLİNMİYOR: yabani
- *   ot da olabilir, kaydetmediğimiz bir fide de. Etiketler bunu bu
- *   şekilde söylüyor, uydurma tür adı yazmıyor.
- *
- *   Kalibrasyon yokken (mm_px = 0) MİLİMETRE YAZILMIYOR. Piksel yazıp
- *   uyarı gösteriyoruz. Yanlış milimetre, hiç milimetre olmamasından
- *   kötüdür: yanlış olduğu belli olmayan bir sayıdır.
+ * Geriye kamera kartı, canlı akış ve kare arşivi kaldı.
  */
-
-/* Bir kameranın çözümlemesinin görünebileceği yerler: Ayarlar kartı (yalnız
- * o kamera seçiliyse) ve o kameranın kendi yüzen kutusu. İkisi de AYNI
- * kareyi gösteriyor, o yüzden tek çözümleme ikisini birden boyuyor.
- *
- * ÖTEKİ KAMERANIN KUTUSU BOYANMIYOR. En kritik nokta bu: iki kamera farklı
- * yerlere bakıyor ve farklı ölçekte; bir karenin kutularını ötekinin
- * görüntüsüne çizmek, yanlış yeri işaret eden kutular demek. */
-function kamHedefler(ad) {
-  const cikti = [];
-  const yari = KAM_YARI.get(ad);
-  if (yari) {
-    cikti.push({
-      im: yari.querySelector('[data-rol="kare"]'),
-      ortu: yari.querySelector('[data-rol="ortu"]'),
-      maske: yari.querySelector('[data-rol="maske-im"]'),
-      not: yari.querySelector('[data-rol="not"]'),
-    });
-  }
-  const kutu = KAM_KUTU.get(ad);
-  if (kutu) {
-    cikti.push({
-      im: kutu.querySelector('[data-rol="kare"]'),
-      ortu: kutu.querySelector('[data-rol="ortu"]'),
-      maske: kutu.querySelector('[data-rol="maske-im"]'),
-      not: kutu.querySelector('[data-rol="not"]'),
-    });
-  }
-  return cikti;
-}
-
-/** Bütün kameraların hedefleri — hizalama ve toplu temizlik için. */
-function kamTumHedefler() {
-  const adlar = kamListe().map((k) => k.ad);
-  if (!adlar.length) adlar.push(kamSecili() || "uc");
-  return adlar.flatMap(kamHedefler);
-}
-
-/** Görüntünün GERÇEKTEN çizildiği dikdörtgen, kapsayıcıya göre piksel.
- *
- *  `inset: 0` yetmiyor: yüzen kutu "büyük" hâlde `object-fit: contain`
- *  kullanıyor ve orada görüntü kutunun tamamını değil, oranı korunmuş
- *  bir iç dikdörtgeni kaplıyor. Harfleme payını hesaba katmasaydık
- *  kutular o pay kadar kayardı — ve kayan bir kutu, yanlış yeri işaret
- *  eden bir kutudur. */
-function kamCizimAlani(im) {
-  const kap = im && im.offsetParent;
-  if (!kap) return null;
-  const ir = im.getBoundingClientRect();
-  const kr = kap.getBoundingClientRect();
-  if (!ir.width || !ir.height) return null;
-  let en = ir.width, boy = ir.height, sol = 0, ust = 0;
-  const dw = im.naturalWidth, dh = im.naturalHeight;
-  if (dw > 0 && dh > 0 && getComputedStyle(im).objectFit === "contain") {
-    const o = Math.min(en / dw, boy / dh);
-    const cw = dw * o, ch = dh * o;
-    sol = (en - cw) / 2; ust = (boy - ch) / 2;
-    en = cw; boy = ch;
-  }
-  // Mutlak konumlu çocuk kapsayıcının DOLGU kutusuna göre yerleşiyor;
-  // getBoundingClientRect ise kenarlık kutusunu veriyor.
-  return {
-    sol: ir.left - kr.left - kap.clientLeft + sol,
-    ust: ir.top - kr.top - kap.clientTop + ust,
-    en, boy,
-  };
-}
-
-/** Katmanları görüntünün üstüne oturtur. Kutu boyu değiştikçe (ölçek
- *  düğmesi, ekrana sığdır, pencere) yeniden çağrılıyor. */
-function kamKatmanHizala() {
-  kamTumHedefler().forEach((h) => {
-    const alan = kamCizimAlani(h.im);
-    [h.ortu, h.maske].forEach((k) => {
-      if (!k) return;
-      if (!alan) { k.style.width = "0"; k.style.height = "0"; return; }
-      k.style.left = `${alan.sol}px`;
-      k.style.top = `${alan.ust}px`;
-      k.style.width = `${alan.en}px`;
-      k.style.height = `${alan.boy}px`;
-    });
-  });
-}
-
-/** Bir kameranın (ad verilmezse hepsinin) çözümleme katmanını boşaltır. */
-function kamOrtuTemizle(ad) {
-  const adlar = ad ? [ad] : Object.keys(S.kamCozler);
-  adlar.forEach((a) => {
-    delete S.kamCozler[a];
-    // Kutular gitti: dondurma sebebi de gitti, akış ekrana geri dönüyor.
-    if (S.kamDondu[a]) { delete S.kamDondu[a]; kameraDurumYaz(kamBilgi(a)); }
-    kamHedefler(a).forEach((h) => {
-      if (h.ortu) h.ortu.innerHTML = "";
-      if (h.maske) { h.maske.classList.add("gizli"); h.maske.removeAttribute("src"); }
-      if (h.not) { h.not.classList.add("gizli"); h.not.innerHTML = ""; }
-    });
-  });
-}
-
-/* Ölçülen çapın beklenene oranı hangi aralıkta "aynı" sayılsın.
- *
- * Bu bir ÖLÇÜM DEĞİL, seçim — ve geniş seçildi. Ölçülen çap üstten
- * görünen izdüşüm: yaprak yatık duruyorsa büyük, dik duruyorsa küçük
- * çıkıyor. Beklenen çap da kaba: yayılım eğrisi bağlı değilse
- * katalogdaki olgun değer kullanılıyor (bkz. `sulama.guncel_yaricap_mm`).
- * Dar bir bant, her fideye sırayla "geride" ve "önde" dedirtirdi. */
-const KAM_ALT_ORAN = 0.7;
-const KAM_UST_ORAN = 1.3;
-
-/** Ölçülen çap ile beklenen çapın kıyası — TEK KELİME.
- *
- * `yasaGore` bayrağı önemli. Bitkiye yayılım eğrisi bağlıysa beklenen
- * çap O YAŞA ait ve "beklenenin altında" gerçekten "geride kalmış"
- * demek. Bağlı değilse beklenen, katalogdaki OLGUN çap: dün ekilmiş bir
- * marul ister istemez altında çıkar ve buna "geride" demek yanlış olur.
- * O yüzden kelime de değişiyor — kıyasın neye göre yapıldığını etiketin
- * kendisi söylüyor. */
-function kamKiyas(cap, beklenen, yasaGore) {
-  if (!(beklenen > 0) || !(cap > 0)) return "";      // bilmiyorsak susuyoruz
-  const o = cap / beklenen;
-  if (yasaGore) {
-    if (o < KAM_ALT_ORAN) return "beklenenin altında";
-    if (o > KAM_UST_ORAN) return "beklenenin üstünde";
-    return "beklendik";
-  }
-  if (o < KAM_ALT_ORAN) return "olgunun altında";
-  if (o > KAM_UST_ORAN) return "olgunun üstünde";
-  return "olgun ölçüde";
-}
-
-/** Tür kataloğundan simge — YALNIZ kayıtlı bitkinin kendi türü için.
- *  Lekeye bakıp tür seçmiyoruz; simge eşleşen KAYITTAN geliyor. */
-function kamSimge(slug) {
-  const t = ((window.Tarla && Tarla.turler && Tarla.turler()) || {})[slug];
-  return (t && t.icon) || "🌱";
-}
-
-/** Bir lekenin kutusunu ve etiketini kurar. */
-function kamKutuHtml(px, kare, sinif, etiket, baslik) {
-  const en = Math.max(1, Number(kare.en_px) || 1);
-  const boy = Math.max(1, Number(kare.boy_px) || 1);
-  const x = (100 * Number(px.x1)) / en;
-  const y = (100 * Number(px.y1)) / boy;
-  const yer = `left:${x}%;top:${y}%;`
-    + `width:${(100 * (px.x2 - px.x1 + 1)) / en}%;`
-    + `height:${(100 * (px.y2 - px.y1 + 1)) / boy}%`;
-  // İki taşma da etiketi okunmaz yapıyor, ikisi de kenara yakın lekelerde
-  // oluyor: üstte etiket görüntünün dışına çıkıyor, sağda kutunun dışına.
-  // Kenara göre yön değiştiriyor — küçültmek yerine, çünkü küçültülmüş
-  // bir ölçü yanlış okunan bir ölçüdür.
-  const sinif2 = `${sinif}${y < 12 ? " alta" : ""}${x > 45 ? " saga" : ""}`;
-  return `<div class="kam-kutu ${sinif2}" style="${yer}"
-    title="${kacisli(baslik)}"><span class="kam-etiket">${kacisli(etiket)}</span></div>`;
-}
-
-function kamCozumYaz(y) {
-  const ad = y.kamera || kamSecili();
-  S.kamCozler[ad] = y;
-  // Kutular ekranda: bundan sonraki kareler görüntüyü değiştirmesin.
-  // Canlı akışta bu olmazsa çözümleme bir sonraki karede siliniyor.
-  S.kamDondu[ad] = true;
-  kameraDurumYaz(kamBilgi(ad));
-  const kare = y.kare || {};
-  // SABİT KAMERA, HARİTASIZ: ölçüler var, KOORDİNAT YOK. `kalibre` bayrağı
-  // burada "milimetre yazılabilir mi" demek; o durumda `ret` her zaman dolu
-  // (konum yok) ama kalibreyse ölçüler yine milimetre. İkisini ayırıyoruz,
-  // yoksa kalibre edilmiş sabit kamerada da piksel yazardık.
-  //
-  // HARİTA VARSA SABİT KAMERA DA HAREKETLİSİ GİBİ: koordinat ve eşleştirme
-  // çıkıyor, çünkü AprilTag haritası doğrudan yatak koordinatı veriyor.
-  if (!kamHareketli(ad) && !y.mutlak_harita) { kamCozumYazSabit(y, ad); return; }
-  const kalibre = !(y.ret && y.ret.length);
-
-  // Leke no -> eşleşme bilgisi. `no` hem piksel hem milimetre lekesinde
-  // aynı: kutuyu piksel uzayından, etiketi milimetre uzayından alıyoruz.
-  const eslesme = {};
-  (y.eslesen || []).forEach((e) => { eslesme[(e.leke || {}).no] = e; });
-  const yabani = {};
-  (y.yabani_aday || []).forEach((b) => { yabani[b.no] = b; });
-  const mm = {};
-  (y.lekeler || []).forEach((l) => { mm[l.no] = l; });
-
-  const kutular = (y.lekeler_px || []).map((px) => {
-    const enPx = Math.round(px.x2 - px.x1 + 1);
-    if (!kalibre) {
-      // Kalibrasyon yok: ölçü PİKSEL ve eşleşme HİÇ denenmedi. "eşleşmedi"
-      // yazmak yalan olurdu — denenmiş de tutmamış gibi okunur.
-      return kamKutuHtml(px, kare, "kam-gri", `${enPx} px`,
-        "Kamera kalibre edilmemiş: ölçü piksel, milimetre değil. "
-        + "Lekenin makine koordinatı bilinmediği için kayıtlı bitkilerle "
-        + "eşleştirme yapılmadı.");
-    }
-    const e = eslesme[px.no];
-    const l = mm[px.no] || {};
-    const olcu = `${Math.round(Number(l.en_mm) || 0)} mm`;
-    if (e) {
-      const yasa = !!e.beklenen_yasa_gore;
-      const bek = Number(e.beklenen_cap_mm);
-      const kiyas = kamKiyas(Number(l.cap_mm), bek, yasa);
-      return kamKutuHtml(px, kare, "kam-yesil",
-        `${kamSimge(e.tur)} ${e.ad} · ${olcu}${kiyas ? ` · ${kiyas}` : ""}`,
-        `Bu leke "${e.ad}" kaydının yayılım çemberine düşüyor `
-        + `(${e.uzaklik_mm} mm uzakta), o yüzden büyük ihtimalle o bitki. `
-        + "Görüntü türü TANIMIYOR — yeşili topraktan ayırıyor; ad kayıttan "
-        + "geliyor, tahminden değil.\n"
-        + `Ölçülen çap ${Number(l.cap_mm).toFixed(0)} mm`
-        + (bek > 0
-          ? (yasa
-            ? `, bu yaşta beklenen ${bek.toFixed(0)} mm — ${kiyas}.`
-            : `, katalogdaki OLGUN çap ${bek.toFixed(0)} mm — ${kiyas}.\n`
-              + "Bu bitkiye yayılım eğrisi bağlı değil, o yüzden kıyas yaşa "
-              + "göre değil olgun ölçüye göre: yeni bir fide doğal olarak "
-              + "altında çıkar, geride kaldığı anlamına gelmez. Yaşa göre "
-              + "kıyas için bitkiye bir yayılım eğrisi bağlayın.")
-          : "; beklenen çap bilinmiyor (tür ya da yayılım kayıtlı değil).")
-        + `\nKutu ${Number(l.en_mm).toFixed(0)}×${Number(l.boy_mm).toFixed(0)} mm · `
-        + `alan ${Number(l.alan_mm2).toFixed(0)} mm².`);
-    }
-    return kamKutuHtml(px, kare, "kam-turuncu", `eşleşmedi · ${olcu}`,
-      "Yakınında kayıtlı bitki yok, yani bunun NE olduğunu bilmiyoruz: "
-      + "yabani ot da olabilir, kaydetmediğiniz bir fide de, yosun ya da "
-      + "düşmüş bir yaprak da. Hiçbir işlem yapılmıyor.\n"
-      + `Konum X${Math.round(l.x)} Y${Math.round(l.y)} · `
-      + `çap ${Number(l.cap_mm).toFixed(0)} mm.`);
-  }).join("");
-
-  const say = (y.lekeler_px || []).length;
-  const not = kalibre
-    ? `<b>${say}</b> leke · <b>${(y.eslesen || []).length}</b> kayıtlı bitkiye
-       denk geliyor · <b>${(y.yabani_aday || []).length}</b> bilinmiyor
-       ${(y.gorunmeyen || []).length
-        ? `· <b>${y.gorunmeyen.length}</b> kayıtlı bitkinin lekesi bulunamadı`
-        : ""}
-       <br>Yeşili topraktan ayırıyoruz, <b>tür tanımıyoruz</b>. "Denk geliyor"
-       demek: leke o bitkinin yayılım çemberine düşüyor.`
-    : `<b>${say}</b> leke bulundu.
-       <br><span class="uyari">⚠ Kamera kalibre edilmedi (mm_px = 0) —
-       ölçüler <b>piksel</b>, milimetre değil.</span>
-       Kayıtlı bitkilerle eşleştirme de yapılamadı: lekenin makine
-       koordinatı bilinmeden hangi bitkiye ait olduğu söylenemez.
-       ${(y.ret || []).slice(1).map(kacisli).join(" ")}`;
-
-  kamHedefler(ad).forEach((h) => {
-    if (h.ortu) h.ortu.innerHTML = kutular;
-    if (h.not) { h.not.innerHTML = not; h.not.classList.remove("gizli"); }
-  });
-  kamMaskeUygula(ad);
-  kamKatmanHizala();
-}
-
-/* SABİT KAMERANIN ÇÖZÜMLEMESİ — ölçü var, koordinat yok.
- *
- * Sabit kamera yatağın neresine baktığını bilmiyor: makine hareket edince
- * onun gördüğü sahne değişmiyor, dolayısıyla karenin bir makine koordinatı
- * yok ve bir lekenin yatak koordinatı da çıkarılamıyor. Bunun sonucu:
- *
- *   - Kayıtlı bitkilerle EŞLEŞTİRME YAPILMIYOR. "Bu marul" diyemeyiz;
- *     "eşleşmedi" de diyemeyiz, çünkü denenmedi.
- *   - Kalibreyse ölçüler MİLİMETRE (çap, alan bir pikselin kaç mm
- *     olduğundan çıkıyor ve o doğru). Kalibre değilse PİKSEL.
- *
- * Yani burada eksik olan tek şey "nerede" — "ne kadar büyük" sorusunun
- * cevabı sağlam. */
-function kamCozumYazSabit(y, ad) {
-  const kare = y.kare || {};
-  const olculu = !!y.yalniz_olcu;      // kalibre → milimetre ölçü var
-  const kutular = (y.lekeler_px || []).map((px) => {
-    const l = (y.lekeler || []).find((m) => m.no === px.no) || {};
-    const enPx = Math.round(px.x2 - px.x1 + 1);
-    const olcu = olculu ? `${Math.round(Number(l.en_mm) || 0)} mm` : `${enPx} px`;
-    return kamKutuHtml(px, kare, "kam-gri", olcu,
-      (olculu
-        ? `Ölçü ${Number(l.en_mm).toFixed(0)}×${Number(l.boy_mm).toFixed(0)} mm · `
-          + `çap ${Number(l.cap_mm).toFixed(0)} mm · `
-          + `alan ${Number(l.alan_mm2).toFixed(0)} mm².\n`
-        : "Bu kamera kalibre edilmemiş: ölçü piksel, milimetre değil.\n")
-      + "Sabit kamera — bu lekenin yatağın neresinde olduğunu BİLMİYORUZ ve "
-      + "kayıtlı bitkilerle eşleştirme yapılmadı. Kamera makineyle hareket "
-      + "etmediği için karenin bir makine koordinatı yok.");
-  }).join("");
-
-  const say = (y.lekeler_px || []).length;
-  const not = `<b>${say}</b> leke bulundu · <b>${kacisli(kamEtiket(ad))}</b> (sabit).
-     ${olculu
-      ? "Ölçüler <b>milimetre</b> (bu kameranın kendi mm/px'i)."
-      : `<span class="uyari">⚠ Bu kamera kalibre edilmedi (mm_px = 0) —
-         ölçüler <b>piksel</b>.</span>`}
-     <br>Sabit kamera makineyle hareket etmiyor, o yüzden karenin bir makine
-     konumu yok: lekelerin <b>yatak koordinatı verilmiyor</b> ve kayıtlı
-     bitkilerle eşleştirme <b>yapılmıyor</b>. Yeşili topraktan ayırıyoruz,
-     <b>tür tanımıyoruz</b>.`;
-
-  kamHedefler(ad).forEach((h) => {
-    if (h.ortu) h.ortu.innerHTML = kutular;
-    if (h.not) { h.not.innerHTML = not; h.not.classList.remove("gizli"); }
-  });
-  kamMaskeUygula(ad);
-  kamKatmanHizala();
-}
-
-/** Bir kameranın çözümle/maske düğmeleri: karttaki (seçiliyse) ve kutudaki. */
-function kamDugmeler(ad, rol) {
-  const cikti = [];
-  const yari = KAM_YARI.get(ad);
-  if (yari) {
-    const d = yari.querySelector(`[data-rol="${rol}"]`);
-    if (d) cikti.push(d);
-  }
-  const kutu = KAM_KUTU.get(ad);
-  if (kutu) {
-    const d = kutu.querySelector(`[data-rol="${rol}"]`);
-    if (d) cikti.push(d);
-  }
-  return cikti;
-}
-
-/** Maske katmanı: eşiğin neyi bitki saydığını GÖRMEDEN eşik ayarlanamaz. */
-function kamMaskeUygula(ad) {
-  const coz = S.kamCozler[ad];
-  const istendi = !!S.kamMaskeler[ad];
-  const acik = istendi && !!coz;
-  kamDugmeler(ad, "maske").forEach((d) => {
-    d.setAttribute("aria-pressed", String(istendi));
-    d.classList.toggle("secili", istendi);
-  });
-  kamHedefler(ad).forEach((h) => {
-    const m = h.maske;
-    if (!m) return;
-    if (!acik) { m.classList.add("gizli"); return; }
-    const jeton = encodeURIComponent(S.jeton || "");
-    const e = coz.esik;
-    // Maske de KAMERAYA bağlı: damga iki kamerada aynı saniyeye denk
-    // gelebiliyor ve kamera yazılmazsa yanlış karenin maskesi gelirdi.
-    m.src = `/api/goruntu/maske?damga=${encodeURIComponent(coz.damga)}`
-      + `&kamera=${encodeURIComponent(ad)}&esik=${e == null ? -9 : e}&jeton=${jeton}`;
-    m.classList.remove("gizli");
-  });
-}
-
-async function kameraCozumle(ad) {
-  const kam = ad || kamSecili();
-  if (!kam) { gunluk("Tanımlı kamera yok", "uyari"); return; }
-  const alan = kamRol(kam, "esik");
-  const esik = !alan || alan.value === "" ? null : Number(alan.value);
-  const dugmeler = kamDugmeler(kam, "coz");
-  dugmeler.forEach((d) => { d.disabled = true; });
-  // Yeniden çözümlemek dondurmayı bozuyor: istenen EN YENİ kare, ekranda
-  // asılı duran eski kare değil. Sunucu "damga: boş" ile en yenisini alıyor.
-  delete S.kamDondu[kam];
-  try {
-    // Damga BOŞ: sunucu O KAMERANIN en yeni kayıtlı karesini seçiyor.
-    // Sonra görüntüleri o kareye sabitliyoruz — canlı akışta ekrandaki
-    // kare çözümlenenden yeni olabilirdi ve kutular yanlış yeri gösterirdi.
-    const y = await apiIste("/api/goruntu/coz", {
-      method: "POST",
-      body: JSON.stringify({ damga: "", esik, kamera: kam }),
-    });
-    const adres = `/api/kare/${encodeURIComponent(y.damga)}`
-      + `?kamera=${encodeURIComponent(kam)}`
-      + `&jeton=${encodeURIComponent(S.jeton || "")}`;
-    // Görüntüyü ÇÖZÜMLENEN kareye sabitliyoruz: canlı akışta ekrandaki
-    // kare çözümlenenden yeni olabilir ve kutular yanlış yeri gösterirdi.
-    const panel = kamRol(kam, "kare");
-    if (panel) {
-      panel.src = adres;
-      panel.classList.remove("gizli");
-      const yok = kamRol(kam, "yok");
-      if (yok) yok.classList.add("gizli");
-    }
-    // Yüzen kutu kullanıcı küçülttüyse kapalı kalıyor: çözümleme onu
-    // geri açacak bir sebep değil.
-    const kutu = KAM_KUTU.get(kam);
-    if (kutu && !S.kamKutuKapali[kam]) {
-      kutu.querySelector('[data-rol="kare"]').src = adres;
-      kutu.classList.remove("gizli");
-      (KAM_SINIRLA.get(kam) || (() => {}))();
-    }
-    kamCozumYaz(y);
-    const kalibsiz = (y.ret || []).some((r) => /kalibre edilmemiş/i.test(r));
-    gunluk(`✓ ${kamEtiket(kam)}: karede ${y.lekeler_px.length} leke`
-      + (kalibsiz ? " (kalibre değil — ölçüler piksel)"
-        : !y.hareketli ? " (sabit kamera — yatak koordinatı yok)"
-        : `, ${(y.eslesen || []).length} kayıtlı bitkiye denk geliyor`), "ok");
-  } catch (h) {
-    gunluk(`✕ ${kamEtiket(kam)} çözümleme: ${h.message}`, "hata");
-  } finally {
-    dugmeler.forEach((d) => { d.disabled = false; });
-  }
-}
-
-function kameraCozumBagla() {
-  // Çözümle/Maske düğmeleri artık her kameranın KENDİ yarısında ve orada
-  // bağlanıyor (bkz. `kamYariBagla`); burada bağlanacak tek kopya yok.
-  // Eşik değişti: eski kutular eski eşiğe ait, ekranda bırakmak yanlış
-  // olurdu. Zaten bir sonuç varsa kendiliğinden yenileniyor — eşik
-  // ayarlamak "değiştir, bak, değiştir" döngüsü.
-
-  // Kutu boyu değişince katman kaymasın: ölçek düğmesi, ekrana sığdır,
-  // sürükleme ve pencere yeniden boyutlama hepsi buradan geçiyor.
-  // Gözcü SAKLANIYOR: kutular kamera listesi değişince yeniden
-  // kuruluyor ve yeni görüntüler de izlenmeli.
-  if (window.ResizeObserver && !KAM_GOZCU.gozcu) {
-    KAM_GOZCU.gozcu = new ResizeObserver(kamKatmanHizala);
-  }
-  kamGozcuTazele();
-  window.addEventListener("resize", kamKatmanHizala);
-}
-
-/** Çözümleme katmanının hizasını bozan her görüntüyü izlemeye alır. */
-const KAM_GOZCU = { gozcu: null, izlenen: new WeakSet() };
-function kamGozcuTazele() {
-  kamTumHedefler().forEach((h) => {
-    const im = h.im;
-    if (!im || KAM_GOZCU.izlenen.has(im)) return;
-    KAM_GOZCU.izlenen.add(im);
-    if (KAM_GOZCU.gozcu) KAM_GOZCU.gozcu.observe(im);
-    im.addEventListener("load", kamKatmanHizala);
-  });
-}
-
-/** Maske düğmesi — kamera başına. */
-function kamMaskeAlSat(ad) {
-  if (!ad) return;
-  S.kamMaskeler[ad] = !S.kamMaskeler[ad];
-  // Maskeyi görmek için çözümleme şart (maske uç noktası damga istiyor).
-  // Kullanıcıyı "önce şuna bas" diye geri göndermiyoruz.
-  if (S.kamMaskeler[ad] && !S.kamCozler[ad]) { kameraCozumle(ad); return; }
-  kamMaskeUygula(ad);
-}
 
 /* ------------------------------------------- yalnızca var olan sensörler */
 // Panelde her zaman dört grafik ve beş kart göstermek, bağlı olmayan bir
@@ -3929,8 +3211,7 @@ function kamKutulariKur() {
       (KAM_SINIRLA.get(ad) || (() => {}))();
     }
   });
-  kamGozcuTazele();
-}
+  }
 
 /** Bir kutunun sürükleme, boyut, büyütme ve kapatma davranışı.
  *  `sira` yalnız ilk açılışta kullanılıyor: bütün kutular aynı ızgara
@@ -4117,8 +3398,7 @@ function kamKutuBagla(kutu, ad, sira = 0) {
     if (olcekDugme) olcekDugme.textContent = secili.etiket;
     // Büyüyen kutu ekranın dışına taşabilir; sınırlama yeniden koşsun.
     uygula();
-    kamKatmanHizala();
-  };
+      };
   olcekUygula();
   if (olcekDugme) {
     olcekDugme.onclick = () => {
@@ -4141,8 +3421,7 @@ function kamKutuBagla(kutu, ad, sira = 0) {
     // Küçülürken sürüklenmiş konum yeniden sınırlanmalı: pencere
     // büyükken değişmiş olabilir.
     if (!buyuk) uygula();
-    kamKatmanHizala();
-  };
+      };
   if (buyutDugme) buyutDugme.onclick = () => buyutYaz(!kutu.classList.contains("buyuk"));
   // Esc ile çıkış: ekranı kaplayan bir şeyden çıkışın beklenen yolu.
   // Diğer Esc davranışlarının önüne geçmesin diye yalnızca büyükken
@@ -4171,19 +3450,6 @@ function kamKutuBagla(kutu, ad, sira = 0) {
     };
   }
 
-  /* --- çözümle / maske --- kutunun kendi kamerasına işliyor. */
-  const cozDugme = rol("coz");
-  if (cozDugme) cozDugme.onclick = () => kameraCozumle(ad);
-  const cozKapatDugme = rol("coz-kapat");
-  if (cozKapatDugme) {
-    cozKapatDugme.onclick = () => {
-      kamOrtuTemizle(ad);
-      const son = S.sonKare[ad];
-      if (son) kareyiTazele(son.ts, son.canli, ad);
-    };
-  }
-  const maskeDugme = rol("maske");
-  if (maskeDugme) maskeDugme.onclick = () => kamMaskeAlSat(ad);
 }
 
 /* --------------------------------------------------- grafik düzleştirmesi
@@ -5622,7 +4888,6 @@ function olaylariBagla() {
       // F2/F3 kamera sekmesine ve ORADAKİ ilk kameranın çözümle
       // düğmesine gidiyor; kamera denetimleri artık orada.
       F2: ['nav.sekmeler button[data-sayfa="kamera"]', "Kamera sekmesi"],
-      F3: ['#kam-tahta .kam-yari [data-rol="coz"]', "Kare çözümleme"],
       F4: ["#d-gorunum-2b", "2B görünüm"],
       F6: ["#d-gorunum-3b", "3B görünüm"],
     };

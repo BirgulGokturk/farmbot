@@ -1003,27 +1003,11 @@
     <section class="sayfa" id="sayfa-kamera">
       <div class="kam-tahta" id="kam-tahta"></div>
 
-      <!-- KAMERA KALİBRASYONU BÖLÜMÜ KALDIRILDI.
-           Üç ölçüm yöntemi (AprilTag, makineyle otomatik, ızgara turu) ve
-           elle giriş formu birlikte silindi; mimari baştan kurulacak.
-           `kalibrasyon.py` kaydı ve `tespit.py`nin piksel->mm işlevleri
-           yerinde duruyor — kalibrasyon yokken `filiz.py` koordinat
-           üretmiyor ve sebebini yazıyor. -->
-      <section class="bolum kapali" id="bolum-goruntu-isleme">
-        <div class="bolum-ust">
-          <button class="bolum-bas" aria-expanded="false">
-            <svg class="ikon ok"><use href="#i-ok"/></svg>
-            <span class="bolum-ad">Görüntü işleme</span>
-          </button>
-        </div>
-        <div class="bolum-govde">
-          <!-- Filiz konumlari kendi dosyasinda kuruluyor (filiz.js);
-               burada yalniz bos kap duruyor. -->
-          <div id="filiz-bolum"></div>
-          <!-- Bitki olcumu (gorus katmani) kendi dosyasinda: bitkiolcum.js -->
-          <div id="bitkiolcum-bolum"></div>
-        </div>
-      </section>
+      <!-- KAMERA KALİBRASYONU VE GÖRÜNTÜ İŞLEME KALDIRILDI.
+           Kalibrasyon yöntemleri, elle giriş, filiz bulma, bitki ölçümü
+           ve görüntü çözümleme birlikte silindi; mimari baştan
+           kurulacak. Geriye kare çekme/saklama ve kameranın kendisi
+           kaldı. -->
       </section>
       </div>
 
@@ -1068,8 +1052,6 @@
         <div class="kam-yari-goruntu">
           <p class="bos-durum" data-rol="yok">Kare bekleniyor…</p>
           <img data-rol="kare" class="gizli" alt="Kamera görüntüsü">
-          <img data-rol="maske-im" class="kam-maske gizli" alt="">
-          <div data-rol="ortu" class="kam-ortu" aria-hidden="true"></div>
         </div>
         <div class="kam-not gizli" data-rol="not"></div>
         <div class="ikincil sayi" data-rol="zaman"></div>
@@ -1088,19 +1070,6 @@
           <button class="ikon-dugme" data-rol="sahnede" aria-pressed="true"
                   title="İzle sahnesinde yüzen kutu olarak göster">Sahnede</button>
           <span class="esnek"></span>
-          <button class="ikon-dugme" data-rol="coz"
-                  title="Karedeki yeşili bul ve görüntünün üstüne çiz">Çözümle</button>
-          <!-- Çözümleme ekrandayken kare donuyor (yoksa canlı akışta bir
-               sonraki kare kutuları silerdi). Buradan akışa dönülüyor. -->
-          <button class="ikon-dugme gizli" data-rol="coz-kapat"
-                  title="Çözümlemeyi kaldır, canlı akışa dön">Akışa dön</button>
-          <button class="ikon-dugme" data-rol="maske" aria-pressed="false"
-                  title="Neyin bitki sayıldığını göster">Maske</button>
-          <label class="kam-esik" title="Yeşillik eşiği — boş bırakılırsa varsayılan">
-            eşik
-            <input type="number" data-rol="esik" step="0.01" min="0" max="1"
-                   placeholder="0.12" inputmode="decimal">
-          </label>
         </div>
         <div class="araclar" role="group" aria-label="Kare aralığı">
           <span class="ikincil">Canlı kapalıyken kare aralığı:</span>
@@ -1543,82 +1512,6 @@
            birbiriyle çelişmesi, hangisinin geçerli olduğunu bilinmez
            yapardı. -->
 
-      <!-- GÖRÜNTÜ ÇÖZÜMLEME. Kalibrasyonun hemen ardında, çünkü onsuz
-           piksel milimetreye çevrilemiyor ve bu bölüm bir işe yaramıyor. -->
-      <section class="bolum kapali" id="bolum-goruntu">
-        <div class="bolum-ust">
-          <button class="bolum-bas" aria-expanded="false">
-            <svg class="ikon ok"><use href="#i-ok"/></svg>
-            <span class="bolum-ad">Görüntü çözümleme</span>
-            <span class="bolum-not" id="goruntu-durum"></span>
-          </button>
-          <button class="yardim" type="button" aria-expanded="false"
-                  aria-controls="yardim-goruntu" aria-label="Açıklama">?</button>
-        </div>
-        <div class="bolum-govde">
-          <p class="yardim-metin gizli" id="yardim-goruntu">
-            Kameranın çektiği karede bitkiyi topraktan ayırıyor ve bulduğu
-            her lekeyi <b>milimetre</b> cinsinden ölçüyor.<br><br>
-            <b>Nasıl çalışıyor.</b> Her piksel önce kendi parlaklığına
-            bölünüyor, sonra <code>2g − r − b</code> hesaplanıyor
-            (Excess Green). Bu sayı nötr bir piksel için — gri, beyaz,
-            siyah, hepsi — <b>tam olarak sıfır</b>; çünkü nötr renkte
-            r, g ve b eşit. Yeşil pozitif, kırmızımsı (toprak, saksı)
-            negatif. Parlaklıktan bağımsız olduğu için gölgedeki yaprak da
-            bulunuyor.<br><br>
-            <b>Eşik</b> sıfırın ne kadar üstünün yeşil sayılacağını
-            söylüyor. Varsayılan 0.12 ölçümle seçildi: gerçek bir bitki
-            karesinde %7, çıplak toprakta %0.2 işaretliyor. Işık ya da
-            toprak rengi çok farklıysa buradan oynatın — maske görüntüsü
-            ne olduğunu anında gösteriyor.<br><br>
-            <b>Otsu neden yok.</b> Eşiği görüntüye seçtiren klasik yöntem
-            iki tepeli histogram varsayıyor; bizim sahnede arka planın
-            tamamı sıfırda yığıldığı için o yığının içinden bölüp
-            görüntünün %82'sini "bitki" ilan ediyordu. Aşağıdaki
-            <b>ayrım</b> sayısı bunu ölçüyor: 0.75'in altındaysa Otsu'ya
-            güvenilmez, sabit eşik doğrudur.<br><br>
-            <b>Hiçbir şey otomatik yapılmıyor.</b> Bu bölüm gördüğünü
-            söylüyor; silmiyor, sulamıyor, ilaçlamıyor.
-          </p>
-
-          <div id="goruntu-uyari" class="rozet-uyari gizli"></div>
-
-          <div class="alan-izgara">
-            <div class="alan"><label for="gr-kare">Kare</label>
-              <select id="gr-kare"></select></div>
-            <div class="alan" title="Nötr piksel 0; bunun üstü yeşil sayılıyor">
-              <label for="gr-esik">Eşik</label>
-              <input type="number" id="gr-esik" step="0.01" min="-1" max="2"
-                     placeholder="0.12"></div>
-            <div class="alan" title="Bundan küçük lekeler atılıyor">
-              <label for="gr-enaz">En az piksel</label>
-              <input type="number" id="gr-enaz" step="10" min="1" placeholder="150"></div>
-          </div>
-          <div class="satir-8">
-            <button class="dugme birincil" id="d-gr-coz">Çözümle</button>
-            <button class="dugme" id="d-gr-fark">Önceki kareyle farkı</button>
-            <label class="onay"><input type="checkbox" id="gr-maske" checked> Maskeyi göster</label>
-          </div>
-
-          <div id="gr-onizleme" class="gr-onizleme gizli">
-            <img id="gr-kare-im" alt="çözümlenen kare">
-            <img id="gr-maske-im" alt="bulunan yeşil alan">
-          </div>
-          <div id="gr-ozet" class="gomulu gizli"></div>
-          <div id="gr-liste"></div>
-
-          <p class="alt-not">Çimlenme denetimi: <b>Tarla</b> sayfasında
-            bitki seçip aşağıdaki düğmeye basın. Bütün yatağa değil,
-            her noktanın çevresindeki küçük pencereye bakılıyor — nerede
-            ektiğinizi bildiğimiz için yanlış pozitiflerin çoğu daha
-            bakmadan eleniyor. Tek ölçüm "çimlendi" demez; oran
-            <b>zamanla</b> yükseliyorsa çimlenme.</p>
-          <div class="satir-8">
-            <button class="dugme" id="d-gr-cimlenme">Seçili noktalarda çimlenme</button>
-          </div>
-          <div id="gr-cimlenme" class="gomulu gizli"></div>
-        </div>
-      </section>
 
       <!-- EKSEN HIZLARI. Genel hız kaydıracı Sür sayfasında ve o tek bir
            sayı; burada eksen başına ayarlanıyor. Z dikey ve yük altında,
@@ -1901,17 +1794,6 @@
           </div>
           <div class="kamera-yuzen-araclar">
             <span class="ikincil" data-rol="zaman"></span>
-            <!-- Ayarlar'daki "Çözümle" ile AYNI iş, aynı uç nokta. Başlık dar
-                 olduğu için simge; adı `title` ve `aria-label`de. -->
-            <button class="kapat" data-rol="coz" type="button"
-                    title="Çözümle — karedeki yeşili bul" aria-label="Çözümle">⌖</button>
-            <!-- Çözümleme ekrandayken kare donuyor; buradan akışa dönülüyor. -->
-            <button class="kapat gizli" data-rol="coz-kapat" type="button"
-                    title="Çözümlemeyi kaldır, akışa dön"
-                    aria-label="Akışa dön">⟳</button>
-            <button class="kapat" data-rol="maske" type="button"
-                    aria-pressed="false" title="Maske — neyin bitki sayıldığı"
-                    aria-label="Maske">◍</button>
             <button class="kapat olcek" data-rol="olcek" type="button"
                     title="Boyut — %100 / %150 / %160">%100</button>
             <button class="kapat" data-rol="buyut" type="button"
@@ -1922,14 +1804,6 @@
           </div>
         </div>
         <img data-rol="kare" alt="Kamera görüntüsü">
-        <!-- Maske ve kutu katmanı: ikisi de KARDEŞ, sarmalayıcı YOK.
-             `.kamera-yuzen.buyuk img` kuralı görüntüyü esnek bir kutuya
-             oturtuyor; araya bir div koymak o esnemeyi div'e verip
-             görüntüyü büzerdi. İkisinin yeri JS'te görüntünün gerçek
-             çizim dikdörtgeninden hesaplanıyor (object-fit: contain
-             harfleme payı dahil). -->
-        <img data-rol="maske-im" class="kam-maske gizli" alt="">
-        <div data-rol="ortu" class="kam-ortu" aria-hidden="true"></div>
         <div class="kam-not gizli" data-rol="not"></div>
       </div>
     </template>
@@ -2001,8 +1875,6 @@
 <script src="/statik/ses.js"></script>
 <script src="/statik/bahce.js"></script>
 <script src="/statik/app.js"></script>
-<script src="/statik/filiz.js"></script>
-<script src="/statik/bitkiolcum.js"></script>
 <script src="/statik/isik.js"></script>
 <!-- `nem.js` BILEREK YUKLENMIYOR. Tarla'daki nem tablosu her sutunuyla
      Bitkiler sekmesinin kartina tasindi (prob bekleme suresi ve
