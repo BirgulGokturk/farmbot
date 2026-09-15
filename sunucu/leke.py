@@ -42,6 +42,7 @@ from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import Response
 
 import kareler
+import olcum as olcum_modul
 
 logger = logging.getLogger("tarim.leke")
 
@@ -116,6 +117,13 @@ def yonlendirici_kur(komut_gonder: Callable, parola_dogrula: Callable) -> APIRou
         else:
             kare_hatasi = "ajan kareyi göndermedi"
 
+        # ÖLÇÜMÜ KAYDEDİYORUZ. Elle basılan düğme `zorla` ile geçiyor:
+        # aralık beklemek, basılan düğmenin hiçbir şey yapmaması olurdu.
+        if sonuc.get("olcum"):
+            await asyncio.to_thread(
+                olcum_modul.ekle, kam, sonuc["olcum"], sonuc.get("konum"),
+                None, True)
+
         return {"ok": True, "kamera": kam, "damga": damga,
                 "kare_hatasi": kare_hatasi, **sonuc}
 
@@ -143,7 +151,63 @@ def yonlendirici_kur(komut_gonder: Callable, parola_dogrula: Callable) -> APIRou
             # ilgisiz bir görüntünün üstüne düşer.
             headers={"Cache-Control": "no-store"})
 
+    @yonlendirici.get("/gecmis")
+    async def leke_gecmis(kamera: str = Query(default=""),
+                          saat: float = Query(default=72.0, ge=0.1, le=24 * 365),
+                          jeton: str = Query(default="")):
+        """Ölçüm geçmişi — büyüme eğrisi için.
+
+        Kamera oynadığında aynı yatağın yeşil oranı bambaşka çıkıyor;
+        kayıtların içindeki `konum` bunu ayırt etmek için duruyor ve
+        panel farklı konumları ayrı seri sayıyor. Hepsini tek eğriye
+        dizmek, olmayan bir büyümeyi göstermek olurdu.
+        """
+        parola_dogrula(jeton)
+        kayitlar = await asyncio.to_thread(
+            olcum_modul.gecmis, kareler.ad_temizle(kamera) if kamera else "",
+            saat)
+        return {"kayitlar": kayitlar, "adet": len(kayitlar),
+                "aralik_sn": olcum_modul.ARALIK_SN}
+
     return yonlendirici
+
+
+async def olcum_dongusu(durum_al: Callable, aralik_sn: float = 30.0) -> None:
+    """Sürekli kipin ürettiği ölçümleri zaman serisine yazar.
+
+    NEDEN AYRI DÖNGÜ: sürekli kipin sonuçları `/api/leke/bul`tan
+    geçmiyor, ajanın durum paketiyle geliyor. Kaydı o paketin işlendiği
+    yere iliştirmek, ölçüm mantığını sunucunun en kalabalık dosyasına
+    dağıtmak olurdu.
+
+    ARALIK BURADA DEĞİL `olcum.ARALIK_SN` içinde: bu döngü sık bakıyor
+    (durum paketi tazeliğini kaçırmamak için), ama `olcum.ekle` kendi
+    aralığını koruyup fazlasını atıyor. İki yerde iki aralık, biri
+    güncellenmeyince sessizce ayrışırdı.
+    """
+    while True:
+        try:
+            await asyncio.sleep(max(5.0, float(aralik_sn)))
+            durum = durum_al() or {}
+            lekeler = durum.get("lekeler") or {}
+            if not isinstance(lekeler, dict):
+                continue
+            for kam, sonuc in lekeler.items():
+                if not isinstance(sonuc, dict):
+                    continue
+                olcum = sonuc.get("olcum")
+                # Sebep varsa (akış kapalı, kare eskimiş) ÖLÇÜM YOK ve
+                # sıfır yazmıyoruz: "0 bitki" ile "bakamadım" aynı şey
+                # değil ve grafikte ikisi aynı görünürdü.
+                if not olcum or sonuc.get("sebep"):
+                    continue
+                await asyncio.to_thread(
+                    olcum_modul.ekle, str(kam), olcum, sonuc.get("konum"))
+        except asyncio.CancelledError:
+            raise
+        except Exception:                                   # noqa: BLE001
+            logger.exception("Ölçüm döngüsünde beklenmeyen hata")
+            await asyncio.sleep(10.0)
 
 
 def _coz(b64: str) -> bytes | None:

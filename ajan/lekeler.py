@@ -98,6 +98,25 @@ VARSAYILAN: dict[str, Any] = {
     # bakılmalı. İkisi de 0 yapılırsa kapı tamamen kapanıyor.
     "ton_alt": 30,
     "ton_ust": 75,
+
+    # LEKELERİ BİRLEŞTİRME. Bir fidenin iki yaprağı çoğu zaman AYRI
+    # bileşen çıkıyor: aralarındaki gövde ince ve toprak rengine yakın,
+    # eşik onu ayıramıyor. Panelde iki kutu görünüyor ama tek bitki var,
+    # ve "kaç bitki" sorusunun cevabı iki katına çıkıyor.
+    #
+    # Ölçek bağımsız: iki lekenin KUTULARI arasındaki boşluk, ikisinin
+    # ortalama kutu kenarının bu katından küçükse aynı bitki sayılıyor.
+    # Örtüşen kutuların boşluğu sıfır, yani her zaman birleşiyorlar.
+    # Sabit piksel eşiği kamera yüksekliği değişince anlamını yitirirdi.
+    #
+    # DEĞER ÖLÇÜLMEDİ ve ölçülmesi gözle oluyor: hangi iki lekenin aynı
+    # bitki olduğunu ancak bakan biri söyler. 0.5 TEMKİNLİ bir başlangıç —
+    # örtüşen ve bitişik kutuları birleştiriyor, aralarında kendi
+    # boyutlarının yarısı kadar boşluk olanları bırakıyor. Panelde
+    # kaydırağı var; 0 birleştirmeyi tamamen kapatıyor. Fazla büyütmek
+    # komşu İKİ FİDEYİ tek bitki yapar ve bu, bir fideyi ikiye bölmekten
+    # daha kötü: var olmayan bir bitki yaratmak yerine olanı kaybediyor.
+    "birlestir_orani": 0.5,
 }
 
 
@@ -151,6 +170,101 @@ def _kare_coz(ham: bytes, hedef_genislik: int, cv2, np):
         if kare is None:
             return None, 0, 0, "opencv"
         return kare, kare.shape[1], kare.shape[0], "opencv"
+
+
+def _kenar(leke: dict[str, Any]) -> float:
+    """Lekenin ortalama kutu kenarı — yakınlık ölçeği."""
+    x1, y1, x2, y2 = leke.get("kutu") or [0, 0, 0, 0]
+    return ((x2 - x1) + (y2 - y1)) / 2.0
+
+
+def _bosluk(a: dict[str, Any], b: dict[str, Any]) -> float:
+    """İki lekenin KUTULARI arasındaki boşluk. Örtüşüyorlarsa 0.
+
+    Merkez mesafesi DEĞİL ve bu fark önemli: iki yaprak kutusu üst üste
+    binmiş olsa bile merkezleri, kutuların yarısı kadar uzak olabiliyor.
+    Merkezle ölçtüğümüzde örtüşen kutular bile "uzak" çıkıyordu.
+    """
+    ax1, ay1, ax2, ay2 = a.get("kutu") or [0, 0, 0, 0]
+    bx1, by1, bx2, by2 = b.get("kutu") or [0, 0, 0, 0]
+    dx = max(0.0, max(ax1, bx1) - min(ax2, bx2))
+    dy = max(0.0, max(ay1, by1) - min(ay2, by2))
+    return (dx * dx + dy * dy) ** 0.5
+
+
+def _birlestir(lekeler: list[dict[str, Any]], oran: float) -> list[dict[str, Any]]:
+    """Yakın lekeleri tek bitkide toplar (tek bağlantılı kümeleme).
+
+    Zincirleme BİLEREK: A-B yakın, B-C yakın ise A-B-C tek bitki. Bir
+    fidenin yaprakları arka arkaya diziliyor ve her birini komşusuna
+    bağlamak, hepsini tek gövdeye bağlamanın en yakın karşılığı.
+
+    Kümenin merkezi ALAN AĞIRLIKLI: büyük yaprak merkezi kendine
+    çekiyor, ki gövde oraya daha yakın. Kutuların ortalaması, küçük bir
+    yaprak yüzünden merkezi boşluğa kaydırırdı.
+    """
+    if oran <= 0 or len(lekeler) < 2:
+        return lekeler
+
+    n = len(lekeler)
+    kok = list(range(n))
+
+    def bul_kok(i: int) -> int:
+        while kok[i] != i:
+            kok[i] = kok[kok[i]]
+            i = kok[i]
+        return i
+
+    kenarlar = [_kenar(l) for l in lekeler]
+    for i in range(n):
+        for j in range(i + 1, n):
+            bosluk = _bosluk(lekeler[i], lekeler[j])
+            sinir = oran * (kenarlar[i] + kenarlar[j]) / 2.0
+            if bosluk <= sinir:
+                ki, kj = bul_kok(i), bul_kok(j)
+                if ki != kj:
+                    kok[ki] = kj
+
+    kumeler: dict[int, list[int]] = {}
+    for i in range(n):
+        kumeler.setdefault(bul_kok(i), []).append(i)
+
+    cikti: list[dict[str, Any]] = []
+    for uyeler in kumeler.values():
+        if len(uyeler) == 1:
+            tek = dict(lekeler[uyeler[0]])
+            tek["parca"] = 1
+            cikti.append(tek)
+            continue
+        parcalar = [lekeler[i] for i in uyeler]
+        alan = sum(float(p["alan_px"]) for p in parcalar)
+        x1 = min(p["kutu"][0] for p in parcalar)
+        y1 = min(p["kutu"][1] for p in parcalar)
+        x2 = max(p["kutu"][2] for p in parcalar)
+        y2 = max(p["kutu"][3] for p in parcalar)
+        agirlik = alan or 1.0
+        mx = sum(float(p["x"]) * float(p["alan_px"]) for p in parcalar) / agirlik
+        my = sum(float(p["y"]) * float(p["alan_px"]) for p in parcalar) / agirlik
+        # Renk EN BÜYÜK parçadan: medyanların ortalaması, küçük bir
+        # parçanın gölgeli tonunu bitkinin tonu diye yazardı.
+        en_buyuk = max(parcalar, key=lambda p: p["alan_px"])
+        kutu_alan = max(1, (x2 - x1) * (y2 - y1))
+        cikti.append({
+            "x": int(round(mx)), "y": int(round(my)),
+            "kutu": [x1, y1, x2, y2],
+            "alan_px": int(round(alan)),
+            # DOLGU birleşik kutuya göre: iki yaprak arasındaki boşluk
+            # da sayılıyor ve bu doğru — bir fide kutusunu bir kablodan
+            # daha az dolduruyorsa bunu görmek gerekiyor.
+            "dolgu": round(alan / float(kutu_alan), 3),
+            "en_boy": round((x2 - x1) / float(max(1, y2 - y1)), 3),
+            "ton": en_buyuk.get("ton"),
+            "doygunluk": en_buyuk.get("doygunluk"),
+            "parlaklik": en_buyuk.get("parlaklik"),
+            "parca": len(parcalar),
+        })
+    cikti.sort(key=lambda l: l["alan_px"], reverse=True)
+    return cikti
 
 
 def bul(ham: bytes, ayar: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -317,6 +431,9 @@ def bul(ham: bytes, ayar: dict[str, Any] | None = None) -> dict[str, Any]:
     # Büyükten küçüğe: panelde ve eşleştirmede önce belirgin olan.
     lekeler.sort(key=lambda l: l["alan_px"], reverse=True)
 
+    ham_adet = len(lekeler)
+    lekeler = _birlestir(lekeler, float(a.get("birlestir_orani") or 0.0))
+
     sebep = ""
     if not lekeler:
         # Yeşil vardı ama hiçbiri leke sayılmadı — sebebi söylüyoruz,
@@ -325,8 +442,30 @@ def bul(ham: bytes, ayar: dict[str, Any] | None = None) -> dict[str, Any]:
                  f"kalmadı: {elenen_kucuk} tanesi çok küçük, "
                  f"{elenen_buyuk} tanesi çok büyük")
 
+    # --- ÖLÇÜM ÖZETİ -----------------------------------------------------
+    # Kalibrasyon olmadığı için milimetre yok; bunlar KARE İÇİ ölçüler ve
+    # kendi aralarında karşılaştırılabilir. Aynı kameradan aynı yerden
+    # alınan iki kare arasındaki değişim, büyümenin kendisi.
+    #
+    # `yesil_oran` zaten kareye oranlı olduğu için kamera yüksekliği
+    # değişmedikçe zaman içinde karşılaştırılabilir; `alan_px` ise
+    # çözünürlüğe bağlı, o yüzden ikisi birlikte yazılıyor.
+    alanlar = sorted((int(l["alan_px"]) for l in lekeler), reverse=True)
+    olcum = {
+        "adet": len(lekeler),
+        "ham_adet": ham_adet,
+        "toplam_alan_px": sum(alanlar),
+        "en_buyuk_px": alanlar[0] if alanlar else 0,
+        "ortanca_px": alanlar[len(alanlar) // 2] if alanlar else 0,
+        # Kareye oran: çözünürlükten bağımsız, zaman serisinde asıl
+        # karşılaştırılabilir olan sayı.
+        "kapladigi_oran": (round(sum(alanlar) / float(max(1, tam_g * tam_y)), 6)
+                           if alanlar else 0.0),
+    }
+
     return {
         "lekeler": lekeler,
+        "olcum": olcum,
         "kare_px": [tam_g, tam_y],
         "yontem": "exg-otsu",
         "esik": round(float(esik), 1),

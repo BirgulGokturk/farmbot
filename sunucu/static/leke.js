@@ -133,6 +133,14 @@
                 sarı hortum 24-25, <b>yaprak 33-63</b>, turkuaz kablo 87-98.
                 Başka bir aydınlatmada <b>ton</b> sütununa yeniden bakın.</span>
             </div>
+            <div class="satir">
+              <label title="Bir fidenin yaprakları ayrı leke çıkabiliyor. Kutuları arasındaki boşluk, ortalama kutu kenarının bu katından azsa aynı bitki sayılıyor. 0 = birleştirme kapalı.">
+                Birleştirme <input type="number" id="leke-birlestir" value="0.5" min="0" max="5" step="0.1" style="width:5rem">
+              </label>
+              <span class="ikincil">Bir fidenin yaprakları ayrı leke çıkıyorsa artırın.
+                Fazlası <b>komşu iki fideyi tek bitki yapar</b> — tabloda
+                <b>parça</b> sütununa bakın.</span>
+            </div>
           </details>
           <div class="rozet-uyari gizli" id="leke-uyari"></div>
           <div id="leke-sahne" style="position:relative;display:inline-block;max-width:100%">
@@ -140,6 +148,22 @@
             <svg id="leke-kutular" style="position:absolute;inset:0;width:100%;height:100%;pointer-events:none"></svg>
           </div>
           <div id="leke-liste"></div>
+          <details class="etiket-blok" id="leke-gecmis-blok">
+            <summary>Büyüme geçmişi</summary>
+            <div class="satir">
+              <label>Süre
+                <select id="leke-gecmis-saat">
+                  <option value="24">24 saat</option>
+                  <option value="72" selected>3 gün</option>
+                  <option value="168">1 hafta</option>
+                  <option value="720">1 ay</option>
+                </select>
+              </label>
+              <button id="d-leke-gecmis">Getir</button>
+              <span class="ikincil" id="leke-gecmis-not"></span>
+            </div>
+            <div id="leke-gecmis-cizim"></div>
+          </details>
         </div>
       </details>`;
 
@@ -161,8 +185,106 @@
     if (img) img.addEventListener("load", kutulariCiz);
 
     otoKur();
+    const gd = $("#d-leke-gecmis");
+    if (gd) gd.addEventListener("click", gecmisGetir);
     yuzenleriTara();
     setInterval(saat, 500);
+  }
+
+  /* ---------------------------------------------------------------- 
+   * BÜYÜME GEÇMİŞİ
+   *
+   * Çizilen şey `kapladigi_oran`: lekelerin karenin ne kadarını
+   * kapladığı. Piksel alanı DEĞİL — o çözünürlüğe bağlı ve kamera ayarı
+   * değişince eski kayıtlarla karşılaştırılamaz hâle geliyor. Oran
+   * çözünürlükten bağımsız.
+   *
+   * KAMERA OYNARSA AYRI SERİ. Bu projede kameralar sabit değil; kamera
+   * yer değiştirince aynı yatağın yeşil oranı bambaşka çıkıyor.
+   * Hepsini tek eğriye dizmek olmayan bir büyümeyi göstermek olurdu, o
+   * yüzden konumu farklı olan kayıtlar ayrı ayrı sayılıyor ve kaç ayrı
+   * konum olduğu yazılıyor.
+   * ---------------------------------------------------------------- */
+  async function gecmisGetir() {
+    const p = P();
+    const not = $("#leke-gecmis-not");
+    const kap = $("#leke-gecmis-cizim");
+    if (!p || !p.apiIste || !kap) return;
+    const sec = $("#leke-kamera");
+    const kamera = sec ? sec.value : "";
+    const saatSec = $("#leke-gecmis-saat");
+    const saatler = saatSec ? saatSec.value : "72";
+    if (not) not.textContent = "getiriliyor…";
+    try {
+      const y = await p.apiIste(
+        `/api/leke/gecmis?kamera=${encodeURIComponent(kamera)}&saat=${encodeURIComponent(saatler)}`);
+      gecmisCiz(y.kayitlar || [], y.aralik_sn);
+    } catch (hata) {
+      if (not) not.textContent = "alınamadı: " + ((hata && hata.message) || hata);
+      kap.innerHTML = "";
+    }
+  }
+
+  function konumEtiketi(k) {
+    if (!k || k.x == null || k.y == null) return "konumsuz";
+    return `${k.x},${k.y}`;
+  }
+
+  function gecmisCiz(kayitlar, aralik) {
+    const kap = $("#leke-gecmis-cizim");
+    const not = $("#leke-gecmis-not");
+    if (!kap) return;
+    if (!kayitlar.length) {
+      kap.innerHTML = "";
+      if (not) {
+        not.textContent = "kayıt yok — 'Lekeleri bul'a basın ya da sürekli kipi açın"
+          + (aralik ? ` (sürekli kipte en sık ${Math.round(aralik / 60)} dakikada bir yazılıyor)` : "");
+      }
+      return;
+    }
+    const konumlar = [...new Set(kayitlar.map((k) => konumEtiketi(k.konum)))];
+    if (not) {
+      not.textContent = `${kayitlar.length} kayıt`
+        + (konumlar.length > 1
+          ? ` · ${konumlar.length} FARKLI KONUM — eğriler ayrı, kamera oynamış`
+          : "");
+    }
+
+    const g = 640, y = 180, ust = 10, alt = 24, sol = 46, sag = 10;
+    const enKucukTs = kayitlar[0].ts, enBuyukTs = kayitlar[kayitlar.length - 1].ts;
+    const araTs = Math.max(1, enBuyukTs - enKucukTs);
+    const enBuyukOran = Math.max(...kayitlar.map((k) => k.kapladigi_oran || 0)) || 1e-6;
+    const xk = (ts) => sol + (ts - enKucukTs) / araTs * (g - sol - sag);
+    const yk = (o) => ust + (1 - (o || 0) / enBuyukOran) * (y - ust - alt);
+
+    /* Her konum kendi eğrisi. Renkler ayırt etmek için; anlam
+     * taşımıyorlar ve o yüzden sabit bir listeden sırayla veriliyor. */
+    const renkler = ["#7bc86c", "#6cb2c8", "#c8a86c", "#c86c9a", "#9a6cc8"];
+    const yollar = konumlar.map((ad, i) => {
+      const seri = kayitlar.filter((k) => konumEtiketi(k.konum) === ad);
+      const d = seri.map((k, j) =>
+        `${j ? "L" : "M"}${xk(k.ts).toFixed(1)},${yk(k.kapladigi_oran).toFixed(1)}`).join("");
+      const nokta = seri.map((k) =>
+        `<circle cx="${xk(k.ts).toFixed(1)}" cy="${yk(k.kapladigi_oran).toFixed(1)}" r="2"
+           fill="${renkler[i % renkler.length]}"><title>${new Date(k.ts * 1000).toLocaleString("tr")}
+%${((k.kapladigi_oran || 0) * 100).toFixed(3)} · ${k.adet} bitki · en büyük ${k.en_buyuk_px} px²</title></circle>`).join("");
+      return `<path d="${d}" fill="none" stroke="${renkler[i % renkler.length]}" stroke-width="1.5"/>${nokta}`;
+    }).join("");
+
+    const tarih = (ts) => new Date(ts * 1000).toLocaleDateString("tr", { day: "2-digit", month: "2-digit" });
+    kap.innerHTML = `
+      <svg viewBox="0 0 ${g} ${y}" style="width:100%;max-width:${g}px;height:auto">
+        <line x1="${sol}" y1="${ust}" x2="${sol}" y2="${y - alt}" stroke="#555"/>
+        <line x1="${sol}" y1="${y - alt}" x2="${g - sag}" y2="${y - alt}" stroke="#555"/>
+        <text x="4" y="${ust + 8}" fill="#999" font-size="10">%${(enBuyukOran * 100).toFixed(2)}</text>
+        <text x="4" y="${y - alt}" fill="#999" font-size="10">0</text>
+        <text x="${sol}" y="${y - 6}" fill="#999" font-size="10">${tarih(enKucukTs)}</text>
+        <text x="${g - sag - 40}" y="${y - 6}" fill="#999" font-size="10">${tarih(enBuyukTs)}</text>
+        ${yollar}
+      </svg>
+      <p class="alt-not">Dikey eksen: lekelerin karenin ne kadarını kapladığı.
+        Piksel alanı değil — o çözünürlüğe bağlı, oran bağımsız.
+        <b>Milimetre yok</b>: kamera kalibre edilmediği için gerçek alan üretilmiyor.</p>`;
   }
 
   function kamerayiDoldur() {
@@ -240,10 +362,16 @@
   function yaz(y) {
     const lekeler = y.lekeler || [];
     const ozet = $("#leke-ozet");
+    const o = y.olcum || {};
     const parca = [
-      `${lekeler.length} leke`,
+      // BİTKİ sayısı ile ham leke sayısı ayrı yazılıyor: birleştirme
+      // çok agresifse fark büyür ve bu, ayarı düzeltme işareti.
+      (o.ham_adet && o.ham_adet !== lekeler.length)
+        ? `${lekeler.length} bitki (${o.ham_adet} leke)`
+        : `${lekeler.length} bitki`,
       `yeşil %${((y.yesil_oran || 0) * 100).toFixed(2)}`,
     ];
+    if (o.en_buyuk_px) parca.push(`en büyük ${o.en_buyuk_px} px²`);
     if (y.esik != null) parca.push(`eşik ${y.esik}`);
     if (y.sure_ms != null) {
       /* Çözme süresi ayrı yazılıyor: toplam yükseldiğinde suçlunun JPEG
@@ -331,6 +459,7 @@
         <td>${l.en_boy}</td>
         <td>${l.ton == null ? "—" : l.ton}</td>
         <td>${l.doygunluk == null ? "—" : l.doygunluk}</td>
+        <td>${l.parca || 1}</td>
       </tr>`).join("");
     kap.innerHTML = `
       <table class="tablo dar">
@@ -340,6 +469,7 @@
           <th title="Genişlik / yükseklik. 1'e yakın = yuvarlak.">en/boy</th>
           <th title="ÖLÇÜLEN HSV tonu (0-179), medyan. Ton kapısını bu sütuna bakarak seçin — yaprak ile sarı hortum/turkuaz kablo burada ayrışıyor.">ton</th>
           <th title="ÖLÇÜLEN doygunluk (0-255), medyan. Kablolar genelde yapraklardan daha doygun.">doyg.</th>
+          <th title="Kaç ayrı lekeden birleşti. 1 = tek parça bulundu. Büyük sayılar yaprakların ayrı ayrı bulunup birleştirildiğini gösteriyor.">parça</th>
         </tr></thead>
         <tbody>${satirlar}</tbody>
       </table>`;
@@ -531,6 +661,8 @@
     const tonUst = sayi("#leke-ton-ust");
     if (tonAlt !== null) ayar.ton_alt = tonAlt;
     if (tonUst !== null) ayar.ton_ust = tonUst;
+    const birlestir = sayi("#leke-birlestir");
+    if (birlestir !== null && birlestir >= 0) ayar.birlestir_orani = birlestir;
     return ayar;
   }
 

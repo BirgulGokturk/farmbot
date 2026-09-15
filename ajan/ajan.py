@@ -1061,6 +1061,11 @@ class Ajan:
                 except Exception as hata:                  # noqa: BLE001
                     return {"ok": False,
                             "mesaj": f"[{kam.etiket}] leke bulunamadı: {hata}"}
+                # KONUM da dönüyor: ölçüm kaydı kameranın nerede
+                # olduğunu bilmeli, yoksa kamera oynadığında iki farklı
+                # yerin ölçümü tek eğriye dizilir.
+                k = (self._son_durum.get("konum") or {}) if self._son_durum else {}
+                sonuc["konum"] = {"x": k.get("x"), "y": k.get("y"), "z": k.get("z")}
                 sayi = len(sonuc.get("lekeler") or [])
                 # Sebep varsa mesaja giriyor: boş liste tek başına "bitki
                 # yok" demek değil, nedeni görünsün.

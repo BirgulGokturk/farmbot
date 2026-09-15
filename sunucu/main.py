@@ -293,6 +293,10 @@ async def yasam(app: FastAPI):
     merkez.son_olcum = await asyncio.to_thread(depo.son_kayit) or {}
     gorevler = [asyncio.create_task(_budama_dongusu()),
                 asyncio.create_task(_kuyruk_dongusu()),
+                # Sürekli leke kipinin ölçümlerini zaman serisine yazar.
+                # Aralık `olcum.ARALIK_SN`de; bu döngü sık bakıp fazlasını
+                # oraya attırıyor.
+                asyncio.create_task(leke.olcum_dongusu(merkez.durum)),
                 asyncio.create_task(_arsiv_dongusu()),
                 # Zamanlanmis gorevler DURMUS baslıyor (bkz. zamanli.py):
                 # dongu doner ama hicbir gorev "calisiyor" degildir.
