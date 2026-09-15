@@ -78,11 +78,26 @@ VARSAYILAN: dict[str, Any] = {
     # aynısı oluyor. Sahada tam bu görüldü: sarı sulama hortumu ve mavi
     # kablolar bitki sanıldı.
     #
-    # Ton kapısı bunları eliyor ama SINIRLARI UYDURULMUYOR: her lekenin
-    # ölçülen tonu çıktıda yazıyor (`ton`), önce bakılıyor sonra
-    # kapatılıyor. İkisi de 0 iken kapı KAPALI ve hiçbir şey elenmiyor.
-    "ton_alt": 0,
-    "ton_ust": 0,
+    # SINIRLAR ÖLÇÜLDÜ, seçilmedi. Bu makinenin iki kamerasından alınan
+    # karelerde her lekenin medyan tonu okundu (15.09.2026, gündüz ışığı):
+    #
+    #   24-25  sarı sulama hortumu     (doygunluk 164-199)
+    #   33-63  BİTKİ YAPRAĞI           (doygunluk  83-149)
+    #   87-98  turkuaz ve mavi kablo   (doygunluk 122-200)
+    #
+    # İki geniş boşluk var: 25->33 ve 63->87. Kapı ikisinin ortasına
+    # konuldu. En düşük yaprak 33, en yüksek 63; iki yanda da pay var.
+    #
+    # Doygunluk da ayrım veriyor ama ÖRTÜŞÜYOR (yaprak 149'a, kablo
+    # 122'ye kadar çıkıyor); ikinci bir kapı eklemek eleme gücü
+    # katmadan karmaşa katardı. Ölçümü yine de her lekede yazıyoruz.
+    #
+    # DİKKAT: bu ölçüm tek bir ışık koşulundan. Ton ışıkla pek
+    # kaymıyor (ExG'nin aksine) ama bambaşka bir aydınlatmada —
+    # örneğin yalnız bitki ışığı (D11) yanarken — panelden yeniden
+    # bakılmalı. İkisi de 0 yapılırsa kapı tamamen kapanıyor.
+    "ton_alt": 30,
+    "ton_ust": 75,
 }
 
 

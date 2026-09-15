@@ -89,13 +89,14 @@
             </div>
             <div class="satir">
               <label title="HSV ton alt sınırı (0-179). Sarı hortum ve turkuaz kablo ExG'yi geçiyor; ton kapısı onları eliyor.">
-                Ton alt <input type="number" id="leke-ton-alt" value="0" min="0" max="179" style="width:5rem">
+                Ton alt <input type="number" id="leke-ton-alt" value="30" min="0" max="179" style="width:5rem">
               </label>
               <label title="HSV ton üst sınırı (0-179). İkisi de 0 iken kapı KAPALI.">
-                Ton üst <input type="number" id="leke-ton-ust" value="0" min="0" max="179" style="width:5rem">
+                Ton üst <input type="number" id="leke-ton-ust" value="75" min="0" max="179" style="width:5rem">
               </label>
-              <span class="ikincil">İkisi de 0 = kapalı. Önce tablodaki <b>ton</b> sütununa bakın:
-                yaprak ile kablo hangi değerlerde ayrışıyor?</span>
+              <span class="ikincil">İkisi de 0 = kapalı. Ölçüldü (15.09.2026):
+                sarı hortum 24-25, <b>yaprak 33-63</b>, turkuaz kablo 87-98.
+                Başka bir aydınlatmada <b>ton</b> sütununa yeniden bakın.</span>
             </div>
           </details>
           <div class="rozet-uyari gizli" id="leke-uyari"></div>
