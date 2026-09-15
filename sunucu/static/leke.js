@@ -58,6 +58,13 @@
               .filter((k) => k.ad);
   }
 
+  function canliMi(ad) {
+    const p = P();
+    const ham = (p && p.S && p.S.kameralar) || [];
+    const k = Array.isArray(ham) ? ham.find((x) => x.ad === ad) : null;
+    return !!(k && k.canli);
+  }
+
   function kur() {
     const kap = document.getElementById(KAP);
     if (!kap) return;
@@ -655,9 +662,13 @@
       kayit.sonuc = y;
       kayit.konum = y.konum || null;
       yuzendeCiz(ad);
-      const sayi = (y.lekeler || []).length;
-      notYaz(ad, `${sayi} leke · ${y.sure_ms ?? "?"} ms`
-        + (y.sebep ? ` — ${y.sebep}` : ""));
+      const adet = (y.lekeler || []).length;
+      // Sebep tek başına geldiyse (akış kapalı, kare eskimiş) sayı
+      // yazmıyoruz: "0 leke" bunu bitki yokluğu gibi gösterirdi.
+      notYaz(ad, y.sure_ms == null && y.sebep
+        ? y.sebep
+        : `${adet} leke · ${y.sure_ms ?? "?"} ms`
+          + (y.sebep ? ` — ${y.sebep}` : ""));
     });
   }
 
@@ -694,7 +705,17 @@
                  ayar: ayarTopla() },
         }),
       });
-      if (durum && mod === "surekli") durum.textContent = "ajanda çalışıyor";
+      if (durum && mod === "surekli") {
+        /* CANLI AKIŞ ŞART. Sürekli kip akışın karesini kullanıyor;
+         * akış kapalıyken ajan kameradan yeni çekim isterdi ve bu
+         * periyodik kare döngüsüyle çakışırdı. Kipi açıp hiçbir şey
+         * olmamasındansa nedenini burada söylüyoruz. */
+        const kapali = kameralar().filter((k) => !canliMi(k.ad)).map((k) => k.etiket);
+        durum.textContent = kapali.length
+          ? `ajanda açık — ama ${kapali.join(", ")} canlı akışı kapalı, `
+            + "kamera kartından açın"
+          : "ajanda çalışıyor";
+      }
     } catch (hata) {
       if (durum) durum.textContent = "açılamadı: " + ((hata && hata.message) || hata);
       gunluk("Sürekli çözümleme açılamadı: " + ((hata && hata.message) || hata), "hata");

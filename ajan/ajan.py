@@ -1496,7 +1496,13 @@ class Ajan:
                     # çekim kamerayı meşgul eder ve periyodik kare
                     # döngüsüyle çakışır.
                     if not d.get("canli"):
-                        self._son_lekeler.pop(kam.ad, None)
+                        # SESSİZCE ATLAMIYORUZ. Kullanıcı kipi açıyor,
+                        # hiçbir şey olmuyor ve sebebini göremiyordu.
+                        self._son_lekeler[kam.ad] = {
+                            "lekeler": [], "kare_px": [0, 0],
+                            "sebep": ("canlı akış kapalı — sürekli çözümleme "
+                                      "akışın karesini kullanıyor. Kamera "
+                                      "kartından akışı açın.")}
                         continue
                     try:
                         # Yaş sınırı aralığın iki katı: akış durduysa
@@ -1506,7 +1512,10 @@ class Ajan:
                     except Exception:                       # noqa: BLE001
                         ham = b""
                     if not ham:
-                        self._son_lekeler.pop(kam.ad, None)
+                        self._son_lekeler[kam.ad] = {
+                            "lekeler": [], "kare_px": [0, 0],
+                            "sebep": (f"taze kare yok (son {yas:.0f} sn) — "
+                                      "akış durmuş olabilir")}
                         continue
                     try:
                         sonuc = await asyncio.to_thread(
