@@ -1496,13 +1496,38 @@ class Ajan:
                     # çekim kamerayı meşgul eder ve periyodik kare
                     # döngüsüyle çakışır.
                     if not d.get("canli"):
-                        # SESSİZCE ATLAMIYORUZ. Kullanıcı kipi açıyor,
-                        # hiçbir şey olmuyor ve sebebini göremiyordu.
-                        self._son_lekeler[kam.ad] = {
-                            "lekeler": [], "kare_px": [0, 0],
-                            "sebep": ("canlı akış kapalı — sürekli çözümleme "
-                                      "akışın karesini kullanıyor. Kamera "
-                                      "kartından akışı açın.")}
+                        # AKIŞI KENDİMİZ AÇIYORUZ. Panel, kamera
+                        # sekmesinden çıkarken akışı kapatıyor ("kimse
+                        # bakmıyorken CPU yakmasın") ve bu kural
+                        # sürekli çözümleme yokken doğruydu — şimdi
+                        # kipi sessizce öldürüyor. Kip kendi
+                        # bağımlılığını sağlasın: kullanıcı paneli
+                        # kapatsa da çözümleme sürsün.
+                        #
+                        # HIZ 1 kare/sn: çözümleme aralığı saniyeler,
+                        # akışın 5 kare/sn dönmesi boşuna JPEG işi.
+                        # Akış ZATEN açıksa hıza dokunmuyoruz — panel
+                        # izliyorsa onun seçtiği hız geçerli.
+                        if not d.get("canli_var"):
+                            self._son_lekeler[kam.ad] = {
+                                "lekeler": [], "kare_px": [0, 0],
+                                "sebep": "bu kamera canlı akış veremiyor"}
+                            continue
+                        try:
+                            ok, mesaj = await asyncio.to_thread(
+                                kam.canli_ac, 1.0)
+                        except Exception as hata:           # noqa: BLE001
+                            ok, mesaj = False, str(hata)
+                        if not ok:
+                            self._son_lekeler[kam.ad] = {
+                                "lekeler": [], "kare_px": [0, 0],
+                                "sebep": f"canlı akış açılamadı: {mesaj}"}
+                            continue
+                        self._gunluk_gonder(
+                            f"[{kam.etiket}] sürekli çözümleme için canlı "
+                            f"akış açıldı (1 kare/sn)", "bilgi")
+                        # Akış yeni açıldı; ilk kare gelene kadar
+                        # bekliyoruz, bu turu atlıyoruz.
                         continue
                     try:
                         # Yaş sınırı aralığın iki katı: akış durduysa
