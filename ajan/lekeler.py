@@ -1,0 +1,267 @@
+"""Karedeki bitki lekelerini bulur — TÜRDEN BAĞIMSIZ.
+
+Bu modül "şurada bir bitki var" diyor, "bu marul" demiyor. Ayrım bilerek:
+ekilen tür listesi büyüyor ve tür listesine bağlı bir bulucu her yeni
+türde yeniden eğitim (ve Hailo yolunda yeniden HEF derlemesi) isterdi.
+Yeşil bir leke yeşil bir lekedir; hangi bitki olduğu sonraki katmanın
+işi ve orada tür bilgisi veriden geliyor, koddan değil.
+
+NEDEN KLASİK YÖNTEMLE BAŞLIYOR
+------------------------------
+ExG (aşırı yeşil) eşiklemesi bugün çalışıyor: eğitim verisi, etiket,
+model derlemesi istemiyor ve OpenCV Pi'de zaten kurulu. Hailo yolu bunun
+yerine değil, ARDINDAN geliyor ve aynı sözleşmeyi döndürecek — üstteki
+katmanlar hangi yolun çalıştığını bilmek zorunda kalmasın diye.
+
+Sıralamanın ikinci gerekçesi pratik: sinir ağını eğitmek için etiketli
+kare gerekiyor ve o etiketlerin ilk taslağını bu modül üretiyor. Elle
+kutu çizmek yerine buradan çıkan lekeleri düzeltmek çok daha hızlı.
+
+MİLİMETRE YOK
+-------------
+Çıktının tamamı PİKSEL. Kamera kalibrasyonu olmadan milimetre vermek
+uydurma olurdu; kalibrasyon ayrı bir katman ve bu modül onu beklemiyor.
+Kamera nereye takılırsa takılsın, hareket etse de etmese de çalışıyor.
+
+EŞİK ÖLÇÜLÜYOR, SEÇİLMİYOR
+--------------------------
+Sabit bir ExG eşiği sabah ile öğlende, ışık açıkken ile kapalıyken
+tutmuyor. Otsu eşiği her karede histogramdan hesaplanıyor. Bunun bir
+bedeli var: karede hiç bitki yoksa Otsu yine bir eşik buluyor ve toprak
+dokusunu ikiye bölüyor. `en_az_yesil_oran` bu durumu yakalıyor — ayrılan
+alan çok küçükse "bitki yok" deniyor, leke uydurulmuyor.
+"""
+
+from __future__ import annotations
+
+import time
+from typing import Any
+
+VARSAYILAN: dict[str, Any] = {
+    # İŞLEME GENİŞLİĞİ. Kare 3840 px geliyor; tam çözünürlükte morfoloji
+    # ve bağlı bileşen Pi'de saniyeler alıyor ve hiçbir şey kazandırmıyor:
+    # bir filiz 1280 px'de de onlarca piksel kaplıyor. Sonuç koordinatları
+    # gerçek karenin ölçeğine geri çevriliyor, yani küçültme dışarıdan
+    # görünmüyor. 0 = küçültme yok.
+    "islem_genislik": 1280,
+
+    # EN KÜÇÜK LEKE — karenin alanına ORAN olarak. Piksel vermek
+    # çözünürlük değişince sessizce anlamını yitirirdi. 1/20000: 1280x720
+    # karede ~46 px, yani yaklaşık 7x7'lik bir yeşillik. Bunun altı
+    # genellikle yaprak kırıntısı ya da yosun.
+    "en_kucuk_oran": 1.0 / 20000.0,
+
+    # EN BÜYÜK LEKE. Karenin bu kadarını kaplayan bir "leke" bitki değil:
+    # yeşil bir kap kenarı, çim zemin ya da eşiğin tamamen kaçırdığı bir
+    # kare. Bitki diye göstermek yanlış koordinat üretir.
+    "en_buyuk_oran": 0.25,
+
+    # AYRILAN ALAN bunun altındaysa karede bitki yok sayılıyor. Otsu her
+    # koşulda bir eşik bulduğu için gerekli — gerekçesi dosya başında.
+    "en_az_yesil_oran": 0.0005,
+
+    # MORFOLOJİ ÇEKİRDEĞİ — işleme genişliğine oranla. Sabit 3x3, 1280 px
+    # bir karede hiçbir şey temizlemiyor. 1/320: 1280'de 4 px.
+    "cekirdek_oran": 1.0 / 320.0,
+
+    # ExG eşiği Otsu ile bulunuyor; bu değer yalnız Otsu'nun bulduğu eşiğe
+    # eklenen güvenlik payı (ExG ölçeğinde, -255..255). Pozitif = daha
+    # seçici. 0 = Otsu'ya dokunma.
+    "esik_payi": 0.0,
+}
+
+
+def _kutu_olcekle(deger: float, olcek: float) -> int:
+    return int(round(deger * olcek))
+
+
+def bul(ham: bytes, ayar: dict[str, Any] | None = None) -> dict[str, Any]:
+    """JPEG karede bitki lekelerini bulur.
+
+    Dönüş SÖZLEŞMESİ (Hailo yolu da aynısını döndürecek):
+
+        {
+          "lekeler": [{"x", "y", "kutu", "alan_px", "dolgu", "en_boy"}, …],
+          "kare_px": [genişlik, yükseklik],   # GERÇEK karenin ölçüsü
+          "yontem": "exg-otsu",
+          "esik": <Otsu'nun bulduğu ExG eşiği>,
+          "yesil_oran": <ayrılan alanın kareye oranı>,
+          "sure_ms": <toplam>,
+          "sebep": ""    # boş değilse leke listesi boş ve nedeni burada
+        }
+
+    `x`/`y` lekenin AĞIRLIK MERKEZİ, gerçek karenin piksel ölçeğinde.
+    Kutunun ortası değil: yaprakları bir yana yatmış bir filizde ağırlık
+    merkezi gövdeye kutu ortasından daha yakın duruyor.
+    """
+    a = {**VARSAYILAN, **(ayar or {})}
+    basladi = time.monotonic()
+    bos = {"lekeler": [], "kare_px": [0, 0], "yontem": "exg-otsu",
+           "esik": None, "yesil_oran": 0.0, "sure_ms": 0.0, "sebep": ""}
+
+    try:
+        import cv2
+        import numpy as np
+    except ImportError as hata:
+        # Sessiz kapanmıyor: sebep çağırana gidiyor, oradan panele.
+        return {**bos, "sebep": f"OpenCV/NumPy yok: {hata}"}
+
+    dizi = np.frombuffer(ham, dtype=np.uint8)
+    kare = cv2.imdecode(dizi, cv2.IMREAD_COLOR)     # BGR
+    if kare is None:
+        return {**bos, "sebep": "kare çözülemedi (bozuk ya da boş JPEG)"}
+    tam_y, tam_g = kare.shape[:2]
+    bos["kare_px"] = [tam_g, tam_y]
+
+    # --- küçültme ---------------------------------------------------------
+    hedef = int(a.get("islem_genislik") or 0)
+    if hedef and tam_g > hedef:
+        oran = hedef / float(tam_g)
+        kare = cv2.resize(kare, (hedef, int(round(tam_y * oran))),
+                          interpolation=cv2.INTER_AREA)
+    yuk, gen = kare.shape[:2]
+    # Küçültülmüş piksel -> gerçek piksel. Sonuçlar bununla geri ölçekleniyor.
+    geri = tam_g / float(gen)
+
+    # --- ExG --------------------------------------------------------------
+    # Normalize edilmiş kanallar kullanılıyor: ham RGB'de gölgedeki bir
+    # yaprak ile güneşteki toprak benzer ExG verebiliyor. Toplama bölmek
+    # parlaklığı düşürüp rengi bırakıyor.
+    b, y, k = cv2.split(kare.astype(np.float32))    # BGR sırası
+    toplam = b + y + k
+    # Sıfıra bölmeyi engelle: tamamen siyah piksel (dolgu, kadraj dışı).
+    toplam[toplam < 1.0] = 1.0
+    exg = (2.0 * y - k - b) / toplam * 255.0
+    exg8 = np.clip(exg, 0, 255).astype(np.uint8)
+
+    # --- eşik -------------------------------------------------------------
+    esik, maske = cv2.threshold(exg8, 0, 255,
+                                cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+    pay = float(a.get("esik_payi") or 0.0)
+    if pay:
+        _, maske = cv2.threshold(exg8, min(255.0, esik + pay), 255,
+                                 cv2.THRESH_BINARY)
+        esik = esik + pay
+
+    yesil_oran = float(np.count_nonzero(maske)) / float(gen * yuk)
+    bos["esik"] = round(float(esik), 1)
+    bos["yesil_oran"] = round(yesil_oran, 5)
+    if yesil_oran < float(a["en_az_yesil_oran"]):
+        return {**bos, "sebep": (
+            f"karede bitki görünmüyor — ayrılan yeşil alan %{yesil_oran*100:.3f}, "
+            f"eşik %{float(a['en_az_yesil_oran'])*100:.3f}"),
+            "sure_ms": round((time.monotonic() - basladi) * 1000.0, 1)}
+
+    # --- morfoloji --------------------------------------------------------
+    # Önce AÇMA: tek tük parlayan pikselleri siliyor. Sonra KAPAMA:
+    # yaprak üstündeki ışık lekesinin açtığı delikleri dolduruyor. Sıra
+    # ters olsaydı kapama önce gürültüyü de büyütürdü.
+    kk = max(2, int(round(gen * float(a["cekirdek_oran"]))))
+    cekirdek = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (kk, kk))
+    maske = cv2.morphologyEx(maske, cv2.MORPH_OPEN, cekirdek)
+    maske = cv2.morphologyEx(maske, cv2.MORPH_CLOSE, cekirdek)
+
+    # --- bileşenler -------------------------------------------------------
+    sayi, _, istatistik, merkezler = cv2.connectedComponentsWithStats(
+        maske, connectivity=8)
+    kare_alan = float(gen * yuk)
+    en_kucuk = kare_alan * float(a["en_kucuk_oran"])
+    en_buyuk = kare_alan * float(a["en_buyuk_oran"])
+
+    lekeler: list[dict[str, Any]] = []
+    elenen_kucuk = elenen_buyuk = 0
+    for no in range(1, sayi):                        # 0 = arka plan
+        x, y0, w, h, alan = istatistik[no]
+        if alan < en_kucuk:
+            elenen_kucuk += 1
+            continue
+        if alan > en_buyuk:
+            elenen_buyuk += 1
+            continue
+        mx, my = merkezler[no]
+        lekeler.append({
+            "x": _kutu_olcekle(mx, geri),
+            "y": _kutu_olcekle(my, geri),
+            "kutu": [_kutu_olcekle(x, geri), _kutu_olcekle(y0, geri),
+                     _kutu_olcekle(x + w, geri), _kutu_olcekle(y0 + h, geri)],
+            # Gerçek karenin ölçeğinde alan: küçültme oranının karesi.
+            "alan_px": int(round(alan * geri * geri)),
+            # DOLGU = lekenin kendi kutusunu ne kadar doldurduğu. Yuvarlak
+            # bir fide ~0.7-0.8; ince uzun bir ot sapı ya da kap kenarı
+            # çok daha düşük. Tür söylemiyor ama "bu bir bitki mi yoksa
+            # çizgi mi" sorusuna veri veriyor.
+            "dolgu": round(float(alan) / float(max(1, w * h)), 3),
+            "en_boy": round(float(w) / float(max(1, h)), 3),
+        })
+
+    # Büyükten küçüğe: panelde ve eşleştirmede önce belirgin olan.
+    lekeler.sort(key=lambda l: l["alan_px"], reverse=True)
+
+    sebep = ""
+    if not lekeler:
+        # Yeşil vardı ama hiçbiri leke sayılmadı — sebebi söylüyoruz,
+        # boş liste tek başına "bitki yok" anlamına gelmesin.
+        sebep = (f"yeşil alan bulundu (%{yesil_oran*100:.2f}) ama leke "
+                 f"kalmadı: {elenen_kucuk} tanesi çok küçük, "
+                 f"{elenen_buyuk} tanesi çok büyük")
+
+    return {
+        "lekeler": lekeler,
+        "kare_px": [tam_g, tam_y],
+        "yontem": "exg-otsu",
+        "esik": round(float(esik), 1),
+        "yesil_oran": round(yesil_oran, 5),
+        "elenen": {"kucuk": elenen_kucuk, "buyuk": elenen_buyuk},
+        "sure_ms": round((time.monotonic() - basladi) * 1000.0, 1),
+        "sebep": sebep,
+    }
+
+
+# --------------------------------------------------------------------------- #
+# Ölçüm aracı
+# --------------------------------------------------------------------------- #
+# Ajana bağlamadan önce gerçek karelerde denemek için. Eşik ve süre
+# tahmin edilmiyor, burada ölçülüyor.
+#
+#   python3 lekeler.py kare.jpg [kare2.jpg …]
+#   python3 lekeler.py kare.jpg --isaretle cikti.jpg
+#
+if __name__ == "__main__":
+    import json
+    import sys
+
+    argumanlar = [a for a in sys.argv[1:]]
+    isaret_yolu = ""
+    if "--isaretle" in argumanlar:
+        i = argumanlar.index("--isaretle")
+        isaret_yolu = argumanlar[i + 1] if i + 1 < len(argumanlar) else ""
+        del argumanlar[i:i + 2]
+
+    if not argumanlar:
+        print(__doc__.strip().splitlines()[0])
+        print("\nKullanım: python3 lekeler.py KARE.jpg [...] [--isaretle CIKTI.jpg]")
+        raise SystemExit(2)
+
+    for yol in argumanlar:
+        with open(yol, "rb") as dosya:
+            veri = dosya.read()
+        sonuc = bul(veri)
+        ozet = {k: v for k, v in sonuc.items() if k != "lekeler"}
+        print(f"\n=== {yol} ===")
+        print(json.dumps(ozet, ensure_ascii=False))
+        print(f"leke: {len(sonuc['lekeler'])}")
+        for leke in sonuc["lekeler"][:15]:
+            print(f"  ({leke['x']:5d},{leke['y']:5d})  alan={leke['alan_px']:7d} "
+                  f"dolgu={leke['dolgu']:.2f} en/boy={leke['en_boy']:.2f}")
+
+        if isaret_yolu and sonuc["lekeler"]:
+            import cv2
+            import numpy as np
+            kare = cv2.imdecode(np.frombuffer(veri, dtype=np.uint8),
+                                cv2.IMREAD_COLOR)
+            for leke in sonuc["lekeler"]:
+                x1, y1, x2, y2 = leke["kutu"]
+                cv2.rectangle(kare, (x1, y1), (x2, y2), (0, 0, 255), 3)
+                cv2.circle(kare, (leke["x"], leke["y"]), 6, (255, 0, 0), -1)
+            cv2.imwrite(isaret_yolu, kare)
+            print(f"işaretli kare yazıldı: {isaret_yolu}")
