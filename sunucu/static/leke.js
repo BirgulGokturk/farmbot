@@ -82,15 +82,25 @@
             <span class="ikincil" id="leke-durum"></span>
           </div>
           <div class="satir">
-            <label class="onay" title="Makine DURDUĞUNDA açık yüzen kamera kutularını kendiliğinden çözümler. Hareket hâlinde değil: o kare bulanık ve hangi konuma ait olduğu belirsiz.">
-              <input type="checkbox" id="leke-oto"> Makine durunca yüzen kutularda otomatik çözümle
+            <label>Otomatik çözümleme
+              <select id="leke-oto-mod">
+                <option value="kapali">kapalı</option>
+                <option value="durunca">makine durunca (kare panele gelir)</option>
+                <option value="surekli">sürekli (ajanda, kare ağdan geçmez)</option>
+              </select>
             </label>
+            <label title="Sürekli kipin çözümleme aralığı. Alt sınır 0.5 sn: çözümleme ~300 ms sürüyor, daha sık istemek bir çekirdeği doldurur.">
+              Aralık <input type="number" id="leke-aralik" value="2" min="0.5" max="300" step="0.5" style="width:5rem"> sn
+            </label>
+            <span class="ikincil" id="leke-oto-durum"></span>
           </div>
           <p class="alt-not">
-            Yüzen kamera kutularındaki <b>◎</b> düğmesi de aynı işi yapıyor;
-            kutular canlı görüntünün üstüne çiziliyor ve <b>makine kımıldadığı
-            anda siliniyor</b> — çözümleme bir konuma ait, makine oradan
-            ayrılınca artık başka bir yeri gösterirlerdi.
+            Yüzen kamera kutularındaki <b>◎</b> düğmesi tek seferlik çözümleme yapıyor.
+            <b>Makine durunca</b> kipinde kare panele geliyor (her durakta ~1,5 MB) ve
+            makine kımıldadığı anda kutular siliniyor — çözümleme bir konuma ait.
+            <b>Sürekli</b> kipinde çözümleme ajanda yapılıyor, panele yalnız kutu
+            koordinatları geliyor: hareket sırasında da çalışıyor, ama sonuç aralık
+            kadar geriden geliyor. Konum farkı büyüdüğünde kutular soluklaşıyor.
           </p>
           <details class="etiket-blok">
             <summary>Ayarlar (bu çağrıya özel, kaydedilmiyor)</summary>
@@ -477,6 +487,13 @@
     kayit.svg.setAttribute("viewBox", `0 0 ${kare[0]} ${kare[1]}`);
     const kalinlik = Math.max(2, Math.round(kare[0] / 250));
     const r = Math.max(3, Math.round(kare[0] / 200));
+    /* KAYMAYI GİZLEMİYORUZ. Sürekli kipte sonuç aralık kadar geriden
+     * geliyor; makine o sırada yol aldıysa kutular canlı görüntüyle
+     * hizalı DEĞİL. Soluklaştırmak bunu söylemenin en sessiz ama
+     * görünür yolu — kutuların doğru yerde olduğunu sanmak en kötü
+     * hata olurdu. */
+    const kayma = kaymaMm(kayit.konum);
+    kayit.svg.style.opacity = kayma > KAYMA_SINIRI_MM ? "0.35" : "1";
     kayit.svg.innerHTML = (y.lekeler || []).map((l) => {
       const [x1, y1, x2, y2] = l.kutu || [0, 0, 0, 0];
       return `<rect x="${x1}" y="${y1}" width="${x2 - x1}" height="${y2 - y1}"
@@ -517,11 +534,19 @@
    * kaçırmayacak kadar sık. */
   function saat() {
     yuzenleriTara();
+    wsBagla();
 
     const simdi = konumImzasi();
     const oncekiImza = sonImza;
     sonImza = simdi;
     if (!simdi) return;
+
+    if (otoMod === "surekli") {
+      // Sürekli kipte sonuç zaten akıyor; silmek yerine kaymayı
+      // soluklaştırarak gösteriyoruz.
+      YUZEN.forEach((kayit, ad) => { if (kayit.sonuc) yuzendeCiz(ad); });
+      return;
+    }
 
     if (oncekiImza && !konumAyni(oncekiImza, simdi)) {
       // HAREKET BAŞLADI. Ekrandaki kutular başka bir konuma ait;
@@ -547,16 +572,146 @@
       .finally(() => { otoCalisiyor = false; });
   }
 
+  /* ---------------------------------------------------------------- 
+   * SÜREKLİ KİP — çözümleme ajanda, kare ağdan geçmiyor.
+   *
+   * "Makine durunca" kipi her durakta 4K kareyi panele getiriyor
+   * (~1,5 MB) ve bu makine Tailscale üzerinden izleniyor. Sürekli kipte
+   * çözümleme ajanda yapılıyor ve durum paketiyle yalnız kutu
+   * koordinatları geliyor — birkaç KB. Kare zaten ajanda: canlı akış
+   * açıkken `tam_kare` bellekteki kareyi veriyor.
+   *
+   * BEDELİ GİZLENMİYOR: sonuç aralık kadar geriden geliyor. Makine
+   * hareket ederken kutular geride kalıyor ve bunu soluklaştırarak
+   * söylüyoruz — kutuların canlı görüntüyle hizalı olduğunu sanmak, en
+   * kötü hata olurdu.
+   * ---------------------------------------------------------------- */
+
+  //: Çözümlemenin yapıldığı konum ile şimdiki konum bu kadar ayrışınca
+  //: kutular soluklaşıyor. 5 mm: bir filizin yarıçapı kadar — bundan
+  //: fazla kayma kutuyu yanlış yaprağa oturtmaya yeter.
+  const KAYMA_SINIRI_MM = 5.0;
+  let otoMod = "kapali";
+  let wsBagli = null;
+  let eslestirildi = false;
+
+  function wsBagla() {
+    const p = P();
+    const ws = p && p.S && p.S.ws;
+    if (!ws || ws === wsBagli) return;
+    /* `addEventListener` kullanılıyor, `onmessage` DEĞİL: app.js kendi
+     * `onmessage`ini kurmuş durumda ve onu ezmek panelin tamamını
+     * sağır bırakırdı. İki dinleyici yan yana çalışıyor. */
+    wsBagli = ws;
+    ws.addEventListener("message", (olay) => {
+      let m = null;
+      try { m = JSON.parse(olay.data); } catch { return; }
+      // Ham durumu saklıyoruz: `app.js` durum paketinin tamamını `S`e
+      // yazmıyor ve bu bölümün ihtiyacı olan alanlar orada yok.
+      const p3 = P();
+      if (m && m.durum && p3 && p3.S) {
+        p3.S.sonDurumHam = m.durum;
+        ajandanEslestir();
+      }
+      if (otoMod !== "surekli") return;
+      const d = m && (m.durum || null);
+      if (!d || !d.lekeler) return;
+      surekliGeldi(d.lekeler);
+    });
+  }
+
+  /** Ajandaki kipi panele yansıtır — panel yenilendiğinde şart.
+   *
+   * Seçici her yüklemede "kapalı" başlıyor ama ajandaki döngü dönmeye
+   * devam ediyor. Panelde kapalı yazarken bir çekirdeğin bir kısmını
+   * yiyen bir döngü, fark edilmesi en zor israf türü. */
+  function ajandanEslestir() {
+    if (eslestirildi) return;
+    const p = P();
+    const d = (p && p.S && p.S.sonDurumHam) || null;
+    const bilgi = d && d.leke_surekli;
+    if (!bilgi) return;
+    eslestirildi = true;
+    if (!bilgi.acik) return;
+    const sec = $("#leke-oto-mod");
+    if (sec) sec.value = "surekli";
+    otoMod = "surekli";
+    const ar = $("#leke-aralik");
+    if (ar && bilgi.aralik_sn) ar.value = bilgi.aralik_sn;
+    const durum = $("#leke-oto-durum");
+    if (durum) durum.textContent = "ajanda zaten çalışıyordu";
+  }
+
+  function surekliGeldi(lekeler) {
+    YUZEN.forEach((kayit, ad) => {
+      const y = lekeler[ad];
+      if (!y) {
+        // Ajan o kamera için sonuç vermiyor (akışı kapalı, kare
+        // eskimiş). Eski kutuları bırakmak "şu an böyle görünüyor"
+        // demek olurdu.
+        if (kayit.sonuc) { kayit.sonuc = null; kayit.svg.innerHTML = ""; }
+        return;
+      }
+      kayit.sonuc = y;
+      kayit.konum = y.konum || null;
+      yuzendeCiz(ad);
+      const sayi = (y.lekeler || []).length;
+      notYaz(ad, `${sayi} leke · ${y.sure_ms ?? "?"} ms`
+        + (y.sebep ? ` — ${y.sebep}` : ""));
+    });
+  }
+
+  /** Çözümlemenin yapıldığı konum ile şimdiki konum arasındaki mesafe. */
+  function kaymaMm(konum) {
+    const simdi = konumImzasi();
+    if (!konum || !simdi || konum.x == null || konum.y == null) return 0;
+    const dx = (+konum.x) - simdi.x;
+    const dy = (+konum.y) - simdi.y;
+    return Math.sqrt(dx * dx + dy * dy);
+  }
+
+  async function modUygula(mod) {
+    otoMod = mod;
+    otoAcik = (mod === "durunca");
+    durgunBasi = otoAcik ? (Date.now() / 1000 - DURGUNLUK_SN) : 0;
+    const p = P();
+    const durum = $("#leke-oto-durum");
+    if (mod !== "surekli") {
+      yuzenleriSil("");
+      if (durum) durum.textContent = "";
+    }
+    if (!p || !p.apiIste) return;
+    // Sürekli kip ajanda çalışıyor; kapanırken de haber vermek şart,
+    // yoksa panel kapansa bile döngü dönmeye devam eder.
+    const aralik = sayi("#leke-aralik");
+    try {
+      await p.apiIste("/api/komut", {
+        method: "POST",
+        body: JSON.stringify({
+          ad: "leke_surekli",
+          arg: { acik: mod === "surekli",
+                 aralik_sn: (aralik && aralik >= 0.5) ? aralik : 2,
+                 ayar: ayarTopla() },
+        }),
+      });
+      if (durum && mod === "surekli") durum.textContent = "ajanda çalışıyor";
+    } catch (hata) {
+      if (durum) durum.textContent = "açılamadı: " + ((hata && hata.message) || hata);
+      gunluk("Sürekli çözümleme açılamadı: " + ((hata && hata.message) || hata), "hata");
+    }
+  }
+
   function otoKur() {
-    const kutu = $("#leke-oto");
-    if (!kutu) return;
-    kutu.addEventListener("change", () => {
-      otoAcik = kutu.checked;
-      durgunBasi = 0;
-      if (!otoAcik) return;
-      // Açar açmaz bir kez çalışsın: kullanıcı kutuyu işaretleyip
-      // makinenin kımıldamasını beklemek zorunda kalmasın.
-      durgunBasi = Date.now() / 1000 - DURGUNLUK_SN;
+    const sec = $("#leke-oto-mod");
+    if (sec) sec.addEventListener("change", () => modUygula(sec.value));
+    // Aralık ya da ayar değişirse sürekli kipe yeniden bildiriyoruz:
+    // ajandaki değerler panelde yazanla ayrışmasın.
+    ["#leke-aralik", "#leke-esik-payi", "#leke-en-kucuk",
+     "#leke-islem-px", "#leke-ton-alt", "#leke-ton-ust"].forEach((s2) => {
+      const el = $(s2);
+      if (el) el.addEventListener("change", () => {
+        if (otoMod === "surekli") modUygula("surekli");
+      });
     });
   }
 

@@ -228,6 +228,19 @@ class Ajan:
         # kamera hiçbir şey fark etmiyor.
         self.hailo = hailo_modulu.olustur(ayar.get("hailo", {}),
                                           gunluk_cb=self._gunluk_gonder)
+        # SÜREKLİ LEKE ÇÖZÜMLEME — canlı akış üstünde, kare ağdan
+        # geçmeden. Sonuç durum paketiyle gidiyor (birkaç KB); 4K kareyi
+        # her çözümlemede tarayıcıya yollamak saniyede megabaytlar
+        # demekti. Kare zaten burada: canlı akış açıkken `tam_kare`
+        # bellekteki kareyi veriyor, yeni çekim yapmıyor.
+        #
+        # VARSAYILAN KAPALI: makinenin işi bitki bulmak değil bitki
+        # yetiştirmek; bu döngü bir çekirdeğin bir kısmını sürekli
+        # tutuyor ve kimse istemeden çalışmamalı.
+        self.leke_ayari: dict[str, Any] = {}
+        self.leke_surekli = False
+        self.leke_aralik = 2.0
+        self._son_lekeler: dict[str, dict[str, Any]] = {}
         # KAMERALAR — birden çok. Her biri kendi iş parçacığında; biri
         # arızalanınca öteki durmuyor.
         self.kameralar: dict[str, kamera_modulu.Kamera] = {}
@@ -1058,6 +1071,29 @@ class Ajan:
                         "veri": {"kamera": kam.ad, "leke": sonuc,
                                  "kare": base64.b64encode(ham).decode("ascii")}}
 
+            if ad == "leke_surekli":
+                # SÜREKLİ ÇÖZÜMLEME aç/kapa. Kare ağdan geçmiyor; sonuç
+                # durum paketinde `lekeler` altında geliyor.
+                acik = bool(arg.get("acik"))
+                try:
+                    aralik = float(arg.get("aralik_sn", self.leke_aralik))
+                except (TypeError, ValueError):
+                    aralik = self.leke_aralik
+                # ALT SINIR 0.5 sn. Çözümleme ~300 ms; daha sık istemek
+                # bir çekirdeği tamamen doldurur ve makinenin asıl işine
+                # (PLC, Arduino) sıra kalmaz.
+                self.leke_aralik = max(0.5, min(300.0, aralik))
+                if isinstance(arg.get("ayar"), dict):
+                    self.leke_ayari = dict(arg["ayar"])
+                self.leke_surekli = acik
+                if not acik:
+                    self._son_lekeler = {}
+                return {"ok": True,
+                        "mesaj": (f"Sürekli leke çözümleme "
+                                  f"{'açık' if acik else 'kapalı'}"
+                                  f" ({self.leke_aralik:g} sn)"),
+                        "veri": {"acik": acik, "aralik_sn": self.leke_aralik}}
+
             if ad == "kamera_kaydet":
                 # Kamera TANIMLARI — cihaz adı, çözünürlük, aralık. Geçici
                 # aç/kapattan farklı olarak KALICI: `kameralar.json`a yazılıp
@@ -1308,6 +1344,17 @@ class Ajan:
             # `dusen` sayacı normal işleyişte SIFIR kalmalı; sıfırdan
             # büyükse ya cihaz yavaşladı ya kilitlendi.
             durum["hailo"] = self.hailo.durum()
+            # LEKELER — yalnız sürekli çözümleme açıkken dolu. Kare
+            # GÖNDERİLMİYOR, yalnız kutu koordinatları: panel canlı
+            # akışı zaten gösteriyor, üstüne çiziyor.
+            durum["lekeler"] = self._son_lekeler
+            # Kipin AÇIK olduğu da bildiriliyor: panel yenilenince
+            # seçicisi "kapalı"ya dönüyor ama ajandaki döngü dönmeye
+            # devam ediyordu. Panelde kapalı yazarken bir çekirdeğin
+            # bir kısmını yiyen bir döngü, fark edilmesi en zor türden
+            # bir israf.
+            durum["leke_surekli"] = {"acik": bool(self.leke_surekli),
+                                     "aralik_sn": float(self.leke_aralik)}
             durum["dizi"] = dict(self.dizi.durum)
             # ÜÇ SABİT BAŞ. "Hangi uç takılı", uç yuvaları, kilit servosu
             # ve varlık sensörü kaldırıldı: hiçbiri sökülmüyor, takılı
@@ -1408,6 +1455,86 @@ class Ajan:
         except Exception as hata:
             logger.warning("Jog bırakma (%s) başarısız: %s", neden, hata)
 
+    async def _leke_dongusu(self) -> None:
+        """Canlı akış karelerinde sürekli leke çözümlemesi.
+
+        NEDEN AYRI DÖNGÜ, KAMERA DÖNGÜSÜNÜN İÇİNDE DEĞİL. Hailo ile aynı
+        gerekçe: kamera bu projede çözümlemeden daha önemli. Çözümleme
+        yavaşlarsa ya da patlarsa canlı akış etkilenmemeli.
+
+        KARE AĞDAN GEÇMİYOR. Çözümleme burada yapılıyor ve panele yalnız
+        kutu koordinatları gidiyor — birkaç KB. 4K kareyi her çözümlemede
+        tarayıcıya yollamak saniyede megabaytlar demekti ve bu makine
+        Tailscale üzerinden izleniyor.
+
+        KARE BEDAVA: canlı akış açıkken `tam_kare` bellekteki son kareyi
+        veriyor, kameradan yeni çekim istemiyor. Yani bu döngü kamerayı
+        hiç meşgul etmiyor.
+
+        İŞ BİTMEDEN YENİSİ BAŞLAMIYOR. Aralık çözümleme süresinden kısa
+        verilirse (panel 0.5 sn'ye izin veriyor, çözümleme ~300 ms)
+        işler üst üste binip çekirdeği doldururdu. Süre aralıktan
+        uzunsa bir sonraki tur gecikiyor ve bu `sure_ms` olarak panelde
+        görünüyor — sessizce yavaşlamıyor.
+        """
+        while True:
+            try:
+                await asyncio.sleep(max(0.5, float(self.leke_aralik)))
+                if not self.leke_surekli:
+                    # Kapalıyken eski sonuçları bırakmıyoruz: ekranda
+                    # duran kutular "şu an böyle görünüyor" der ve o an
+                    # çoktan geçmiş olur.
+                    if self._son_lekeler:
+                        self._son_lekeler = {}
+                    continue
+                for kam in list(self.kameralar.values()):
+                    if not self.leke_surekli:
+                        break
+                    d = kam.durum()
+                    # YALNIZ CANLI AKIŞI AÇIK OLANLAR. Akış kapalıyken
+                    # `tam_kare` kameradan yeni çekim ister; saniyede bir
+                    # çekim kamerayı meşgul eder ve periyodik kare
+                    # döngüsüyle çakışır.
+                    if not d.get("canli"):
+                        self._son_lekeler.pop(kam.ad, None)
+                        continue
+                    try:
+                        # Yaş sınırı aralığın iki katı: akış durduysa
+                        # donmuş kareyi çözümleyip "şu an böyle" demeyelim.
+                        yas = max(2.0, float(self.leke_aralik) * 2.0)
+                        ham = await asyncio.to_thread(kam.tam_kare, yas)
+                    except Exception:                       # noqa: BLE001
+                        ham = b""
+                    if not ham:
+                        self._son_lekeler.pop(kam.ad, None)
+                        continue
+                    try:
+                        sonuc = await asyncio.to_thread(
+                            lekeler_modulu.bul, ham, self.leke_ayari or None)
+                    except Exception as hata:               # noqa: BLE001
+                        self._son_lekeler[kam.ad] = {
+                            "lekeler": [], "sebep": f"çözümleme hatası: {hata}"}
+                        continue
+                    # KONUM da yazılıyor: panel kutuların hangi konumda
+                    # bulunduğunu bilmeli, makine kımıldayınca onları
+                    # silebilsin. Kalibrasyon geldiğinde koordinat
+                    # dönüşümü de buna dayanacak.
+                    k = (self._son_durum.get("konum") or {}) if self._son_durum else {}
+                    sonuc["konum"] = {"x": k.get("x"), "y": k.get("y"),
+                                      "z": k.get("z")}
+                    sonuc["ts"] = time.time()
+                    # Kutu listesi durum paketiyle her yarım saniyede
+                    # gidiyor; 300 leke kadarını taşımak paketi
+                    # şişiriyor. Alan sırasına göre en büyükler zaten
+                    # başta.
+                    sonuc["lekeler"] = (sonuc.get("lekeler") or [])[:60]
+                    self._son_lekeler[kam.ad] = sonuc
+            except asyncio.CancelledError:
+                raise
+            except Exception:                               # noqa: BLE001
+                logger.exception("Leke döngüsünde beklenmeyen hata")
+                await asyncio.sleep(2.0)
+
     async def calis(self) -> None:
         import websockets
 
@@ -1438,6 +1565,7 @@ class Ajan:
                         asyncio.create_task(self._alici()),
                         asyncio.create_task(self._gonderici()),
                         asyncio.create_task(self._durum_dongusu()),
+                        asyncio.create_task(self._leke_dongusu()),
                     ]
                     _, bekleyen = await asyncio.wait(gorevler, return_when=asyncio.FIRST_COMPLETED)
                     for gorev in bekleyen:

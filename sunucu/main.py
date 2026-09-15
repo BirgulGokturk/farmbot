@@ -98,6 +98,9 @@ IZINLI_KOMUTLAR = {
                      #   v4l2 denetimleri ve aralıkları. Panel kaydırakları
                      #   buradan kuruluyor; koda gömülü liste yok.
     "kamera_kare",   # {"kamera":"ust"} — TAM çözünürlüklü tek kare (çözümleme)
+    "leke_surekli",  # {"acik":true,"aralik_sn":2,"ayar":{…}} — canlı akış
+                     #   üstünde SÜREKLİ çözümleme. Kare ağdan GEÇMİYOR:
+                     #   sonuç durum paketinde `lekeler` altında.
     "leke_bul",      # {"kamera":"uc","ayar":{…}} — TÜRDEN BAĞIMSIZ bitki
                      #   lekeleri. İş ajanda: kare orada, OpenCV orada ve
                      #   bu sunucu bulutta çalışabiliyor. Çıktı PİKSEL;
