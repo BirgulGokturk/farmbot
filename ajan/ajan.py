@@ -237,16 +237,29 @@ class Ajan:
     def _kameralari_kur(self, tanimlar: list[dict[str, Any]]) -> None:
         """Tanımlardan kamera nesnelerini üretir (sıra korunur).
 
-        ÇIKARIM YALNIZ HAREKETLİ KAMERADA. Hailo tespitini yatağın bir
-        koordinatına çevirmenin tek yolu karenin çekildiği X/Y; sabit
-        kamerada o yok. Sabit kameranın karesini çıkarıma vermek, sonucu
-        koyacak yeri olmayan bir hesap yaptırmak olurdu.
+        ÇIKARIM HER KAMERADA. Eskiden yalnız `hareketli` olanda vardı ve
+        gerekçesi şuydu: tespiti yatak koordinatına çevirmenin tek yolu
+        karenin çekildiği X/Y, sabit kamerada o yok. Gerekçe koordinat
+        için hâlâ doğru ama TESPİTİN TAMAMINI KAPSAMIYOR — "karede kaç
+        filiz var, ne kadar büyümüş, yabancı ot görünüyor mu" soruları
+        milimetre istemiyor, kendi karesinde cevaplanıyor. Sabit kamerayı
+        çıkarımın dışında tutmak, cevaplanabilir soruları da kapatıyordu.
+
+        Koordinat gerektiren iş (robotun oraya gidip bir şey yapması) ayrı
+        bir katman ve kalibrasyona bağlı; onu kameranın hareketli olup
+        olmadığı değil, kalibrasyonunun bulunup bulunmadığı belirliyor.
+
+        Kamera adı çıkarıma BİRLİKTE gidiyor: iki kamera aynı Hailo'yu
+        besliyor, hangi tespitin hangi kareye ait olduğu ancak adla belli
+        oluyor.
         """
         self.kameralar = {}
         for tanim in tanimlar:
+            kam_ad = kamera_modulu.ad_temizle(tanim.get("ad"))
             kam = kamera_modulu.Kamera(
                 tanim, self._kare_geldi, gunluk_cb=self._gunluk_gonder,
-                cikarim=(self.hailo.kare_ver if tanim.get("hareketli", True) else None))
+                cikarim=(lambda ham, ts, _ad=kam_ad:
+                         self.hailo.kare_ver(ham, ts, _ad)))
             self.kameralar[kam.ad] = kam
 
     @property

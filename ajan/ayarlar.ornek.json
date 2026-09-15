@@ -47,6 +47,8 @@
     "model": "/usr/share/hailo-models/yolov8s_h8.hef",
     "_model": "Dosya adindaki son ek cipi soyluyor: _h8 = Hailo-8 (26 TOPS, AI HAT+), _h8l = Hailo-8L (13 TOPS), _h10 = Hailo-10H (AI HAT+ 2). Yanlis olanini vermek dusuk performans ya da hata demek.",
     "esik": 0.4,
+    "siniflar": "",
+    "_siniflar": "Sinif adlari: dosya yolu ya da dogrudan liste. Bos birakilirsa kutularda sinif NUMARASI gorunur — ad UYDURULMAZ, cunku model degisince eski adlar yeni numaralarin ustune binerdi. Pi ile gelen hazir HEF'ler COCO: \"/home/pi/farmbot/ajan/coco_siniflar.json\" verin. Dikkat: COCO'da tarim sinifi yok, o dosya yalniz boru hattini dogrulamak icin.",
     "kilit_sn": 30.0,
     "_kilit_sn": "Ucustaki bir kare bu kadar saniyede donmezse cihaz kilitli sayilir, besleme durur ve durum panele cikar. HailoRT cagrilari C seviyesinde bloke oldugu icin takilan is parcacigi kesilemiyor; yapilabilecek tek sey beslemeyi kesip soylemek.",
     "azami_hata": 5,

@@ -13,13 +13,19 @@ döngüsünde olsaydı, kilitlenen Hailo kamerayı da durdururdu — yani paneli
 canlı görüntüsü ve periyodik kareleri de. Kamera bu projede tespitten çok
 daha önemli; tespit kaybolabilir, kamera kaybolamaz.
 
-KUYRUK NEDEN TEK ELEMANLI
--------------------------
-`maxsize=1`. Normal işleyişte kuyruk zaten hiç dolmuyor (saniyeler arayla
-gelen kare, 7 ms'lik iş). Kuyruğun tek işi arıza anında tampon olmak ve o
-anda ESKİ KARE DEĞERSİZ: bir dakika önceki yatağın görüntüsünü işlemek
-kimseye bir şey söylemiyor. Kuyruk doluysa yeni kare düşüyor, sayaç
-artıyor. En yeni kare kazanıyor.
+KAMERA BAŞINA TEK SLOT
+----------------------
+Ortak bir kuyruk yok; her kameranın kendi tek kişilik slotu var. Normal
+işleyişte hiçbiri dolmuyor (saniyeler arayla gelen kare, ölçülen 4.5 ms'lik
+iş). Slotun tek işi arıza anında tampon olmak ve o anda ESKİ KARE DEĞERSİZ:
+bir dakika önceki yatağın görüntüsünü işlemek kimseye bir şey söylemiyor.
+Slot doluysa yeni kare eskisini eziyor, sayaç artıyor. En yeni kare
+kazanıyor.
+
+Neden kamera başına: iki kamera birden besleyebiliyor. Ortak tek slotta
+biri ötekinin karesini düşürürdü ve — daha kötüsü — dönen tespitin hangi
+kareye ait olduğu kaybolurdu. İki kamera farklı yerlere bakarken adsız bir
+tespit kullanılamaz.
 
 İŞ PARÇACIĞI YETMİYOR: ÖLÜ ADAM ANAHTARI
 ----------------------------------------
@@ -39,7 +45,6 @@ gerekiyor".
 
 from __future__ import annotations
 
-import queue
 import threading
 import time
 from typing import Any, Callable
@@ -62,6 +67,10 @@ VARSAYILAN = {
     # Modelin beklediği giriş boyu. HEF'ten de okunabiliyor ama sahte
     # sürücünün de bilmesi gerekiyor.
     "giris": 640,
+    # Sınıf adları: dosya yolu ("…/siniflar.json") ya da doğrudan liste.
+    # Boşsa kutularda sınıf NUMARASI görünüyor. Koda gömülü liste yok —
+    # gerekçesi `_siniflari_yukle` içinde.
+    "siniflar": "",
 }
 
 
@@ -120,10 +129,13 @@ class HailoCikarim:
         self._vdevice = None
         self._model = None
         self._giris = int(ayar.get("giris", 640))
+        self.siniflar: list[str] = []
+        self.siniflar_hatasi: str | None = None
 
     def ac(self) -> str:
         from hailo_platform import VDevice, HEF, ConfigureParams, HailoStreamInterface
 
+        self._siniflari_yukle()
         yol = str(self.ayar.get("model") or "")
         # vdevice AÇIK TUTULUYOR. Her karede açıp kapatmak, ölçtüğümüz
         # 204 ms'lik firmware yükünü her kareye bindirirdi.
@@ -149,42 +161,117 @@ class HailoCikarim:
         self._model = None
         self._vdevice = None
 
+    def _siniflari_yukle(self) -> None:
+        """Sınıf adlarını ayardan okur. Bulamazsa NUMARA kalıyor.
+
+        Koda gömülü bir liste YOK ve bilerek: `siniflar` boşken model
+        değiştiğinde eski adlar yeni numaraların üstüne binerdi, yani
+        "marul" yazan bir kutu aslında başka bir şey olurdu. Adsız kutu
+        okunması zor; yanlış adlı kutu yanıltıcı.
+        """
+        self.siniflar = []
+        self.siniflar_hatasi = None
+        ham = self.ayar.get("siniflar")
+        if isinstance(ham, (list, tuple)):
+            self.siniflar = [str(a) for a in ham]
+            return
+        yol = str(ham or "").strip()
+        if not yol:
+            return
+        try:
+            import json
+            with open(yol, encoding="utf-8") as dosya:
+                veri = json.load(dosya)
+        except Exception as hata:
+            # Sessiz geçmiyoruz: kullanıcı dosyayı verdiyse adları
+            # bekliyordur; numara görüp nedenini aramasın.
+            self.siniflar_hatasi = f"sınıf adları okunamadı ({yol}): {hata}"
+            return
+        if isinstance(veri, dict):
+            veri = veri.get("siniflar") or veri.get("classes") or []
+        if isinstance(veri, list):
+            self.siniflar = [str(a) for a in veri]
+        else:
+            self.siniflar_hatasi = (
+                f"sınıf dosyası bir liste ya da {{\"siniflar\": [...]}} "
+                f"olmalı ({yol})")
+
     def _hazirla(self, ham: bytes):
-        """JPEG baytlarını modelin beklediği diziye çevirir.
+        """JPEG baytlarını modelin beklediği diziye çevirir — EN-BOY KORUNARAK.
 
         JPEG çözmek çıkarımın kendisinden pahalı (Pi 5'te onlarca ms'ye
-        karşı 7 ms). Kare aralığı saniyeler olduğu için sorun değil, ama
-        sayının nerede harcandığını bilmek gerekiyor.
+        karşı ölçülen 4.5 ms). Kare aralığı saniyeler olduğu için sorun
+        değil, ama sayının nerede harcandığını bilmek gerekiyor.
+
+        EN-BOY: kare eskiden doğrudan `resize((640, 640))` ile
+        sıkıştırılıyordu. Bu makinedeki kareler 16:9 (3840x2160), yani
+        yatay olarak eziliyorlardı: yuvarlak bir filiz elipse dönüyor ve
+        model eğitimde hiç görmediği bir şekle bakıyor. Bedeli iki kere
+        ödeniyor — önce tespit kaçıyor, sonra kalan tespitin 0-1
+        koordinatı gerçek karede yanlış yere denk geliyor.
+
+        Yerine letterbox: oran korunarak sığdırılıyor, artan yer griyle
+        dolduruluyor. Gri 114 rastgele seçilmedi — YOLO ailesi eğitim
+        sırasında da bu dolguyu kullanıyor, model onu tanıyor.
+
+        Dönüş `(dizi, kutu)`: `kutu` dolgunun nereye ve ne kadar
+        konduğunu söylüyor, `_coz` koordinatı gerçek kareye geri
+        çevirirken ona bakıyor.
         """
         import io
         import numpy as np
         from PIL import Image
 
         gorsel = Image.open(io.BytesIO(ham)).convert("RGB")
-        gorsel = gorsel.resize((self._giris, self._giris))
-        return np.expand_dims(np.asarray(gorsel, dtype=np.uint8), axis=0)
+        kenar = int(self._giris)
+        gen, yuk = gorsel.width, gorsel.height
+        oran = min(kenar / gen, kenar / yuk)
+        yeni_g, yeni_y = max(1, round(gen * oran)), max(1, round(yuk * oran))
+        kucuk = gorsel.resize((yeni_g, yeni_y))
+        tuval = Image.new("RGB", (kenar, kenar), (114, 114, 114))
+        dolgu_x, dolgu_y = (kenar - yeni_g) // 2, (kenar - yeni_y) // 2
+        tuval.paste(kucuk, (dolgu_x, dolgu_y))
+        kutu = {"dolgu_x": dolgu_x, "dolgu_y": dolgu_y,
+                "gen": yeni_g, "yuk": yeni_y, "kenar": kenar}
+        return np.expand_dims(np.asarray(tuval, dtype=np.uint8), axis=0), kutu
 
     def calistir(self, ham: bytes) -> list[dict[str, Any]]:
         from hailo_platform import (InferVStreams, InputVStreamParams,
                                     OutputVStreamParams)
 
-        dizi = self._hazirla(ham)
+        dizi, kutu = self._hazirla(ham)
         giris = InputVStreamParams.make(self._model)
         cikis = OutputVStreamParams.make(self._model)
         with InferVStreams(self._model, giris, cikis) as boru:
             ad = list(giris.keys())[0]
             sonuc = boru.infer({ad: dizi})
-        return self._coz(sonuc)
+        return self._coz(sonuc, kutu)
 
-    def _coz(self, sonuc: dict[str, Any]) -> list[dict[str, Any]]:
+    def _coz(self, sonuc: dict[str, Any],
+             kutu: dict[str, Any] | None = None) -> list[dict[str, Any]]:
         """NMS'i çipte yapılmış YOLO çıktısını kutulara çevirir.
 
-        Pi ile gelen HEF'ler NMS'i çipte yapıyor ve sınıf başına bir liste
-        döndürüyor: her satır [y1, x1, y2, x2, guven], 0-1 aralığında.
-        Biçim beklenenden farklı çıkarsa boş liste dönüyoruz — tespit
-        kaybetmek, çöp kutu üretmekten iyi.
+        Biçim Pi'de doğrulandı (`hailortcli parse-hef`): çıkış
+        "HAILO NMS BY CLASS", sınıf başına bir liste ve her satır
+        [y1, x1, y2, x2, guven], 0-1 aralığında. Beklenenden farklı
+        çıkarsa boş liste dönüyoruz — tespit kaybetmek, çöp kutu
+        üretmekten iyi.
+
+        Koordinatlar LETTERBOX TUVALİNE göre geliyor; burada gerçek
+        karenin 0-1 uzayına geri çevriliyor. Çevirmezsek dolgu kalınlığı
+        kadar kayarlar ve o kayma kalibrasyondan sonra doğrudan
+        milimetreye geçer.
         """
         esik = float(self.ayar.get("esik", 0.4))
+        k = kutu or {}
+        kenar = float(k.get("kenar") or self._giris)
+        dolgu_x, dolgu_y = float(k.get("dolgu_x", 0)), float(k.get("dolgu_y", 0))
+        gen, yuk = float(k.get("gen") or kenar), float(k.get("yuk") or kenar)
+
+        def _geri(deger: float, dolgu: float, boy: float) -> float:
+            return min(1.0, max(0.0, (deger * kenar - dolgu) / max(1.0, boy)))
+
+        adlar = getattr(self, "siniflar", [])
         cikti: list[dict[str, Any]] = []
         try:
             for _, deger in (sonuc or {}).items():
@@ -196,13 +283,25 @@ class HailoCikarim:
                         guven = float(satir[4])
                         if guven < esik:
                             continue
+                        x1 = _geri(float(satir[1]), dolgu_x, gen)
+                        y1 = _geri(float(satir[0]), dolgu_y, yuk)
+                        x2 = _geri(float(satir[3]), dolgu_x, gen)
+                        y2 = _geri(float(satir[2]), dolgu_y, yuk)
+                        # Tamamen dolguya düşen bir kutu geri çevrimden
+                        # sonra sıfır alanlı çıkıyor; onu tespit saymak
+                        # panelde görünmez bir kutu çizmek olurdu.
+                        if x2 - x1 <= 0 or y2 - y1 <= 0:
+                            continue
+                        ad = (adlar[sinif_no] if 0 <= sinif_no < len(adlar)
+                              else str(sinif_no))
                         cikti.append({
-                            "sinif": str(sinif_no),
+                            "sinif": ad,
+                            "sinif_no": sinif_no,
                             "guven": round(guven, 3),
-                            "x1": round(float(satir[1]), 4),
-                            "y1": round(float(satir[0]), 4),
-                            "x2": round(float(satir[3]), 4),
-                            "y2": round(float(satir[2]), 4),
+                            "x1": round(x1, 4),
+                            "y1": round(y1, 4),
+                            "x2": round(x2, 4),
+                            "y2": round(y2, 4),
                         })
         except (TypeError, ValueError, IndexError):
             return []
@@ -217,11 +316,29 @@ class Hailo:
                  surucu: Any = None) -> None:
         self.ayar = {**VARSAYILAN, **(ayar or {})}
         self.gunluk_cb = gunluk_cb or (lambda m, s="bilgi": None)
-        # TEK elemanlı kuyruk — dosya başındaki gerekçe.
-        self._kuyruk: queue.Queue = queue.Queue(maxsize=1)
+        # KAMERA BAŞINA TEK SLOT — tek ortak kuyruk değil.
+        #
+        # Eskiden `queue.Queue(maxsize=1)` vardı. Tek kameralı kurulumda
+        # doğruydu; iki kamera birden beslerken iki yerden bozuluyor:
+        # (1) biri ötekinin slotunu kapıyor ve öteki kamera sürekli kare
+        # düşürüyor, (2) kuyrukta kamera adı taşınmadığı için dönen
+        # tespitin hangi kareye ait olduğu kayboluyor — iki kamera farklı
+        # yerlere bakarken bu, tespiti kullanılamaz yapıyor.
+        #
+        # Şimdi her kameranın kendi slotu var ve yalnız KENDİ karesini
+        # eziyor. "En yeni kare kazanıyor" kuralı kamera içinde aynen
+        # duruyor: bir dakika önceki görüntüyü işlemek hâlâ kimseye bir
+        # şey söylemiyor. İşçi slotları sırayla dolaşıyor, böylece sık
+        # kare veren bir kamera ötekini aç bırakmıyor.
+        self._slot: dict[str, tuple[bytes, float]] = {}
+        self._sira: list[str] = []
         self._ip: threading.Thread | None = None
         self._dur = threading.Event()
         self._kilit = threading.Lock()
+        # Koşul aynı kilidi kullanıyor: slot, sıra ve sayaçlar tek bir
+        # tutarlı bütün. Ayrı kilit, "sayaç arttı ama slot henüz
+        # dolmadı" gibi ara durumlar üretirdi.
+        self._uyandir = threading.Condition(self._kilit)
         self._surucu = surucu
         self._acik = False
 
@@ -232,6 +349,9 @@ class Hailo:
         self.hatali = 0
         self._ardisik_hata = 0
         self.son_sure_ms: float | None = None
+        # KAMERA BAŞINA son tespit: {kamera: {tespitler, ts, sure_ms}}.
+        self.son_tespitler: dict[str, dict[str, Any]] = {}
+        self._son_kamera: str = ""
         self.son_tespit: list[dict[str, Any]] = []
         self.son_tespit_ts: float | None = None
         # Uçuştaki karenin başlangıcı (monotonic). None = boşta.
@@ -251,6 +371,13 @@ class Hailo:
             self._acik = True
             self.son_hata = None
             self.gunluk_cb(f"Hailo hazır ({ad})", "bilgi")
+            # Sınıf adları açılışı engellemiyor (adsız tespit de değerli)
+            # ama sessiz de kalmıyor: kullanıcı dosyayı verdiyse numara
+            # değil ad bekliyordur.
+            sinif_hata = getattr(self._surucu, "siniflar_hatasi", None)
+            if sinif_hata:
+                self.gunluk_cb(f"Hailo: {sinif_hata} — kutularda sınıf "
+                               f"numarası gösterilecek", "uyari")
         except Exception as hata:
             # Kütüphane yok, HEF yok, cihaz yok — hepsi buraya düşüyor.
             # Ajan çalışmaya devam ediyor, yalnız tespit yok.
@@ -267,11 +394,10 @@ class Hailo:
 
     def durdur(self) -> None:
         self._dur.set()
-        # Kuyruğa zehir koyuyoruz: işçi `get`te bekliyorsa hemen uyansın.
-        try:
-            self._kuyruk.put_nowait(None)
-        except queue.Full:
-            pass
+        # İşçi koşulda bekliyorsa hemen uyansın; `_dur` zaten kurulu
+        # olduğu için uyanınca döngüden çıkıyor.
+        with self._uyandir:
+            self._uyandir.notify_all()
         if self._surucu is not None:
             try:
                 self._surucu.kapat()
@@ -280,12 +406,16 @@ class Hailo:
         self._acik = False
 
     # ------------------------------------------------------- besleme
-    def kare_ver(self, ham: bytes, ts: float | None = None) -> bool:
-        """Kareyi kuyruğa bırakır. Dolu ya da kilitliyse DÜŞÜRÜR.
+    def kare_ver(self, ham: bytes, ts: float | None = None,
+                 kamera: str = "") -> bool:
+        """Kareyi o kameranın slotuna bırakır. Kilitliyse DÜŞÜRÜR.
 
         Hiçbir koşulda bloke etmiyor ve hiçbir koşulda istisna atmıyor:
         çağıran kamera döngüsü ve orada atılan bir istisna kareyi
         kaybettirirdi.
+
+        `kamera` boş geçilirse "?" yazılıyor — adsız kare kaybolmuyor ama
+        hangi kameradan geldiği de uydurulmuyor.
         """
         if not self._acik or self._dur.is_set():
             return False
@@ -294,25 +424,36 @@ class Hailo:
             with self._kilit:
                 self.dusen += 1
             return False
-        try:
+        ad = str(kamera or "").strip() or "?"
+        with self._uyandir:
+            if ad in self._slot:
+                # Önceki kare daha işlenmeden yenisi geldi: eski düşüyor.
+                self.dusen += 1
+            else:
+                self._sira.append(ad)
             # Kopya ŞART: kamera tamponunu yeniden kullanıyorsa, referans
             # bırakmak işçinin üstüne yazılan bir kareyi okuması demek.
-            self._kuyruk.put_nowait((bytes(ham), ts or time.time()))
-            return True
-        except queue.Full:
-            with self._kilit:
-                self.dusen += 1
-            return False
+            self._slot[ad] = (bytes(ham), ts or time.time())
+            self._uyandir.notify()
+        return True
 
     # -------------------------------------------------------- işçi
     def _dongu(self) -> None:
         while not self._dur.is_set():
-            try:
-                is_ = self._kuyruk.get(timeout=0.5)
-            except queue.Empty:
+            with self._uyandir:
+                # Sırada kimse yoksa bekliyoruz. Zaman aşımlı bekleme,
+                # `durdur` bildirimini kaçırsak bile döngünün yarım
+                # saniyede kendine gelmesi için.
+                if not self._sira and not self._dur.is_set():
+                    self._uyandir.wait(0.5)
+                if self._dur.is_set():
+                    break
+                if not self._sira:
+                    continue
+                kam = self._sira.pop(0)
+                is_ = self._slot.pop(kam, None)
+            if is_ is None:
                 continue
-            if is_ is None:              # zehir
-                break
             ham, ts = is_
             basladi = time.monotonic()
             with self._kilit:
@@ -323,6 +464,12 @@ class Hailo:
                 with self._kilit:
                     self.islenen += 1
                     self.son_sure_ms = round(sure, 1)
+                    self.son_tespitler[kam] = {
+                        "tespitler": tespitler,
+                        "ts": ts,
+                        "sure_ms": round(sure, 1),
+                    }
+                    self._son_kamera = kam
                     self.son_tespit = tespitler
                     self.son_tespit_ts = ts
                     self.son_hata = None
@@ -391,9 +538,21 @@ class Hailo:
                 "hatali": self.hatali,
                 "son_sure_ms": self.son_sure_ms,
                 "son_hata": self.son_hata,
+                # Eski alanlar duruyor: en son işlenen karenin tespitleri.
+                # Tek kameralı kurulumda anlamları değişmiyor.
                 "tespit": len(self.son_tespit),
                 "tespitler": self.son_tespit[:20],
                 "tespit_ts": self.son_tespit_ts,
+                "son_kamera": self._son_kamera,
+                # KAMERA BAŞINA: hangi kutunun hangi kareye ait olduğu
+                # ancak burada belli oluyor.
+                "kameralar": {
+                    ad: {"tespit": len(v.get("tespitler") or []),
+                         "tespitler": (v.get("tespitler") or [])[:20],
+                         "ts": v.get("ts"),
+                         "sure_ms": v.get("sure_ms")}
+                    for ad, v in self.son_tespitler.items()
+                },
             }
 
 
