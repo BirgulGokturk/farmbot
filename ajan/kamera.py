@@ -487,6 +487,30 @@ class Kamera:
             return jpeg
         try:
             gorsel = Image.open(io.BytesIO(jpeg))
+            # JPEG'I KUCUK COZUYORUZ, cozup sonra kucultmuyoruz.
+            #
+            # OLCULDU (Pi, iki kamera x 5 kare/sn): ajan sureci %255 CPU
+            # yiyordu ve tamami bu yoldaydi — surekli leke cozumlemesi
+            # acik/kapali arasinda olculebilir fark YOK (%255'e karsi
+            # %256). Suclu her karede 3840x2160'in TAM cozulmesiydi;
+            # uretilen piksellerin cogu hemen atiliyordu.
+            #
+            # PIL'in `draft` kipi JPEG'i DCT seviyesinde 1/2, 1/4, 1/8
+            # olcekte cozuyor. Olculdu: 3840->960 yolunda 117 ms yerine
+            # 60 ms, cikti piksel piksel AYNI.
+            #
+            # HEDEF ORANLI VERILMELI. `(hedef, hedef*10)` gibi bir ipucu
+            # draft'i tamamen devre disi birakiyor: PIL her iki boyutun
+            # da sigmasini istiyor ve 10 kat yukseklik istenince olcek 1
+            # seciliyor. Once kaynagin hangi kenarinin hedefe inecegini
+            # buluyoruz — 90/270 donmede kaynagin YUKSEKLIGI, cunku
+            # donme sonrasi genislik oradan geliyor.
+            kay_g, kay_y = gorsel.size
+            temel = kay_y if derece in (90, 270) else kay_g
+            if temel > hedef:
+                olcek = hedef / float(temel)
+                gorsel.draft("RGB", (max(1, round(kay_g * olcek)),
+                                     max(1, round(kay_y * olcek))))
             if derece:
                 # Kare burada ZATEN cozuluyor: dondurmek fazladan hicbir
                 # cozme/sikistirma getirmiyor, yalnizca piksel tasima.
