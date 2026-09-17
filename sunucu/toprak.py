@@ -4,10 +4,30 @@ ROI elle çiziliyordu; kap eğik durduğu için dört köşeyi tek tek sürükle
 gerekiyordu. Toprak renkçe çevresinden belirgin ayrı, o hâlde dörtgeni
 makine çıkarabilir.
 
-EŞİKLER ÖLÇÜLDÜ (kullanıcının kendi karesi, R-B = kırmızı eksi mavi):
-    toprak 42,2 / doygunluk 0,508   beyaz plastik 8,5 / 0,185
-    alüminyum 21,3 / 0,132          duvar 6,0 / 0,043   masa 1,1 / 0,108
-Kapı ortadan geçiyor: R-B > 25 ve doygunluk > 0,30.
+KAPI MUTLAK DEĞİL, KAREDEN TÜRETİLİYOR. Önce "R-B > 25 ve doygunluk >
+0,30" yazılmıştı; o eşikler tek bir karede ölçülmüştü ve kamera beyaz
+dengesi değişince çöktü. Aynı kap, iki ayrı karede:
+    eski kare   : toprak R-B 42 · kare medyanı  6  · doygunluk toprakta YÜKSEK
+    bugünkü kare: toprak R-B  0 · kare medyanı -49 · doygunluk toprakta DÜŞÜK
+Mutlak kapı bugünkü karede toprağın yalnız %0,8'ini geçirdi, yani hiç
+bulamadı. Doygunluk kapısı da işe yaramıyor: bugünkü karede toprak (0,159)
+çevresinden (0,358) DAHA AZ doygun, yani kapının yönü tersine dönüyor.
+
+Beyaz dengesiyle kaymayan tek şey SIRALAMA: toprak karenin en sıcak tonlu
+büyük yüzeyi. İki kare de aynı bunu söylüyor — toprak R-B'de çevresinden
+46-52 puan yukarıda, kaçık ne olursa olsun. O yüzden eşik her karede
+Otsu ile R-B histogramından çıkarılıyor, sabit yazılmıyor.
+
+ÖLÇÜLDÜ (tam boru hattı, iki kare + toprak içermeyen üç kırpma):
+    eski kare    → 20 köşe · doluluk 0,795
+    bugünkü kare → 24 köşe · doluluk 0,972 · elle çizilen ROI'nin %96,8'i
+    toprak yok (duvar+profil / sağ şerit / üst şerit) → üçünde de BULUNAMADI
+Karşılaştırma: mutlak kapı bugünkü karede BULUNAMADI veriyordu.
+
+TOPRAK YOKKEN ELİ BOŞ DÖNMESİNİ SAĞLAYAN EN_AZ_ORAN. Otsu her karede bir
+eşik üretir, toprak olmasa da; ayıran şey alan. Ölçülen: toprak olan
+karelerde sıcak sınıf kadrajın %15,7 ve %22,3'ü, toprak olmayan
+kırpmalarda %1,0 · %1,9 · %2,6'sı. Sınır ikisinin arasından: %5.
 
 AÇMA YARIÇAPI DA ÖLÇÜLDÜ. Sarı hortum da sıcak tonlu ve toprağa değiyor;
 ince bağlantı dışbükey zarfı köprü braketine kadar çekiyordu. 450x798
@@ -26,10 +46,10 @@ from typing import Any
 
 import numpy as np
 
-RB_ESIK = 25.0
-DOY_ESIK = 0.30
 ACMA_ORANI = 0.007
-EN_AZ_ORAN = 0.02
+#: Sıcak sınıf kadrajın bu payından küçükse toprak yok sayılıyor.
+#: Ölçüm: toprak varken %15,7 / %22,3 — yokken %1,0 / %1,9 / %2,6.
+EN_AZ_ORAN = 0.05
 #: Zarf en çok bu kadar köşeye iniyor — panelde her köşe bir tutamak,
 #: 24'ten fazlası sürüklenemez hâle geliyor.
 AZAMI_KOSE = 24
@@ -173,14 +193,35 @@ def _sadelestir(z, azami: int):
     return z
 
 
+def _otsu(v: np.ndarray) -> float:
+    """Otsu eşiği — iki sınıf arası değişintiyi en büyükleyen kesim.
+
+    Sabit eşik yerine bu var, çünkü beyaz dengesi kareyi toptan kaydırıyor
+    (ölçülen kayma: R-B medyanı +6 ile -49 arasında). Otsu kaymayla
+    birlikte gidiyor; sıralamayı koruyor.
+    """
+    sayim, kenar = np.histogram(v, bins=256)
+    orta = (kenar[:-1] + kenar[1:]) / 2.0
+    n0 = np.cumsum(sayim)
+    n1 = sayim.sum() - n0
+    t0 = np.cumsum(sayim * orta)
+    t1 = t0[-1] - t0
+    gecerli = (n0 > 0) & (n1 > 0)
+    degisinti = np.zeros(256, dtype=np.float64)
+    degisinti[gecerli] = (n0[gecerli] * n1[gecerli]
+                          * ((t0[gecerli] / n0[gecerli])
+                             - (t1[gecerli] / n1[gecerli])) ** 2)
+    return float(orta[int(np.argmax(degisinti))])
+
+
 def _maske(rgb: np.ndarray) -> np.ndarray:
+    """Karenin en sıcak tonlu sınıfı. Doygunluk kapısı YOK — ölçümde
+    toprağın doygunluğu çevresinden kimi karede yüksek, kimi karede
+    düşük çıktı, yani ayırt edici değil; eklenince eski kare kayboluyordu.
+    """
     a = np.asarray(rgb, dtype=np.float32)
-    kirmizi, mavi = a[..., 0], a[..., 2]
-    en_buyuk = a.max(axis=2)
-    en_kucuk = a.min(axis=2)
-    doygunluk = np.where(en_buyuk > 0,
-                         (en_buyuk - en_kucuk) / np.maximum(en_buyuk, 1e-6), 0.0)
-    return (kirmizi - mavi > RB_ESIK) & (doygunluk > DOY_ESIK)
+    sicaklik = a[..., 0] - a[..., 2]
+    return sicaklik > _otsu(sicaklik)
 
 
 def _icinde(xx: np.ndarray, yy: np.ndarray, kose) -> np.ndarray:
