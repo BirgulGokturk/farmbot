@@ -985,8 +985,10 @@
     const kalinlik = Math.max(2, Math.round(kare[0] / 250));
     const r = Math.max(3, Math.round(kare[0] / 200));
     // Yazı kare ölçüsüne oranlı: viewBox gerçek piksel, kutu küçülse de
-    // büyüse de yazı aynı görünür kalıyor.
-    const yaziBoy = Math.max(12, Math.round(kare[0] / 45));
+    // büyüse de yazı aynı görünür kalıyor. 45'ten 110'a indirildi —
+    // sahada yazılar kutulardan büyük çıkıyor ve komşu filizlerde üst
+    // üste biniyordu.
+    const yaziBoy = Math.max(9, Math.round(kare[0] / 110));
     /* KAYMAYI GİZLEMİYORUZ. Sürekli kipte sonuç aralık kadar geriden
      * geliyor; makine o sırada yol aldıysa kutular canlı görüntüyle
      * hizalı DEĞİL. Soluklaştırmak bunu söylemenin en sessiz ama
@@ -1021,7 +1023,7 @@
        * kutu. Kalibrasyon yoksa `x_mm` gelmiyor ve hiçbir şey
        * yazılmıyor — "0, 0" yazmak uydurma koordinat olurdu. */
       const etiket = (l.x_mm == null) ? "" :
-        `<text x="${x2 + r}" y="${y1 + yaziBoy}" font-size="${yaziBoy}"
+        `<text x="${x2 + r}" y="${(y1 + y2) / 2 + yaziBoy / 3}" font-size="${yaziBoy}"
            fill="${renk}" stroke="#000" stroke-width="${yaziBoy / 8}"
            paint-order="stroke" font-family="monospace"
            >${l.x_mm}, ${l.y_mm}</text>`;
