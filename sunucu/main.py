@@ -40,6 +40,7 @@ import isik
 import dikim
 import egriler
 import ekim
+import favori
 import geri_al
 import kareler
 import kuyruk as kuyruk_modul
@@ -2915,6 +2916,12 @@ app.include_router(bitki.yonlendirici_kur(
 # saklaniyor ki panel kutulari DOGRU karenin ustune cizsin.
 app.include_router(leke.yonlendirici_kur(
     merkez.komut_gonder, _parola_dogrula))
+# FAVORI TURLER. Panelde tur acilir listelerinin basina cikacak olanlar.
+# Siralamayi bu modul YAPMIYOR, yalniz listeyi tutuyor: tur listesini
+# kendi icinde yeniden siralayan ekranlar (tarla.js alfabetik siraliyor)
+# sunucudan gelen sirayi sessizce bozardi. Sirayi panel katmani kuruyor
+# (static/favori.js).
+app.include_router(favori.yonlendirici_kur(_parola_dogrula))
 
 
 async def _git_ve_bekle(x: float, y: float, z: float | None,
