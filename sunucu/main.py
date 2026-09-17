@@ -48,6 +48,7 @@ import leke
 import noktalar
 import programlar
 import sulama
+import sulama_genel
 import turler
 import zamanli
 
@@ -1429,6 +1430,12 @@ def _sulama_coz(adlar: list[str], saniye: float | None,
         # ile olgun bir marul aynı suyu istemiyor. İstek açık bir süre
         # verdiyse o eziyor, vermediyse tür zinciri geçerli.
         bitki_sn = saniye
+        if bitki_sn is None:
+            # TUM BITKILERI KAPSAYAN SURE, acikken tur zincirinin ONUNE
+            # geciyor (uzerine yazmiyor: kapatilinca her bitki yine kendi
+            # ayarindan cozuluyor). Istekte acikca verilen sure yine en
+            # ustte: kullanici o an bir sayi yazdiysa kasti acik.
+            bitki_sn = sulama_genel.saniye()
         if bitki_sn is None:
             bitki_sn = float(sulama.ayar_coz(bitki, tur).get(
                 "sulama_saniye", turler.VARSAYILAN["sulama_saniye"]))
@@ -2922,6 +2929,10 @@ app.include_router(leke.yonlendirici_kur(
 # sunucudan gelen sirayi sessizce bozardi. Sirayi panel katmani kuruyor
 # (static/favori.js).
 app.include_router(favori.yonlendirici_kur(_parola_dogrula))
+# TUM BITKILERI KAPSAYAN SULAMA SURESI. Sunucuda tutuluyor cunku zamanli
+# gorevler ve "olc, dusukse sula" isi panel kapaliyken calisiyor; tarayicida
+# tutulsaydi "tum bitkiler" onlari kapsamazdi.
+app.include_router(sulama_genel.yonlendirici_kur(_parola_dogrula))
 
 
 async def _git_ve_bekle(x: float, y: float, z: float | None,
