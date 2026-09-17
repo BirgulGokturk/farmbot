@@ -14,6 +14,10 @@
     {
       "id": 8,
       "rol": "referans",
+      "merkez_mm": [
+        314.9,
+        44.9
+      ],
       "koseler_mm": [
         [
           303.0,
@@ -36,6 +40,10 @@
     {
       "id": 9,
       "rol": "referans",
+      "merkez_mm": [
+        493.9,
+        40.9
+      ],
       "koseler_mm": [
         [
           482.0,
@@ -58,6 +66,10 @@
     {
       "id": 1,
       "rol": "referans",
+      "merkez_mm": [
+        301.9,
+        308.9
+      ],
       "koseler_mm": [
         [
           290.0,
@@ -80,6 +92,10 @@
     {
       "id": 0,
       "rol": "referans",
+      "merkez_mm": [
+        519.9,
+        284.9
+      ],
       "koseler_mm": [
         [
           508.0,
@@ -100,5 +116,5 @@
       ]
     }
   ],
-  "_not": "Dort kose probla olculdu (17.09.2026, Z=240 hepsinde). koseler_mm verildigi icin kenar ve yon kullanilmiyor."
+  "_not": "Dort kose probla olculdu (17.09.2026, Z=240 hepsinde). merkez_mm kosellerin ortalamasi — dogrulama zorunlu tuttugu icin turetildi, hesapta koseler_mm kullaniliyor."
 }
