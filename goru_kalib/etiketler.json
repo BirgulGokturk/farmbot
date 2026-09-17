@@ -1,0 +1,11 @@
+{
+  "aciklama": "Yatak üzerindeki AprilTag 36h11 etiketlerinin makine koordinatları (mm). null alanları sahada ölçüp doldurun. REHBER.md adım 5.",
+  "kenar_mm_varsayilan": null,
+  "yatak_mm": {"x": [0, 540], "y": [0, 645]},
+  "etiketler": [
+    {"id": 0, "rol": "referans", "merkez_mm": [null, null], "kenar_mm": null},
+    {"id": 1, "rol": "referans", "merkez_mm": [null, null], "kenar_mm": null},
+    {"id": 8, "rol": "referans", "merkez_mm": [null, null], "kenar_mm": null},
+    {"id": 9, "rol": "referans", "merkez_mm": [null, null], "kenar_mm": null}
+  ]
+}
