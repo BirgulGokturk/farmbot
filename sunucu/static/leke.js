@@ -115,7 +115,7 @@
             kadar geriden geliyor. Konum farkı büyüdüğünde kutular soluklaşıyor.
           </p>
           <details class="etiket-blok">
-            <summary>Ayarlar (bu çağrıya özel, kaydedilmiyor)</summary>
+            <summary>Ayarlar (bu tarayıcıda saklanıyor)</summary>
             <div class="satir">
               <label title="Otsu'nun bulduğu eşiğe eklenen pay. Pozitif = daha seçici.">
                 Eşik payı <input type="number" id="leke-esik-payi" value="0" step="2" style="width:5rem">
@@ -1027,6 +1027,45 @@
     });
   }
 
+  /* AYARLAR TARAYICIDA SAKLANIYOR.
+   *
+   * Önce "kaydedilmiyor" diye yazılmıştı; gerekçe bir denemede girilen
+   * değerin aylar sonra sürpriz olmamasıydı. Ama her sayfa
+   * yenilemesinde altı alanı yeniden girmek denemeyi imkânsız kılıyor —
+   * eşik aramak tam olarak bu: gir, bak, değiştir, tekrar bak.
+   *
+   * SUNUCUYA GİTMİYOR, `localStorage`da duruyor: bu tarayıcının denemesi
+   * başka bir tarayıcıyı ya da ajanı bağlamıyor. Sürekli kipin ajandaki
+   * kopyası ayrı ve o zaten her değişiklikte yeniden bildiriliyor.
+   */
+  const AYAR_ANAHTAR = "farmbot_leke_ayar";
+  const AYAR_ALANLARI = ["#leke-esik-payi", "#leke-en-kucuk", "#leke-islem-px",
+                         "#leke-ton-alt", "#leke-ton-ust", "#leke-birlestir",
+                         "#leke-aralik"];
+
+  function ayarlariYukle() {
+    let kayit = null;
+    try { kayit = JSON.parse(localStorage.getItem(AYAR_ANAHTAR) || "null"); }
+    catch { kayit = null; }
+    if (!kayit || typeof kayit !== "object") return;
+    AYAR_ALANLARI.forEach((sec) => {
+      const el = $(sec);
+      // Kayıtta olmayan alan varsayılanında kalıyor: sonradan eklenen
+      // bir alan, eski kayıt yüzünden boş açılmasın.
+      if (el && kayit[sec] != null) el.value = kayit[sec];
+    });
+  }
+
+  function ayarlariSakla() {
+    const kayit = {};
+    AYAR_ALANLARI.forEach((sec) => {
+      const el = $(sec);
+      if (el) kayit[sec] = el.value;
+    });
+    try { localStorage.setItem(AYAR_ANAHTAR, JSON.stringify(kayit)); }
+    catch { /* özel pencerede yazma kapalı olabilir; ayar yine çalışır */ }
+  }
+
   function ayarTopla() {
     const ayar = {};
     const pay = sayi("#leke-esik-payi");
@@ -1242,6 +1281,12 @@
   function otoKur() {
     const sec = $("#leke-oto-mod");
     if (sec) sec.addEventListener("change", () => modUygula(sec.value));
+    // Kayıtlı değerler alanlar kurulduktan SONRA yükleniyor.
+    ayarlariYukle();
+    AYAR_ALANLARI.forEach((s3) => {
+      const el = $(s3);
+      if (el) el.addEventListener("change", ayarlariSakla);
+    });
     // Aralık ya da ayar değişirse sürekli kipe yeniden bildiriyoruz:
     // ajandaki değerler panelde yazanla ayrışmasın.
     ["#leke-aralik", "#leke-esik-payi", "#leke-en-kucuk",
