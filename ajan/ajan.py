@@ -46,6 +46,7 @@ ROLELER = {"su_pompasi": "Su pompası", "hava_pompasi": "Hava pompası",
            "isik": "Bitki ışığı"}
 import hailo as hailo_modulu
 import lekeler as lekeler_modulu
+import koordinat as koordinat_modulu
 import kamera as kamera_modulu
 import uclar as uc_modulu
 
@@ -1066,6 +1067,12 @@ class Ajan:
                 # yerin ölçümü tek eğriye dizilir.
                 k = (self._son_durum.get("konum") or {}) if self._son_durum else {}
                 sonuc["konum"] = {"x": k.get("x"), "y": k.get("y"), "z": k.get("z")}
+                # MİLİMETRE, kalibrasyon varsa. Yoksa `mm_sebep` doluyor
+                # ve koordinat alanı hiç açılmıyor — uydurma ölçek yok.
+                try:
+                    koordinat_modulu.mm_ekle(sonuc, kam._dondurme())
+                except Exception as hata:                  # noqa: BLE001
+                    sonuc["mm_sebep"] = f"koordinat modülü: {hata}"
                 sayi = len(sonuc.get("lekeler") or [])
                 # Sebep varsa mesaja giriyor: boş liste tek başına "bitki
                 # yok" demek değil, nedeni görünsün.
@@ -1558,6 +1565,10 @@ class Ajan:
                     # bulunduğunu bilmeli, makine kımıldayınca onları
                     # silebilsin. Kalibrasyon geldiğinde koordinat
                     # dönüşümü de buna dayanacak.
+                    try:
+                        koordinat_modulu.mm_ekle(sonuc, kam._dondurme())
+                    except Exception as hata:              # noqa: BLE001
+                        sonuc["mm_sebep"] = f"koordinat modülü: {hata}"
                     k = (self._son_durum.get("konum") or {}) if self._son_durum else {}
                     sonuc["konum"] = {"x": k.get("x"), "y": k.get("y"),
                                       "z": k.get("z")}

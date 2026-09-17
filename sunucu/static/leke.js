@@ -393,6 +393,10 @@
      * boş liste veriyor ve ikisi bambaşka sorunlar. */
     const notlar = [];
     if (y.sebep) notlar.push(y.sebep);
+    /* KOORDİNAT SESSİZ KAPANMIYOR. Kalibrasyon yoksa ya da dönüşüm
+     * patlarsa mm sütunu boş kalıyor; sebebini yazmazsak kullanıcı
+     * "neden milimetre yok" sorusunu kodda arar. */
+    if (y.mm_sebep) notlar.push("konum (mm) yok: " + y.mm_sebep);
     if (y.kare_hatasi) notlar.push("Kare gösterilemiyor: " + y.kare_hatasi);
     if (y.elenen && (y.elenen.kucuk || y.elenen.buyuk)) {
       notlar.push(`elenen: ${y.elenen.kucuk} küçük, ${y.elenen.buyuk} büyük`);
@@ -459,6 +463,7 @@
       <tr data-no="${i}" style="cursor:pointer">
         <td>${i + 1}</td>
         <td>${l.x}, ${l.y}</td>
+        <td>${l.x_mm == null ? "—" : l.x_mm + ", " + l.y_mm}</td>
         <td>${l.alan_px}</td>
         <td>${l.dolgu}</td>
         <td>${l.en_boy}</td>
@@ -469,7 +474,9 @@
     kap.innerHTML = `
       <table class="tablo dar">
         <thead><tr>
-          <th>#</th><th>merkez (px)</th><th>alan (px²)</th>
+          <th>#</th><th>merkez (px)</th>
+          <th title="MAKİNE koordinatı (mm). Kamera kalibrasyonundan geliyor; kalibrasyon yoksa — çıkar ve sebebi üstte yazar.">konum (mm)</th>
+          <th>alan (px²)</th>
           <th title="Lekenin kendi kutusunu ne kadar doldurduğu. Yuvarlak bir fide yüksek; ince bir kablo ya da kenar çizgisi düşük.">dolgu</th>
           <th title="Genişlik / yükseklik. 1'e yakın = yuvarlak.">en/boy</th>
           <th title="ÖLÇÜLEN HSV tonu (0-179), medyan. Ton kapısını bu sütuna bakarak seçin — yaprak ile sarı hortum/turkuaz kablo burada ayrışıyor.">ton</th>
