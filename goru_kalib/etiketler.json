@@ -1,11 +1,52 @@
 {
-  "aciklama": "Yatak üzerindeki AprilTag 36h11 etiketlerinin makine koordinatları (mm). null alanları sahada ölçüp doldurun. REHBER.md adım 5.",
-  "kenar_mm_varsayilan": null,
-  "yatak_mm": {"x": [0, 540], "y": [0, 645]},
+  "kenar_mm_varsayilan": 23.8,
+  "yatak_mm": {
+    "x": [
+      0,
+      540
+    ],
+    "y": [
+      0,
+      645
+    ]
+  },
   "etiketler": [
-    {"id": 0, "rol": "referans", "merkez_mm": [null, null], "kenar_mm": null},
-    {"id": 1, "rol": "referans", "merkez_mm": [null, null], "kenar_mm": null},
-    {"id": 8, "rol": "referans", "merkez_mm": [null, null], "kenar_mm": null},
-    {"id": 9, "rol": "referans", "merkez_mm": [null, null], "kenar_mm": null}
-  ]
+    {
+      "id": 8,
+      "rol": "referans",
+      "merkez_mm": [
+        310.0,
+        0.0
+      ],
+      "kenar_mm": null
+    },
+    {
+      "id": 9,
+      "rol": "referans",
+      "merkez_mm": [
+        475.0,
+        25.0
+      ],
+      "kenar_mm": null
+    },
+    {
+      "id": 0,
+      "rol": "referans",
+      "merkez_mm": [
+        495.0,
+        250.0
+      ],
+      "kenar_mm": null
+    },
+    {
+      "id": 1,
+      "rol": "referans",
+      "merkez_mm": [
+        250.0,
+        270.0
+      ],
+      "kenar_mm": null
+    }
+  ],
+  "_not": "Merkezler probla elle olculdu (17.09.2026). Dort etiketin Z'si de 240 mm — ayni duzlemde. Kenar 23.8 mm kumpasla."
 }
