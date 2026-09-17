@@ -349,22 +349,6 @@ main.kabuk {
   grid-column: 1;
   grid-row: 1 / span 4;
   width: var(--sol-en);
-  /* SAYFA KAYMASIN, PANEL KAYSIN.
-     Ölçüldü: sürüş sekmesinde panel içeriği 2032 px, ekran 912 px
-     (ışık kartı ve eksen bölümleri alt alta). Kaydırma paneldeyken
-     değil sayfadayken oluyordu ve sahne — `position: absolute` olduğu
-     hâlde — kabukla birlikte yukarı kayıp ekrandan çıkıyordu.
-     Taşmayı burada kesip kaydırmayı panelin İÇİNE alıyoruz: sahne her
-     zaman tam ekran kalıyor, kartlar kendi içinde kayıyor. */
-  overflow: hidden;
-}
-/* Başlık sabit, yalnız etkin sayfa kayıyor: başlığın da kayması
-   "hangi sekmedeyim" sorusunun cevabını ekrandan çıkarırdı. */
-.yuzen.sol > .sayfa.etkin {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  overscroll-behavior: contain;
 }
 .yuzen-ust {
   display: flex;
