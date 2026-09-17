@@ -11,16 +11,17 @@
  * Gerekçe: burada tablo okunuyor, satıra tıklanıyor, ayar deneniyor —
  * altındaki görüntü saniyede beş kez değişseydi hiçbiri okunamazdı.
  *
- * YÜZEN KUTULARDA ÇİZİM YOK — GERİ ALINDI. Kutuları canlı akışın
- * üstüne çizmek için görüntüyü konumlandırılmış bir sarmalayıcıya
- * almıştık. Bedeli ağır çıktı: `app.js`in kamera kutusu düzeni
- * görüntünün `.kamera-yuzen`in DOĞRUDAN çocuğu olmasına dayanıyor,
- * araya bir öğe girince esneme ona gidiyor ve görüntü kutudan taşıyor.
- * Sahada "kamera bozuldu" diye ortaya çıktı.
+ * YÜZEN KUTULARDA canlı akışın üstüne çiziliyor. Orada soru "makine şu
+ * an neye bakıyor" ve görüntüyü dondurmak onu kaybettirirdi. Kaymaya
+ * karşı koruma başka: makine kımıldadığı anda kutular siliniyor, çünkü
+ * çözümleme bir konuma ait.
  *
- * Yüzen kutuda kalan tek şey ◎ düğmesi: çözümlemeyi başlatıyor, sonuç
- * bölümde görünüyor. Çizim, `app.js`in düzenine dokunmayan bir yol
- * bulunduğunda geri gelecek.
+ * KATMAN GÖRÜNTÜNÜN MUTLAK KONUMLU KARDEŞİ — sarmalayıcı YOK. İlk
+ * deneme görüntüyü bir div'e sarıyordu ve kamerayı bozdu: `app.js`in
+ * kutu düzeni görüntünün `.kamera-yuzen`in DOĞRUDAN çocuğu olmasına
+ * dayanıyor, araya bir öğe girince esneme ona gidiyor ve görüntü
+ * kutudan taşıyor. Mutlak öğe esnek düzenin dışında kalıyor: düzen
+ * hesabına giren tek şey yine görüntünün kendisi.
  *
  * MİLİMETRE YOK. Kamera kalibrasyonu olmadığı için bütün sayılar piksel.
  * Panelde "mm" yazan tek bir yer yok; kalibrasyon geldiğinde eklenecek.
@@ -542,19 +543,22 @@
     kap.querySelectorAll(".kamera-yuzen").forEach(yuzeniDonat);
   }
 
-  /* YÜZEN KUTULARIN DOM'UNA DOKUNULMUYOR — GERİ ALINDI.
+  /* ÇİZİM KATMANI: SARMALAYICISIZ, GÖRÜNTÜNÜN MUTLAK KONUMLU KARDEŞİ.
    *
-   * Görüntüyü konumlandırılmış bir sarmalayıcıya almıştık ki kutular
-   * tam üstüne otursun. Bedeli ağır çıktı: `app.js`in kamera kutusu
-   * düzeni görüntünün `.kamera-yuzen`in DOĞRUDAN çocuğu olmasına
-   * dayanıyor; araya bir öğe girince esneme ona gidiyor ve görüntü
-   * kutudan taşıyor. Sahada "kamera bozuldu" diye ortaya çıktı.
+   * İlk deneme görüntüyü konumlandırılmış bir div'e sarıyordu ve
+   * kamerayı bozdu: `app.js`in kutu düzeni görüntünün `.kamera-yuzen`in
+   * DOĞRUDAN çocuğu olmasına dayanıyor, araya bir öğe girince esneme
+   * ona gidiyor ve görüntü kutudan taşıyor.
    *
-   * Çizim şimdilik YALNIZ bölümde (orada kare kendi kabında ve kimsenin
-   * düzenine karışmıyor). Yüzen kutuda kalan tek şey ◎ düğmesi:
-   * çözümlemeyi başlatıyor, sonuç bölümde görünüyor. Kutuların yüzen
-   * kutuda da çizilmesi, `app.js`in düzenini bozmayan bir yol
-   * bulunduğunda geri gelecek. */
+   * Şimdi SVG görüntünün KARDEŞİ ve `position: absolute`. Mutlak öğe
+   * esnek düzenin dışında kalıyor: görüntü hâlâ kutunun doğrudan
+   * çocuğu, düzen hesabına giren tek öğe o. Katman hiçbir yer
+   * kaplamıyor, yalnız görüntünün üstüne biniyor.
+   *
+   * KONUM HER ÇİZİMDE ÖLÇÜLÜYOR (`_svgYerlestir`). Görüntü esnek bir
+   * kutuda ve boyutu pencereyle, "büyüt" düğmesiyle, kare oranıyla
+   * değişiyor; sabit bir `inset: 0` görüntü kutuyu tam doldurmadığında
+   * kutuları kaydırırdı. */
   function yuzeniDonat(kutu) {
     const ad = kutu && kutu.dataset ? kutu.dataset.kam : "";
     if (!ad || YUZEN.has(ad)) return;
@@ -562,9 +566,18 @@
     const araclar = kutu.querySelector(".kamera-yuzen-araclar");
     if (!img || !araclar) return;
 
-    // DOM'a eklenmeyen boş bir SVG: çizim kodu değişmeden duruyor ama
-    // hiçbir yere bağlı olmadığı için görünmüyor ve bir şeyi bozmuyor.
     const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("preserveAspectRatio", "none");
+    svg.style.cssText = "position:absolute;pointer-events:none;z-index:1";
+    // Görüntünün HEMEN ARDINA: aynı ebeveyn, aynı yığın bağlamı.
+    img.parentNode.insertBefore(svg, img.nextSibling);
+    /* Görüntü yeniden boyutlandığında katman da yerleşsin. Yüklenme,
+     * pencere boyutu ve "büyüt" düğmesi üçü de boyutu değiştiriyor;
+     * üçünü ayrı ayrı dinlemek yerine kaynağı izliyoruz. */
+    if (typeof ResizeObserver === "function") {
+      new ResizeObserver(() => yuzendeCiz(ad)).observe(img);
+    }
+    img.addEventListener("load", () => yuzendeCiz(ad));
 
     const dugme = document.createElement("button");
     dugme.type = "button";
@@ -629,7 +642,15 @@
     if (!kayit) return;
     const y = kayit.sonuc;
     const kare = (y && y.kare_px) || null;
-    if (!y || !kare || !kare[0] || !kare[1]) { kayit.svg.innerHTML = ""; return; }
+    if (!y || !kare || !kare[0] || !kare[1]) {
+      kayit.svg.innerHTML = "";
+      // Boş katman da yerinde dursun: sonraki çizimde bir kare boyunca
+      // eski konumda görünmesin.
+      kayit.svg.style.width = "0";
+      kayit.svg.style.height = "0";
+      return;
+    }
+    _svgYerlestir(kayit);
     kayit.svg.setAttribute("viewBox", `0 0 ${kare[0]} ${kare[1]}`);
     const kalinlik = Math.max(2, Math.round(kare[0] / 250));
     const r = Math.max(3, Math.round(kare[0] / 200));
@@ -646,6 +667,23 @@
                 fill="none" stroke="#ff4d4d" stroke-width="${kalinlik}"/>
               <circle cx="${l.x}" cy="${l.y}" r="${r}" fill="#ff4d4d"/>`;
     }).join("");
+  }
+
+  /** Katmanı görüntünün ÖLÇÜLEN geometrisine oturtur.
+   *
+   * `offsetLeft/Top` en yakın konumlanmış ataya göre; `.kamera-yuzen`e
+   * `position: relative` verildi (stil.css) ki o ata kutunun kendisi
+   * olsun. Verilmeseydi katman sayfanın köşesine kaçardı.
+   */
+  function _svgYerlestir(kayit) {
+    const img = kayit.kutu.querySelector('[data-rol="kare"]');
+    if (!img) return;
+    const g = img.offsetWidth, y = img.offsetHeight;
+    if (!g || !y) { kayit.svg.style.width = "0"; kayit.svg.style.height = "0"; return; }
+    kayit.svg.style.left = img.offsetLeft + "px";
+    kayit.svg.style.top = img.offsetTop + "px";
+    kayit.svg.style.width = g + "px";
+    kayit.svg.style.height = y + "px";
   }
 
   function yuzenleriSil(sebep) {

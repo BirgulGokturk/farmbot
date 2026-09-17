@@ -349,6 +349,22 @@ main.kabuk {
   grid-column: 1;
   grid-row: 1 / span 4;
   width: var(--sol-en);
+  /* SAYFA KAYMASIN, PANEL KAYSIN.
+     Ölçüldü: sürüş sekmesinde panel içeriği 2032 px, ekran 912 px
+     (ışık kartı ve eksen bölümleri alt alta). Kaydırma paneldeyken
+     değil sayfadayken oluyordu ve sahne — `position: absolute` olduğu
+     hâlde — kabukla birlikte yukarı kayıp ekrandan çıkıyordu.
+     Taşmayı burada kesip kaydırmayı panelin İÇİNE alıyoruz: sahne her
+     zaman tam ekran kalıyor, kartlar kendi içinde kayıyor. */
+  overflow: hidden;
+}
+/* Başlık sabit, yalnız etkin sayfa kayıyor: başlığın da kayması
+   "hangi sekmedeyim" sorusunun cevabını ekrandan çıkarırdı. */
+.yuzen.sol > .sayfa.etkin {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 .yuzen-ust {
   display: flex;
@@ -1710,6 +1726,11 @@ button.dugme.role.acik:hover:not(:disabled) { background: rgba(74, 168, 96, .24)
    Panel bölümündeki kamera duruyor; bu onun yerine değil, yanına: oraya
    ulaşmak için bölümü açıp kaydırmak gerekiyordu. */
 .kamera-yuzen {
+  /* Konumlandırma bağlamı: leke katmanı görüntünün MUTLAK KONUMLU
+     kardeşi olarak duruyor ve en yakın konumlanmış atasına göre
+     yerleşiyor. Bu kural olmasaydı katman sayfanın köşesine kaçardı.
+     Izgara yerleşimini etkilemiyor. */
+  position: relative;
   grid-column: 3;
   grid-row: 2;
   align-self: end;
