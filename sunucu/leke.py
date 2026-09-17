@@ -127,6 +127,69 @@ def yonlendirici_kur(komut_gonder: Callable, parola_dogrula: Callable) -> APIRou
         return {"ok": True, "kamera": kam, "damga": damga,
                 "kare_hatasi": kare_hatasi, **sonuc}
 
+    @yonlendirici.post("/toprak")
+    async def leke_toprak(govde: dict[str, Any] | None = None,
+                          jeton: str = Query(default="")):
+        """Saklı kareden toprağın çevresini çıkarır — ilgi alanını elle
+        çizmek yerine.
+
+        Köşeler ORANLI (0-1) dönüyor; panel bunu doğrudan ilgi alanı
+        olarak kullanıyor ve köşeleri Shift ile düzeltebiliyor. KARE
+        GEREKİYOR: çözümleme yapılmadan saklı kare olmuyor; uydurma bir
+        kareyle çalışmaktansa sebebi söyleyip duruyoruz.
+        """
+        parola_dogrula(jeton)
+        kam = kareler.ad_temizle((govde or {}).get("kamera") or "")
+        with _KILIT:
+            kayit = _SON_KARE.get(kam)
+        if not kayit or not kayit.get("veri"):
+            raise HTTPException(status_code=409,
+                                detail="Saklı kare yok — önce çözümleyin.")
+        try:
+            import toprak as toprak_modulu
+        except Exception as hata:                       # noqa: BLE001
+            raise HTTPException(
+                status_code=503,
+                detail=f"toprak modülü yüklenemedi: {hata}") from None
+        sonuc = await asyncio.to_thread(toprak_modulu.bayttan, kayit["veri"])
+        if not sonuc:
+            raise HTTPException(
+                status_code=409,
+                detail="Toprak bulunamadı — kadrajda yeterince büyük bir "
+                       "toprak alanı yok ya da renk kapısı tutmadı.")
+        return {"ok": True, "kamera": kam, **sonuc}
+
+    @yonlendirici.post("/kesit")
+    async def leke_kesit(govde: dict[str, Any] | None = None,
+                         jeton: str = Query(default="")):
+        """Seçili lekelerin kesitlerini eğitim verisine yazar.
+
+        LEKELER PANELDEN GELİYOR, sunucu yeniden çözümlemiyor: kullanıcı
+        ekranda hangi kutuları seçtiyse eğitime giden de o. Sunucu kendi
+        listesini üretse, görülen ile kaydedilen ayrışır ve fark sessiz
+        kalırdı.
+        """
+        parola_dogrula(jeton)
+        istek = govde or {}
+        kam = kareler.ad_temizle(istek.get("kamera") or "")
+        with _KILIT:
+            kayit = _SON_KARE.get(kam)
+        if not kayit or not kayit.get("veri"):
+            raise HTTPException(status_code=409,
+                                detail="Saklı kare yok — önce çözümleyin.")
+        try:
+            from gorus import toplama
+        except Exception as hata:                       # noqa: BLE001
+            raise HTTPException(
+                status_code=503,
+                detail=f"toplama modülü yüklenemedi: {hata}") from None
+        sonuc = await asyncio.to_thread(
+            toplama.kaydet, kayit["veri"], istek.get("lekeler") or [],
+            str(istek.get("tur") or ""), kam, {"roi": bool(istek.get("roi"))})
+        if not sonuc.get("ok"):
+            raise HTTPException(status_code=409, detail=str(sonuc.get("mesaj")))
+        return {**sonuc, "sayim": await asyncio.to_thread(toplama.sayim)}
+
     @yonlendirici.get("/kare")
     async def leke_kare(kamera: str = Query(default=""),
                         jeton: str = Query(default=""),

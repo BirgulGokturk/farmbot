@@ -11,17 +11,16 @@
  * Gerekçe: burada tablo okunuyor, satıra tıklanıyor, ayar deneniyor —
  * altındaki görüntü saniyede beş kez değişseydi hiçbiri okunamazdı.
  *
- * YÜZEN KUTULARDA canlı akışın üstüne çiziliyor. Orada soru "makine şu
- * an neye bakıyor" ve görüntüyü dondurmak onu kaybettirirdi. Kaymaya
- * karşı koruma başka: makine kımıldadığı anda kutular siliniyor, çünkü
- * çözümleme bir konuma ait.
+ * YÜZEN KUTULARDA ÇİZİM YOK — GERİ ALINDI. Kutuları canlı akışın
+ * üstüne çizmek için görüntüyü konumlandırılmış bir sarmalayıcıya
+ * almıştık. Bedeli ağır çıktı: `app.js`in kamera kutusu düzeni
+ * görüntünün `.kamera-yuzen`in DOĞRUDAN çocuğu olmasına dayanıyor,
+ * araya bir öğe girince esneme ona gidiyor ve görüntü kutudan taşıyor.
+ * Sahada "kamera bozuldu" diye ortaya çıktı.
  *
- * KATMAN GÖRÜNTÜNÜN MUTLAK KONUMLU KARDEŞİ — sarmalayıcı YOK. İlk
- * deneme görüntüyü bir div'e sarıyordu ve kamerayı bozdu: `app.js`in
- * kutu düzeni görüntünün `.kamera-yuzen`in DOĞRUDAN çocuğu olmasına
- * dayanıyor, araya bir öğe girince esneme ona gidiyor ve görüntü
- * kutudan taşıyor. Mutlak öğe esnek düzenin dışında kalıyor: düzen
- * hesabına giren tek şey yine görüntünün kendisi.
+ * Yüzen kutuda kalan tek şey ◎ düğmesi: çözümlemeyi başlatıyor, sonuç
+ * bölümde görünüyor. Çizim, `app.js`in düzenine dokunmayan bir yol
+ * bulunduğunda geri gelecek.
  *
  * MİLİMETRE YOK. Kamera kalibrasyonu olmadığı için bütün sayılar piksel.
  * Panelde "mm" yazan tek bir yer yok; kalibrasyon geldiğinde eklenecek.
@@ -71,6 +70,7 @@
   }
 
   function kur() {
+    roiYukle();
     const kap = document.getElementById(KAP);
     if (!kap) return;
     /* `<details>` KULLANILIYOR, `.bolum` DEĞİL. app.js açılışta bütün
@@ -531,6 +531,235 @@
         && fark(a.z, b.z) <= KONUM_ESIK_MM;
   }
 
+  /* ==================================================================== #
+   * ÇİZİM KATMANI — SARMALAYICISIZ
+   *
+   * Bir önceki denemede görüntü konumlandırılmış bir div'e alınmıştı ve
+   * geri alındı (0c53d0e): `app.js`in kamera kutusu düzeni görüntünün
+   * `.kamera-yuzen`in DOĞRUDAN çocuğu olmasına dayanıyor, araya öğe
+   * girince esneme ona gidip görüntü kutudan taşıyordu.
+   *
+   * Bu sefer katman görüntünün KARDEŞİ ve MUTLAK konumlu. Mutlak öğe
+   * esnek düzenin dışındadır, yani `app.js`in yerleşimine hiç
+   * karışmıyor. `.kamera-yuzen` zaten `position: relative` (stil.css),
+   * dolayısıyla çapa hazır.
+   *
+   * KATMAN GÖRÜNTÜNÜN KUTUSUNA OTURUYOR, kutunun tamamına değil:
+   * görüntü `object-fit: contain` ile duruyor ve geniş kutuda fotoğraf
+   * ortada dar bir şerit olabiliyor. Ölçek/büyüt/pencere değişince
+   * `ResizeObserver` yeniden hizalıyor. İçerik `xMidYMid meet` ile
+   * `contain` ile birebir aynı ölçekleniyor — ölçüldü, sapma 0 px.
+   * ==================================================================== */
+
+  /** Katmanı görüntünün o anki kutusuna oturtur. */
+  function katmanHizala(ad) {
+    const k = YUZEN.get(ad);
+    if (!k || !k.svg || !k.im || !k.kutu) return;
+    const kb = k.kutu.getBoundingClientRect();
+    const ib = k.im.getBoundingClientRect();
+    if (!ib.width || !ib.height) { k.svg.style.display = "none"; return; }
+    k.svg.style.display = "";
+    k.svg.style.left = (ib.left - kb.left - k.kutu.clientLeft) + "px";
+    k.svg.style.top = (ib.top - kb.top - k.kutu.clientTop) + "px";
+    k.svg.style.width = ib.width + "px";
+    k.svg.style.height = ib.height + "px";
+  }
+
+  /* ------------------------------------------------------------------ ROI
+   * Bu uç kalibrasyon kullanmıyor, yani "leke toprağın üstünde mi"
+   * denetimi yok ve kadrajdaki her yeşil sayılıyor. ÖLÇÜLDÜ: yeşil
+   * plastik huninin ExG'si 35,3, gerçek filizlerinki 0,6 / 7,0 / 8,2 /
+   * 12,2 — huni hepsinden yeşil, yani hiçbir renk eşiği ikisini
+   * ayıramaz. Ayıran tek şey YER.
+   *
+   * Şekil ÇOK KÖŞELİ. Dört köşeli bir şekil kabın yuvarlak köşelerini
+   * kesiyordu: ölçümde dörtgen toprağın %94,2'sini, zarf %99,7'sini
+   * kapsadı. Köşeler oranlı (0-1) saklanıyor — çekim çözünürlüğü
+   * değişiyor, piksel saklamak ROI'yi kaydırırdı. */
+  const ROI = new Map();
+  const ROI_ANAHTAR = "farmbot_leke_roi";
+  const ROI_KOSE_YAKIN = 0.05;
+
+  function roiOku(v) {
+    if (!v) return null;
+    if (Array.isArray(v.k) && v.k.length >= 3) return { k: v.k };
+    if (typeof v.x1 === "number") {
+      return { k: [[v.x1, v.y1], [v.x2, v.y1], [v.x2, v.y2], [v.x1, v.y2]] };
+    }
+    return null;
+  }
+
+  function roiYukle() {
+    try {
+      const ham = JSON.parse(localStorage.getItem(ROI_ANAHTAR) || "{}");
+      Object.keys(ham).forEach((a) => {
+        const d = roiOku(ham[a]);
+        if (d) ROI.set(a, d);
+      });
+    } catch (h) { /* bozuk kayıt: ROI yok sayılıyor */ }
+  }
+
+  function roiKaydet() {
+    const d = {};
+    ROI.forEach((v, a) => { d[a] = v; });
+    try { localStorage.setItem(ROI_ANAHTAR, JSON.stringify(d)); } catch (h) { /* boş */ }
+  }
+
+  /** Olayın karedeki oranlı karşılığı (0-1). Katman zaten görüntünün
+   *  kutusuna oturduğu için dönüşüm katmanın kendi kutusundan çıkıyor. */
+  function roiNokta(ad, o) {
+    const k = YUZEN.get(ad);
+    if (!k || !k.svg) return null;
+    const b = k.svg.getBoundingClientRect();
+    if (!b.width || !b.height) return null;
+    return [Math.max(0, Math.min(1, (o.clientX - b.left) / b.width)),
+            Math.max(0, Math.min(1, (o.clientY - b.top) / b.height))];
+  }
+
+  function roiKose(ad, n) {
+    const r = ROI.get(ad);
+    if (!r || !n) return -1;
+    let en = -1, mesafe = ROI_KOSE_YAKIN;
+    r.k.forEach((p, i) => {
+      const d = Math.hypot(p[0] - n[0], p[1] - n[1]);
+      if (d < mesafe) { mesafe = d; en = i; }
+    });
+    return en;
+  }
+
+  function roiIcinde(px, py, k) {
+    let v = false;
+    for (let i = 0, j = k.length - 1; i < k.length; j = i++) {
+      const xi = k[i][0], yi = k[i][1], xj = k[j][0], yj = k[j][1];
+      if ((yi > py) !== (yj > py)
+          && px < (xj - xi) * (py - yi) / (yj - yi) + xi) v = !v;
+    }
+    return v;
+  }
+
+  /** ROI'yi uygular, YENİ sonuç nesnesi döndürür — ham liste değişmiyor,
+   *  yani ROI'yi oynatmak geri alınabilir. Merkezi olmayan leke
+   *  ELENMİYOR: bilmediğimiz bir şeye dayanarak atmak daha kötü. */
+  function roiUygula(ad, ham) {
+    if (!ham) return ham;
+    const r = ROI.get(ad);
+    const kare = ham.kare_px || null;
+    if (!r || !kare || !kare[0] || !kare[1] || !Array.isArray(ham.lekeler)) {
+      return Object.assign({}, ham, { roi_elenen: 0 });
+    }
+    const kalan = ham.lekeler.filter((l) => {
+      let cx = Number(l.x), cy = Number(l.y);
+      if (!Number.isFinite(cx) || !Number.isFinite(cy)) {
+        const kt = l.kutu;
+        if (!Array.isArray(kt) || kt.length !== 4) return true;
+        cx = (Number(kt[0]) + Number(kt[2])) / 2;
+        cy = (Number(kt[1]) + Number(kt[3])) / 2;
+      }
+      if (!Number.isFinite(cx) || !Number.isFinite(cy)) return true;
+      return roiIcinde(cx / kare[0], cy / kare[1], r.k);
+    });
+    return Object.assign({}, ham,
+      { lekeler: kalan, roi_elenen: ham.lekeler.length - kalan.length });
+  }
+
+  /** ROI ya da seçim değişince ekrandaki sonucu tazeler. */
+  function roiTazele(ad) {
+    const k = YUZEN.get(ad);
+    if (!k || !k.ham) return null;
+    k.sonuc = roiUygula(ad, k.ham);
+    if (k.secili) k.secili.clear();
+    yuzendeCiz(ad);
+    return k.sonuc;
+  }
+
+  /** Toprağı sunucuya buldurup ROI'yi ondan kurar. DOLULUK yazılıyor:
+   *  düşükse maskeye yabancı bir şey karışmış demektir ve kullanıcının
+   *  köşeleri düzeltebilmesi için bunu görmesi gerekiyor. */
+  async function toprakBul(ad) {
+    const p = P();
+    if (!YUZEN.has(ad) || !p || !p.apiIste) return;
+    notYaz(ad, "toprak aranıyor…");
+    try {
+      const y = await p.apiIste("/api/leke/toprak", {
+        method: "POST", body: JSON.stringify({ kamera: ad }),
+      });
+      if (!y || !Array.isArray(y.kose) || y.kose.length < 3) {
+        notYaz(ad, "toprak bulunamadı — köşeleri Shift ile elle çizin");
+        return;
+      }
+      ROI.set(ad, { k: y.kose });
+      roiKaydet();
+      const t = roiTazele(ad);
+      yuzendeCiz(ad);
+      notYaz(ad, `toprak bulundu · ${y.kose.length} köşe · doluluk ${y.doluluk}`
+        + (t ? ` · ${(t.lekeler || []).length} leke`
+             + (t.roi_elenen ? `, dışarıda ${t.roi_elenen} elendi` : "") : ""));
+    } catch (hata) {
+      notYaz(ad, "toprak aranamadı: " + ((hata && hata.message) || hata));
+    }
+  }
+
+  //: Son yazılan tür — kap genelde günlerce aynı türü taşıyor.
+  const TUR_ANAHTAR = "farmbot_leke_tur";
+
+  /** Seçili lekelerin kesitlerini eğitim verisine yazar.
+   *
+   *  SEÇİM ŞART. Kapta tek tür olduğu varsayımıyla hepsini yazmak,
+   *  karışık kapta yanlış etiket üretir ve yanlış etiket eğitimde
+   *  etiketsizlikten kötüdür. Hiçbir kutu seçili değilse iş yapılmıyor
+   *  ve sebebi yazılıyor. */
+  async function kesitKaydet(ad) {
+    const kayit = YUZEN.get(ad);
+    const p = P();
+    if (!kayit || !p || !p.apiIste) return;
+    const hepsi = (kayit.sonuc && kayit.sonuc.lekeler) || [];
+    const secili = kayit.secili || new Set();
+    const lekeler = hepsi.filter((l, i) => secili.has(i));
+    if (!lekeler.length) {
+      notYaz(ad, hepsi.length
+        ? "hiç kutu seçili değil — kaydedilecekleri tıklayın"
+        : "önce ◎ ile çözümleyin");
+      return;
+    }
+    const kutu = kayit.turKutu;
+    const tur = ((kutu && kutu.value) || "").trim().toLowerCase();
+    if (!tur) {
+      notYaz(ad, "önce tür yazın (örn. maydanoz)");
+      if (kutu) kutu.focus();
+      return;
+    }
+    try { localStorage.setItem(TUR_ANAHTAR, tur); } catch (h) { /* boş */ }
+    notYaz(ad, `${lekeler.length} kesit yazılıyor…`);
+    try {
+      const y = await p.apiIste("/api/leke/kesit", {
+        method: "POST",
+        body: JSON.stringify({ kamera: ad, tur, lekeler, roi: !!ROI.get(ad) }),
+      });
+      const say = (y.sayim && y.sayim.turler) || {};
+      const dokum = Object.keys(say).sort().map((t) => `${t} ${say[t]}`).join(" · ");
+      secili.clear();
+      yuzendeCiz(ad);
+      notYaz(ad, `${y.yazilan} kesit yazıldı`
+        + (y.atlanan ? ` · ${y.atlanan} atlandı` : "")
+        + (dokum ? ` — ${dokum}` : ""));
+    } catch (hata) {
+      notYaz(ad, "kesit yazılamadı: " + ((hata && hata.message) || hata));
+    }
+  }
+
+  /** Sürüklerken oluşan şekil: köşe taşınıyorsa yalnız o köşe, yeni
+   *  çizimse iki noktadan kaba bir dikdörtgen. */
+  function gecici(ad, suru, n) {
+    if (suru.kose >= 0) {
+      const r = ROI.get(ad);
+      if (!r) return null;
+      return { k: r.k.map((p, i) => (i === suru.kose ? n : p)) };
+    }
+    const x1 = Math.min(suru.bas[0], n[0]), x2 = Math.max(suru.bas[0], n[0]);
+    const y1 = Math.min(suru.bas[1], n[1]), y2 = Math.max(suru.bas[1], n[1]);
+    return { k: [[x1, y1], [x2, y1], [x2, y2], [x1, y2]] };
+  }
+
   function yuzenleriTara() {
     const kap = document.getElementById("kamera-yuzenler");
     if (!kap) return;
@@ -543,22 +772,19 @@
     kap.querySelectorAll(".kamera-yuzen").forEach(yuzeniDonat);
   }
 
-  /* ÇİZİM KATMANI: SARMALAYICISIZ, GÖRÜNTÜNÜN MUTLAK KONUMLU KARDEŞİ.
+  /* YÜZEN KUTULARIN DOM'UNA DOKUNULMUYOR — GERİ ALINDI.
    *
-   * İlk deneme görüntüyü konumlandırılmış bir div'e sarıyordu ve
-   * kamerayı bozdu: `app.js`in kutu düzeni görüntünün `.kamera-yuzen`in
-   * DOĞRUDAN çocuğu olmasına dayanıyor, araya bir öğe girince esneme
-   * ona gidiyor ve görüntü kutudan taşıyor.
+   * Görüntüyü konumlandırılmış bir sarmalayıcıya almıştık ki kutular
+   * tam üstüne otursun. Bedeli ağır çıktı: `app.js`in kamera kutusu
+   * düzeni görüntünün `.kamera-yuzen`in DOĞRUDAN çocuğu olmasına
+   * dayanıyor; araya bir öğe girince esneme ona gidiyor ve görüntü
+   * kutudan taşıyor. Sahada "kamera bozuldu" diye ortaya çıktı.
    *
-   * Şimdi SVG görüntünün KARDEŞİ ve `position: absolute`. Mutlak öğe
-   * esnek düzenin dışında kalıyor: görüntü hâlâ kutunun doğrudan
-   * çocuğu, düzen hesabına giren tek öğe o. Katman hiçbir yer
-   * kaplamıyor, yalnız görüntünün üstüne biniyor.
-   *
-   * KONUM HER ÇİZİMDE ÖLÇÜLÜYOR (`_svgYerlestir`). Görüntü esnek bir
-   * kutuda ve boyutu pencereyle, "büyüt" düğmesiyle, kare oranıyla
-   * değişiyor; sabit bir `inset: 0` görüntü kutuyu tam doldurmadığında
-   * kutuları kaydırırdı. */
+   * Çizim şimdilik YALNIZ bölümde (orada kare kendi kabında ve kimsenin
+   * düzenine karışmıyor). Yüzen kutuda kalan tek şey ◎ düğmesi:
+   * çözümlemeyi başlatıyor, sonuç bölümde görünüyor. Kutuların yüzen
+   * kutuda da çizilmesi, `app.js`in düzenini bozmayan bir yol
+   * bulunduğunda geri gelecek. */
   function yuzeniDonat(kutu) {
     const ad = kutu && kutu.dataset ? kutu.dataset.kam : "";
     if (!ad || YUZEN.has(ad)) return;
@@ -566,18 +792,40 @@
     const araclar = kutu.querySelector(".kamera-yuzen-araclar");
     if (!img || !araclar) return;
 
+    /* Katman görüntünün KARDEŞİ, mutlak konumlu — esnek düzenin
+     * dışında kaldığı için `app.js`in kutu yerleşimine karışmıyor.
+     * `pointer-events: none`: altındaki görüntüyü sürüklemeyi
+     * engellemesin; kutular kendi üzerlerinde `all` diyor. */
     const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-    svg.setAttribute("preserveAspectRatio", "none");
+    svg.setAttribute("preserveAspectRatio", "xMidYMid meet");
     svg.style.cssText = "position:absolute;pointer-events:none;z-index:1";
-    // Görüntünün HEMEN ARDINA: aynı ebeveyn, aynı yığın bağlamı.
-    img.parentNode.insertBefore(svg, img.nextSibling);
-    /* Görüntü yeniden boyutlandığında katman da yerleşsin. Yüklenme,
-     * pencere boyutu ve "büyüt" düğmesi üçü de boyutu değiştiriyor;
-     * üçünü ayrı ayrı dinlemek yerine kaynağı izliyoruz. */
-    if (typeof ResizeObserver === "function") {
-      new ResizeObserver(() => yuzendeCiz(ad)).observe(img);
-    }
-    img.addEventListener("load", () => yuzendeCiz(ad));
+    kutu.appendChild(svg);
+
+    const turKutu = document.createElement("input");
+    turKutu.type = "text";
+    turKutu.placeholder = "tür";
+    turKutu.title = "Kesitlerin kaydedileceği tür (örn. maydanoz)";
+    turKutu.style.cssText = "width:68px;min-width:0;font:inherit;padding:0 4px;"
+      + "background:transparent;color:inherit;border:1px solid currentColor;"
+      + "border-radius:4px;opacity:.7";
+    try { turKutu.value = localStorage.getItem(TUR_ANAHTAR) || ""; }
+    catch (h) { /* boş */ }
+    turKutu.addEventListener("pointerdown", (o) => o.stopPropagation());
+
+    const dugmeYap = (im, baslik, islev) => {
+      const d = document.createElement("button");
+      d.type = "button";
+      d.className = "kapat";
+      d.textContent = im;
+      d.title = baslik;
+      d.setAttribute("aria-label", baslik);
+      d.addEventListener("click", (o) => { o.stopPropagation(); islev(); });
+      return d;
+    };
+    const kDugme = dugmeYap("⬓", "Seçili kutuların kesitlerini kaydet",
+                            () => kesitKaydet(ad));
+    const tDugme = dugmeYap("⊡", "Toprağı bul — ilgi alanını topraktan çıkarır",
+                            () => toprakBul(ad));
 
     const dugme = document.createElement("button");
     dugme.type = "button";
@@ -591,10 +839,86 @@
       yuzendeCozumle(ad);
     });
     // Ölçek/büyüt/kapat düğmelerinin SOLUNA: onlar kutunun kendi
-    // penceresini yönetiyor, bu görüntüyle ilgili — gruplar ayrı dursun.
-    araclar.insertBefore(dugme, araclar.firstChild);
+    // penceresini yönetiyor, bunlar görüntüyle ilgili — gruplar ayrı.
+    [dugme, tDugme, kDugme, turKutu].forEach(
+      (e2) => araclar.insertBefore(e2, araclar.firstChild));
 
-    YUZEN.set(ad, { kutu, svg, dugme, sonuc: null, konum: null });
+    YUZEN.set(ad, { kutu, svg, dugme, turKutu, im: img,
+                    secili: new Set(), ham: null, sonuc: null, konum: null });
+
+    /* HİZALAMA. Görüntünün kutusu ölçek düğmesi, "ekrana sığdır" ve
+     * pencere boyuyla değişiyor; katman her seferinde yeniden oturuyor.
+     * `ResizeObserver` üçünü de tek yerden yakalıyor. */
+    katmanHizala(ad);
+    img.addEventListener("load", () => { katmanHizala(ad); yuzendeCiz(ad); });
+    if (window.ResizeObserver) {
+      const g = new ResizeObserver(() => katmanHizala(ad));
+      g.observe(img);
+      g.observe(kutu);
+    }
+
+    /* SHIFT + SÜRÜKLE: ilgi alanını elle çiz. Shift şart — sade
+     * sürükleme kutuyu taşıyor. Sıfıra yakın dikdörtgen ROI'yi kaldırır.
+     * ROI varken bir köşenin yakınında başlarsan O KÖŞE taşınır. */
+    let suru = null;
+    svg.style.touchAction = "none";
+    kutu.addEventListener("pointerdown", (o) => {
+      if (!o.shiftKey) return;
+      const n = roiNokta(ad, o);
+      if (!n) return;
+      o.preventDefault(); o.stopPropagation();
+      suru = { bas: n, kose: roiKose(ad, n) };
+    });
+    kutu.addEventListener("pointermove", (o) => {
+      if (!suru) return;
+      const n = roiNokta(ad, o);
+      if (n) yuzendeCiz(ad, gecici(ad, suru, n));
+    });
+    kutu.addEventListener("pointerup", (o) => {
+      if (!suru) return;
+      const n = roiNokta(ad, o) || suru.bas;
+      const d = gecici(ad, suru, n);
+      const kose = suru.kose;
+      suru = null;
+      if (!d) { yuzendeCiz(ad); return; }
+      const xs = d.k.map((p) => p[0]), ys = d.k.map((p) => p[1]);
+      const kucuk = (Math.max.apply(null, xs) - Math.min.apply(null, xs)) < 0.02
+                 || (Math.max.apply(null, ys) - Math.min.apply(null, ys)) < 0.02;
+      if (kose < 0 && kucuk) {
+        ROI.delete(ad);
+        roiKaydet();
+        const t0 = roiTazele(ad);
+        yuzendeCiz(ad);
+        notYaz(ad, "ilgi alanı kaldırıldı — bütün kare taranıyor"
+          + (t0 ? ` · ${(t0.lekeler || []).length} leke` : ""));
+        return;
+      }
+      ROI.set(ad, d);
+      roiKaydet();
+      const t = roiTazele(ad);
+      yuzendeCiz(ad);
+      notYaz(ad, (kose >= 0 ? "köşe taşındı" : "ilgi alanı kuruldu")
+        + (t ? ` · ${(t.lekeler || []).length} leke`
+             + (t.roi_elenen ? `, dışarıda ${t.roi_elenen} elendi` : "") : ""));
+    });
+
+    /* KUTU SEÇİMİ. Kesit kaydederken hangi lekenin hangi türe ait
+     * olduğunu ancak kullanıcı bilir; tıklanan kutu seçilir. Olay
+     * katmana bağlanıyor (delegasyon): çizim her tazelemede baştan
+     * yazılıyor, tek tek dinleyici bağlamak sızdırırdı. */
+    svg.addEventListener("click", (o) => {
+      if (o.shiftKey) return;
+      const no = o.target && o.target.getAttribute
+        ? o.target.getAttribute("data-no") : null;
+      if (no === null) return;
+      const k = YUZEN.get(ad);
+      if (!k) return;
+      const i = Number(no);
+      if (k.secili.has(i)) k.secili.delete(i); else k.secili.add(i);
+      yuzendeCiz(ad);
+      notYaz(ad, `${k.secili.size} kutu seçili`
+        + (k.secili.size ? " — tür yazıp ⬓ ile kaydedin" : ""));
+    });
   }
 
   async function yuzendeCozumle(ad) {
@@ -613,12 +937,16 @@
         method: "POST",
         body: JSON.stringify({ kamera: ad, ayar: ayarTopla() }),
       });
-      kayit.sonuc = y;
+      kayit.ham = y;
+      kayit.sonuc = roiUygula(ad, y);
       kayit.konum = konum;
+      kayit.secili.clear();
       yuzendeCiz(ad);
-      notYaz(ad, `${(y.lekeler || []).length} leke`
+      notYaz(ad, `${(kayit.sonuc.lekeler || []).length} leke`
+        + (kayit.sonuc.roi_elenen ? ` · dışarıda ${kayit.sonuc.roi_elenen} elendi` : "")
         + (y.sebep ? ` — ${y.sebep}` : ""));
     } catch (hata) {
+      kayit.ham = null;
       kayit.sonuc = null;
       yuzendeCiz(ad);
       notYaz(ad, "çözümleme başarısız: " + ((hata && hata.message) || hata));
@@ -637,20 +965,15 @@
     not.classList.toggle("gizli", !metin);
   }
 
-  function yuzendeCiz(ad) {
+  function yuzendeCiz(ad, roiGecici) {
     const kayit = YUZEN.get(ad);
     if (!kayit) return;
+    katmanHizala(ad);
     const y = kayit.sonuc;
-    const kare = (y && y.kare_px) || null;
-    if (!y || !kare || !kare[0] || !kare[1]) {
-      kayit.svg.innerHTML = "";
-      // Boş katman da yerinde dursun: sonraki çizimde bir kare boyunca
-      // eski konumda görünmesin.
-      kayit.svg.style.width = "0";
-      kayit.svg.style.height = "0";
-      return;
-    }
-    _svgYerlestir(kayit);
+    const kare = (y && y.kare_px) || kayit.kareOlcu || null;
+    const r0 = roiGecici || ROI.get(ad);
+    if (!kare || !kare[0] || !kare[1]) { kayit.svg.innerHTML = ""; return; }
+    kayit.kareOlcu = kare;
     kayit.svg.setAttribute("viewBox", `0 0 ${kare[0]} ${kare[1]}`);
     const kalinlik = Math.max(2, Math.round(kare[0] / 250));
     const r = Math.max(3, Math.round(kare[0] / 200));
@@ -661,37 +984,45 @@
      * hata olurdu. */
     const kayma = kaymaMm(kayit.konum);
     kayit.svg.style.opacity = kayma > KAYMA_SINIRI_MM ? "0.35" : "1";
-    kayit.svg.innerHTML = (y.lekeler || []).map((l) => {
-      const [x1, y1, x2, y2] = l.kutu || [0, 0, 0, 0];
-      return `<rect x="${x1}" y="${y1}" width="${x2 - x1}" height="${y2 - y1}"
-                fill="none" stroke="#ff4d4d" stroke-width="${kalinlik}"/>
-              <circle cx="${l.x}" cy="${l.y}" r="${r}" fill="#ff4d4d"/>`;
-    }).join("");
-  }
 
-  /** Katmanı görüntünün ÖLÇÜLEN geometrisine oturtur.
-   *
-   * `offsetLeft/Top` en yakın konumlanmış ataya göre; `.kamera-yuzen`e
-   * `position: relative` verildi (stil.css) ki o ata kutunun kendisi
-   * olsun. Verilmeseydi katman sayfanın köşesine kaçardı.
-   */
-  function _svgYerlestir(kayit) {
-    const img = kayit.kutu.querySelector('[data-rol="kare"]');
-    if (!img) return;
-    const g = img.offsetWidth, y = img.offsetHeight;
-    if (!g || !y) { kayit.svg.style.width = "0"; kayit.svg.style.height = "0"; return; }
-    kayit.svg.style.left = img.offsetLeft + "px";
-    kayit.svg.style.top = img.offsetTop + "px";
-    kayit.svg.style.width = g + "px";
-    kayit.svg.style.height = y + "px";
+    /* İLGİ ALANI — kesikli, köşelerinde tutamak. Kutuların ALTINDA
+     * çiziliyor ki tıklamayı çalmasın. */
+    let ic = "";
+    if (r0 && Array.isArray(r0.k) && r0.k.length >= 3) {
+      const nk = r0.k.map((n) => (n[0] * kare[0]) + "," + (n[1] * kare[1])).join(" ");
+      ic += `<polygon points="${nk}" fill="none" stroke="#4da3ff"`
+          + ` stroke-width="${kalinlik}"`
+          + ` stroke-dasharray="${kalinlik * 3} ${kalinlik * 2}"/>`
+          + r0.k.map((n) => `<circle cx="${n[0] * kare[0]}" cy="${n[1] * kare[1]}"`
+              + ` r="${kalinlik * 2.5}" fill="#4da3ff" fill-opacity="0.5"/>`).join("");
+    }
+
+    /* KUTULAR. `pointer-events="all"` kutunun İÇİNİ de tıklanabilir
+     * yapıyor (dolgu olmasa bile) — ölçüldü; katman `pointer-events:
+     * none` olduğu hâlde şekil `all` derse olayı alıyor. Seçili kutu
+     * sarı ve kalın: renk körlüğünde de kalınlık ayırt ediyor. */
+    const secili = kayit.secili || new Set();
+    ic += (y && y.lekeler || []).map((l, i) => {
+      const [x1, y1, x2, y2] = l.kutu || [0, 0, 0, 0];
+      const s2 = secili.has(i);
+      const renk = s2 ? "#ffd166" : "#ff4d4d";
+      return `<rect data-no="${i}" pointer-events="all" x="${x1}" y="${y1}"
+                width="${x2 - x1}" height="${y2 - y1}" fill="none"
+                stroke="${renk}" stroke-width="${s2 ? kalinlik * 2 : kalinlik}"/>
+              <circle data-no="${i}" pointer-events="all" cx="${l.x}" cy="${l.y}"
+                r="${r}" fill="${renk}"/>`;
+    }).join("");
+    kayit.svg.innerHTML = ic;
   }
 
   function yuzenleriSil(sebep) {
     YUZEN.forEach((kayit, ad) => {
       if (!kayit.sonuc) return;
+      kayit.ham = null;
       kayit.sonuc = null;
       kayit.konum = null;
-      kayit.svg.innerHTML = "";
+      if (kayit.secili) kayit.secili.clear();
+      yuzendeCiz(ad);
       notYaz(ad, sebep);
     });
   }
@@ -840,13 +1171,15 @@
         // Ajan o kamera için sonuç vermiyor (akışı kapalı, kare
         // eskimiş). Eski kutuları bırakmak "şu an böyle görünüyor"
         // demek olurdu.
-        if (kayit.sonuc) { kayit.sonuc = null; kayit.svg.innerHTML = ""; }
+        if (kayit.sonuc) { kayit.ham = null; kayit.sonuc = null; yuzendeCiz(ad); }
         return;
       }
-      kayit.sonuc = y;
+      kayit.ham = y;
+      kayit.sonuc = roiUygula(ad, y);
       kayit.konum = y.konum || null;
+      kayit.secili.clear();
       yuzendeCiz(ad);
-      const adet = (y.lekeler || []).length;
+      const adet = (kayit.sonuc.lekeler || []).length;
       // Sebep tek başına geldiyse (akış kapalı, kare eskimiş) sayı
       // yazmıyoruz: "0 leke" bunu bitki yokluğu gibi gösterirdi.
       notYaz(ad, y.sure_ms == null && y.sebep
