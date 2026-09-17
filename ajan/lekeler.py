@@ -109,14 +109,30 @@ VARSAYILAN: dict[str, Any] = {
     # Örtüşen kutuların boşluğu sıfır, yani her zaman birleşiyorlar.
     # Sabit piksel eşiği kamera yüksekliği değişince anlamını yitirirdi.
     #
-    # DEĞER ÖLÇÜLMEDİ ve ölçülmesi gözle oluyor: hangi iki lekenin aynı
-    # bitki olduğunu ancak bakan biri söyler. 0.5 TEMKİNLİ bir başlangıç —
-    # örtüşen ve bitişik kutuları birleştiriyor, aralarında kendi
-    # boyutlarının yarısı kadar boşluk olanları bırakıyor. Panelde
-    # kaydırağı var; 0 birleştirmeyi tamamen kapatıyor. Fazla büyütmek
-    # komşu İKİ FİDEYİ tek bitki yapar ve bu, bir fideyi ikiye bölmekten
-    # daha kötü: var olmayan bir bitki yaratmak yerine olanı kaybediyor.
-    "birlestir_orani": 0.5,
+    # 0.5'ten 0.3'E İNDİRİLDİ. Sahada 0.5 sık bir kümede beş filizi tek
+    # kutuya düşürdü. Yapay bir sırada ölçüldü (beş fide, her biri iki
+    # yaprak, fideler arası boşluk eşiğe yakın): 0.5 -> 4 bitki (biri iki
+    # fideyi toplamış), 0.3 -> 5 bitki ve her biri kendi iki yaprağıyla.
+    # Üç yapraklı tek fide her iki değerde de tek bitki kalıyor.
+    #
+    # Panelde kaydırağı var; 0 birleştirmeyi tamamen kapatıyor. Fazla
+    # büyütmek komşu İKİ FİDEYİ tek bitki yapar ve bu, bir fideyi ikiye
+    # bölmekten daha kötü: var olmayan bir bitki yaratmak yerine olanı
+    # kaybediyor.
+    "birlestir_orani": 0.3,
+
+    # KÜMENİN BÜYÜYEBİLECEĞİ ÜST SINIR — parça kenarının kaç katı.
+    #
+    # Yalnız yakınlık eşiği yetmiyor: sık ekilmiş bir sırada her fide
+    # komşusuna eşik kadar yakınsa, birleşme turdan tura yayılıp bütün
+    # sırayı tek bitki yapıyor. Ölçüldü: beş fide (on yaprak), fideler
+    # arası boşluk eşiğe tam eşitken 0.5 oranında iki kümeye düştü, biri
+    # SEKİZ parçalı.
+    #
+    # Bir fide kendi yaprağının birkaç katıdır, on katı değil. 3.0 =
+    # kümenin kutusu, parçalarının ortalama kenarının üç katını geçemez.
+    # 0 = sınır yok (eski davranış).
+    "azami_kume_orani": 3.0,
 }
 
 
@@ -192,56 +208,107 @@ def _bosluk(a: dict[str, Any], b: dict[str, Any]) -> float:
     return (dx * dx + dy * dy) ** 0.5
 
 
+def _kume_kutu(parcalar: list[dict[str, Any]]) -> list[int]:
+    """Parçaları saran en küçük dikdörtgen."""
+    return [min(p["kutu"][0] for p in parcalar),
+            min(p["kutu"][1] for p in parcalar),
+            max(p["kutu"][2] for p in parcalar),
+            max(p["kutu"][3] for p in parcalar)]
+
+
 def _birlestir(lekeler: list[dict[str, Any]], oran: float) -> list[dict[str, Any]]:
-    """Yakın lekeleri tek bitkide toplar (tek bağlantılı kümeleme).
+    """Yakın lekeleri tek bitkide toplar — KARŞILIKLI EN YAKIN eşleşmeyle.
 
-    Zincirleme BİLEREK: A-B yakın, B-C yakın ise A-B-C tek bitki. Bir
-    fidenin yaprakları arka arkaya diziliyor ve her birini komşusuna
-    bağlamak, hepsini tek gövdeye bağlamanın en yakın karşılığı.
+    ZİNCİRLEME KALDIRILDI. Önceki sürüm tek bağlantılı kümeleme
+    yapıyordu: A-B yakın, B-C yakın ise A-B-C tek bitki. Sık ekilmiş bir
+    yatakta o zincir hiç kopmuyor — sahada beş filiz tek kutuya düştü.
+    Zincirleme, aralarında hiç yakınlık olmayan iki lekeyi bile
+    aradaki köprüler yüzünden aynı bitki sayabiliyor.
 
-    Kümenin merkezi ALAN AĞIRLIKLI: büyük yaprak merkezi kendine
-    çekiyor, ki gövde oraya daha yakın. Kutuların ortalaması, küçük bir
-    yaprak yüzünden merkezi boşluğa kaydırırdı.
+    Şimdi yalnız KARŞILIKLI en yakın komşular birleşiyor: i'nin en yakını
+    j VE j'nin en yakını i ise aynı bitki. Bir fidenin iki yaprağı
+    birbirinin en yakınıdır; iki ayrı fidenin komşu yaprakları değildir,
+    çünkü her birinin kendi öbür yaprağı daha yakın durur. Ölçüt aynı
+    kalıyor: kutular arası boşluk, ortalama kutu kenarının `oran` katı.
+
+    TEKRARLI ama SINIRLI. Bir turda yalnız çiftler birleşiyor, sonra
+    kümeler yeniden değerlendiriliyor — üç yapraklı bir fide ikinci
+    turda tamamlanıyor. Tur sayısı sınırlı: sınırsız tekrar,
+    zincirlemenin yavaş çekimde geri gelmesi olurdu. Dört tur, sekiz
+    parçaya kadar bir fideyi toplamaya yetiyor.
     """
     if oran <= 0 or len(lekeler) < 2:
-        return lekeler
+        return [{**l, "parca": 1} for l in lekeler]
 
-    n = len(lekeler)
-    kok = list(range(n))
+    azami = float(VARSAYILAN["azami_kume_orani"])
+    # Her küme bir parça listesi; başlangıçta hepsi tek parça.
+    kumeler: list[list[dict[str, Any]]] = [[l] for l in lekeler]
 
-    def bul_kok(i: int) -> int:
-        while kok[i] != i:
-            kok[i] = kok[kok[i]]
-            i = kok[i]
-        return i
+    for _ in range(4):
+        n = len(kumeler)
+        if n < 2:
+            break
+        kutular = [_kume_kutu(k) for k in kumeler]
+        # EŞİK PARÇALARIN BOYUNA GÖRE, kümenin büyümüş kutusuna göre
+        # DEĞİL. Küme kutusu her turda büyüyor; eşiği ona bağlamak eşiği
+        # de büyütüyor ve küme komşu fideye atlıyordu — ölçüldü: beş
+        # fide (on yaprak) 0.5 oranında iki kümeye düşüyordu, biri sekiz
+        # parçalı. Parça kenarı turlar boyunca sabit kalıyor, yani bir
+        # yaprağın komşusuna uzanabileceği mesafe de sabit.
+        kenarlar = [sum(_kenar(p) for p in k) / len(k) for k in kumeler]
 
-    kenarlar = [_kenar(l) for l in lekeler]
-    for i in range(n):
-        for j in range(i + 1, n):
-            bosluk = _bosluk(lekeler[i], lekeler[j])
-            sinir = oran * (kenarlar[i] + kenarlar[j]) / 2.0
-            if bosluk <= sinir:
-                ki, kj = bul_kok(i), bul_kok(j)
-                if ki != kj:
-                    kok[ki] = kj
+        # Her küme için EN YAKIN komşu ve o komşuya olan boşluk.
+        en_yakin: list[int] = [-1] * n
+        for i in range(n):
+            iyi, iyi_bosluk = -1, None
+            for j in range(n):
+                if i == j:
+                    continue
+                b = _bosluk({"kutu": kutular[i]}, {"kutu": kutular[j]})
+                if b > oran * (kenarlar[i] + kenarlar[j]) / 2.0:
+                    continue                      # eşiğin dışında
+                if iyi_bosluk is None or b < iyi_bosluk:
+                    iyi, iyi_bosluk = j, b
+            en_yakin[i] = iyi
 
-    kumeler: dict[int, list[int]] = {}
-    for i in range(n):
-        kumeler.setdefault(bul_kok(i), []).append(i)
+        # KARŞILIKLI olanlar birleşiyor. Her küme en fazla bir kez
+        # eşleşiyor: bir turda ikiden çok parça toplamak, zincirlemeyi
+        # arka kapıdan geri getirirdi.
+        kullanildi = [False] * n
+        yeni_kumeler: list[list[dict[str, Any]]] = []
+        degisti = False
+        for i in range(n):
+            if kullanildi[i]:
+                continue
+            j = en_yakin[i]
+            birlesir = (j >= 0 and not kullanildi[j] and en_yakin[j] == i)
+            if birlesir and azami > 0:
+                # Birleşince ne kadar büyüyecek? Parça boyuna göre çok
+                # büyüyen bir küme artık bir bitki değil, bir sıra.
+                aday = kumeler[i] + kumeler[j]
+                ak = _kume_kutu(aday)
+                kume_kenar = ((ak[2] - ak[0]) + (ak[3] - ak[1])) / 2.0
+                parca_kenar = sum(_kenar(p) for p in aday) / len(aday)
+                if kume_kenar > azami * max(1.0, parca_kenar):
+                    birlesir = False
+            if birlesir:
+                yeni_kumeler.append(kumeler[i] + kumeler[j])
+                kullanildi[i] = kullanildi[j] = True
+                degisti = True
+            else:
+                yeni_kumeler.append(kumeler[i])
+                kullanildi[i] = True
+        kumeler = yeni_kumeler
+        if not degisti:
+            break
 
     cikti: list[dict[str, Any]] = []
-    for uyeler in kumeler.values():
-        if len(uyeler) == 1:
-            tek = dict(lekeler[uyeler[0]])
-            tek["parca"] = 1
-            cikti.append(tek)
+    for parcalar in kumeler:
+        if len(parcalar) == 1:
+            cikti.append({**parcalar[0], "parca": 1})
             continue
-        parcalar = [lekeler[i] for i in uyeler]
         alan = sum(float(p["alan_px"]) for p in parcalar)
-        x1 = min(p["kutu"][0] for p in parcalar)
-        y1 = min(p["kutu"][1] for p in parcalar)
-        x2 = max(p["kutu"][2] for p in parcalar)
-        y2 = max(p["kutu"][3] for p in parcalar)
+        x1, y1, x2, y2 = _kume_kutu(parcalar)
         agirlik = alan or 1.0
         mx = sum(float(p["x"]) * float(p["alan_px"]) for p in parcalar) / agirlik
         my = sum(float(p["y"]) * float(p["alan_px"]) for p in parcalar) / agirlik

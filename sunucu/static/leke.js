@@ -140,7 +140,7 @@
             </div>
             <div class="satir">
               <label title="Bir fidenin yaprakları ayrı leke çıkabiliyor. Kutuları arasındaki boşluk, ortalama kutu kenarının bu katından azsa aynı bitki sayılıyor. 0 = birleştirme kapalı.">
-                Birleştirme <input type="number" id="leke-birlestir" value="0.5" min="0" max="5" step="0.1" style="width:5rem">
+                Birleştirme <input type="number" id="leke-birlestir" value="0.3" min="0" max="5" step="0.1" style="width:5rem">
               </label>
               <span class="ikincil">Bir fidenin yaprakları ayrı leke çıkıyorsa artırın.
                 Fazlası <b>komşu iki fideyi tek bitki yapar</b> — tabloda
