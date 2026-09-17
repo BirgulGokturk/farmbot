@@ -1245,7 +1245,10 @@
     // Aralık ya da ayar değişirse sürekli kipe yeniden bildiriyoruz:
     // ajandaki değerler panelde yazanla ayrışmasın.
     ["#leke-aralik", "#leke-esik-payi", "#leke-en-kucuk",
-     "#leke-islem-px", "#leke-ton-alt", "#leke-ton-ust"].forEach((s2) => {
+     "#leke-islem-px", "#leke-ton-alt", "#leke-ton-ust",
+     // Birleştirme bu listeye SONRADAN eklendi ve unutulmuştu: sürekli
+     // kipte değeri değiştirmek ajana ulaşmıyor, sonuç değişmiyordu.
+     "#leke-birlestir"].forEach((s2) => {
       const el = $(s2);
       if (el) el.addEventListener("change", () => {
         if (otoMod === "surekli") modUygula("surekli");
