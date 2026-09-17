@@ -984,6 +984,9 @@
     kayit.svg.setAttribute("viewBox", `0 0 ${kare[0]} ${kare[1]}`);
     const kalinlik = Math.max(2, Math.round(kare[0] / 250));
     const r = Math.max(3, Math.round(kare[0] / 200));
+    // Yazı kare ölçüsüne oranlı: viewBox gerçek piksel, kutu küçülse de
+    // büyüse de yazı aynı görünür kalıyor.
+    const yaziBoy = Math.max(12, Math.round(kare[0] / 45));
     /* KAYMAYI GİZLEMİYORUZ. Sürekli kipte sonuç aralık kadar geriden
      * geliyor; makine o sırada yol aldıysa kutular canlı görüntüyle
      * hizalı DEĞİL. Soluklaştırmak bunu söylemenin en sessiz ama
@@ -1013,11 +1016,20 @@
       const [x1, y1, x2, y2] = l.kutu || [0, 0, 0, 0];
       const s2 = secili.has(i);
       const renk = s2 ? "#ffd166" : "#ff4d4d";
+      /* KOORDİNAT KUTUNUN YANINDA. Tabloya bakmak için Kamera
+       * sekmesine gitmek gerekiyordu; asıl kullanım burası, yüzen
+       * kutu. Kalibrasyon yoksa `x_mm` gelmiyor ve hiçbir şey
+       * yazılmıyor — "0, 0" yazmak uydurma koordinat olurdu. */
+      const etiket = (l.x_mm == null) ? "" :
+        `<text x="${x2 + r}" y="${y1 + yaziBoy}" font-size="${yaziBoy}"
+           fill="${renk}" stroke="#000" stroke-width="${yaziBoy / 8}"
+           paint-order="stroke" font-family="monospace"
+           >${l.x_mm}, ${l.y_mm}</text>`;
       return `<rect data-no="${i}" pointer-events="all" x="${x1}" y="${y1}"
                 width="${x2 - x1}" height="${y2 - y1}" fill="none"
                 stroke="${renk}" stroke-width="${s2 ? kalinlik * 2 : kalinlik}"/>
               <circle data-no="${i}" pointer-events="all" cx="${l.x}" cy="${l.y}"
-                r="${r}" fill="${renk}"/>`;
+                r="${r}" fill="${renk}"/>${etiket}`;
     }).join("");
     kayit.svg.innerHTML = ic;
   }
