@@ -152,11 +152,18 @@ def yonlendirici_kur(komut_gonder: Callable, parola_dogrula: Callable) -> APIRou
                 status_code=503,
                 detail=f"toprak modülü yüklenemedi: {hata}") from None
         sonuc = await asyncio.to_thread(toprak_modulu.bayttan, kayit["veri"])
-        if not sonuc:
+        # SEBEP OLDUĞU GİBİ GERİ GİDİYOR. Önce tek bir "bulunamadı" metni
+        # vardı; hangi kapının hangi sayıyla kapandığı görünmediği için
+        # ikinci denemede de elde ölçüm olmuyordu.
+        if sonuc is None:
             raise HTTPException(
                 status_code=409,
-                detail="Toprak bulunamadı — kadrajda yeterince büyük bir "
-                       "toprak alanı yok ya da renk kapısı tutmadı.")
+                detail="Sunucudaki toprak.py eski sürüm (sebep döndürmüyor)"
+                       " — depo çekilmemiş ya da servis yeniden başlamamış.")
+        if not sonuc.get("ok"):
+            raise HTTPException(
+                status_code=409,
+                detail="Toprak bulunamadı — " + str(sonuc.get("neden") or "?"))
         return {"ok": True, "kamera": kam, **sonuc}
 
     @yonlendirici.post("/kesit")

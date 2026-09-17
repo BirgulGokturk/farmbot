@@ -238,19 +238,38 @@ def _icinde(xx: np.ndarray, yy: np.ndarray, kose) -> np.ndarray:
     return ic
 
 
-def bul(rgb: np.ndarray) -> dict[str, Any] | None:
-    """(h, w, 3) kare -> dörtgen ve ölçüleri, ya da None."""
+def bul(rgb: np.ndarray) -> dict[str, Any]:
+    """(h, w, 3) kare -> zarf ve ölçüleri.
+
+    HER ZAMAN SÖZLÜK DÖNÜYOR, None değil. Önce None dönüyordu ve panel
+    "bulunamadı" diyordu; hangi kapının hangi sayıyla kapandığı
+    görünmüyordu, o yüzden aynı uyarıyı ikinci kez alınca elde tek bir
+    ölçüm yoktu. Başarısızlıkta da sayılar geri gidiyor (CLAUDE.md:
+    sessiz başarısızlık yok).
+    """
     h, w = rgb.shape[:2]
     if h < 16 or w < 16:
-        return None
+        return {"ok": False, "neden": f"kare çok küçük: {w}x{h}"}
+    a = np.asarray(rgb, dtype=np.float32)
+    sicaklik = a[..., 0] - a[..., 2]
+    esik = _otsu(sicaklik)
+    ham_maske = sicaklik > esik
+    olcu = (f"kare {w}x{h} · R-B medyan {float(np.median(sicaklik)):.0f} "
+            f"en az {float(sicaklik.min()):.0f} en çok {float(sicaklik.max()):.0f} "
+            f"· Otsu eşiği {esik:.0f} · sıcak sınıf %{ham_maske.mean()*100:.1f}")
     yaricap = max(2, int(round(min(w, h) * ACMA_ORANI)))
-    m = _ac_kapa(_maske(rgb), yaricap, max(yaricap, 4))
+    m = _ac_kapa(ham_maske, yaricap, max(yaricap, 4))
     bilesen = _en_buyuk_bilesen(m)
     if bilesen is None:
-        return None
+        return {"ok": False, "neden": f"açma sonrası hiç bileşen kalmadı "
+                                      f"(yarıçap {yaricap}) · {olcu}"}
     piksel = int(bilesen.sum())
+    oran = piksel / float(h * w)
     if piksel < EN_AZ_ORAN * h * w:
-        return None
+        return {"ok": False,
+                "neden": (f"en büyük sıcak bileşen kadrajın yalnız "
+                          f"%{oran*100:.1f}'i, alt sınır %{EN_AZ_ORAN*100:.0f} "
+                          f"· {olcu}")}
     ys, xs = np.nonzero(bilesen)
     # DÖRTGEN DEĞİL, ZARF. Kap yuvarlak köşeli ve perspektifte yamuk; dört
     # köşeli bir şekil köşeleri kesiyor ve orada gerçek fide kaybediliyor.
@@ -259,7 +278,8 @@ def bul(rgb: np.ndarray) -> dict[str, Any] | None:
     # uzaktaki makine değil — kenardaki fideyi kaybetmekten iyi.
     kose = _sadelestir(_zarf(list(zip(xs.tolist(), ys.tolist()))), AZAMI_KOSE)
     if len(kose) < 3:
-        return None
+        return {"ok": False,
+                "neden": f"zarf {len(kose)} köşeye düştü · {olcu}"}
     alan = 0.0
     for i in range(len(kose)):
         x1, y1 = kose[i - 1]
@@ -272,6 +292,8 @@ def bul(rgb: np.ndarray) -> dict[str, Any] | None:
     ic = _icinde(xx, yy, kose)
     doluluk = float((bilesen & ic).sum()) / max(float(ic.sum()), 1.0)
     return {
+        "ok": True,
+        "olcu": olcu,
         "kose": [[x / w, y / h] for x, y in kose],
         "kare_px": [w, h],
         "maske_px": piksel,
@@ -281,20 +303,27 @@ def bul(rgb: np.ndarray) -> dict[str, Any] | None:
     }
 
 
-def bayttan(ham: bytes) -> dict[str, Any] | None:
-    """JPEG/PNG baytlarından dörtgen. Kare önce küçültülüyor."""
+def bayttan(ham: bytes) -> dict[str, Any]:
+    """JPEG/PNG baytlarından zarf. Kare önce küçültülüyor.
+
+    Hata da sözlük olarak dönüyor: yutulan istisna, panelde "bulunamadı"
+    diye görünüp gerçek sebebi (Pillow yok, kare bozuk) gizliyordu.
+    """
     try:
         from PIL import Image
-    except Exception:                                   # noqa: BLE001
-        return None
+    except Exception as hata:                           # noqa: BLE001
+        return {"ok": False, "neden": f"Pillow yüklenemedi: {hata}"}
     try:
         with Image.open(io.BytesIO(ham)) as im:
             im = im.convert("RGB")
+            asil = im.size
             uzun = max(im.size)
             if uzun > CALISMA_KENARI:
                 o = CALISMA_KENARI / float(uzun)
                 im = im.resize((max(1, int(im.width * o)),
                                 max(1, int(im.height * o))))
-            return bul(np.asarray(im))
-    except Exception:                                   # noqa: BLE001
-        return None
+            sonuc = bul(np.asarray(im))
+    except Exception as hata:                           # noqa: BLE001
+        return {"ok": False, "neden": f"kare çözülemedi: {hata}"}
+    sonuc["asil_px"] = [asil[0], asil[1]]
+    return sonuc
