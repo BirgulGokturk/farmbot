@@ -1,0 +1,10 @@
+{
+  "tur": "charuco",
+  "kare_x": 9,
+  "kare_y": 6,
+  "kare_mm": 30.0,
+  "isaret_mm": 21.6,
+  "sozluk": "DICT_5X5_100",
+  "not": "Yazdırdıktan sonra kare_mm ve isaret_mm'yi kumpas ölçüsüyle güncelleyin.",
+  "tarih": "2026-09-17T19:43:22"
+}
