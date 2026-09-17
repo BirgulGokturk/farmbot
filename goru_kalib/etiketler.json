@@ -14,39 +14,91 @@
     {
       "id": 8,
       "rol": "referans",
-      "merkez_mm": [
-        310.0,
-        0.0
-      ],
-      "kenar_mm": null
+      "koseler_mm": [
+        [
+          303.0,
+          33.0
+        ],
+        [
+          326.8,
+          33.0
+        ],
+        [
+          303.0,
+          56.8
+        ],
+        [
+          326.8,
+          56.8
+        ]
+      ]
     },
     {
       "id": 9,
       "rol": "referans",
-      "merkez_mm": [
-        475.0,
-        25.0
-      ],
-      "kenar_mm": null
-    },
-    {
-      "id": 0,
-      "rol": "referans",
-      "merkez_mm": [
-        495.0,
-        250.0
-      ],
-      "kenar_mm": null
+      "koseler_mm": [
+        [
+          482.0,
+          29.0
+        ],
+        [
+          505.8,
+          29.0
+        ],
+        [
+          482.0,
+          52.8
+        ],
+        [
+          505.8,
+          52.8
+        ]
+      ]
     },
     {
       "id": 1,
       "rol": "referans",
-      "merkez_mm": [
-        250.0,
-        270.0
-      ],
-      "kenar_mm": null
+      "koseler_mm": [
+        [
+          290.0,
+          297.0
+        ],
+        [
+          313.8,
+          297.0
+        ],
+        [
+          290.0,
+          320.8
+        ],
+        [
+          313.8,
+          320.8
+        ]
+      ]
+    },
+    {
+      "id": 0,
+      "rol": "referans",
+      "koseler_mm": [
+        [
+          508.0,
+          273.0
+        ],
+        [
+          531.8,
+          273.0
+        ],
+        [
+          508.0,
+          296.8
+        ],
+        [
+          531.8,
+          296.8
+        ]
+      ]
     }
   ],
-  "_not": "Merkezler probla elle olculdu (17.09.2026). Dort etiketin Z'si de 240 mm — ayni duzlemde. Kenar 23.8 mm kumpasla."
+  "_not": "Dort kose probla olculdu (17.09.2026, Z=240 hepsinde). koseler_mm verildigi icin kenar ve yon kullanilmiyor."
 }
