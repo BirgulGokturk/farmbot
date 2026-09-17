@@ -33,6 +33,7 @@
 
   const D = {
     slug: new Set(),        // katalogdaki tür anahtarları
+    tur: [],                // [{slug, ad, ikon}] — çoklu seçim listesi için
     favori: [],             // kullanıcının sırasıyla
     gozcu: null,
     hazir: false,
@@ -60,10 +61,18 @@
     if (!p || !p.apiIste) return;
     try {
       const y = await p.apiIste("/api/turler");
-      D.slug = new Set((y.turler || []).map((t) => String(t.slug || ""))
-        .filter(Boolean));
+      /* Ad ve simge de saklanıyor: çoklu seçim listesinde tür anahtarı
+       * ("aycicegi") değil kullanıcının gördüğü ad yazmalı. */
+      D.tur = (y.turler || [])
+        .map((t) => ({ slug: String(t.slug || ""),
+                       ad: String(t.name_tr || t.slug || ""),
+                       ikon: String(t.icon || "🌱") }))
+        .filter((t) => t.slug)
+        .sort((a, b) => a.ad.localeCompare(b.ad, "tr"));
+      D.slug = new Set(D.tur.map((t) => t.slug));
     } catch (h) {
       if (p.gunluk) p.gunluk("✕ Tür listesi okunamadı: " + h.message, "hata");
+      D.tur = [];
       D.slug = new Set();
     }
   }
@@ -85,6 +94,7 @@
       return;
     }
     hepsiniDiz();
+    kutulariTazele();
   }
 
   /* --------------------------------------------------------- tanıma */
@@ -190,11 +200,131 @@
       degistir(slug, D.favori.indexOf(slug) < 0);
     });
     sec.addEventListener("change", () => dugmeTazele(dugme, sec));
+    /* İKİNCİ DÜĞME — ÇOKLU SEÇİM. Yıldız yalnız SEÇİLİ türü değiştiriyor;
+     * on türü favorilemek için on kez tür seçip on kez yıldıza basmak
+     * gerekirdi. Bu düğme bütün türleri onay kutusuyla açıyor, istediğin
+     * kadarını aynı anda işaretliyorsun. İkisi de duruyor çünkü tek tür
+     * için açılır liste kurmak da gereksiz yavaş olurdu. */
+    const liste = document.createElement("button");
+    liste.type = "button";
+    liste.className = "favori-liste-ac";
+    liste.textContent = "▾";
+    liste.title = "Favori türleri seç (çoklu)";
+    liste.setAttribute("aria-haspopup", "true");
+    liste.setAttribute("aria-expanded", "false");
+    liste.addEventListener("click", (o) => {
+      o.preventDefault();
+      o.stopPropagation();
+      listeAcKapa(liste);
+    });
     /* Açılır listenin hemen yanına, kendi kabının içine — ayrı bir sarmalayıcı
      * KURULMUYOR: panelin kendi düzeni bozulmasın. */
-    if (sec.parentNode) sec.parentNode.insertBefore(dugme, sec.nextSibling);
+    if (sec.parentNode) {
+      sec.parentNode.insertBefore(dugme, sec.nextSibling);
+      sec.parentNode.insertBefore(liste, dugme.nextSibling);
+    }
     dugmeTazele(dugme, sec);
     return dugme;
+  }
+
+  /* --------------------------------------------------- çoklu seçim listesi */
+  function listeKapat() {
+    const eski = document.getElementById("favori-liste");
+    if (eski) eski.remove();
+    document.querySelectorAll(".favori-liste-ac[aria-expanded='true']")
+      .forEach((d) => d.setAttribute("aria-expanded", "false"));
+    document.removeEventListener("click", disariTiklama, true);
+    document.removeEventListener("keydown", tusBasildi, true);
+  }
+
+  function disariTiklama(o) {
+    const kap = document.getElementById("favori-liste");
+    if (kap && !kap.contains(o.target)
+        && !(o.target.classList && o.target.classList.contains("favori-liste-ac"))) {
+      listeKapat();
+    }
+  }
+
+  function tusBasildi(o) {
+    if (o.key === "Escape") { o.stopPropagation(); listeKapat(); }
+  }
+
+  function kutulariTazele() {
+    const kap = document.getElementById("favori-liste");
+    if (!kap) return;
+    kap.querySelectorAll("input[type=checkbox]").forEach((k) => {
+      const isaretli = D.favori.indexOf(k.value) >= 0;
+      if (k.checked !== isaretli) k.checked = isaretli;
+    });
+    const sayi = kap.querySelector(".favori-liste-sayi");
+    if (sayi) sayi.textContent = D.favori.length + " favori";
+  }
+
+  function listeAcKapa(acanDugme) {
+    if (document.getElementById("favori-liste")) { listeKapat(); return; }
+    if (!D.tur.length) return;
+
+    const kap = document.createElement("div");
+    kap.id = "favori-liste";
+    kap.className = "favori-liste";
+    kap.setAttribute("role", "group");
+    kap.setAttribute("aria-label", "Favori türler");
+
+    const bas = document.createElement("div");
+    bas.className = "favori-liste-bas";
+    bas.innerHTML = "<b>Favori türler</b>";
+    const sayi = document.createElement("span");
+    sayi.className = "favori-liste-sayi";
+    bas.appendChild(sayi);
+    kap.appendChild(bas);
+
+    const govde = document.createElement("div");
+    govde.className = "favori-liste-govde";
+    /* SIRA AÇILIRKEN DONDURULUYOR: her tıklamada favoriler başa zıplasaydı
+     * ikinci kutuyu işaretlemek için fareyi yeniden aramak gerekirdi. */
+    const yer = new Map();
+    D.favori.forEach((s2, i) => yer.set(s2, i));
+    const sirali = D.tur.slice().sort((a, b) => {
+      const fa = yer.has(a.slug) ? yer.get(a.slug) : Infinity;
+      const fb = yer.has(b.slug) ? yer.get(b.slug) : Infinity;
+      if (fa !== fb) return fa - fb;
+      return a.ad.localeCompare(b.ad, "tr");
+    });
+    sirali.forEach((t) => {
+      const satir = document.createElement("label");
+      satir.className = "favori-liste-satir";
+      const kutu = document.createElement("input");
+      kutu.type = "checkbox";
+      kutu.value = t.slug;
+      kutu.checked = D.favori.indexOf(t.slug) >= 0;
+      kutu.addEventListener("change", () => {
+        /* Her kutu kendi isteğini yolluyor. Toplu "kaydet" düğmesi
+         * KOYMUYORUZ: kullanıcı kapatıp gittiğinde kaydedilmemiş işaret
+         * kalması, sessizce kaybolan bir değişiklik olurdu. */
+        degistir(t.slug, kutu.checked);
+      });
+      satir.appendChild(kutu);
+      const ad = document.createElement("span");
+      ad.textContent = t.ikon + " " + t.ad;
+      satir.appendChild(ad);
+      govde.appendChild(satir);
+    });
+    kap.appendChild(govde);
+    document.body.appendChild(kap);
+
+    /* Konum: düğmenin altına, ekranın dışına taşmayacak şekilde. Sayfa
+     * kaydırmasıyla birlikte gitsin diye belge koordinatı kullanılıyor. */
+    const k = acanDugme.getBoundingClientRect();
+    const genislik = kap.offsetWidth || 240;
+    let sol = k.left + window.scrollX;
+    sol = Math.max(8, Math.min(sol, window.innerWidth + window.scrollX - genislik - 8));
+    kap.style.left = sol + "px";
+    kap.style.top = (k.bottom + window.scrollY + 4) + "px";
+
+    acanDugme.setAttribute("aria-expanded", "true");
+    kutulariTazele();
+    document.addEventListener("click", disariTiklama, true);
+    document.addEventListener("keydown", tusBasildi, true);
   }
 
   function dugmeleriTazele() {
@@ -237,8 +367,22 @@
       + "font-size:1.05rem;line-height:1;padding:.2rem .3rem;color:#ffd166;"
       + "align-self:center}"
       + ".favori-yildiz[disabled]{opacity:.35;cursor:default}"
-      + ".favori-yildiz:focus-visible{outline:2px solid currentColor;"
-      + "outline-offset:2px;border-radius:.2rem}";
+      + ".favori-yildiz:focus-visible,.favori-liste-ac:focus-visible{"
+      + "outline:2px solid currentColor;outline-offset:2px;border-radius:.2rem}"
+      + ".favori-liste-ac{background:none;border:0;cursor:pointer;"
+      + "font-size:.9rem;line-height:1;padding:.2rem .25rem;opacity:.75;"
+      + "align-self:center}"
+      + ".favori-liste-ac:hover{opacity:1}"
+      + ".favori-liste{position:absolute;z-index:9999;min-width:220px;"
+      + "max-height:60vh;overflow:auto;background:#1b1e22;color:#e8e8e8;"
+      + "border:1px solid #3a3f45;border-radius:.4rem;padding:.4rem;"
+      + "box-shadow:0 8px 24px rgba(0,0,0,.45);font-size:.9rem}"
+      + ".favori-liste-bas{display:flex;justify-content:space-between;"
+      + "align-items:baseline;gap:.5rem;padding:.15rem .3rem .35rem}"
+      + ".favori-liste-sayi{opacity:.6;font-size:.8rem}"
+      + ".favori-liste-satir{display:flex;align-items:center;gap:.45rem;"
+      + "padding:.25rem .3rem;border-radius:.25rem;cursor:pointer}"
+      + ".favori-liste-satir:hover{background:rgba(255,255,255,.07)}";
     document.head.appendChild(s);
   }
 
