@@ -142,6 +142,15 @@
               <label title="Bir fidenin yaprakları ayrı leke çıkabiliyor. Kutuları arasındaki boşluk, ortalama kutu kenarının bu katından azsa aynı bitki sayılıyor. 0 = birleştirme kapalı.">
                 Birleştirme <input type="number" id="leke-birlestir" value="0.3" min="0" max="5" step="0.1" style="width:5rem">
               </label>
+              <label title="Eğik kamerada filizin görünen kısmı, gövdenin toprağa değdiği noktadan kaymış görünüyor. 'alt' kutunun alt-orta noktasını kullanır — gövde dibine daha yakın.">
+                Nokta <select id="leke-mm-nokta">
+                  <option value="merkez">merkez</option>
+                  <option value="alt">alt</option>
+                </select>
+              </label>
+              <label title="Filizin topraktan tahmini yüksekliği (mm). Kayma = yükseklik × tan(eğim); üst kamerada eğim 51°, yani 20 mm'lik filizde 25 mm kayma.">
+                Yükseklik <input type="number" id="leke-mm-yukseklik" value="0" min="0" max="300" step="5" style="width:5rem"> mm
+              </label>
               <span class="ikincil">Bir fidenin yaprakları ayrı leke çıkıyorsa artırın.
                 Fazlası <b>komşu iki fideyi tek bitki yapar</b> — tabloda
                 <b>parça</b> sütununa bakın.</span>
@@ -1062,7 +1071,7 @@
   const AYAR_ANAHTAR = "farmbot_leke_ayar";
   const AYAR_ALANLARI = ["#leke-esik-payi", "#leke-en-kucuk", "#leke-islem-px",
                          "#leke-ton-alt", "#leke-ton-ust", "#leke-birlestir",
-                         "#leke-aralik"];
+                         "#leke-aralik", "#leke-mm-nokta", "#leke-mm-yukseklik"];
 
   function ayarlariYukle() {
     let kayit = null;
@@ -1101,6 +1110,10 @@
     if (tonUst !== null) ayar.ton_ust = tonUst;
     const birlestir = sayi("#leke-birlestir");
     if (birlestir !== null && birlestir >= 0) ayar.birlestir_orani = birlestir;
+    const nokta = $("#leke-mm-nokta");
+    if (nokta && nokta.value) ayar.mm_nokta = nokta.value;
+    const yuk = sayi("#leke-mm-yukseklik");
+    if (yuk !== null && yuk >= 0) ayar.mm_yukseklik = yuk;
     return ayar;
   }
 
@@ -1314,7 +1327,7 @@
      "#leke-islem-px", "#leke-ton-alt", "#leke-ton-ust",
      // Birleştirme bu listeye SONRADAN eklendi ve unutulmuştu: sürekli
      // kipte değeri değiştirmek ajana ulaşmıyor, sonuç değişmiyordu.
-     "#leke-birlestir"].forEach((s2) => {
+     "#leke-birlestir", "#leke-mm-nokta", "#leke-mm-yukseklik"].forEach((s2) => {
       const el = $(s2);
       if (el) el.addEventListener("change", () => {
         if (otoMod === "surekli") modUygula("surekli");

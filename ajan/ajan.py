@@ -1069,8 +1069,18 @@ class Ajan:
                 sonuc["konum"] = {"x": k.get("x"), "y": k.get("y"), "z": k.get("z")}
                 # MİLİMETRE, kalibrasyon varsa. Yoksa `mm_sebep` doluyor
                 # ve koordinat alanı hiç açılmıyor — uydurma ölçek yok.
+                # NOKTA ve YÜKSEKLİK ayardan geliyor. Eğik kamerada
+                # filizin görünen kısmı toprağa değdiği noktadan kaymış
+                # oluyor: kayma = yükseklik x tan(eğim). Üst kamerada
+                # eğim 51°, yani 2 cm'lik bir filizde 25 mm. Hangi
+                # düzeltmenin doğru olduğu ekim kaydıyla karşılaştırarak
+                # bulunuyor, bu yüzden ikisi de ayarlanabilir.
+                _a = ayar_lekeler or {}
                 try:
-                    koordinat_modulu.mm_ekle(sonuc, kam._dondurme())
+                    koordinat_modulu.mm_ekle(
+                        sonuc, kam._dondurme(),
+                        nokta=str(_a.get("mm_nokta") or "merkez"),
+                        yukseklik_mm=float(_a.get("mm_yukseklik") or 0.0))
                 except Exception as hata:                  # noqa: BLE001
                     sonuc["mm_sebep"] = f"koordinat modülü: {hata}"
                 sayi = len(sonuc.get("lekeler") or [])
@@ -1565,8 +1575,12 @@ class Ajan:
                     # bulunduğunu bilmeli, makine kımıldayınca onları
                     # silebilsin. Kalibrasyon geldiğinde koordinat
                     # dönüşümü de buna dayanacak.
+                    _a = self.leke_ayari or {}
                     try:
-                        koordinat_modulu.mm_ekle(sonuc, kam._dondurme())
+                        koordinat_modulu.mm_ekle(
+                            sonuc, kam._dondurme(),
+                            nokta=str(_a.get("mm_nokta") or "merkez"),
+                            yukseklik_mm=float(_a.get("mm_yukseklik") or 0.0))
                     except Exception as hata:              # noqa: BLE001
                         sonuc["mm_sebep"] = f"koordinat modülü: {hata}"
                     k = (self._son_durum.get("konum") or {}) if self._son_durum else {}
