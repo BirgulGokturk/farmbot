@@ -47,43 +47,76 @@ KALIB_KLASOR = os.environ.get(
         os.path.abspath(__file__))), "goru_kalib"))
 
 _KILIT = threading.Lock()
-_DURUM: dict[str, Any] = {"donusum": None, "sebep": "", "denendi": False}
+#: Kamera adı -> {"donusum": …, "sebep": …}. HER KAMERANIN KENDİ
+#: KALİBRASYONU var: iç kalibrasyon lense özgü (odak uzaklığı,
+#: distorsiyon) ve homografi kameranın durduğu yere özgü. Tek set
+#: tutmak, üst kameranın koordinatlarını uç kamerasının lensiyle
+#: hesaplamak olurdu — sessizce yanlış milimetre.
+_DURUM: dict[str, dict[str, Any]] = {}
 
 
-def _yukle() -> None:
-    """Kalibrasyonu bir kez yükler. Kilit ÇAĞIRANDA tutuluyor."""
-    _DURUM["denendi"] = True
+def _klasor(kamera: str) -> str:
+    """O kameranın kalibrasyon klasörü.
+
+    `kalib_veri_<ad>` varsa o, yoksa `kalib_veri`. Tek kameralı bir
+    kurulumda hiçbir şey değişmiyor; ikinci kamera eklendiğinde kendi
+    klasörünü açmak yetiyor.
+    """
+    ad = str(kamera or "").strip()
+    if ad:
+        ozel = os.path.join(KALIB_KLASOR, f"kalib_veri_{ad}")
+        if os.path.isdir(ozel):
+            return ozel
+    return os.path.join(KALIB_KLASOR, "kalib_veri")
+
+
+def _yukle(kamera: str) -> dict[str, Any]:
+    """O kameranın kalibrasyonunu yükler. Kilit ÇAĞIRANDA tutuluyor."""
+    kayit: dict[str, Any] = {"donusum": None, "sebep": ""}
+    _DURUM[kamera] = kayit
     if not os.path.isdir(KALIB_KLASOR):
-        _DURUM["sebep"] = f"kalibrasyon klasörü yok: {KALIB_KLASOR}"
-        return
+        kayit["sebep"] = f"kalibrasyon paketi yok: {KALIB_KLASOR}"
+        return kayit
+    veri = _klasor(kamera)
+    if not os.path.isdir(veri):
+        kayit["sebep"] = f"kalibrasyon klasörü yok: {veri}"
+        return kayit
     if KALIB_KLASOR not in sys.path:
         sys.path.insert(0, KALIB_KLASOR)
     try:
         from donusum import KameraDonusum
-        _DURUM["donusum"] = KameraDonusum()
-        _DURUM["sebep"] = ""
+        # Yollar AÇIKÇA veriliyor: `ortak.VERI` ortam değişkenine
+        # bakıyor ve ajan o değişkeni taşımıyor; varsayılana bırakmak
+        # her kamerada aynı dosyayı okumak olurdu.
+        kayit["donusum"] = KameraDonusum(
+            ic_yol=os.path.join(veri, "kamera_ic.json"),
+            dis_yol=os.path.join(veri, "kamera_dis.json"))
+        kayit["klasor"] = veri
     except Exception as hata:                               # noqa: BLE001
         # En sık sebep: homografi hiç kurulmamış ya da iç kalibrasyon
         # yenilenip homografi eski kalmış (donusum.py bunu reddediyor).
-        _DURUM["donusum"] = None
-        _DURUM["sebep"] = f"{type(hata).__name__}: {hata}"
+        kayit["donusum"] = None
+        kayit["sebep"] = f"{type(hata).__name__}: {hata} [{veri}]"
+    return kayit
 
 
-def hazir() -> tuple[bool, str]:
-    """(kalibrasyon var mı, yoksa sebebi)."""
+def hazir(kamera: str = "") -> tuple[bool, str]:
+    """(o kamera için kalibrasyon var mı, yoksa sebebi)."""
     with _KILIT:
-        if not _DURUM["denendi"]:
-            _yukle()
-        return (_DURUM["donusum"] is not None, _DURUM["sebep"])
+        kayit = _DURUM.get(kamera) or _yukle(kamera)
+        return (kayit["donusum"] is not None, kayit["sebep"])
 
 
-def yenile() -> tuple[bool, str]:
+def yenile(kamera: str = "") -> tuple[bool, str]:
     """Kalibrasyon dosyaları değiştiyse yeniden okur."""
     with _KILIT:
-        _DURUM["donusum"] = None
-        _DURUM["denendi"] = False
-        _yukle()
-        return (_DURUM["donusum"] is not None, _DURUM["sebep"])
+        if kamera:
+            _DURUM.pop(kamera, None)
+            kayit = _yukle(kamera)
+        else:
+            _DURUM.clear()
+            kayit = _yukle("")
+        return (kayit["donusum"] is not None, kayit["sebep"])
 
 
 def _ham_uzaya(x: float, y: float, derece: int,
@@ -100,7 +133,8 @@ def _ham_uzaya(x: float, y: float, derece: int,
 
 
 def mm_ekle(sonuc: dict[str, Any], derece: int = 0,
-            nokta: str = "merkez", yukseklik_mm: float = 0.0) -> dict[str, Any]:
+            nokta: str = "merkez", yukseklik_mm: float = 0.0,
+            kamera: str = "") -> dict[str, Any]:
     """Leke sonucuna `x_mm` / `y_mm` ekler. Sonucu YERİNDE değiştirir.
 
     `derece`: karenin döndürülme açısı (ajandaki `dondur`). Kutular önce
@@ -115,7 +149,7 @@ def mm_ekle(sonuc: dict[str, Any], derece: int = 0,
     if not lekeler:
         return sonuc
 
-    var, sebep = hazir()
+    var, sebep = hazir(kamera)
     if not var:
         sonuc["mm_sebep"] = sebep or "kalibrasyon yok"
         return sonuc
@@ -137,7 +171,7 @@ def mm_ekle(sonuc: dict[str, Any], derece: int = 0,
 
     try:
         with _KILIT:
-            donusum = _DURUM["donusum"]
+            donusum = (_DURUM.get(kamera) or {}).get("donusum")
         mm = donusum.piksel_to_mm(noktalar, (ham_g, ham_y), kaynak="ham",
                                   yukseklik_mm=float(yukseklik_mm))
     except Exception as hata:                               # noqa: BLE001

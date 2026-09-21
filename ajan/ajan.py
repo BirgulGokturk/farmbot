@@ -1080,7 +1080,8 @@ class Ajan:
                     koordinat_modulu.mm_ekle(
                         sonuc, kam._dondurme(),
                         nokta=str(_a.get("mm_nokta") or "merkez"),
-                        yukseklik_mm=float(_a.get("mm_yukseklik") or 0.0))
+                        yukseklik_mm=float(_a.get("mm_yukseklik") or 0.0),
+                        kamera=kam.ad)
                 except Exception as hata:                  # noqa: BLE001
                     sonuc["mm_sebep"] = f"koordinat modülü: {hata}"
                 sayi = len(sonuc.get("lekeler") or [])
@@ -1580,7 +1581,8 @@ class Ajan:
                         koordinat_modulu.mm_ekle(
                             sonuc, kam._dondurme(),
                             nokta=str(_a.get("mm_nokta") or "merkez"),
-                            yukseklik_mm=float(_a.get("mm_yukseklik") or 0.0))
+                            yukseklik_mm=float(_a.get("mm_yukseklik") or 0.0),
+                            kamera=kam.ad)
                     except Exception as hata:              # noqa: BLE001
                         sonuc["mm_sebep"] = f"koordinat modülü: {hata}"
                     k = (self._son_durum.get("konum") or {}) if self._son_durum else {}
