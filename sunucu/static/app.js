@@ -1818,6 +1818,84 @@ function kameraGoruntuTemizle(ad) {
   // kalan kutular neyin üstünde olduğu bilinmeyen kutulardır.
   }
 
+/** Yüzen kamera kutusunu açar/kapatır. `goster` verilmezse tersine çevirir.
+ *
+ *  DÜĞME DE BAHÇE PANELİ DE BURADAN GEÇİYOR. Kutuyu gizlemenin yan
+ *  işleri var (akış isteğini tazelemek, geri açarken içini doldurmak ve
+ *  ekrana sığdırmak); ikinci bir yerde tekrar yazmak ikisinin
+ *  ayrışması demekti.
+ *
+ *  `sessiz` günlüğe yazmayı kapatıyor: bahçe sekmesi açılırken kutular
+ *  toptan gizleniyor ve her biri için bir günlük satırı düşmesi,
+ *  kullanıcının kendi yaptığı işi günlükte kaybetmek olurdu.
+ */
+function kamKutusuAcKapa(ad, goster, sessiz) {
+  const kutu = KAM_KUTU.get(ad);
+  /* DURUM BAYRAKTAN DEĞİL KUTUDAN OKUNUYOR.
+   *
+   * `S.kamKutuKapali` sayfa yenilenince sıfırlanıyor ve o an
+   * `undefined` oluyordu; `!undefined` true, yani YENİLEMEDEN SONRAKİ
+   * İLK BASIŞ HER ZAMAN GİZLE demekti. Kutu zaten görünmez olduğu
+   * için ekranda hiçbir şey değişmiyor, günlüğe "gizlendi"
+   * düşüyordu. Kullanıcı "açamıyorum" dedi; düğme gerçekten
+   * açmıyordu.
+   *
+   * Kutunun kendi görünürlüğü tek doğru kaynak: ekranda ne
+   * görünüyorsa durum odur. */
+  const suAnKapali = kutu ? kutu.classList.contains("gizli")
+                          : !!S.kamKutuKapali[ad];
+  const kapali = goster === undefined ? !suAnKapali : !goster;
+  // İstenen hâl zaten geçerliyse dokunmuyoruz: gereksiz akış isteği
+  // ve günlük satırı üretmesin.
+  if (goster !== undefined && kapali === suAnKapali) return kapali;
+  S.kamKutuKapali[ad] = kapali;
+  if (kutu) {
+    kutu.classList.toggle("gizli", kapali);
+    if (kapali) kutu.classList.remove("buyuk");
+    if (!kapali) {
+      /* İÇİNİ HEMEN DOLDURUYORUZ.
+       *
+       * Kutu şimdiye kadar YALNIZCA yeni bir kare geldiğinde
+       * görünür oluyordu (`kareyiTazele`). Canlı akış Kamera
+       * sekmesinden çıkınca duruyor, yani İzle sekmesindeyken sabit
+       * kameradan yeni kare gelmiyor — düğmeye basılıyor, kutu
+       * açılıyor ama içi boş kalıyor ve gelmeyecek bir kareyi
+       * bekliyor. Kullanıcının gördüğü şey "hiç açılmadı".
+       *
+       * Elimizde her zaman son kare var; kurulum sırasında da
+       * ondan dolduruluyordu. Aynı şeyi burada da yapıyoruz. */
+      const son = S.sonKare[ad];
+      if (son) {
+        const im = kutu.querySelector('[data-rol="kare"]');
+        if (im && !im.src) im.src = son.adres;
+        const z = kutu.querySelector('[data-rol="zaman"]');
+        if (z) {
+          z.textContent = (son.canli ? "canlı " : "")
+            + new Date(son.ts * 1000).toLocaleTimeString("tr-TR");
+        }
+      } else {
+        /* Hiç kare gelmemişse boş bir kutu açmak, kullanıcıya
+         * "bozuk" diye görünür. Sebebi söylüyoruz. */
+        gunluk(`${kamEtiket(ad)} kutusu açıldı ama henüz kare yok — `
+               + "Kamera sekmesini bir kez açıp kare gelmesini bekleyin",
+               "uyari");
+      }
+      /* GERİ AÇARKEN EKRANA SIĞDIRIYORUZ. Kutu daha önce kenara
+       * sürüklendiyse ya da pencere küçüldüyse, "gizli" sınıfını
+       * kaldırmak onu GÖRÜNÜR yapıyor ama ekranın DIŞINDA
+       * bırakıyordu. */
+      (KAM_SINIRLA.get(ad) || (() => {}))();
+    }
+  }
+  kamSahnedeYaz(ad);
+  // Gizli kutu için akış istemiyoruz, geri açılınca istiyoruz.
+  izleAkisTazele();
+  if (!sessiz) {
+    gunluk(`${kamEtiket(ad)} sahnede ${kapali ? "gizlendi" : "gösteriliyor"}`);
+  }
+  return kapali;
+}
+
 /** "Sahnede" düğmesinin hâli — yüzen kutu gizli mi değil mi. */
 function kamSahnedeYaz(ad) {
   const d = kamRol(ad, "sahnede");
@@ -1937,66 +2015,7 @@ function kamYariBagla(yari, ad) {
   // yerde durmaması demek, hiçbir yerde durmaması değil.
   const sahnede = rol("sahnede");
   if (sahnede) {
-    sahnede.onclick = () => {
-      const kutu = KAM_KUTU.get(ad);
-      /* DURUM BAYRAKTAN DEĞİL KUTUDAN OKUNUYOR.
-       *
-       * `S.kamKutuKapali` sayfa yenilenince sıfırlanıyor ve o an
-       * `undefined` oluyordu; `!undefined` true, yani YENİLEMEDEN SONRAKİ
-       * İLK BASIŞ HER ZAMAN GİZLE demekti. Kutu zaten görünmez olduğu
-       * için ekranda hiçbir şey değişmiyor, günlüğe "gizlendi"
-       * düşüyordu. Kullanıcı "açamıyorum" dedi; düğme gerçekten
-       * açmıyordu.
-       *
-       * Kutunun kendi görünürlüğü tek doğru kaynak: ekranda ne
-       * görünüyorsa durum odur. */
-      const suAnKapali = kutu ? kutu.classList.contains("gizli")
-                              : !!S.kamKutuKapali[ad];
-      const kapali = !suAnKapali;
-      S.kamKutuKapali[ad] = kapali;
-      if (kutu) {
-        kutu.classList.toggle("gizli", kapali);
-        if (kapali) kutu.classList.remove("buyuk");
-        if (!kapali) {
-          /* İÇİNİ HEMEN DOLDURUYORUZ.
-           *
-           * Kutu şimdiye kadar YALNIZCA yeni bir kare geldiğinde
-           * görünür oluyordu (`kareyiTazele`). Canlı akış Kamera
-           * sekmesinden çıkınca duruyor, yani İzle sekmesindeyken sabit
-           * kameradan yeni kare gelmiyor — düğmeye basılıyor, kutu
-           * açılıyor ama içi boş kalıyor ve gelmeyecek bir kareyi
-           * bekliyor. Kullanıcının gördüğü şey "hiç açılmadı".
-           *
-           * Elimizde her zaman son kare var; kurulum sırasında da
-           * ondan dolduruluyordu. Aynı şeyi burada da yapıyoruz. */
-          const son = S.sonKare[ad];
-          if (son) {
-            const im = kutu.querySelector('[data-rol="kare"]');
-            if (im && !im.src) im.src = son.adres;
-            const z = kutu.querySelector('[data-rol="zaman"]');
-            if (z) {
-              z.textContent = (son.canli ? "canlı " : "")
-                + new Date(son.ts * 1000).toLocaleTimeString("tr-TR");
-            }
-          } else {
-            /* Hiç kare gelmemişse boş bir kutu açmak, kullanıcıya
-             * "bozuk" diye görünür. Sebebi söylüyoruz. */
-            gunluk(`${kamEtiket(ad)} kutusu açıldı ama henüz kare yok — `
-                   + "Kamera sekmesini bir kez açıp kare gelmesini bekleyin",
-                   "uyari");
-          }
-          /* GERİ AÇARKEN EKRANA SIĞDIRIYORUZ. Kutu daha önce kenara
-           * sürüklendiyse ya da pencere küçüldüyse, "gizli" sınıfını
-           * kaldırmak onu GÖRÜNÜR yapıyor ama ekranın DIŞINDA
-           * bırakıyordu. */
-          (KAM_SINIRLA.get(ad) || (() => {}))();
-        }
-      }
-      kamSahnedeYaz(ad);
-      // Gizli kutu için akış istemiyoruz, geri açılınca istiyoruz.
-      izleAkisTazele();
-      gunluk(`${kamEtiket(ad)} sahnede ${kapali ? "gizlendi" : "gösteriliyor"}`);
-    };
+    sahnede.onclick = () => kamKutusuAcKapa(ad);
   }
 
   yari.querySelectorAll(".kam-aralik").forEach((d) => {
@@ -5373,6 +5392,9 @@ function kalibKaydedildiIsareti() {
  */
 window.Panel = { S, komutGonder, apiIste, gunluk, noktalariYukle, egrileriYukle,
                  geriAlGoster, tanilariCiz,
+                 /* Bahçe paneli sahnedeki kamera kutularını kendi
+                  * düğmesinden yönetiyor; kutuların sahibi burası. */
+                 kamKutusuAcKapa, kamListe,
                  /* Deneme yardımcısı — kalibrasyon gönderimini tarayıcı
                   * konsolundan tetiklemek için. `tarla.js`teki
                   * `secimDurumu()` ile aynı gerekçe. */

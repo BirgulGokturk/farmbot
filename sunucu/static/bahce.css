@@ -330,3 +330,25 @@ body.bh-menu .bh-cark { color: var(--metin); border-color: var(--metin-3); }
  * `body.bahce-acik` ile sınırlı. */
 body.bahce-acik #gunluk-serit.kapali #gunluk-son { display: none; }
 body.bahce-acik #gunluk-serit.kapali .surum-damga { display: none; }
+
+/* Boş bağlam şeridi yer kaplamıyor.
+ *
+ * `.bh-alt` normalde en az 56 px: seçim, onay ve mesaj oraya çıkıyor ve
+ * içerik değiştikçe şeridin zıplamaması için taban yükseklik gerekiyor.
+ * Ama söyleyecek bir şeyi yokken o 56 px, bahçenin kendisinden çalınan
+ * yerdi. Boşken kapanıyor; bir şey söyleyince geri açılıyor. */
+.bh-alt.bos-gizli {
+  min-height: 0;
+  padding: 0;
+  border-top: none;
+}
+
+/* Kamera düğmesi basılıyken vurgulu: kutular açıkken düğmenin de açık
+   görünmesi gerekiyor, yoksa "kameralar nerede" sorusunun cevabı
+   ekranda hiçbir yerde yazmıyor. Renk tek işaret değil — `aria-pressed`
+   ekran okuyucuya da söylüyor. */
+#bh-kam[aria-pressed="true"] {
+  background: var(--vurgu);
+  border-color: var(--vurgu);
+  color: #fff;
+}

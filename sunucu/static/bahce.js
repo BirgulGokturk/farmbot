@@ -1441,6 +1441,66 @@ window.Bahce = (function () {
   /* ==================================================================== *
    * TUVAL ÖLÇÜSÜ
    * ==================================================================== */
+  /* ==================================================================== *
+   * SAHNEDEKİ KAMERA KUTULARI
+   *
+   * Yüzen kamera kutuları `app.js`in; bahçe onları yalnız AÇIP
+   * KAPATIYOR, kendi kopyasını yapmıyor. Bahçeye bakarken kutular
+   * yatağın bir köşesini örtüyordu, o yüzden bahçe açılırken
+   * kapanıyorlar — ama kullanıcının kendi ayarı unutulmuyor: sekmeden
+   * çıkınca ne bıraktıysa o geri geliyor.
+   * ==================================================================== */
+  //: Bahçeye girmeden önceki görünürlük: {ad: gizliMiydi}
+  var kamOnceki = null;
+
+  function kamAdlari() {
+    var p = P();
+    return ((p.kamListe && p.kamListe()) || []).map(function (k) { return k.ad; });
+  }
+  function kamGizli(ad) {
+    /* Öznitelik `data-kam` (bkz. app.js, `kutu.dataset.kam = ad`). */
+    var kutu = document.querySelector('.kamera-yuzen[data-kam="' + ad + '"]');
+    if (kutu) return kutu.classList.contains("gizli");
+    var p = P();
+    return !!(p.S && p.S.kamKutuKapali && p.S.kamKutuKapali[ad]);
+  }
+  function kamAcikMi() {
+    return kamAdlari().some(function (ad) { return !kamGizli(ad); });
+  }
+  function kamDugmeYaz() {
+    var d = $("#bh-kam");
+    if (!d) return;
+    var acik = kamAcikMi();
+    d.setAttribute("aria-pressed", acik ? "true" : "false");
+    d.classList.toggle("etkin", acik);
+  }
+  /** Hepsini aç ya da kapat. `sessiz` bahçeye girerken günlüğü susturuyor. */
+  function kamHepsi(goster, sessiz) {
+    var p = P();
+    if (!p.kamKutusuAcKapa) return;
+    kamAdlari().forEach(function (ad) { p.kamKutusuAcKapa(ad, goster, sessiz); });
+    kamDugmeYaz();
+  }
+  /** Bahçe açılırken: hâli sakla, kutuları kapat. */
+  function kamBahceyeGir() {
+    var p = P();
+    if (!p.kamKutusuAcKapa) return;
+    if (kamOnceki === null) {
+      kamOnceki = {};
+      kamAdlari().forEach(function (ad) { kamOnceki[ad] = kamGizli(ad); });
+    }
+    kamHepsi(false, true);
+  }
+  /** Bahçeden çıkarken: kullanıcının kendi ayarı geri. */
+  function kamBahcedenCik() {
+    var p = P();
+    if (!p.kamKutusuAcKapa || !kamOnceki) return;
+    Object.keys(kamOnceki).forEach(function (ad) {
+      p.kamKutusuAcKapa(ad, !kamOnceki[ad], true);
+    });
+    kamOnceki = null;
+  }
+
   /** Başlığın sağ grubunun GERÇEKTEN kapladığı yer — üst şeride pay.
    *
    *  Sabit bir sayı iki kere yanlış oluyordu: grubun genişliği "⏻ Aç"
@@ -1930,7 +1990,13 @@ window.Bahce = (function () {
     var w = Math.min(250, solBos - 16);
     var adet = acikKartlar().slice(0, 3).length;
     var h = gorevOlcu(adet);
-    if (h > S.boy - 200) h = Math.max(110, S.boy - 200);   /* askıya yer kalsın */
+    /* TABELA ASKIYA YER BIRAKIYOR — sayı tahmin değil, askının kendi
+       ölçüsünden çıkıyor. Eski sabit (`S.boy - 200`) askının gerçek
+       boyunu (5 alet = 314 px) bilmiyordu ve tabela onu örtecek kadar
+       uzayabiliyordu. */
+    var askiPay = RAY_TABELA_ARA + rayYuksekligi() + RAY_ALT_PAY;
+    var enCok = S.boy - 14 - askiPay;
+    if (h > enCok) h = Math.max(110, enCok);
     S.gorevKutu = { x: Math.max(10, (solBos - w) / 2), y: 14, w: w, h: h };
   }
   /** Tabela KARE BAŞINA DEĞİL, içeriği değişince çiziliyor: ahşap
@@ -2177,6 +2243,12 @@ window.Bahce = (function () {
       cikti.splice(2, 0, { ad: "Toprak nemi",
                            deger: Number(ham).toFixed(0) + " ham" });
     }
+    /* SON SULAMA BURADA, alt şeritte değil: bir ölçüm ve yeri
+       ölçümlerin yanı. Altta sabit bir satır olarak duruyordu ve
+       ekranın altından yer yiyordu. Kayıt yoksa satır da yok —
+       "bilinmiyor" yazmak boş yere bir satır açmak olurdu. */
+    var ss = sonSulama();
+    if (ss) cikti.push({ ad: "Son sulama", deger: sureKisa(ss.yas) + " önce" });
     return cikti;
   }
   function sensorKur() {
@@ -2571,6 +2643,16 @@ window.Bahce = (function () {
    * bitkiyi sepete bırakmak yataktan düşürüyor. Bitkiyi yatağın içinde
    * başka bir yere bırakmak da kayıt: `/api/bahce/tasi`.
    * ==================================================================== */
+  /* ASKI ÖLÇÜLERİ TEK YERDE. Hem askıyı kuran `rayKur` hem de ona yer
+     bırakması gereken görev tabelası bunları okuyor; iki yerde iki sayı
+     tutmak, alet sayısı değiştiğinde birinin sessizce yanılması demekti. */
+  var RAY_GEN = 50, RAY_ARA = 16;
+  var RAY_TABELA_ARA = 34;   /* tabelanın altı ile ilk alet arası */
+  /* Ses düğmesi askının 30 px altında ve yarıçapı 15; artı kenar payı. */
+  var RAY_ALT_PAY = 57;
+  function rayYuksekligi() {
+    return RAY_ALET.length * RAY_GEN + (RAY_ALET.length - 1) * RAY_ARA;
+  }
   var RAY_ALET = [
     { k: "sula", ad: "Su", renk: "#5aa6e8", ipucu: "bitkiye bırak · sula" },
     { k: "nem", ad: "Nem", renk: "#63c46b", ipucu: "bitkiye bırak · nem ölç" },
@@ -2582,14 +2664,38 @@ window.Bahce = (function () {
     { k: "ek", ad: "Tohum", renk: "#e6d49c", ipucu: "tohum seç · boş yere ek" }
   ];
   function rayKur() {
-    var gen = 50, ara = 16;
-    var top = RAY_ALET.length * gen + (RAY_ALET.length - 1) * ara;
+    var gen = RAY_GEN, ara = RAY_ARA;
+    var n = RAY_ALET.length;
+    /* SIĞMIYORSA ASKI DARALIYOR, TAŞMIYOR.
+       Eski kod sığmayınca askıyı yukarı çekiyordu ve tabelanın üstüne
+       biniyordu; tabela ona yer bırakır hâle gelince bu sefer alttan
+       taşmaya başladı (ölçüldü: 496 px tuvalde 21 px, 424 px'de 93 px —
+       ses düğmesi ekranın dışında kalıyordu).
+       Önce ARALIK daralıyor, sonra alet küçülüyor: dokunma hedefi
+       aletin kendisi, aradaki boşluk değil. Alt sınır 36 px — altına
+       inmek parmakla vurulamayan bir düğme demek. */
+    var tabelaAlti = S.gorevKutu
+      ? S.gorevKutu.y + S.gorevKutu.h + RAY_TABELA_ARA : 12;
+    var yer = S.boy - tabelaAlti - RAY_ALT_PAY;
+    if (n > 1 && n * gen + (n - 1) * ara > yer) {
+      ara = Math.max(4, Math.floor((yer - n * gen) / (n - 1)));
+      if (n * gen + (n - 1) * ara > yer) {
+        gen = Math.max(36, Math.floor((yer - (n - 1) * ara) / n));
+      }
+    }
+    var top = n * gen + (n - 1) * ara;
     var y0 = Math.max(12, (S.boy - top) / 2);
     /* Askı, görev tabelasının ALTINDAN başlıyor: ortalanınca tabelanın
-       altına giriyor ve ilk aletin yarısı kayboluyordu. */
+       altına giriyordu.
+       KIRPMA YOK ARTIK. Eskiden buradaki alt sınır (`S.boy - top - 56`)
+       tabelanın altını da geçebiliyordu ve askı tabelanın ÜSTÜNE
+       biniyordu — ilk alet ("Su") tabelanın arkasında kalıyordu.
+       Yer açmak askının değil TABELANIN işi: tabela kendi boyunu
+       askının ihtiyacına göre kısıyor (`gorevOlcu` kullanan yer), o
+       yüzden burada sığdırmaya çalışmak gerekmiyor. */
     if (S.gorevKutu) {
-      var alt0 = S.gorevKutu.y + S.gorevKutu.h + 34;
-      if (y0 < alt0) y0 = Math.min(alt0, Math.max(12, S.boy - top - 56));
+      var alt0 = S.gorevKutu.y + S.gorevKutu.h + RAY_TABELA_ARA;
+      if (y0 < alt0) y0 = alt0;
     }
     var solBos = G.ox - G.kal - G.ray - 12;
     var x = solBos > gen + 16 ? (solBos - gen) / 2 : 8;
@@ -4564,23 +4670,51 @@ window.Bahce = (function () {
         + '<button type="button" data-bh="kapat" class="sade">Bırak</button></div>';
       return;
     }
+    /* BOŞTAYKEN ŞERİT KAPANIYOR.
+     *
+     * Burada sabit bir ipucu satırı ve "son sulama" duruyordu: ikisi
+     * birlikte ekranın altından 56 px yiyordu ve ikisi de her an
+     * gerekli değil. İpucu aletleri tarif ediyordu, oysa hepsi askıdaki
+     * etiketlerde yazılı; "son sulama" ise bir ÖLÇÜM ve yeri ölçümlerin
+     * yanı — sağdaki Ölçümler tabelasına taşındı.
+     *
+     * Şerit yok olmuyor: seçim, onay ve mesaj hâlâ buraya çıkıyor.
+     * Yalnız söyleyecek bir şeyi olmadığında yer kaplamıyor.
+     *
+     * İPUCU İLK KEZ AÇANA BİR KEZ gösteriliyor. Öğrendikten sonra her
+     * açılışta tekrar etmesi, ekranı kendi kendini tekrarlayan bir
+     * satırla doldurmaktı. */
     kok.dataset.kip = "bos";
-    /* İPUCU KISA. Uzun hâli aletleri tek tek sayıyordu (sula · nem ·
-       kamera · yakın · tohum · hasat) — hepsi zaten askıdaki etiketlerde
-       ve sepetin üstünde YAZILI, yani ekranın altını kendi kendini
-       tekrarlayan bir satır kaplıyordu. Burada yalnız simgeden
-       anlaşılmayan iki hareket kalıyor: dokunmak ve uzun basmak. */
-    var ipuc = S.mesaj || "Aleti bitkiye sürükle · bitkiye dokun: künye · "
-      + "toprağa uzun bas: ek";
-    /* SON SULAMA hep görünür: hangi bitki en son ne zaman sulandı,
-       `sulama_ts` kayıtlarından. Kayıt yoksa satır da yok. */
-    var ss = sonSulama();
-    var altYazi = S.mesaj ? (S.sonAlt || "") : (ss ? ss.yazi : "");
+    var ipuc = S.mesaj || (ipucuGorulduMu() ? "" : IPUCU);
+    if (!ipuc) {
+      kok.innerHTML = "";
+      var gd = geriAlDugmesi();
+      if (gd) kok.innerHTML = gd;
+      kok.classList.toggle("bos-gizli", !gd);
+      return;
+    }
+    kok.classList.remove("bos-gizli");
+    var altYazi = S.mesaj ? (S.sonAlt || "") : "";
     kok.innerHTML = '<div class="bh-a-metin"><span class="bh-a-alt'
       + (S.mesaj ? " vurgu" : "") + '">' + kacisli(ipuc) + "</span>"
       + (altYazi ? '<span class="bh-a-alt">' + kacisli(altYazi) + "</span>" : "")
       + "</div>" + geriAlDugmesi();
   });
+
+  //: Simgeden anlaşılmayan iki hareket. Aletlerin adı askıda yazılı.
+  var IPUCU = "Aleti bitkiye sürükle · bitkiye dokun: künye · "
+    + "toprağa uzun bas: ek";
+  var IPUCU_ANAHTAR = "bh-ipucu-gorundu";
+  function ipucuGorulduMu() {
+    try {
+      if (localStorage.getItem(IPUCU_ANAHTAR)) return true;
+      /* İlk gösterimde işaretleniyor: bir sonraki açılışta çıkmıyor.
+         Kaybolmasını istemeyen için `bh-ipucu-gorundu` anahtarını
+         silmek yetiyor. */
+      localStorage.setItem(IPUCU_ANAHTAR, "1");
+    } catch (h) { return false; }   /* depolama yoksa ipucu hep görünsün */
+    return false;
+  }
 
   /* ==================================================================== *
    * BAĞLAMA
@@ -4709,6 +4843,9 @@ window.Bahce = (function () {
       koorAc(!!(k && k.hidden));
     });
     $("#bh-koor-koy").addEventListener("click", function () { koorKoy(); });
+    $("#bh-kam").addEventListener("click", function () {
+      kamHepsi(!kamAcikMi());
+    });
     /* Enter da koyuyor: iki sayı yazıp fareye uzanmak gereksiz. */
     ["#bh-koor-x", "#bh-koor-y"].forEach(function (sec) {
       var el = $(sec);
@@ -4888,6 +5025,10 @@ window.Bahce = (function () {
     sekme: function (acik) {
       S.acik = !!acik;
       document.body.classList.toggle("bahce-acik", S.acik);
+      /* Kamera kutuları bahçede kapalı: sahnenin üstünde durup yatağın
+         bir köşesini örtüyorlardı. Sekmeden çıkınca kullanıcının kendi
+         ayarı geri geliyor. */
+      if (S.acik) kamBahceyeGir(); else kamBahcedenCik();
       if (!S.acik) {
         carkKapat(); jogBitir();
         if (S.ekimSayac) { clearInterval(S.ekimSayac); S.ekimSayac = null; }
