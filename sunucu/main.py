@@ -99,6 +99,10 @@ IZINLI_KOMUTLAR = {
     "kamera_denetimleri",  # {"kamera":"uc"} — o kameranın DESTEKLEDİĞİ
                      #   v4l2 denetimleri ve aralıkları. Panel kaydırakları
                      #   buradan kuruluyor; koda gömülü liste yok.
+    "odak_tara",     # {"kamera":"uc","alt":0,"ust":255,"adim":16} — focus_absolute
+                     #   adım adım geziliyor, her adımda netlik (Laplacian
+                     #   varyansı) ölçülüyor. KALICI DEĞİL: ayardaki değer
+                     #   tarama sonunda geri yazılıyor.
     "kamera_kipleri",  # {"kamera":"uc"} — o kameranın DESTEKLEDİĞİ çözünürlük
                      #   kipleri. Yükseklik `genislik`ten 4:3 türetiliyordu ve
                      #   16:9 bir kamerada o kip yok: sürücü kareyi kırpıyor.

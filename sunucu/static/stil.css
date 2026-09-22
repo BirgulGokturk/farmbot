@@ -2806,3 +2806,18 @@ body.kamera-sekmesi .toplu-cubuk { display: none; }
   .kam-olcum .olcum-satir { grid-template-columns: 1fr auto; }
   .kam-olcum .olcum-satir .uyari { grid-column: 1 / -1; }
 }
+
+/* Odak taraması çubukları — sayı tek başına tepe noktasını göstermiyor.
+   Tepenin KESKİN mi yayvan mı olduğu da anlamlı: yayvan tepe, odağın o
+   aralıkta zaten fark etmediği demek ve o zaman odağı kovalamak boşuna. */
+.kam-olcum .odak-cubuk {
+  display: block;
+  height: 8px;
+  border-radius: 4px;
+  background: linear-gradient(to right, var(--metin-3) var(--o, 0%),
+                              transparent var(--o, 0%));
+}
+.kam-olcum .odak-cubuk.en {
+  background: linear-gradient(to right, var(--vurgu) var(--o, 0%),
+                              transparent var(--o, 0%));
+}

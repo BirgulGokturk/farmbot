@@ -3089,9 +3089,19 @@ function kamAyarKartiCiz(k, i) {
           Otsu eşiği kullanıyor: <b>parlaklık ve kontrast büyük ölçüde
           sönüyor</b>, buna karşılık <b>doygunluk ve beyaz ayarı doğrudan
           vuruyor</b> — ikisi de R:G:B oranlarını kaydırıyor.</p>
-        <button class="dugme" type="button" data-kare-olc="${kacisli(k.ad)}">
-          Kareyi ölç</button>
+        <div class="satir-8">
+          <button class="dugme" type="button" data-kare-olc="${kacisli(k.ad)}">
+            Kareyi ölç</button>
+          <!-- ODAK TARAMASI: focus_absolute adım adım geziliyor ve her
+               adımda netlik ölçülüyor. Elle "biraz daha net" demek iki
+               ayarı karşılaştırmaya yetmiyor. KALICI DEĞİL — en iyi
+               değeri siz yazıp Kaydet'e basıyorsunuz. -->
+          <button class="dugme" type="button" data-odak-tara="${kacisli(k.ad)}"
+                  title="focus_absolute'ı tarayıp en net değeri bulur. Ayarı değiştirmez.">
+            Odağı tara</button>
+        </div>
         <div class="kam-olcum" data-olcum="${kacisli(k.ad)}"></div>
+        <div class="kam-olcum" data-odak="${kacisli(k.ad)}"></div>
       </details>
 
       <!-- AKIŞ KIRPMASI (YAKINLAŞMA)
@@ -3242,7 +3252,19 @@ function kamAyarKartiCiz(k, i) {
       + `<span class="ikincil ${sinif || ""}">${kacisli(hukum)}</span></div>`;
 
     const k = o.kirpilma || {}, be = o.beyaz || {}, e = o.exg || {}, t = o.ton || {};
+    const n = o.netlik || {};
     let h = "";
+
+    /* NETLİK — odak ayarlanırken elde tutulacak tek sayı. Mutlak bir
+     * eşiği yok: sahneye, ışığa ve çözünürlüğe göre değişiyor. İşe
+     * yarayan şey KARŞILAŞTIRMA, o yüzden hüküm yerine ne yapılacağı
+     * yazılı. Orta bölge ayrı: kenardaki keskin bir kablo tam kare
+     * ölçüsünü yukarı çekip "odak iyi" dedirtebiliyor. */
+    if (n.orta != null) {
+      h += satir("Netlik (orta)", String(n.orta),
+        `tam kare ${n.tam} · ${n.genislik} px'te ölçüldü`
+        + " — odağı değiştirip tekrar ölçün, BÜYÜK olan daha net");
+    }
 
     const pat = Number(k.patlamis);
     h += satir("Kırpılan piksel", `%${pat}`,
@@ -3295,6 +3317,52 @@ function kamAyarKartiCiz(k, i) {
    * soruluyor — denetimlerle aynı gerekçe. Sabit bir liste, kameranın
    * vermediği bir kipi seçtirir ve sürücü onu sessizce başka bir şeye
    * çevirir. */
+  kap.querySelectorAll("[data-odak-tara]").forEach((d) => {
+    d.onclick = async () => {
+      const ad = d.dataset.odakTara;
+      const kutu = kap.querySelector(`[data-odak="${CSS.escape(ad)}"]`);
+      if (!kutu) return;
+      /* ODAK MOTORU HER ADIMDA BEKLİYOR: 16 adım x 0,7 sn + çekim
+       * süresi. Süreyi önden yazıyoruz, yoksa donmuş gibi görünüyor. */
+      const adim = 16;
+      kutu.innerHTML = `<p class="ikincil">odak taranıyor — `
+        + `${Math.ceil((256 / adim) * 1.2)} saniye kadar sürebilir…</p>`;
+      d.disabled = true;
+      try {
+        const c = await komutGonder("odak_tara",
+          { kamera: ad, alt: 0, ust: 255, adim: adim });
+        const v = (c && c.veri) || {};
+        const satirlar = v.satirlar || [];
+        const en = v.en_iyi;
+        if (!satirlar.length) {
+          kutu.innerHTML = `<p class="ikincil">✕ ${kacisli(c && c.mesaj
+            || "tarama sonuç vermedi")}</p>`;
+          return;
+        }
+        const enB = Math.max(...satirlar.map((r) => Number(r.netlik) || 0), 1);
+        /* Çubuklar sayıyı okunur yapıyor: tepe noktası gözle bulunuyor
+         * ve tepenin KESKİN mi yayvan mı olduğu da görünüyor — yayvan
+         * tepe, odağın o aralıkta zaten fark etmediği demek. */
+        kutu.innerHTML = `<p class="ikincil">${kacisli(c.mesaj || "")}${
+            v.geri_yazilan != null
+              ? ` · ayardaki değer (${v.geri_yazilan}) geri yazıldı` : ""}</p>`
+          + satirlar.map((r) => {
+              const iyi = en && r.odak === en.odak;
+              const oran = Math.round(100 * (Number(r.netlik) || 0) / enB);
+              return `<div class="olcum-satir">`
+                + `<span class="olcum-ad">odak ${r.odak}</span>`
+                + `<b>${r.netlik == null ? "—" : r.netlik}</b>`
+                + `<span class="odak-cubuk${iyi ? " en" : ""}"`
+                + ` style="--o:${oran}%"></span></div>`;
+            }).join("");
+      } catch (h) {
+        kutu.innerHTML = `<p class="ikincil">✕ ${kacisli((h && h.message) || h)}</p>`;
+      } finally {
+        d.disabled = false;
+      }
+    };
+  });
+
   kap.querySelectorAll("[data-kip-yukle]").forEach((d) => {
     d.onclick = async () => {
       const ad = d.dataset.kipYukle;

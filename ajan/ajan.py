@@ -1212,6 +1212,80 @@ class Ajan:
                 return {"ok": bool(veri.get("ok")), "sessiz": True,
                         "mesaj": veri.get("sebep", ""), "veri": veri}
 
+            if ad == "odak_tara":
+                # ODAK TARAMASI — "biraz netleşti" yerine sayı.
+                #
+                # Odak elle ayarlanıyordu: değeri değiştir, bak, tahmin
+                # et. Gözle "biraz daha net" söylenebiliyor ama iki
+                # ayar karşılaştırılamıyor ve en iyi nokta ıskalanıyor.
+                # Burada `focus_absolute` adım adım geziliyor, her
+                # adımda bir kare alınıp Laplacian varyansı (netlik)
+                # ölçülüyor ve tablo panele dönüyor.
+                #
+                # KALICI DEĞİL. Tarama bitince ayardaki değer geri
+                # yazılıyor; hangi değerin kaydedileceğine kullanıcı
+                # karar veriyor. Tarama sırasında kamerayı kendi
+                # ayarından farklı bırakıp öyle bırakmak, sonradan
+                # "neden bulanık" sorusunun sessiz cevabı olurdu.
+                kam = self._kamera_sec(arg.get("kamera"))
+                if kam is None:
+                    return {"ok": False,
+                            "mesaj": f"'{arg.get('kamera')}' adlı kamera tanımlı değil"}
+                try:
+                    alt = max(0, int(arg.get("alt", 0)))
+                    ust = min(1023, int(arg.get("ust", 255)))
+                    adim = max(1, int(arg.get("adim", 16)))
+                    bekle = max(0.2, min(3.0, float(arg.get("bekle", 0.7))))
+                except (TypeError, ValueError):
+                    return {"ok": False, "mesaj": "tarama sınırları sayı olmalı"}
+                if ust <= alt:
+                    return {"ok": False, "mesaj": "üst sınır alttan büyük olmalı"}
+                # ÜST SINIR 40 ADIM: her adım bir kare çekimi ve bekleme
+                # demek; 256 adımlık bir tarama dakikalarca sürer ve o
+                # sürede makine başka iş yapamaz.
+                degerler = list(range(alt, ust + 1, adim))[:40]
+
+                # Otomatik odak AÇIKSA tarama anlamsız: kamera her
+                # karede kendi odağını değiştiriyor ve ölçülen sayı
+                # bizim yazdığımız değere ait olmuyor.
+                denet = dict(kam.ayar.get("denetimler") or {})
+                if int(denet.get("focus_automatic_continuous", 0) or 0):
+                    return {"ok": False,
+                            "mesaj": ("Otomatik odak açık — taramadan önce "
+                                      "`focus_automatic_continuous` kapatılmalı.")}
+                onceki = denet.get("focus_absolute")
+                satirlar = []
+                for d in degerler:
+                    ok, sebep = await asyncio.to_thread(
+                        kam.denetim_yaz, "focus_absolute", d)
+                    if not ok:
+                        return {"ok": False,
+                                "mesaj": f"focus_absolute yazılamadı: {sebep}"}
+                    # Odak motorunun oturmasını bekliyoruz; beklemeden
+                    # ölçmek bir önceki odağın karesini ölçmek olurdu.
+                    await asyncio.sleep(bekle)
+                    ham = await asyncio.to_thread(kam.tam_kare, 0.0)
+                    if not ham:
+                        satirlar.append({"odak": d, "netlik": None,
+                                         "sebep": "kare gelmedi"})
+                        continue
+                    n = await asyncio.to_thread(lekeler_modulu.netlik, ham, 1280)
+                    satirlar.append({"odak": d,
+                                     "netlik": n.get("orta") if n.get("ok") else None,
+                                     "tam": n.get("tam") if n.get("ok") else None,
+                                     "sebep": n.get("sebep", "")})
+                # Ayardaki değer geri: tarama kalıcı bir şey değiştirmiyor.
+                if onceki is not None:
+                    await asyncio.to_thread(kam.denetim_yaz,
+                                            "focus_absolute", onceki)
+                gecerli = [r for r in satirlar if r.get("netlik") is not None]
+                en_iyi = max(gecerli, key=lambda r: r["netlik"]) if gecerli else None
+                return {"ok": True, "sessiz": True,
+                        "mesaj": (f"{len(gecerli)}/{len(satirlar)} adım ölçüldü"
+                                  + (f"; en net odak {en_iyi['odak']}" if en_iyi else "")),
+                        "veri": {"kamera": kam.ad, "satirlar": satirlar,
+                                 "en_iyi": en_iyi, "geri_yazilan": onceki}}
+
             if ad == "kamera_kipleri":
                 # KAMERANIN DESTEKLEDIGI COZUNURLUKLER — denetimlerle ayni
                 # gerekce: koda yazilmiyor, cihaza soruluyor. Panelde

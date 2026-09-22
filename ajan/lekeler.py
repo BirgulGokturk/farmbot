@@ -387,6 +387,36 @@ def _exg_otsu_ton(kare, a, cv2, np):
     return exg8, esik, maske, hsv, ton_elenen, maske_ham
 
 
+def netlik(ham: bytes, islem_genislik: int = 1280) -> dict[str, Any]:
+    """Tek karenin netliği — odak taraması için ucuz ölçüm.
+
+    `olc` bütün ölçümleri yapıyor ve odak taramasında onlarca kare
+    ölçülüyor; burada yalnız Laplacian varyansı hesaplanıyor.
+    """
+    bos = {"ok": False, "tam": 0.0, "orta": 0.0, "genislik": 0, "sebep": ""}
+    try:
+        import cv2
+        import numpy as np
+    except ImportError as hata:
+        return {**bos, "sebep": f"OpenCV/NumPy yok: {hata}"}
+    kare, _g, _y, _yol = _kare_coz(ham, int(islem_genislik or 0), cv2, np)
+    if kare is None:
+        return {**bos, "sebep": "kare çözülemedi"}
+    hedef = int(islem_genislik or 0)
+    if hedef and kare.shape[1] > hedef:
+        oran = hedef / float(kare.shape[1])
+        kare = cv2.resize(kare, (hedef, max(1, int(round(kare.shape[0] * oran)))),
+                          interpolation=cv2.INTER_AREA)
+    yuk, gen = kare.shape[:2]
+    gri = cv2.cvtColor(kare, cv2.COLOR_BGR2GRAY)
+    oy, ox = yuk // 4, gen // 4
+    orta = gri[oy:yuk - oy, ox:gen - ox]
+    return {"ok": True, "sebep": "", "genislik": gen,
+            "tam": round(float(cv2.Laplacian(gri, cv2.CV_64F).var()), 1),
+            "orta": round(float(cv2.Laplacian(orta, cv2.CV_64F).var()), 1)
+            if orta.size else 0.0}
+
+
 def olc(ham: bytes, ayar: dict[str, Any] | None = None) -> dict[str, Any]:
     """Kare ölçümü — kamera ayarını körlemesine çevirmemek için.
 
@@ -461,6 +491,23 @@ def olc(ham: bytes, ayar: dict[str, Any] | None = None) -> dict[str, Any]:
             (b_k <= 5) & (y_k <= 5) & (k_k <= 5))) / toplam_px, 3),
         "patlamis": round(100.0 * float(np.count_nonzero(beyaz_px)) / toplam_px, 3),
     }
+
+    # --- netlik ------------------------------------------------------------
+    # Laplacian'ın VARYANSI: odakta olan kenarlar keskin, varyans büyük.
+    # Odak ayarlanırken elde tutulacak tek sayı bu; "biraz netleşti"
+    # gözle söylenebilen ama karşılaştırılamayan bir şey.
+    #
+    # ÇÖZÜNÜRLÜĞE BAĞLI. Aynı sahne iki kat büyük çekilince varyans da
+    # değişiyor, yani iki ölçüm ancak AYNI genişlikte karşılaştırılabilir;
+    # kullanılan genişlik bu yüzden çıktıda yazıyor.
+    gri = cv2.cvtColor(kare, cv2.COLOR_BGR2GRAY)
+    netlik_tam = float(cv2.Laplacian(gri, cv2.CV_64F).var())
+    # ORTA BÖLGE AYRICA: kadrajın kenarında duvar, kablo ve zemin var;
+    # odaklanmak istenen şey yatağın ortası. Kenardaki keskin bir kablo
+    # tam kare ölçüsünü yukarı çekip "odak iyi" dedirtebiliyor.
+    oy, ox = yuk // 4, gen // 4
+    orta = gri[oy:yuk - oy, ox:gen - ox]
+    netlik_orta = float(cv2.Laplacian(orta, cv2.CV_64F).var()) if orta.size else 0.0
 
     exg8, esik, maske, hsv, ton_elenen, maske_ham = _exg_otsu_ton(kare, a, cv2, np)
 
@@ -541,6 +588,8 @@ def olc(ham: bytes, ayar: dict[str, Any] | None = None) -> dict[str, Any]:
         ton_o["y95"] = int(np.percentile(tonlar, 95))
         ton_o["elenen_yuzde"] = round(100.0 * ton_elenen / float(bitki_n), 2)
     return {"kare_px": [tam_g, tam_y], "islem_px": [gen, yuk],
+            "netlik": {"tam": round(netlik_tam, 1), "orta": round(netlik_orta, 1),
+                       "genislik": gen},
             "kirpilma": kirpilma, "beyaz": beyaz, "exg": exg_o, "ton": ton_o,
             "sure_ms": round((time.monotonic() - basladi) * 1000.0, 1),
             "sebep": ""}

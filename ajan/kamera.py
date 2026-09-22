@@ -776,6 +776,34 @@ class Kamera:
             self._son_denetim = ciftler
             self.gunluk_cb(f"[{self.etiket}] kamera denetimleri uygulandı: {ciftler}")
 
+    def denetim_yaz(self, ad: str, deger: Any) -> tuple[bool, str]:
+        """TEK bir v4l2 denetimini yazar — tarama için, GEÇİCİ.
+
+        `_denetimleri_uygula` ayardaki denetimlerin TAMAMINI yazıyor ve
+        kaydedilmiş hâli uyguluyor. Odak taraması ise değeri adım adım
+        değiştirip ölçüyor ve ayara hiç dokunmuyor; tarama bitince
+        ayardaki değer geri yazılıyor. İkisini aynı işlevle yapmak,
+        taramanın yarısında kaydedilmemiş bir değeri kalıcı sanmak
+        olurdu.
+        """
+        cihaz = self._cihaz or str(self.ayar.get("cihaz") or "")
+        if not cihaz:
+            return False, "kamera cihazı çözülmedi"
+        if not shutil.which("v4l2-ctl"):
+            return False, "v4l2-ctl yok (sudo apt install -y v4l-utils)"
+        if not str(ad).replace("_", "").isalnum():
+            return False, f"geçersiz denetim adı: {ad!r}"
+        try:
+            sonuc = subprocess.run(
+                ["v4l2-ctl", "-d", cihaz, "--set-ctrl", f"{ad}={int(deger)}"],
+                capture_output=True, timeout=6)
+        except (OSError, subprocess.SubprocessError, ValueError) as hata:
+            return False, str(hata)
+        if sonuc.returncode != 0:
+            return False, ((sonuc.stderr or b"").decode("utf-8", "replace").strip()
+                           or "v4l2-ctl reddetti")
+        return True, ""
+
     #: `v4l2-ctl --list-ctrls` satırının biçimi:
     #:     brightness 0x00980900 (int)  : min=-64 max=64 step=1 default=0 value=0
     #: Ad, tip ve anahtar=değer çiftleri. Menü seçenekleri ayrı satırlarda
