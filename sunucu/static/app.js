@@ -2952,6 +2952,13 @@ function kamAyarTaslak() {
     // Görüntü döndürme (0/90/180/270, saat yönü). Taslakta DURMASI şart:
     // gönderilmeyen alan ajanda varsayılana düşüp ayarı sessizce sıfırlar.
     dondur: Number(k.dondur) || 0,
+    // AKIŞ KIRPMASI — [sol, üst, sağ, alt] oranlı (0-1), döndürülmüş
+    // karenin uzayında. null = kırpma yok. Taslakta DURMASI şart:
+    // gönderilmeyen alan ajanda varsayılana (null) düşer ve yakınlaşma
+    // her kayıtta sessizce silinirdi.
+    kirp: (Array.isArray(k.kirp) && k.kirp.length === 4
+           && k.kirp.every((v) => Number.isFinite(Number(v))))
+      ? k.kirp.map(Number) : null,
     // DENETİMLER OLDUĞU GİBİ TAŞINIYOR. Kaydetmede bu alan düşerse
     // kameranın parlaklık/pozlama ayarı her kayıtta silinirdi.
     denetimler: (k.denetimler && typeof k.denetimler === "object")
@@ -3034,6 +3041,49 @@ function kamAyarKartiCiz(k, i) {
           Açılışta çalışsın</label>
       </div>
 
+      <!-- AKIŞ KIRPMASI (YAKINLAŞMA)
+           Üst kamera yatağın dışını da görüyor: zemin, kablolar, çerçeve.
+           Panelde bakılan şey dikim alanı; gerisini taşımak hem ekranı
+           hem ağı boşa yoruyor.
+
+           YALNIZ AKIŞA uygulanıyor, çözümlemeye DEĞİL. Kalibrasyon ham
+           karenin koordinat sisteminde kurulu ve milimetreler oradan
+           çıkıyor; kırpılmış kareyi çözümlemeye de vermek bütün
+           koordinatları kırpma kadar kaydırırdı — sessizce. Leke
+           kutuları bu yüzden kaymıyor: panel kırpmayı biliyor ve
+           çizim penceresini ona göre kaydırıyor (leke.js).
+
+           Yüzde, oran değil: "%12" yazmak "0,12" yazmaktan az hata
+           yapılan biçim. Ajana 0-1 olarak gidiyor. -->
+      <details class="kam-denetim-kutu">
+        <summary>Akış kırpma — yalnız toprağı göster</summary>
+        <p class="alt-not">Canlı akışta görünen bölge. Çözümleme ve
+          koordinatlar TAM kareyi kullanmaya devam ediyor, yani
+          kalibrasyon bozulmuyor. Değiştirdikten sonra <b>Kaydet</b>.</p>
+        <div class="satir-8 alt-hizali">
+          <div class="alan"><label>Sol (%)</label>
+            <input type="number" data-kirp="0" min="0" max="95" step="1"
+                   value="${k.kirp ? Math.round(k.kirp[0] * 100) : 0}"></div>
+          <div class="alan"><label>Üst (%)</label>
+            <input type="number" data-kirp="1" min="0" max="95" step="1"
+                   value="${k.kirp ? Math.round(k.kirp[1] * 100) : 0}"></div>
+          <div class="alan"><label>Sağ (%)</label>
+            <input type="number" data-kirp="2" min="5" max="100" step="1"
+                   value="${k.kirp ? Math.round(k.kirp[2] * 100) : 100}"></div>
+          <div class="alan"><label>Alt (%)</label>
+            <input type="number" data-kirp="3" min="5" max="100" step="1"
+                   value="${k.kirp ? Math.round(k.kirp[3] * 100) : 100}"></div>
+        </div>
+        <div class="satir-8">
+          <button class="dugme" type="button" data-toprak-kirp="${kacisli(k.ad)}"
+                  title="Kameradan bir kare alıp toprağı bulur ve kırpmayı onun sınırlarına ayarlar. Kaydetmeyi siz yapıyorsunuz.">
+            Toprağı bul ve yakınlaş</button>
+          <button class="dugme" type="button" data-kirp-sil="${kacisli(k.ad)}">
+            Yakınlaşmayı kaldır</button>
+          <span class="ikincil" data-kirp-not="${kacisli(k.ad)}"></span>
+        </div>
+      </details>
+
       <!-- KAMERA DENETİMLERİ — parlaklık, pozlama, odak…
            Liste KAMERADAN geliyor (v4l2-ctl --list-ctrls), koda yazılı
            değil: her kamera başka denetim sunuyor ve aralıkları farklı.
@@ -3064,8 +3114,126 @@ function kamAyarKartiCiz(k, i) {
     };
   });
 
+  /* ------------------------------------------------------ AKIŞ KIRPMASI
+   * Kutular yüzde, taslak oran. Dört kutudan biri değişince tamamı
+   * yeniden okunuyor: tek kutuyu taslağa yazmak, "sol %60 / sağ %40"
+   * gibi ters bir ara durumda taslağı geçersiz bırakırdı ve hata ancak
+   * Kaydet'te görünürdü.
+   *
+   * GEÇERSİZ KIRPMA TASLAĞA YAZILMIYOR ve sebebi kartta yazıyor —
+   * kaydedip ajandan ret almak, aynı şeyi bir tur geç öğrenmek olurdu. */
+  function kirpNot(ad, metin) {
+    const el = kap.querySelector(`[data-kirp-not="${CSS.escape(ad)}"]`);
+    if (el) el.textContent = metin || "";
+  }
+  function kirpOku(kart, ad, sira) {
+    const t = kamAyarTaslak()[sira];
+    if (!t) return;
+    const v = [0, 1, 2, 3].map((i) => {
+      const el = kart.querySelector(`[data-kirp="${i}"]`);
+      return el ? Number(el.value) / 100 : NaN;
+    });
+    if (!v.every((x) => Number.isFinite(x) && x >= 0 && x <= 1)) {
+      kirpNot(ad, "Kırpma %0 ile %100 arasında olmalı — yazılan kullanılmadı.");
+      return;
+    }
+    // Kırpma yoksa alan null gidiyor: [0,0,1,1] göndermek "kırpma var
+    // ama tam kare" demek olurdu ve ajan o yolda boşuna kırpma yapardı.
+    if (v[0] === 0 && v[1] === 0 && v[2] === 1 && v[3] === 1) {
+      t.kirp = null; kirpNot(ad, "Yakınlaşma yok — tam kare."); return;
+    }
+    if (v[2] - v[0] < 0.05 || v[3] - v[1] < 0.05) {
+      kirpNot(ad, "Çok dar — genişlik ve yükseklik en az %5 olmalı. "
+                  + "Yazılan kullanılmadı.");
+      return;
+    }
+    t.kirp = v;
+    kirpNot(ad, `Akışta görünen: %${Math.round((v[2] - v[0]) * 100)} × `
+              + `%${Math.round((v[3] - v[1]) * 100)} — Kaydet'e basın.`);
+  }
+  function kirpYaz(kart, ad, sira, v) {
+    const t = kamAyarTaslak()[sira];
+    if (!t) return;
+    t.kirp = v;
+    [0, 1, 2, 3].forEach((i) => {
+      const el = kart.querySelector(`[data-kirp="${i}"]`);
+      if (el) el.value = v ? Math.round(v[i] * 100) : (i < 2 ? 0 : 100);
+    });
+  }
+
+  kap.querySelectorAll("[data-toprak-kirp]").forEach((d) => {
+    d.onclick = async () => {
+      const ad = d.dataset.toprakKirp;
+      const kart = d.closest(".kam-ayar");
+      const sira = kart ? Number(kart.dataset.sira) : -1;
+      if (!kart || sira < 0) return;
+      d.disabled = true;
+      kirpNot(ad, "kare alınıyor…");
+      try {
+        /* ÖNCE ÇÖZÜMLEME, SONRA TOPRAK. `/api/leke/toprak` sunucuda
+         * saklı çözümleme karesi üstünde çalışıyor; kullanıcıdan önce
+         * Kamera sekmesine gidip çözümleme yapmasını beklemek, düğmenin
+         * çoğu zaman "saklı kare yok" demesi olurdu. */
+        await apiIste("/api/leke/bul", {
+          method: "POST", body: JSON.stringify({ kamera: ad })
+        });
+        kirpNot(ad, "toprak aranıyor…");
+        const c = await apiIste("/api/leke/toprak", {
+          method: "POST", body: JSON.stringify({ kamera: ad })
+        });
+        // Alan adı `kose` (bkz. sunucu/toprak.py, leke.js/toprakBul).
+        const k = (c && c.kose) || [];
+        if (!Array.isArray(k) || k.length < 3) {
+          kirpNot(ad, "Toprak bulunamadı — kırpma değişmedi."); return;
+        }
+        const xs = k.map((n) => Number(n[0])), ys = k.map((n) => Number(n[1]));
+        if (!xs.every(Number.isFinite) || !ys.every(Number.isFinite)) {
+          kirpNot(ad, "Toprak köşeleri okunamadı — kırpma değişmedi."); return;
+        }
+        /* PAY BIRAKILIYOR. Toprağın tam sınırına kırpmak, kenardaki bir
+         * filizi yarısından kesiyor ve maske birkaç piksel şaşsa toprağın
+         * kendisi kırpılıyordu. %2 ölçülen bir sayı değil, kenarda kalan
+         * için bırakılmış görünür bir pay. */
+        const pay = 0.02;
+        const v = [
+          Math.max(0, Math.min(...xs) - pay), Math.max(0, Math.min(...ys) - pay),
+          Math.min(1, Math.max(...xs) + pay), Math.min(1, Math.max(...ys) + pay)
+        ];
+        if (v[2] - v[0] < 0.05 || v[3] - v[1] < 0.05) {
+          kirpNot(ad, "Bulunan toprak çok küçük — kırpma değişmedi."); return;
+        }
+        kirpYaz(kart, ad, sira, v);
+        kirpNot(ad, `Toprak bulundu: akışta görünen %${Math.round((v[2] - v[0]) * 100)}`
+                  + ` × %${Math.round((v[3] - v[1]) * 100)}`
+                  + (c && c.doluluk != null
+                     ? ` · maske doluluğu %${Math.round(Number(c.doluluk) * 100)}` : "")
+                  + " — Kaydet'e basın.");
+      } catch (h) {
+        kirpNot(ad, "Olmadı: " + ((h && h.message) || h));
+      } finally {
+        d.disabled = false;
+      }
+    };
+  });
+  kap.querySelectorAll("[data-kirp-sil]").forEach((d) => {
+    d.onclick = () => {
+      const ad = d.dataset.kirpSil;
+      const kart = d.closest(".kam-ayar");
+      const sira = kart ? Number(kart.dataset.sira) : -1;
+      if (!kart || sira < 0) return;
+      kirpYaz(kart, ad, sira, null);
+      kirpNot(ad, "Yakınlaşma kaldırıldı — Kaydet'e basın.");
+    };
+  });
+
   kap.querySelectorAll(".kam-ayar").forEach((kart) => {
     const sira = Number(kart.dataset.sira);
+    const kamAd = kart.querySelector("[data-toprak-kirp]");
+    kart.querySelectorAll("[data-kirp]").forEach((el) => {
+      el.addEventListener("input", () => {
+        kirpOku(kart, kamAd ? kamAd.dataset.toprakKirp : "", sira);
+      });
+    });
     kart.querySelectorAll("[data-alan]").forEach((el) => {
       el.addEventListener("input", () => {
         const t = kamAyarTaslak()[sira];

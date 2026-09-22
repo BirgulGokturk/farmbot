@@ -567,6 +567,40 @@
    * `contain` ile birebir aynı ölçekleniyor — ölçüldü, sapma 0 px.
    * ==================================================================== */
 
+  /* ------------------------------------------------------- AKIŞ KIRPMASI
+   * Üst kamera yatağın dışını da görüyor ve akışı kırpılabiliyor
+   * (`ajan/kamera.py`, kamera ayarındaki `kirp`). Kırpma YALNIZ AKIŞA
+   * uygulanıyor: çözümleme ve kalibrasyon ham karenin uzayında kalıyor,
+   * yoksa bütün milimetreler kırpma kadar kayardı.
+   *
+   * Bunun bedeli burada ödeniyor: kutular ham karenin koordinatlarında
+   * geliyor, görüntü ise kırpılmış. viewBox'ı kırpılan bölgeye kaydırmak
+   * ikisini yeniden çakıştırıyor — kutu koordinatlarına dokunmadan,
+   * ROI ve toprak köşeleri dahil hepsi aynı anda düzeliyor.
+   * ---------------------------------------------------------------- */
+
+  /** O kameranın akış kırpması — [x1,y1,x2,y2] oranlı; yoksa null. */
+  function kirpmaAl(ad) {
+    const p = P();
+    const liste = (p && p.S && p.S.kameralar) || [];
+    const k = liste.filter((x) => x && x.ad === ad)[0];
+    const c = k && k.kirp;
+    if (!Array.isArray(c) || c.length !== 4) return null;
+    const s = c.map(Number);
+    if (!s.every((v) => Number.isFinite(v))) return null;
+    /* Ajandaki alt sınırla aynı: daha darını çizmek, kırpmanın kapalı
+       olduğu bir akışa kırpılmış viewBox uydurmak olurdu. */
+    if (s[2] - s[0] < 0.05 || s[3] - s[1] < 0.05) return null;
+    return s;
+  }
+
+  /** viewBox — kırpma varsa akışta GÖRÜNEN bölge. */
+  function goruntuKutusu(ad, kare, c) {
+    if (!c) return `0 0 ${kare[0]} ${kare[1]}`;
+    return `${c[0] * kare[0]} ${c[1] * kare[1]} `
+         + `${(c[2] - c[0]) * kare[0]} ${(c[3] - c[1]) * kare[1]}`;
+  }
+
   /** Katmanı görüntünün o anki kutusuna oturtur. */
   function katmanHizala(ad) {
     const k = YUZEN.get(ad);
@@ -990,14 +1024,19 @@
     const r0 = roiGecici || ROI.get(ad);
     if (!kare || !kare[0] || !kare[1]) { kayit.svg.innerHTML = ""; return; }
     kayit.kareOlcu = kare;
-    kayit.svg.setAttribute("viewBox", `0 0 ${kare[0]} ${kare[1]}`);
-    const kalinlik = Math.max(2, Math.round(kare[0] / 250));
-    const r = Math.max(3, Math.round(kare[0] / 200));
+    const kirp = kirpmaAl(ad);
+    kayit.svg.setAttribute("viewBox", goruntuKutusu(ad, kare, kirp));
+    /* ÇİZGİ VE YAZI GÖRÜNEN GENİŞLİĞE ORANLI, ham genişliğe değil:
+       kırpılmış viewBox daha küçük ve ham ölçüyü kullanmak, yakınlaşınca
+       çizgileri kutulardan kalın, yazıları ekrandan taşkın yapardı. */
+    const gorunenG = kirp ? (kirp[2] - kirp[0]) * kare[0] : kare[0];
+    const kalinlik = Math.max(2, Math.round(gorunenG / 250));
+    const r = Math.max(3, Math.round(gorunenG / 200));
     // Yazı kare ölçüsüne oranlı: viewBox gerçek piksel, kutu küçülse de
     // büyüse de yazı aynı görünür kalıyor. 45'ten 110'a indirildi —
     // sahada yazılar kutulardan büyük çıkıyor ve komşu filizlerde üst
     // üste biniyordu.
-    const yaziBoy = Math.max(9, Math.round(kare[0] / 110));
+    const yaziBoy = Math.max(9, Math.round(gorunenG / 110));
     /* KAYMAYI GİZLEMİYORUZ. Sürekli kipte sonuç aralık kadar geriden
      * geliyor; makine o sırada yol aldıysa kutular canlı görüntüyle
      * hizalı DEĞİL. Soluklaştırmak bunu söylemenin en sessiz ama

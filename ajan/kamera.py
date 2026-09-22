@@ -122,6 +122,21 @@ VARSAYILAN = {
     # DONDURDUKTEN SONRA KAMERAYI YENIDEN KALIBRE ET: mm/px olcusu ve
     # kamera merkezinin uctan kaymasi eski aciya gore olculmustu.
     "dondur": 0,
+    # CANLI AKIS KIRPMASI — [x1, y1, x2, y2], ORANLI (0-1), DONUK karenin
+    # uzayinda. None = kirpma yok.
+    #
+    # YALNIZ AKISA UYGULANIYOR, `tam_kare`ye DEGIL. Sebep kalibrasyon:
+    # ic kalibrasyon ve homografi HAM karenin koordinat sisteminde
+    # kuruldu, cozumleme (leke bulma, AprilTag) `tam_kare`den besleniyor
+    # ve `koordinat.py` o uzayda mm uretiyor. Kirpilmis kareyi oraya da
+    # vermek, butun milimetreleri kirpma kadar kaydirmak olurdu — ve bu
+    # kayma sessiz olurdu, kimse fark etmezdi.
+    #
+    # NE ISE YARIYOR: ust kamera yatagin disini da goruyor (zemin,
+    # kablolar, cerceve). Panelde bakilan sey dikim alani; akisin geri
+    # kalanini tasimak hem ekrani hem agi bosa yoruyor. Kirpma DONUK
+    # uzayda cunku kullanici ekranda gordugu kareye gore ayarliyor.
+    "kirp": None,
     # ŞERİT KABLOLU Pi KAMERASININ AYARLARI. `denetimler` UVC (USB) yolunda
     # `v4l2-ctl` ile yazılıyor; rpicam/libcamera o denetimleri HİÇ tanımıyor,
     # kendi komut satırı seçeneklerini istiyor ve ölçekleri de farklı
@@ -508,6 +523,29 @@ class Kamera:
             return 0
         return derece if derece in (90, 180, 270) else 0
 
+    def _kirpma(self) -> list[float] | None:
+        """Akis kirpmasi — [x1, y1, x2, y2] oranli, DONUK uzayda. Yoksa None.
+
+        Bozuk bir deger kirpmayi KAPATIYOR, kamerayi degil: yanlis yazilmis
+        bir ayar yuzunden akisin tamamen kesilmesi, gorunen sorunu
+        buyutmekten baska ise yaramaz. Kayit sirasinda `tanim_dogrula`
+        zaten reddediyor; buraya ancak elle duzenlenmis bir dosya dusebilir.
+        """
+        ham = self.ayar.get("kirp")
+        if not ham:
+            return None
+        try:
+            k = [float(v) for v in ham]
+        except (TypeError, ValueError):
+            return None
+        if len(k) != 4:
+            return None
+        if not all(0.0 <= v <= 1.0 for v in k):
+            return None
+        if k[2] - k[0] < 0.05 or k[3] - k[1] < 0.05:
+            return None
+        return k
+
     def _dondur(self, jpeg: bytes) -> bytes:
         """Kareyi ayardaki aciya cevirir. Ceviremezse OLDUGU GIBI verir.
 
@@ -558,14 +596,19 @@ class Kamera:
         """
         hedef = int(self.ayar.get("canli_genislik", 0) or 0)
         derece = self._dondurme()
-        if hedef <= 0:
+        kirp = self._kirpma()
+        # KIRPMA VARSA ERKEN CIKIS YOK. Kucultme gereksiz olsa bile
+        # (kare zaten hedeften kucuk) kirpmanin uygulanmasi gerekiyor;
+        # eskiden buradan donen kare kirpilmamis giderdi ve ayar hicbir
+        # sey yapmiyor gibi gorunurdu.
+        if hedef <= 0 and not kirp:
             return self._dondur(jpeg)
         genislik, yukseklik = self._boyut()
         if derece in (90, 270):
             # Dondukten sonra genislik ile yukseklik yer degistiriyor;
             # kucultme esigi DONMUS kareye gore olculmeli.
             genislik = yukseklik
-        if genislik <= hedef:
+        if hedef > 0 and genislik <= hedef and not kirp:
             return self._dondur(jpeg)
         try:
             import io
@@ -601,8 +644,17 @@ class Kamera:
             # donme sonrasi genislik oradan geliyor.
             kay_g, kay_y = gorsel.size
             temel = kay_y if derece in (90, 270) else kay_g
-            if temel > hedef:
-                olcek = hedef / float(temel)
+            # DRAFT HEDEFI KIRPMAYI HESABA KATIYOR. Hedef genislik
+            # EKRANDA gorunen (kirpilmis) karenin genisligi; kaynagi
+            # dogrudan hedefe indirmek, kirptiktan sonra hedefin altina
+            # dusmek demekti — yakinlasma ekranda bulaniklik olarak
+            # gorunurdu. Kirpma orani 0.5 ise kaynak iki kati kalmali.
+            ham_hedef = hedef
+            if hedef > 0 and kirp:
+                genis_oran = max(0.05, kirp[2] - kirp[0])
+                ham_hedef = min(temel, int(round(hedef / genis_oran)))
+            if ham_hedef > 0 and temel > ham_hedef:
+                olcek = ham_hedef / float(temel)
                 gorsel.draft("RGB", (max(1, round(kay_g * olcek)),
                                      max(1, round(kay_y * olcek))))
             if derece:
@@ -611,7 +663,17 @@ class Kamera:
                 gorsel = gorsel.transpose({90: Image.ROTATE_270,
                                            180: Image.ROTATE_180,
                                            270: Image.ROTATE_90}[derece])
-            gorsel.thumbnail((hedef, hedef * 10), Image.BILINEAR)
+            if kirp:
+                # DONDURMEDEN SONRA: kirpma donuk uzayda tanimli, cunku
+                # kullanici ekranda gordugu kareye gore ayarliyor.
+                dg, dy = gorsel.size
+                x1 = max(0, min(dg - 1, int(round(kirp[0] * dg))))
+                y1 = max(0, min(dy - 1, int(round(kirp[1] * dy))))
+                x2 = max(x1 + 1, min(dg, int(round(kirp[2] * dg))))
+                y2 = max(y1 + 1, min(dy, int(round(kirp[3] * dy))))
+                gorsel = gorsel.crop((x1, y1, x2, y2))
+            if hedef > 0:
+                gorsel.thumbnail((hedef, hedef * 10), Image.BILINEAR)
             tampon = io.BytesIO()
             gorsel.convert("RGB").save(tampon, format="JPEG",
                                        quality=int(self.ayar.get("kalite", 75)))
@@ -1239,6 +1301,10 @@ class Kamera:
             "canli_genislik": int(self.ayar.get("canli_genislik", 0) or 0),
             "denetimler": dict(self.ayar.get("denetimler") or {}),
             "dondur": self._dondurme(),
+            # PANEL BUNU BILMEK ZORUNDA: leke kutulari cozumlenen (KIRPILMAMIS)
+            # karenin uzayinda geliyor, akis ise kirpilmis. Panel kutulari
+            # bu dikdortgene gore yerlestirmezse hepsi kaymis cizilir.
+            "kirp": self._kirpma(),
             "pi_secenekleri": dict(self.ayar.get("pi_secenekleri") or {}),
             "yol": str(self.ayar.get("yol") or "oto"),
             "sahte": bool(self.ayar.get("sahte")),
@@ -1504,6 +1570,33 @@ def tanim_dogrula(ham: dict[str, Any], sira: int = 0) -> dict[str, Any]:
             f"'{temiz['etiket']}' goruntu dondurme 0, 90, 180 ya da 270 olmali "
             f"(verilen: {dondur})")
     temiz["dondur"] = dondur
+
+    # CANLI AKIS KIRPMASI. Bos/None = kirpma yok.
+    ham_kirp = ham.get("kirp")
+    if ham_kirp in (None, "", [], ()):
+        temiz["kirp"] = None
+    else:
+        if not isinstance(ham_kirp, (list, tuple)) or len(ham_kirp) != 4:
+            raise KameraAyarHatasi(
+                f"'{temiz['etiket']}' kirpmasi [x1, y1, x2, y2] bicimide dort "
+                "sayi olmali (0-1 arasi oran)")
+        try:
+            k = [float(v) for v in ham_kirp]
+        except (TypeError, ValueError):
+            raise KameraAyarHatasi(
+                f"'{temiz['etiket']}' kirpma degerleri sayi olmali") from None
+        if not all(0.0 <= v <= 1.0 for v in k):
+            raise KameraAyarHatasi(
+                f"'{temiz['etiket']}' kirpma degerleri 0 ile 1 arasinda ORAN "
+                f"olmali, piksel degil (verilen: {k})")
+        # ALT SINIR %5. Daha darini kabul etmek, bir yazim hatasiyla
+        # akisin birkac piksele dusup "kamera bozuldu" gibi gorunmesi
+        # demekti; sebebi de hicbir yerde yazmazdi.
+        if k[2] - k[0] < 0.05 or k[3] - k[1] < 0.05:
+            raise KameraAyarHatasi(
+                f"'{temiz['etiket']}' kirpmasi cok dar — genislik ve yukseklik "
+                f"en az %5 olmali (verilen: {k})")
+        temiz["kirp"] = [round(v, 4) for v in k]
 
     try:
         aralik = float(ham.get("aralik_sn", 3600.0))
