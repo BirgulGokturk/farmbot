@@ -1025,6 +1025,49 @@ class Ajan:
                         "veri": {"kamera": kam.ad, "genislik": g, "yukseklik": y,
                                  "kare": base64.b64encode(ham).decode("ascii")}}
 
+            if ad == "kare_olc":
+                # KARE ÖLÇÜMÜ — kamera ayarını körlemesine çevirmemek için.
+                #
+                # Tespiti belirleyen sayılar görüntünün güzelliğinden
+                # başka: kırpılma, beyaz dengesi, ExG ayrımı ve ton
+                # kapısının sessizce elediği yeşil. Bunları ekran
+                # görüntüsünden elle saydırmak yavaş ve hiçbir ölçüm
+                # saklanmıyordu.
+                #
+                # `leke_bul` ile AYNI KARE YOLU (`tam_kare`): ölçüm,
+                # çözümlemenin gördüğü kareyi ölçmeli. Kırpılmış canlı
+                # akışı ölçmek, tespitin hiç görmediği bir kareye bakmak
+                # olurdu.
+                kam = self._kamera_sec(arg.get("kamera"))
+                if kam is None:
+                    return {"ok": False,
+                            "mesaj": f"'{arg.get('kamera')}' adlı kamera tanımlı değil"}
+                try:
+                    yas = float(arg.get("azami_yas_sn", 5.0))
+                except (TypeError, ValueError):
+                    yas = 5.0
+                try:
+                    ham = await asyncio.to_thread(kam.tam_kare, yas)
+                except Exception as hata:                  # noqa: BLE001
+                    return {"ok": False,
+                            "mesaj": f"[{kam.etiket}] kare alınamadı: {hata}"}
+                if not ham:
+                    return {"ok": False,
+                            "mesaj": (f"[{kam.etiket}] taze kare yok. Canlı akış "
+                                      "açıksa son kare eskimiş; kapalıysa kamera "
+                                      "kare veremedi.")}
+                ayar_olc = arg.get("ayar") if isinstance(arg.get("ayar"), dict) else None
+                try:
+                    olcum = await asyncio.to_thread(lekeler_modulu.olc, ham, ayar_olc)
+                except Exception as hata:                  # noqa: BLE001
+                    return {"ok": False,
+                            "mesaj": f"[{kam.etiket}] ölçüm yapılamadı: {hata}"}
+                if olcum.get("sebep"):
+                    return {"ok": False, "mesaj": olcum["sebep"]}
+                return {"ok": True, "mesaj": f"[{kam.etiket}] kare ölçüldü",
+                        "veri": {"kamera": kam.ad, "etiket": kam.etiket,
+                                 "olcum": olcum}}
+
             if ad == "leke_bul":
                 # BİTKİ LEKELERİ — türden bağımsız, kalibrasyonsuz.
                 #

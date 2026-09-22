@@ -2773,3 +2773,36 @@ body.kamera-sekmesi .toplu-cubuk { display: none; }
   height: 100%;
   object-fit: contain;
 }
+
+/* ------------------------------------------------------- kare ölçümü
+ *
+ * Sayı ile HÜKÜM yan yana duruyor: çıplak "R/G 0,898" kendi başına bir
+ * şey söylemiyor, onu neyle kıyaslayacağını bilmeyen için işe yaramaz
+ * ve bu ölçümün varlık sebebi "değeri körlemesine değiştirme"ydi.
+ *
+ * Ad sabit genişlikte, değer tek boşlukta: alt alta okunduğunda
+ * değerler hizalı kalıyor ve iki ölçüm arasındaki farkı gözle aramak
+ * gerekmiyor.
+ */
+.kam-olcum { margin-top: var(--b2); }
+.kam-olcum .olcum-satir {
+  display: grid;
+  grid-template-columns: 130px auto 1fr;
+  gap: var(--b2);
+  align-items: baseline;
+  padding: 3px 0;
+  border-top: 1px solid var(--cizgi);
+  font-size: var(--yazi-kucuk);
+}
+.kam-olcum .olcum-satir:first-child { border-top: none; }
+.kam-olcum .olcum-ad { color: var(--metin-3); }
+.kam-olcum .olcum-satir b { font-family: ui-monospace, monospace; white-space: nowrap; }
+/* Uyarı RENKLE değil, yalnız renkle de değil: metnin kendisi zaten ne
+   yapılacağını yazıyor. Renk ikinci işaret, tek işaret değil. */
+.kam-olcum .uyari { color: #e8a33d; }
+
+@media (max-width: 720px) {
+  /* Dar ekranda üç sütun sıkışıyor; hüküm alta iniyor. */
+  .kam-olcum .olcum-satir { grid-template-columns: 1fr auto; }
+  .kam-olcum .olcum-satir .uyari { grid-column: 1 / -1; }
+}

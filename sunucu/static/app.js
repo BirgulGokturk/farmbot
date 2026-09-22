@@ -3041,6 +3041,23 @@ function kamAyarKartiCiz(k, i) {
           Açılışta çalışsın</label>
       </div>
 
+      <!-- KARE ÖLÇÜMÜ — ayarı körlemesine çevirmemek için.
+           Denetimleri değiştirmek şimdiye kadar "değiştir, ekran
+           görüntüsü al, pikselleri saydır" döngüsüydü. Ölçülen sayılar
+           görüntünün güzelliği değil, TESPİTİ belirleyen dördü:
+           kırpılma, beyaz dengesi, ExG ayrımı, ton kapısı. -->
+      <details class="kam-denetim-kutu">
+        <summary>Kare ölçümü (kırpılma, beyaz dengesi, ExG ayrımı)</summary>
+        <p class="alt-not">Denetimleri değiştirip <b>Kaydet</b>'ten sonra
+          ölçün. Tespit normalize ExG ve her karede yeniden hesaplanan
+          Otsu eşiği kullanıyor: <b>parlaklık ve kontrast büyük ölçüde
+          sönüyor</b>, buna karşılık <b>doygunluk ve beyaz ayarı doğrudan
+          vuruyor</b> — ikisi de R:G:B oranlarını kaydırıyor.</p>
+        <button class="dugme" type="button" data-kare-olc="${kacisli(k.ad)}">
+          Kareyi ölç</button>
+        <div class="kam-olcum" data-olcum="${kacisli(k.ad)}"></div>
+      </details>
+
       <!-- AKIŞ KIRPMASI (YAKINLAŞMA)
            Üst kamera yatağın dışını da görüyor: zemin, kablolar, çerçeve.
            Panelde bakılan şey dikim alanı; gerisini taşımak hem ekranı
@@ -3160,6 +3177,102 @@ function kamAyarKartiCiz(k, i) {
       if (el) el.value = v ? Math.round(v[i] * 100) : (i < 2 ? 0 : 100);
     });
   }
+
+  /* -------------------------------------------------------- KARE ÖLÇÜMÜ
+   * Her satır bir HÜKÜM taşıyor: çıplak sayı, onu neyle kıyaslayacağını
+   * bilmeyen için işe yaramıyor ve bu ölçümün varlık sebebi tam olarak
+   * "değeri körlemesine değiştirme"ydi. Hedefler ölçümle kondu:
+   *
+   *   kırpılma  255'e yapışan piksel oranını ve tonunu kaybediyor ve bu
+   *             geri alınamaz; yapay olarak aşırı pozlanmış karede ExG
+   *             ayrımı 39,8'den 28,2'ye düştü.
+   *   beyaz     0,97-1,03 nötr. Maviye kaydırılmış karede R/G 0,898'e
+   *             indi, kırmızıda 1,083'e çıktı.
+   *   ayrım     bitki ile zeminin ExG ortalaması arasındaki fark.
+   *             Doygunluk %50 artırılınca 39,8 -> 67,2, %50 düşürülünce
+   *             16,8 oldu; eşiği belirleyen şey bu.
+   *   ton       kapının SESSİZCE elediği yeşil. Kırmızıya kaymış karede
+   *             yaprak tonu 23-27'ye inip kapının altına düştü ve bitki
+   *             piksellerinin %100'ü elendi — hiçbir uyarı vermeden.
+   */
+  function olcumYaz(ad, o, hata) {
+    const el = kap.querySelector(`[data-olcum="${CSS.escape(ad)}"]`);
+    if (!el) return;
+    if (hata) { el.innerHTML = `<p class="ikincil">✕ ${kacisli(hata)}</p>`; return; }
+    if (!o) { el.innerHTML = ""; return; }
+    const satir = (ad2, deger, hukum, sinif) =>
+      `<div class="olcum-satir"><span class="olcum-ad">${kacisli(ad2)}</span>`
+      + `<b>${kacisli(deger)}</b>`
+      + `<span class="ikincil ${sinif || ""}">${kacisli(hukum)}</span></div>`;
+
+    const k = o.kirpilma || {}, be = o.beyaz || {}, e = o.exg || {}, t = o.ton || {};
+    let h = "";
+
+    const pat = Number(k.patlamis);
+    h += satir("Kırpılan piksel", `%${pat}`,
+      pat < 0.1 ? "iyi" : pat < 1 ? "yüksek — pozlamayı düşürün"
+        : "çok yüksek; oran ve ton kaybı GERİ ALINAMAZ",
+      pat < 0.1 ? "" : "uyari");
+
+    if (be.r_g == null) {
+      h += satir("Beyaz dengesi", "—", be.sebep || "nötr bölge yok", "uyari");
+    } else {
+      const sap = Math.max(Math.abs(be.r_g - 1), Math.abs(be.b_g - 1));
+      h += satir("Beyaz dengesi", `R/G ${be.r_g} · B/G ${be.b_g}`,
+        sap <= 0.03 ? `nötr (${be.piksel} px)`
+          : (be.r_g < 1 ? "maviye kaçık — renk sıcaklığını YÜKSELTİN"
+                        : "kırmızıya kaçık — renk sıcaklığını DÜŞÜRÜN"),
+        sap <= 0.03 ? "" : "uyari");
+      if (Number(be.doygunluk) > 60) {
+        h += satir("", "", `ölçülen beyazın doygunluğu ${be.doygunluk} —`
+          + " referans renkli olabilir, oranlar o kadar güvenilir", "uyari");
+      }
+    }
+
+    const ay = Number(e.ayrim);
+    h += satir("ExG ayrımı", e.ayrim == null ? "—" : String(e.ayrim),
+      e.ayrim == null ? "karede bitki ayrılmadı"
+        : ay >= 40 ? `iyi · Otsu eşiği ${e.esik}`
+        : ay >= 20 ? `yeterli · doygunluğu artırmak yükseltir (eşik ${e.esik})`
+        : `zayıf · doygunluğu artırın (eşik ${e.esik})`,
+      (e.ayrim != null && ay >= 20) ? "" : "uyari");
+
+    if (t.kapi) {
+      const el2 = Number(t.elenen_yuzde || 0);
+      h += satir("Yaprak tonu", `${t.y05}–${t.y95}`,
+        `kapı ${t.kapi[0]}–${t.kapi[1]}`
+        + (el2 > 0 ? ` · kapı yeşilin %${el2}'ini eliyor` : " · kapı eleme yapmıyor"),
+        el2 > 5 ? "uyari" : "");
+      if (el2 > 20) {
+        h += satir("", "", "Ton kapısı yaprağı SESSİZCE eliyor: ya beyaz"
+          + " ayarını düzeltin ya da ton_alt/ton_ust'u ölçülen aralığa"
+          + " göre genişletin.", "uyari");
+      }
+    }
+    h += `<p class="ikincil">Ölçülen kare ${o.kare_px ? o.kare_px.join("×") : "?"}`
+       + `, işlenen ${o.islem_px ? o.islem_px.join("×") : "?"} · ${o.sure_ms} ms</p>`;
+    el.innerHTML = h;
+  }
+
+  kap.querySelectorAll("[data-kare-olc]").forEach((d) => {
+    d.onclick = async () => {
+      const ad = d.dataset.kareOlc;
+      d.disabled = true;
+      olcumYaz(ad, null);
+      const el = kap.querySelector(`[data-olcum="${CSS.escape(ad)}"]`);
+      if (el) el.innerHTML = '<p class="ikincil">ölçülüyor…</p>';
+      try {
+        const c = await apiIste("/api/leke/olc", {
+          method: "POST", body: JSON.stringify({ kamera: ad })
+        });
+        olcumYaz(ad, c);
+      } catch (h) {
+        olcumYaz(ad, null, (h && h.message) || String(h));
+      } finally {
+        d.disabled = false;
+      }
+    };
+  });
 
   kap.querySelectorAll("[data-toprak-kirp]").forEach((d) => {
     d.onclick = async () => {

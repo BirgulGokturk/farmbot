@@ -127,6 +127,36 @@ def yonlendirici_kur(komut_gonder: Callable, parola_dogrula: Callable) -> APIRou
         return {"ok": True, "kamera": kam, "damga": damga,
                 "kare_hatasi": kare_hatasi, **sonuc}
 
+    @yonlendirici.post("/olc")
+    async def leke_olc(govde: dict[str, Any] | None = None,
+                       jeton: str = Query(default="")):
+        """Kare ölçümü — kamera ayarı için sayı, görüntü değil.
+
+        KARE SAKLANMIYOR. Ölçüm bir kareye ait sayı üretiyor, kutu
+        değil; kareyi bellekte tutmanın karşılığı yok. `/bul` ile aynı
+        yolu kullansaydı, ölçüm yapmak çözümleme karesini de eziyor
+        olurdu ve ekrandaki kutular sebepsiz yenilenirdi.
+        """
+        parola_dogrula(jeton)
+        istek = govde or {}
+        kamera = kareler.ad_temizle(istek.get("kamera") or "")
+        arg: dict[str, Any] = {"kamera": kamera}
+        if isinstance(istek.get("ayar"), dict):
+            arg["ayar"] = istek["ayar"]
+        try:
+            cevap = await komut_gonder("kare_olc", arg)
+        except Exception as hata:                           # noqa: BLE001
+            raise HTTPException(status_code=503,
+                                detail=f"Ajana ulaşılamadı: {hata}") from None
+        if not (cevap or {}).get("ok"):
+            raise HTTPException(
+                status_code=409,
+                detail=str((cevap or {}).get("mesaj")
+                           or "Ajan kareyi ölçemedi (sebep bildirmedi)"))
+        veri = (cevap or {}).get("veri") or {}
+        return {"ok": True, "kamera": kareler.ad_temizle(veri.get("kamera") or kamera),
+                "etiket": veri.get("etiket") or "", **(veri.get("olcum") or {})}
+
     @yonlendirici.post("/toprak")
     async def leke_toprak(govde: dict[str, Any] | None = None,
                           jeton: str = Query(default="")):

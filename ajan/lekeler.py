@@ -334,6 +334,218 @@ def _birlestir(lekeler: list[dict[str, Any]], oran: float) -> list[dict[str, Any
     return cikti
 
 
+def _exg_otsu_ton(kare, a, cv2, np):
+    """Normalize ExG, Otsu eşiği ve ton kapısı — TEK yerde.
+
+    `bul` ile `olc` bunu ORTAK kullanıyor. Ayrı yazılsalardı ölçüm,
+    tespitin gerçekte yaptığı şeyi değil onun bir kopyasını ölçerdi ve
+    ikisi ayrıştığında ölçüm sessizce yanlış sayı vermeye başlardı —
+    üstelik tam da sayıya güvenilmesi gereken yerde.
+
+    Dönen: (exg8, eşik, maske, hsv, ton kapısının eledigi piksel,
+    ton kapısından ÖNCEKİ maske). Sonuncusu ölçüm için: "kapı kaç yeşil
+    pikseli eliyor" ancak ikisi elde olunca sorulabiliyor.
+    """
+    # Normalize edilmiş kanallar kullanılıyor: ham RGB'de gölgedeki bir
+    # yaprak ile güneşteki toprak benzer ExG verebiliyor. Toplama bölmek
+    # parlaklığı düşürüp rengi bırakıyor.
+    b, y, k = cv2.split(kare.astype(np.float32))    # BGR sırası
+    toplam = b + y + k
+    # Sıfıra bölmeyi engelle: tamamen siyah piksel (dolgu, kadraj dışı).
+    toplam[toplam < 1.0] = 1.0
+    exg = (2.0 * y - k - b) / toplam * 255.0
+    exg8 = np.clip(exg, 0, 255).astype(np.uint8)
+
+    esik, maske = cv2.threshold(exg8, 0, 255,
+                                cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+    pay = float(a.get("esik_payi") or 0.0)
+    if pay:
+        _, maske = cv2.threshold(exg8, min(255.0, esik + pay), 255,
+                                 cv2.THRESH_BINARY)
+        esik = esik + pay
+    maske_ham = maske.copy()
+
+    # HSV her koşulda hesaplanıyor: kapı kapalı olsa bile her lekenin
+    # ölçülen tonu çıktıya giriyor. "Önce ölç, sonra eşik koy" ancak
+    # ölçüm hep elde olursa işliyor.
+    hsv = cv2.cvtColor(kare, cv2.COLOR_BGR2HSV)
+    ton_alt, ton_ust = int(a.get("ton_alt") or 0), int(a.get("ton_ust") or 0)
+    ton_elenen = 0
+    if ton_alt or ton_ust:
+        alt = max(0, min(179, ton_alt))
+        ust = max(0, min(179, ton_ust)) or 179
+        # `cv2.inRange` DEĞİL: tek kanallı bir dilime skaler sınır
+        # geçmek OpenCV bağlamasında "lowerb is not a numpy array,
+        # neither a scalar" ile patlıyor (5.0.0'da doğrulandı). NumPy
+        # karşılaştırması bağlamaya hiç dokunmuyor ve aynı sonucu
+        # veriyor.
+        ton_k = hsv[:, :, 0]
+        ton_maske = ((ton_k >= alt) & (ton_k <= ust)).astype(np.uint8) * 255
+        onceki = int(np.count_nonzero(maske))
+        maske = cv2.bitwise_and(maske, ton_maske)
+        ton_elenen = onceki - int(np.count_nonzero(maske))
+    return exg8, esik, maske, hsv, ton_elenen, maske_ham
+
+
+def olc(ham: bytes, ayar: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Kare ölçümü — kamera ayarını körlemesine çevirmemek için.
+
+    NİYE VAR. Kamera denetimlerini (pozlama, beyaz ayarı, doygunluk)
+    ayarlamak şimdiye kadar şöyle yapılıyordu: değeri değiştir, ekran
+    görüntüsü al, pikselleri elle saydır, yeni değer dene. Yavaş ve
+    hiçbir ölçüm saklanmıyor; üstelik bakılan şey çoğu zaman görüntünün
+    GÜZELLİĞİ oluyor, oysa tespiti belirleyen başka sayılar.
+
+    NE ÖLÇÜLÜYOR VE NİYE O. Tespit normalize ExG (`(2G-R-B)/(R+G+B)`)
+    ve her karede yeniden hesaplanan Otsu eşiği kullanıyor. Bunun iki
+    sonucu var ve ikisi de sezgiye ters:
+
+      * Parlaklık ve kontrast büyük ölçüde SÖNÜYOR. Normalizasyon
+        parlaklığı, Otsu da sabit eşiği ortadan kaldırıyor; kontrastı
+        artırmak görüntüyü değiştirir, bulunan bitkiyi çoğu zaman
+        değiştirmez.
+      * Buna karşılık DOYGUNLUK ve BEYAZ AYARI doğrudan vuruyor, çünkü
+        ikisi de R:G:B ORANLARINI kaydırıyor — normalize ExG'nin ölçtüğü
+        şey tam olarak o oranlar.
+
+    Bu yüzden ölçülen dört şey: kırpılma, beyaz dengesi, ExG ayrımı ve
+    ton kapısının elediği yeşil.
+
+    KIRPILMA GERİ ALINAMAZ. 255'e yapışmış bir piksel kendi R:G:B
+    oranını ve tonunu kaybetmiştir; hiçbir eşik, hiçbir yazılım
+    düzeltmesi onu geri getirmiyor. Ölçümün ilk satırı bu.
+
+    TON KAPISI SESSİZ ELEYEBİLİYOR. `ton_alt`/`ton_ust` belli bir beyaz
+    ayarında ölçülmüştü. Görüntü maviye kayarsa yaprağın tonu yukarı
+    kayıyor ve kapıyı geçemeyen yaprak hiçbir uyarı vermeden düşüyor.
+    Kapının kaç yeşil pikseli elediği bu yüzden ayrı yazılıyor.
+
+    Dönen sözlükteki `sebep` doluysa ölçüm yapılamadı.
+    """
+    a = {**VARSAYILAN, **(ayar or {})}
+    basladi = time.monotonic()
+    bos: dict[str, Any] = {"kare_px": [0, 0], "sure_ms": 0.0, "sebep": ""}
+    try:
+        import cv2
+        import numpy as np
+    except ImportError as hata:
+        return {**bos, "sebep": f"OpenCV/NumPy yok: {hata}"}
+
+    hedef = int(a.get("islem_genislik") or 0)
+    kare, tam_g, tam_y, _yol = _kare_coz(ham, hedef, cv2, np)
+    if kare is None:
+        return {**bos, "sebep": "kare çözülemedi (bozuk ya da boş JPEG)"}
+    bos["kare_px"] = [tam_g, tam_y]
+    # TESPİTLE AYNI GENİŞLİKTE ölçülüyor: başka bir ölçekte ölçmek,
+    # tespitin görmediği bir kareyi ölçmek olurdu.
+    if hedef and kare.shape[1] > hedef:
+        oran = hedef / float(kare.shape[1])
+        kare = cv2.resize(kare, (hedef, max(1, int(round(kare.shape[0] * oran)))),
+                          interpolation=cv2.INTER_AREA)
+    yuk, gen = kare.shape[:2]
+    toplam_px = float(gen * yuk)
+
+    b_k, y_k, k_k = cv2.split(kare)                    # BGR sırası
+
+    # --- kırpılma ---------------------------------------------------------
+    # Hem üstten (255) hem alttan (0): ikisi de oranı yok ediyor. Sınır
+    # 250/5, tam 255/0 değil — JPEG sıkıştırması tepeyi 253-254'e
+    # yuvarlıyor ve tam eşitlik arayan bir sayaç kırpılmayı ıskalıyor.
+    def _oran(kanal, ust=True):
+        m = (kanal >= 250) if ust else (kanal <= 5)
+        return round(100.0 * float(np.count_nonzero(m)) / toplam_px, 3)
+    beyaz_px = (b_k >= 250) & (y_k >= 250) & (k_k >= 250)
+    kirpilma = {
+        "r": _oran(k_k), "g": _oran(y_k), "b": _oran(b_k),
+        "siyah": round(100.0 * float(np.count_nonzero(
+            (b_k <= 5) & (y_k <= 5) & (k_k <= 5))) / toplam_px, 3),
+        "patlamis": round(100.0 * float(np.count_nonzero(beyaz_px)) / toplam_px, 3),
+    }
+
+    exg8, esik, maske, hsv, ton_elenen, maske_ham = _exg_otsu_ton(kare, a, cv2, np)
+
+    # --- beyaz dengesi ----------------------------------------------------
+    # REFERANS KAREDE HAZIR DURUYOR: AprilTag'lerin beyazı nötr. Etiketi
+    # aramak yerine "parlak + renksiz + kırpılmamış" pikselleri alıyoruz;
+    # bu tanıma etiketin beyazı giriyor, gökyüzü ya da yansıma da girerse
+    # zaten nötr olduğu için ölçüyü bozmuyor.
+    doy = hsv[:, :, 1]
+    par = hsv[:, :, 2]
+    aday = (par >= 150) & (~beyaz_px)
+    # DOYGUNLUK EŞİĞİ UYARLANIYOR, SABİT DEĞİL. Sabit "S < 40" ölçüldü
+    # ve ters teptı: renk kayması büyüdükçe beyaz kartın kendi doygunluğu
+    # da yükseliyor (kırmızıya kaymış karede 48'e çıktı) ve eşiği aşınca
+    # ölçüm "nötr bölge yok" diyordu — yani beyaz ayarı ölçüsü tam da
+    # ayarın en bozuk olduğu anda susuyordu. Şimdi karenin parlak
+    # pikselleri arasında EN AZ renkli olanlar alınıyor.
+    #
+    # TAVAN 90: bunun üstü renk kaymasıyla açıklanamaz, boyalı bir
+    # yüzeydir ve onu beyaz sanmak uydurma bir oran üretirdi.
+    if int(np.count_nonzero(aday)) >= 200:
+        s_esik = min(90.0, max(40.0, float(np.percentile(doy[aday], 25))))
+        notr = aday & (doy <= s_esik)
+    else:
+        notr = aday
+    notr_n = int(np.count_nonzero(notr))
+    # ALT SINIR 200 PİKSEL. Daha azında ortalama tek bir parlamanın
+    # gürültüsüne dönüyor ve "beyaz ayarı bozuk" diye yanlış alarm verir.
+    if notr_n < 200:
+        beyaz: dict[str, Any] = {
+            "piksel": notr_n, "r_g": None, "b_g": None, "parlaklik": None,
+            "sebep": ("nötr beyaz bölge bulunamadı — karede kırpılmamış, "
+                      "parlak ve renksiz alan yok. AprilTag'lerden biri "
+                      "kadraja girsin ya da pozlamayı düşürün.")}
+    else:
+        r_o = float(np.mean(k_k[notr])); g_o = float(np.mean(y_k[notr]))
+        b_o = float(np.mean(b_k[notr]))
+        g_g = max(g_o, 1.0)
+        beyaz = {"piksel": notr_n,
+                 "r_g": round(r_o / g_g, 3), "b_g": round(b_o / g_g, 3),
+                 "parlaklik": round(g_o, 1),
+                 # Örneğin kendi doygunluğu da yazılıyor: yüksekse
+                 # ölçülen "beyaz" aslında renkli bir yüzey olabilir ve
+                 # oranlar o kadar güvenilir.
+                 "doygunluk": round(float(np.mean(doy[notr])), 1),
+                 "sebep": ""}
+
+    # --- ExG ayrımı -------------------------------------------------------
+    # Ayrım payı = bitki ile zeminin ExG ortalamaları arasındaki fark.
+    # Otsu eşiği ikisinin arasında bir yere düşüyor; pay daraldıkça eşik
+    # kararı gürültüye duyarlı hâle geliyor ve kare kare oynuyor.
+    bitki_m = maske_ham > 0
+    zemin_m = ~bitki_m
+    bitki_n = int(np.count_nonzero(bitki_m))
+    if bitki_n and bitki_n < toplam_px:
+        b_exg = float(np.mean(exg8[bitki_m]))
+        z_exg = float(np.mean(exg8[zemin_m]))
+        exg_o: dict[str, Any] = {
+            "esik": round(float(esik), 1),
+            "bitki": round(b_exg, 1), "zemin": round(z_exg, 1),
+            "ayrim": round(b_exg - z_exg, 1),
+            "bitki_yuzde": round(100.0 * bitki_n / toplam_px, 3)}
+    else:
+        exg_o = {"esik": round(float(esik), 1), "bitki": None, "zemin": None,
+                 "ayrim": None, "bitki_yuzde": round(100.0 * bitki_n / toplam_px, 3)}
+
+    # --- ton kapısı -------------------------------------------------------
+    ton_alt = int(a.get("ton_alt") or 0)
+    ton_ust = int(a.get("ton_ust") or 0)
+    ton_o: dict[str, Any] = {"kapi": ([ton_alt, ton_ust] if (ton_alt or ton_ust)
+                                      else None),
+                             "elenen_px": ton_elenen}
+    if bitki_n:
+        tonlar = hsv[:, :, 0][bitki_m]
+        ton_o["ortanca"] = int(np.median(tonlar))
+        # %5-%95: tek tük aykırı piksel kapının kenarını yanlış gösteriyor.
+        ton_o["y05"] = int(np.percentile(tonlar, 5))
+        ton_o["y95"] = int(np.percentile(tonlar, 95))
+        ton_o["elenen_yuzde"] = round(100.0 * ton_elenen / float(bitki_n), 2)
+    return {"kare_px": [tam_g, tam_y], "islem_px": [gen, yuk],
+            "kirpilma": kirpilma, "beyaz": beyaz, "exg": exg_o, "ton": ton_o,
+            "sure_ms": round((time.monotonic() - basladi) * 1000.0, 1),
+            "sebep": ""}
+
+
 def bul(ham: bytes, ayar: dict[str, Any] | None = None) -> dict[str, Any]:
     """JPEG karede bitki lekelerini bulur.
 
@@ -384,46 +596,10 @@ def bul(ham: bytes, ayar: dict[str, Any] | None = None) -> dict[str, Any]:
     # Küçültülmüş piksel -> gerçek piksel. Sonuçlar bununla geri ölçekleniyor.
     geri = tam_g / float(gen)
 
-    # --- ExG --------------------------------------------------------------
-    # Normalize edilmiş kanallar kullanılıyor: ham RGB'de gölgedeki bir
-    # yaprak ile güneşteki toprak benzer ExG verebiliyor. Toplama bölmek
-    # parlaklığı düşürüp rengi bırakıyor.
-    b, y, k = cv2.split(kare.astype(np.float32))    # BGR sırası
-    toplam = b + y + k
-    # Sıfıra bölmeyi engelle: tamamen siyah piksel (dolgu, kadraj dışı).
-    toplam[toplam < 1.0] = 1.0
-    exg = (2.0 * y - k - b) / toplam * 255.0
-    exg8 = np.clip(exg, 0, 255).astype(np.uint8)
-
-    # --- eşik -------------------------------------------------------------
-    esik, maske = cv2.threshold(exg8, 0, 255,
-                                cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-    pay = float(a.get("esik_payi") or 0.0)
-    if pay:
-        _, maske = cv2.threshold(exg8, min(255.0, esik + pay), 255,
-                                 cv2.THRESH_BINARY)
-        esik = esik + pay
-
-    # --- ton kapısı -------------------------------------------------------
-    # HSV her koşulda hesaplanıyor: kapı kapalı olsa bile her lekenin
-    # ölçülen tonu çıktıya giriyor. "Önce ölç, sonra eşik koy" ancak
-    # ölçüm hep elde olursa işliyor.
-    hsv = cv2.cvtColor(kare, cv2.COLOR_BGR2HSV)
+    exg8, esik, maske, hsv, ton_elenen, _ = _exg_otsu_ton(kare, a, cv2, np)
+    # Kapı sınırları çıktıda da duruyor: "neden bu leke yok" sorusunun
+    # cevabı çoğu zaman burada ve ayarı görmeden anlaşılmıyor.
     ton_alt, ton_ust = int(a.get("ton_alt") or 0), int(a.get("ton_ust") or 0)
-    ton_elenen = 0
-    if ton_alt or ton_ust:
-        alt = max(0, min(179, ton_alt))
-        ust = max(0, min(179, ton_ust)) or 179
-        # `cv2.inRange` DEĞİL: tek kanallı bir dilime skaler sınır
-        # geçmek OpenCV bağlamasında "lowerb is not a numpy array,
-        # neither a scalar" ile patlıyor (5.0.0'da doğrulandı). NumPy
-        # karşılaştırması bağlamaya hiç dokunmuyor ve aynı sonucu
-        # veriyor.
-        ton_k = hsv[:, :, 0]
-        ton_maske = ((ton_k >= alt) & (ton_k <= ust)).astype(np.uint8) * 255
-        onceki = int(np.count_nonzero(maske))
-        maske = cv2.bitwise_and(maske, ton_maske)
-        ton_elenen = onceki - int(np.count_nonzero(maske))
 
     yesil_oran = float(np.count_nonzero(maske)) / float(gen * yuk)
     bos["esik"] = round(float(esik), 1)
