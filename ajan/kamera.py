@@ -1705,11 +1705,23 @@ def tanimlari_dogrula(ham: Any,
                       ) -> list[dict[str, Any]]:
     """Panelden gelen liste. `mevcut` verilirse SÖYLENMEYEN alanlar oradan.
 
-    `aktif` (açılışta kendiliğinden çalışsın mı) bunun için var: panel bu
-    alanı göndermeyebiliyor ve göndermediğinde varsayılan `false` devreye
-    girip ayarı sessizce kapatıyordu. Kamera o an açık kaldığı için sorun
-    ancak bir sonraki yeniden başlatmada, "kameralarım neden açılmıyor"
-    diye görünüyordu. Söylenmeyen bir alan değiştirilmemeli.
+    KURAL: söylenmeyen bir alan DEĞİŞTİRİLMEMELİ. Önce yalnız `aktif`
+    için uygulanıyordu (panel o alanı göndermediğinde varsayılan `false`
+    devreye girip ayarı sessizce kapatıyor, sorun ancak bir sonraki
+    yeniden başlatmada "kameralarım neden açılmıyor" diye görünüyordu).
+
+    Kuralın yalnız bir alan için geçerli olması kendi hatasını üretti:
+    akış kırpması (`kirp`) eklendikten sonra, o alanı tanımayan bir
+    panel — örneğin tarayıcıda açık kalmış eski bir sayfa — herhangi bir
+    kamera ayarını kaydettiğinde yakınlaştırma SESSİZCE siliniyordu.
+    Ölçüldü: `kirp` göndermeyen bir kayıt, kayıtlı [0.12, 0.2, 0.88,
+    0.95] değerini None yapıyor. Aynı tuzak `denetimler`, `dondur` ve
+    `pi_secenekleri` için de açıktı.
+
+    Bu yüzden eksik alanların TAMAMI öncekinden tamamlanıyor. Alanı
+    açıkça boşaltmak yine mümkün: panel `kirp: null` GÖNDERİRSE alan
+    listede var sayılıyor ve null geçiyor — "göndermemek" ile "boş
+    göndermek" artık ayrı şeyler.
     """
     if not isinstance(ham, list) or not ham:
         raise KameraAyarHatasi("En az bir kamera tanımı gerekiyor")
@@ -1718,10 +1730,12 @@ def tanimlari_dogrula(ham: Any,
     eski = {str(k.get("ad")): k for k in (mevcut or [])}
     tamam = []
     for k in ham:
-        if isinstance(k, dict) and "aktif" not in k:
+        if isinstance(k, dict):
             onceki = eski.get(str(k.get("ad")))
             if onceki is not None:
-                k = {**k, "aktif": bool(onceki.get("aktif"))}
+                # Sıra önemli: panelin GÖNDERDİĞİ her alan öncekini eziyor,
+                # göndermedikleri olduğu gibi kalıyor.
+                k = {**onceki, **k}
         tamam.append(k)
     cikti = [tanim_dogrula(k, i) for i, k in enumerate(tamam)]
     adlar = [k["ad"] for k in cikti]

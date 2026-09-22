@@ -656,20 +656,38 @@
   }
 
   /** Olayın karedeki oranlı karşılığı (0-1). Katman zaten görüntünün
-   *  kutusuna oturduğu için dönüşüm katmanın kendi kutusundan çıkıyor. */
+   *  kutusuna oturduğu için dönüşüm katmanın kendi kutusundan çıkıyor.
+   *
+   *  ORAN TAM KARENİN, EKRANIN DEĞİL. İkisi kırpma yokken aynı şey ve
+   *  bu yüzden fark uzun süre görünmedi; kırpma açılınca ayrıştılar:
+   *  ekranda görünen yalnız kırpılmış dikdörtgen, oysa `roiUygula`
+   *  köşeleri TAM karenin oranı sayıp `cx / kare[0]` ile karşılaştırıyor.
+   *  Dönüştürmeden saklamak, ekranın ortasına konan köşeyi tam karenin
+   *  ortasına yazmak olurdu — ilgi alanı kayar, lekeler yanlış elenir ve
+   *  ekranda her şey bozulmuş görünür. */
   function roiNokta(ad, o) {
     const k = YUZEN.get(ad);
     if (!k || !k.svg) return null;
     const b = k.svg.getBoundingClientRect();
     if (!b.width || !b.height) return null;
-    return [Math.max(0, Math.min(1, (o.clientX - b.left) / b.width)),
-            Math.max(0, Math.min(1, (o.clientY - b.top) / b.height))];
+    let x = (o.clientX - b.left) / b.width;
+    let y = (o.clientY - b.top) / b.height;
+    const c = kirpmaAl(ad);
+    if (c) {
+      x = c[0] + x * (c[2] - c[0]);
+      y = c[1] + y * (c[3] - c[1]);
+    }
+    return [Math.max(0, Math.min(1, x)), Math.max(0, Math.min(1, y))];
   }
 
   function roiKose(ad, n) {
     const r = ROI.get(ad);
     if (!r || !n) return -1;
-    let en = -1, mesafe = ROI_KOSE_YAKIN;
+    /* Yakalama yarıçapı EKRANDA sabit kalsın: `ROI_KOSE_YAKIN` tam
+       karenin oranı ve kırpma varken ekranda o oran büyüyor — %20
+       yakınlaşmada köşe tutamağı görünürde iki katına çıkıyordu. */
+    const c = kirpmaAl(ad);
+    let en = -1, mesafe = ROI_KOSE_YAKIN * (c ? (c[2] - c[0]) : 1);
     r.k.forEach((p, i) => {
       const d = Math.hypot(p[0] - n[0], p[1] - n[1]);
       if (d < mesafe) { mesafe = d; en = i; }
