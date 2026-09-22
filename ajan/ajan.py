@@ -1212,6 +1212,23 @@ class Ajan:
                 return {"ok": bool(veri.get("ok")), "sessiz": True,
                         "mesaj": veri.get("sebep", ""), "veri": veri}
 
+            if ad == "kamera_kipleri":
+                # KAMERANIN DESTEKLEDIGI COZUNURLUKLER — denetimlerle ayni
+                # gerekce: koda yazilmiyor, cihaza soruluyor. Panelde
+                # yalniz "cekim genisligi" vardi ve yukseklik 4:3
+                # turetiliyordu; 16:9 bir kamerada o kip yok ve surucu
+                # kareyi kirpiyor. Kullanicinin tahmin etmesi gereken sey
+                # kameranin kendisinde yazili.
+                kam = self._kamera_sec(arg.get("kamera"))
+                if kam is None:
+                    return {"ok": False,
+                            "mesaj": f"'{arg.get('kamera')}' adlı kamera tanımlı değil"}
+                yol = kam._cihaz or str(kam.ayar.get("cihaz") or "")
+                veri = await asyncio.to_thread(kamera_modulu.kip_listesi, yol)
+                veri["cihaz"] = yol
+                return {"ok": bool(veri.get("ok")), "sessiz": True,
+                        "mesaj": veri.get("sebep", ""), "veri": veri}
+
             if ad == "kamera_cihazlar":
                 # Sistemdeki video cihazları — panelde "kameranın adı ne"
                 # sorusunun cevabı. Kullanıcının /dev/video* numaralarını

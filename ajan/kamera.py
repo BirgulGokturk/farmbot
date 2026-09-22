@@ -294,6 +294,33 @@ def v4l2_kipler(cihaz: str, bicim: str = "MJPG") -> list[tuple[int, int]]:
     return kipler
 
 
+def kip_listesi(cihaz: str) -> dict[str, Any]:
+    """Cihazın desteklediği kipler — panele gidecek hâliyle.
+
+    NİYE VAR. Panelde yalnız "çekim genişliği" vardı ve yükseklik ondan
+    türetiliyordu; türetme 16:9 bir kamerada olmayan bir kip üretince
+    sürücü kareyi kırpıyor ya da başka bir kipe düşüyordu ve sonuç
+    "görüntü kalitesi kötü" diye görünüyordu. Kullanıcının tahmin etmesi
+    gereken şey aslında kameranın kendisinde YAZILI.
+
+    MJPG ÖNCE. 4K'da YUYV ham veri USB 2.0'a sığmıyor; o kipte kamera ya
+    saniyede 1-2 kare veriyor ya hiç açılmıyor. Kamera MJPG sunuyorsa
+    liste ondan çıkıyor, yoksa YUYV'ye düşülüyor ve bu çıktıda yazıyor.
+    """
+    if not cihaz:
+        return {"ok": False, "sebep": "cihaz yolu boş", "kipler": [], "bicim": ""}
+    for bicim in ("MJPG", "YUYV"):
+        kipler = v4l2_kipler(cihaz, bicim)
+        if kipler:
+            # Büyükten küçüğe: aranan şey çoğunlukla en yüksek kip.
+            sirali = sorted(set(kipler), key=lambda k: (-k[0] * k[1], -k[0]))
+            return {"ok": True, "sebep": "", "bicim": bicim,
+                    "kipler": [{"g": g, "y": y, "ad": f"{g}x{y}"} for g, y in sirali]}
+    return {"ok": False, "kipler": [], "bicim": "",
+            "sebep": ("Kip listesi okunamadı — `v4l2-ctl` kurulu değil ya da "
+                      "kamera bağlı değil. Pi'de: sudo apt install -y v4l-utils")}
+
+
 def v4l2_cihazlar() -> list[dict[str, Any]]:
     """Sistemdeki video düğümleri — [{"yol","no","ad","index","surucu","alinabilir"}].
 
@@ -1169,9 +1196,24 @@ class Kamera:
                 if not cihaz:
                     raise RuntimeError(self.cihaz_not or "USB kamera bulunamadı")
                 self._denetimleri_uygula(cihaz)
+                # BİÇİM AÇIKÇA İSTENİYOR — ama yalnız kameranın
+                # gerçekten sunduğu biçim. fswebcam kendi varsayılan
+                # sırasıyla önce ham biçimleri deniyor ve yüksek
+                # çözünürlükte USB bunu taşıyamıyor. `-p MJPEG`i körlemesine
+                # vermek de olmaz: sunmayan kamerada fswebcam hata verip
+                # hiç kare vermez, yani kötü kareyi HİÇ kareye çevirirdik.
                 komut = ["fswebcam", "-d", cihaz, "-r",
-                         f"{genislik}x{yukseklik}", "--no-banner",
-                         "-q", gecici.name]
+                         f"{genislik}x{yukseklik}"]
+                if v4l2_kipler(cihaz, "MJPG"):
+                    komut += ["-p", "MJPEG"]
+                # İLK KARELER ATILIYOR: kamera yeni açıldığında pozlama
+                # ve beyaz ayarı henüz oturmamış oluyor; ilk kare
+                # çoğunlukla koyu ya da renk kaymış geliyor.
+                # JPEG KALİTESİ de veriliyor: fswebcam'in varsayılanı
+                # çözümleme için düşük, `-q` ise "sessiz" demek —
+                # kaliteyle ilgisi yok.
+                komut += ["-S", "2", "--jpeg", "92", "--no-banner",
+                          "-q", gecici.name]
             try:
                 subprocess.run(komut, check=True, capture_output=True, timeout=20)
             except subprocess.CalledProcessError as hata:
@@ -1208,13 +1250,26 @@ class Kamera:
         return tampon.getvalue()
 
     def _usb_yontem(self) -> str:
-        """USB kamera yolu — cihazı çözüp aracı seçer."""
+        """USB kamera yolu — cihazı çözüp aracı seçer.
+
+        FFMPEG ÖNCE, fswebcam yedek. Sıra eskiden tersiydi ve yüksek
+        çözünürlükte görüntüyü bozuyordu: fswebcam'e piksel biçimi
+        söylenmiyor ve kendi varsayılan sırasıyla önce HAM biçimleri
+        deniyor. 3840x2160 bir YUYV karesi ~16 MB; USB 2.0 bunu
+        taşıyamıyor ve sürücü ya daha düşük bir kipe düşüyor ya yarım
+        kare veriyor. ffmpeg yolu MJPEG'i AÇIKÇA istiyor
+        (`-input_format mjpeg`) ve JPEG kalitesini de veriyor.
+
+        Canlı akış zaten ffmpeg kullanıyordu (fswebcam'in akış karşılığı
+        yok): tek kareyi başka araçla almak, aynı kameradan iki farklı
+        kalite demekti.
+        """
         if not self.cihaz_coz(zorla=True):
             return ""
-        if shutil.which("fswebcam"):
-            return "fswebcam"
         if shutil.which("ffmpeg"):
             return "ffmpeg"
+        if shutil.which("fswebcam"):
+            return "fswebcam"
         return ""
 
     def _yontem_sec(self) -> str:

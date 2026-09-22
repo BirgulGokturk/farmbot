@@ -3037,6 +3037,23 @@ function kamAyarKartiCiz(k, i) {
           <input type="number" data-alan="genislik" min="160" max="4096" step="16"
                  value="${Number(k.genislik)}"
                  title="Kameranın gerçekten aldığı kare. Çözümleme bunu kullanıyor: 640'ta yeni çıkmış bir filiz birkaç piksel kalıp eleniyor."></div>
+        <!-- ÇÖZÜNÜRLÜK — kameranın KENDİ kipi.
+             Boş bırakılırsa yükseklik genişlikten 4:3 türetiliyor ve bu
+             16:9 bir kamerada HİÇ OLMAYAN bir kip demek: sürücü ya
+             reddediyor ya en yakınına düşüp kareyi kırpıyor. İkisi de
+             "görüntü kalitesi kötü" diye görünüyor. "Kipleri oku"
+             kameranın gerçekten verdiklerini listeliyor. -->
+        <div class="alan"><label>Çözünürlük (kip)</label>
+          <div class="satir-8">
+            <select data-alan="cozunurluk" data-kip-secim="${kacisli(k.ad)}"
+                    title="Kameranın desteklediği kip. Boş = genişlikten türet (son çare).">
+              <option value=""${k.cozunurluk ? "" : " selected"}>— genişlikten türet —</option>
+              ${k.cozunurluk ? `<option value="${kacisli(k.cozunurluk)}" selected>${kacisli(k.cozunurluk)}</option>` : ""}
+            </select>
+            <button class="dugme" type="button" data-kip-yukle="${kacisli(k.ad)}">
+              Kipleri oku</button>
+          </div>
+          <span class="ikincil" data-kip-not="${kacisli(k.ad)}"></span></div>
         <div class="alan"><label>Canlı akış genişliği (px)</label>
           <input type="number" data-alan="canli_genislik" min="0" max="4096" step="16"
                  value="${Number(k.canli_genislik)}"
@@ -3273,6 +3290,53 @@ function kamAyarKartiCiz(k, i) {
     el.innerHTML = h;
   }
 
+  /* ------------------------------------------------------- KİP LİSTESİ
+   * Kameranın desteklediği çözünürlükler KODA YAZILMIYOR, cihazdan
+   * soruluyor — denetimlerle aynı gerekçe. Sabit bir liste, kameranın
+   * vermediği bir kipi seçtirir ve sürücü onu sessizce başka bir şeye
+   * çevirir. */
+  kap.querySelectorAll("[data-kip-yukle]").forEach((d) => {
+    d.onclick = async () => {
+      const ad = d.dataset.kipYukle;
+      const not = kap.querySelector(`[data-kip-not="${CSS.escape(ad)}"]`);
+      const sec = kap.querySelector(`[data-kip-secim="${CSS.escape(ad)}"]`);
+      if (!sec) return;
+      d.disabled = true;
+      if (not) not.textContent = "kipler okunuyor…";
+      try {
+        const c = await komutGonder("kamera_kipleri", { kamera: ad });
+        const v = (c && c.veri) || {};
+        const kipler = v.kipler || [];
+        if (!kipler.length) {
+          if (not) {
+            not.textContent = v.sebep || "Kip listesi boş — kamera bağlı değil.";
+          }
+          return;
+        }
+        const suan = sec.value;
+        sec.innerHTML = '<option value="">— genişlikten türet —</option>'
+          + kipler.map((m) => `<option value="${kacisli(m.ad)}"${
+              m.ad === suan ? " selected" : ""}>${kacisli(m.ad)}</option>`).join("");
+        sec.value = suan;
+        const enBuyuk = kipler[0];
+        if (not) {
+          /* EN BÜYÜĞÜ YAZILIYOR: "4K istiyorum" diyen kişinin araması
+           * gereken sayı bu ve listede kaçıncı sırada olduğu belli
+           * değil. Biçim de yazılı — YUYV'de 4K pratikte açılmıyor. */
+          not.textContent = `${kipler.length} kip · biçim ${v.bicim}`
+            + ` · en büyük ${enBuyuk.ad}`
+            + (v.bicim === "YUYV"
+               ? " — kamera MJPG sunmuyor, yüksek kipte kare hızı çok düşebilir"
+               : "");
+        }
+      } catch (h) {
+        if (not) not.textContent = "Okunamadı: " + ((h && h.message) || h);
+      } finally {
+        d.disabled = false;
+      }
+    };
+  });
+
   kap.querySelectorAll("[data-kare-olc]").forEach((d) => {
     d.onclick = async () => {
       const ad = d.dataset.kareOlc;
@@ -3371,6 +3435,8 @@ function kamAyarKartiCiz(k, i) {
         const t = kamAyarTaslak()[sira];
         if (!t) return;
         const alan = el.dataset.alan;
+        /* `cozunurluk` METİN kalıyor: Number("3840x2160") NaN verir ve
+           ajan boş çözünürlük sanıp yine 4:3 türetirdi. */
         t[alan] = el.type === "checkbox" ? el.checked
           : (alan === "genislik" || alan === "canli_genislik"
              || alan === "aralik_sn" || alan === "dondur") ? Number(el.value)

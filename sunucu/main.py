@@ -99,6 +99,9 @@ IZINLI_KOMUTLAR = {
     "kamera_denetimleri",  # {"kamera":"uc"} — o kameranın DESTEKLEDİĞİ
                      #   v4l2 denetimleri ve aralıkları. Panel kaydırakları
                      #   buradan kuruluyor; koda gömülü liste yok.
+    "kamera_kipleri",  # {"kamera":"uc"} — o kameranın DESTEKLEDİĞİ çözünürlük
+                     #   kipleri. Yükseklik `genislik`ten 4:3 türetiliyordu ve
+                     #   16:9 bir kamerada o kip yok: sürücü kareyi kırpıyor.
     "kamera_kare",   # {"kamera":"ust"} — TAM çözünürlüklü tek kare (çözümleme)
     "leke_surekli",  # {"acik":true,"aralik_sn":2,"ayar":{…}} — canlı akış
                      #   üstünde SÜREKLİ çözümleme. Kare ağdan GEÇMİYOR:
