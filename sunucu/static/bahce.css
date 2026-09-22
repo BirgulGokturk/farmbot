@@ -82,10 +82,18 @@ body.bahce-acik.bh-menu #tani-bant { display: block; }
 
 /* Üst bar şeffafken ⚙ ile acil düğmesi bahçenin ÜST ŞERİDİNİN üstünde
    duruyor; şerit sağdan o kadar yer bırakıyor ki iki şey çakışmasın.
-   Menü açıkken başlık kendi yerine oturuyor, paya gerek kalmıyor. */
-body.bahce-acik:not(.bh-menu) .bh-ust { padding-right: 250px; }
+   Menü açıkken başlık kendi yerine oturuyor, paya gerek kalmıyor.
+
+   PAY ÖLÇÜLÜYOR, YAZILMIYOR. Sabit 250 px ölçüldü ve yetmedi: başlığın
+   sağ grubu 1920 px'de 261 px yer kaplıyor ve şeride bir düğme
+   eklenince (koordinat) ⟳ düğmesi "⏻ Kapat"ın altında kaldı — 11 px
+   binme. Üstelik grubun genişliği sabit de değil, "⏻ Aç" ile "⏻ Kapat"
+   arasında değişiyor. `bahce.js` grubu her durum değişiminde ölçüp bu
+   değişkeni yazıyor; aşağıdaki sayı yalnız değişken hiç yazılmadıysa
+   (bahçe kapalı açılış) geçerli olan yedek. */
+body.bahce-acik:not(.bh-menu) .bh-ust { padding-right: var(--bh-sag-pay, 250px); }
 @media (max-width: 720px) {
-  body.bahce-acik:not(.bh-menu) .bh-ust { padding-right: 150px; }
+  body.bahce-acik:not(.bh-menu) .bh-ust { padding-right: var(--bh-sag-pay, 150px); }
 }
 
 .bh-cark {
@@ -309,3 +317,16 @@ body.bh-menu .bh-cark { color: var(--metin); border-color: var(--metin-3); }
   .bh-koor input { width: 8ch; }
   .bh-koor-not { flex: 1 0 100%; }
 }
+
+/* Bahçe tam ekranken ALTTAKİ GÜNLÜK ŞERİDİ SUSUYOR.
+ *
+ * Şerit kapalıyken bile son olay satırını yanında gösteriyor ve o satır
+ * bahçenin altında, çoğu zaman o an yapılan işle ilgisiz bir metin
+ * olarak duruyordu ("Üst kamera sahneden gizlendi — …"), üstelik sağdan
+ * kesilerek. Başlık ve açma düğmesi duruyor: günlük kayboluyor değil,
+ * sesi kısılıyor — açınca hepsi orada.
+ *
+ * YALNIZ BAHÇEDE. Öteki sekmelerde son satır işe yarıyor; bu kural
+ * `body.bahce-acik` ile sınırlı. */
+body.bahce-acik #gunluk-serit.kapali #gunluk-son { display: none; }
+body.bahce-acik #gunluk-serit.kapali .surum-damga { display: none; }

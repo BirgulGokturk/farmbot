@@ -259,9 +259,14 @@
                parmakla konulan nokta ancak pikselin izin verdiği kadar
                hassas: 540 mm'lik yatak 700 px'e sığdığında bir piksel
                0,8 mm. Ölçtüğü yere ekmek isteyen için sayı gerekiyor. -->
-          <button type="button" class="bh-ikon" id="bh-koor-ac"
-                  title="Koordinat girerek ek" aria-label="Koordinat girerek ek"
-                  aria-expanded="false">⌖</button>
+          <!-- YAZI, SİMGE DEĞİL. Önce ⌖ (U+2316) kullanıldı ve sahada
+               okunmadı: yazı tipinde karşılığı yok, ekranda anlamsız bir
+               artı olarak çıkıyor ve kullanıcı koordinatla ekimi
+               bulamadı. Şeritteki öteki yazılı düğmeyle ("sakin mod")
+               aynı biçim. -->
+          <button type="button" id="bh-koor-ac"
+                  title="X/Y yazarak ekim noktası koy"
+                  aria-expanded="false">koordinatla ek</button>
           <button type="button" class="bh-ikon" id="bh-kur"
                   title="Bahçeyi yeniden kur" aria-label="Bahçeyi yeniden kur">⟳</button>
           <button type="button" class="bh-sakin" id="bh-sakin" aria-pressed="false">sakin mod</button>

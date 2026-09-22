@@ -1441,7 +1441,36 @@ window.Bahce = (function () {
   /* ==================================================================== *
    * TUVAL ÖLÇÜSÜ
    * ==================================================================== */
+  /** Başlığın sağ grubunun GERÇEKTEN kapladığı yer — üst şeride pay.
+   *
+   *  Sabit bir sayı iki kere yanlış oluyordu: grubun genişliği "⏻ Aç"
+   *  ile "⏻ Kapat" arasında değişiyor, ve şeride bir düğme eklendiğinde
+   *  eski pay sessizce yetmez oluyor (koordinat düğmesi eklenince ⟳
+   *  düğmesi "⏻ Kapat"ın altında kaldı). Ölçmek ikisini de çözüyor.
+   */
+  function sagPayOlc() {
+    if (!S.acik) return;
+    var sag = document.querySelector(".ust-sag");
+    if (!sag) return;
+    var r = sag.getBoundingClientRect();
+    if (!r.width) return;
+    /* Sol kenarından ölçülüyor, genişliğinden değil: grup sağa yaslı ve
+       aradaki boşluk da payın parçası. +16 şeritle grup arasındaki
+       görünür aralık. */
+    var pay = Math.ceil(window.innerWidth - r.left) + 16;
+    /* TAVAN YOK — DENENDİ VE GERİ ALINDI. Payı şeridin %45'iyle
+       sınırlamak telefonda mantıklı görünüyordu (430 px'de grup 303 px
+       istiyor), ama ölçüldü: tavan konunca "⏻ Kapat" koordinat
+       düğmesinin üstüne bindi (83x26 px) — yani tam da bu ölçümün
+       önlemeye çalıştığı şey geri geldi. Payı kısmak yerine şeridin
+       sarmasına bırakıyoruz: sarınca şerit uzuyor, ama hiçbir düğme
+       ötekinin altında kalmıyor. Üst üste binmiş iki düğme, bir satır
+       daha uzamış bir şeritten kötü. */
+    document.documentElement.style.setProperty("--bh-sag-pay", pay + "px");
+  }
+
   var olcuKur = guvenli("ölçü", function () {
+    sagPayOlc();
     var kok = $("#bh-tuval");
     if (!kok || !S.tuval) return;
     var r = kok.getBoundingClientRect();
@@ -4399,6 +4428,9 @@ window.Bahce = (function () {
       el.className = "bh-makine " + sinif;
       el.textContent = yazi;
     }
+    /* Pay burada da tazeleniyor: başlıktaki "⏻ Aç" düğmesi tork
+       açılınca "⏻ Kapat" oluyor ve grup genişliyor. */
+    sagPayOlc();
     var metin = $("#bh-is-metin"), neden = $("#bh-is-neden"), evet = $("#bh-is-evet");
     var ertele = $("#bh-is-ertele"), sayac = $("#bh-is-sayac");
     if (!metin) return;
@@ -4533,9 +4565,13 @@ window.Bahce = (function () {
       return;
     }
     kok.dataset.kip = "bos";
-    var ipuc = S.mesaj || "Soldaki aleti bitkinin üstüne sürükle (sula · nem · "
-      + "kamera · yakın bak) · tohumu boş yere ek · bitkiyi sürükle (taşı) ya da "
-      + "sepete bırak (hasat) · bitkiye dokun (künye)";
+    /* İPUCU KISA. Uzun hâli aletleri tek tek sayıyordu (sula · nem ·
+       kamera · yakın · tohum · hasat) — hepsi zaten askıdaki etiketlerde
+       ve sepetin üstünde YAZILI, yani ekranın altını kendi kendini
+       tekrarlayan bir satır kaplıyordu. Burada yalnız simgeden
+       anlaşılmayan iki hareket kalıyor: dokunmak ve uzun basmak. */
+    var ipuc = S.mesaj || "Aleti bitkiye sürükle · bitkiye dokun: künye · "
+      + "toprağa uzun bas: ek";
     /* SON SULAMA hep görünür: hangi bitki en son ne zaman sulandı,
        `sulama_ts` kayıtlarından. Kayıt yoksa satır da yok. */
     var ss = sonSulama();
@@ -4733,18 +4769,36 @@ window.Bahce = (function () {
     S.yukleniyor = true;
     return api("/api/bahce").then(function (c) {
       S.veri = c || {};
+      /* BAĞLANTI ROZETİ ÖNCE YAZILIYOR, ÇİZİMDEN SONRA DEĞİL.
+         Eskiden `ustYaz` bu bloğun sonundaydı: aradaki adımlardan biri
+         (yerleşim, toprak dokusu, katalog) hata verdiğinde hiç
+         çalışmıyor ve rozet "makine bağlı değil"de DONUYORDU — oysa
+         veri gelmiş ve `bagli` true. Üstelik not da "Bahçe okunamadı —
+         makine ya da sunucu yanıt vermedi" diyordu, yani bir çizim
+         hatası bağlantı hatası gibi görünüyordu. Veri geldiyse
+         bağlantı durumu doğrudur; çizim ondan ayrı bir iş. */
       kuyrukIzle();
-      bitkileriHazirla();
-      yerlesim();
-      topragiCiz();
+      ustYaz();
       notYaz("veri", "");
+      /* ÇİZİM AYRI YAKALANIYOR: burada patlayan bir şey sahneyi boş
+         bırakabilir ama "sunucu yanıt vermedi" DEĞİLDİR ve öyle
+         yazmak, arızayı yanlış yerde aratır. */
+      try {
+        bitkileriHazirla();
+        yerlesim();
+        topragiCiz();
+      } catch (h) {
+        hataYaz("sahne", h);
+        notYaz("sahne", "Sahne çizilemedi — veri geldi, çizim hata verdi.");
+      }
       katalogAl();
       olcumAl();
       ekimSayacKur();
       if (((S.veri && S.veri.ekim) || {}).aktif && !S.ekimOturum) ekimDurumAl();
       ustYaz(); altYaz(); isteKare();
     }).catch(function (h) {
-      /* SESSİZ BAŞARISIZLIK YOK: sahne boş kalırsa sebebi ekranda. */
+      /* SESSİZ BAŞARISIZLIK YOK: sahne boş kalırsa sebebi ekranda.
+         Buraya artık YALNIZ isteğin kendisi başarısız olunca düşülüyor. */
       hataYaz("veri", h);
       notYaz("veri", "Bahçe okunamadı — makine ya da sunucu yanıt vermedi.");
     }).then(function () { S.yukleniyor = false; });
@@ -4805,6 +4859,15 @@ window.Bahce = (function () {
        `Favori` hem aynı sayfadaki dinleyicileri hem başka sekmenin
        `storage` olayını iletiyor. */
     Favori.dinle(function () { S.nemDamga = ""; isteKare(); });
+    /* SAĞ PAYI KENDİ KENDİNE TAZELİYOR. `resize` yetmiyor: grup
+       pencere boyu değişmeden de genişliyor ("⏻ Aç" → "⏻ Kapat") ve o
+       anda pay eski kalıyor. Gözlemci grubun KENDİSİNE bakıyor. */
+    try {
+      var sagK = document.querySelector(".ust-sag");
+      if (sagK && window.ResizeObserver) {
+        new ResizeObserver(function () { sagPayOlc(); }).observe(sagK);
+      }
+    } catch (h) { /* gözlemci yoksa `resize` ve `ustYaz` yolu duruyor */ }
     carkKur();
     sakinKur();
     bulutKur();
