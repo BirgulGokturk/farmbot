@@ -52,7 +52,7 @@ DUZENLENEBILIR = ("spread_mm", "sow_depth_mm", "days_to_harvest", "water_ml_per_
 # Ayrı bir `sabit_mm` terimi bilerek YOK: eğrisiz hâl zaten onu veriyor ve
 # altıncı bir alan panelde karşılığı olmayan karmaşıklık olurdu.
 SECENEK = {
-    "sulama_deseni": ("ust", "yan", "iki", "cember"),
+    "sulama_deseni": ("ust", "yan", "iki", "cember", "zikzak"),
 }
 
 # Seçeneklerin panelde görünen adı.
@@ -62,6 +62,7 @@ SECENEK_ADI = {
         "yan": "Tek yana kaydır",
         "iki": "Karşılıklı iki nokta",
         "cember": "Çember (N nokta)",
+        "zikzak": "Zikzak (hat boyunca)",
     },
 }
 
@@ -87,9 +88,9 @@ VARSAYILAN = {
 
 # Hangi alan hangi desende anlamlı — panel gereksiz alanı gizliyor.
 KOSUL = {
-    "sulama_oran": ("yan", "iki", "cember"),
-    "sulama_aci": ("yan", "iki", "cember"),
-    "sulama_nokta": ("cember",),
+    "sulama_oran": ("yan", "iki", "cember", "zikzak"),
+    "sulama_aci": ("yan", "iki", "cember", "zikzak"),
+    "sulama_nokta": ("cember", "zikzak"),
 }
 
 # Alanın altında görünen açıklama. `sulama_oran`daki not önemli: eğri
@@ -109,14 +110,17 @@ NOT = {
     "sulama_aci": ("Ofsetin yönü. 0° = +X. SABİT bir açı: yatağın kenarına "
                    "yakın bitkide su alan dışına nişanlanabilir; öyle bir "
                    "durumda sulama reddedilir ve açıyı çevirmeniz istenir."),
-    "sulama_nokta": ("Çemberdeki nokta sayısı. Her nokta ayrı bir hareket "
-                     "demek: 40 bitkilik bir koşuda 8 nokta, 4 noktanın iki "
-                     "katı süre eder. 2-4 arası tavsiye edilir."),
+    "sulama_nokta": ("Çemberdeki ya da zikzaktaki nokta sayısı. Her nokta "
+                     "ayrı bir hareket demek: 40 bitkilik bir koşuda 8 nokta, "
+                     "4 noktanın iki katı süre eder. 2-4 arası tavsiye edilir."),
     "sulama_aciklik_mm": ("Ucun bitkinin TEPESİNDEN ne kadar yukarıda "
                           "duracağı. Boy `egri_yukseklik`ten okunuyor; eğri "
                           "yoksa yüzeyden bu kadar yukarısı kullanılır."),
     "sulama_deseni": ("Suyun bırakılacağı desen. Tam üst eski davranış ve "
-                      "varsayılan; fide, tohum ve kök sebzesi için doğrusu bu."),
+                      "varsayılan; fide, tohum ve kök sebzesi için doğrusu bu. "
+                      "Çember suyu kanopinin çevresine halka gibi dağıtıyor; "
+                      "zikzak ise açının gösterdiği HAT boyunca ileri geri "
+                      "giderek sıra ekimde iki bitkinin arasını ıslatıyor."),
     "sulama_nem_esigi": (
         "TOPRAK nemi (hava nemi değil) bu yüzdenin altındaysa sulanır, "
         "üstündeyse atlanır. 100 = nem bakılmaz, her zaman sula "

@@ -277,17 +277,51 @@ def _nokta(su_x: float, su_y: float, z: float, saniye: float,
     }
 
 
-def _yonler(desen: str, aci_derece: float, adet: int) -> list[float]:
-    """Desenin ürettiği açılar (radyan). `ust` için boş liste."""
-    taban = math.radians(aci_derece % 360.0)
+def _sapmalar(desen: str, aci_derece: float, adet: int) -> list[tuple[float, float]]:
+    """Desenin ürettiği BİRİM sapmalar — (dx, dy); ofsetle çarpılıyor.
+
+    AÇI DEĞİL VEKTÖR. Önce açı listesi döndürüyordu ve bütün noktalar
+    zorunlu olarak aynı yarıçapa düşüyordu. Zikzak öyle değil: hat
+    boyunca ilerlerken hattın iki yanına da sapıyor, yani noktaların
+    merkeze uzaklıkları birbirinden farklı. Tek bir açı listesi bunu
+    anlatamıyordu.
+
+    `ust` için boş liste — ofset yok, tek nokta bitkinin üstünde.
+    """
+    t = math.radians(aci_derece % 360.0)
+    ux, uy = math.cos(t), math.sin(t)
     if desen == "ust":
         return []
     if desen == "yan":
-        return [taban]
+        return [(ux, uy)]
     if desen == "iki":
-        return [taban, taban + math.pi]
+        return [(ux, uy), (-ux, -uy)]
     if desen == "cember":
-        return [taban + (2.0 * math.pi * i) / adet for i in range(adet)]
+        return [(math.cos(t + (2.0 * math.pi * i) / adet),
+                 math.sin(t + (2.0 * math.pi * i) / adet))
+                for i in range(adet)]
+    if desen == "zikzak":
+        # HAT `sulama_aci` yönünde, merkezden geçiyor ve -ofset ile
+        # +ofset arasında uzanıyor. Noktalar hat boyunca ilerlerken
+        # dönüşümlü olarak hattın iki yanına sapıyor.
+        #
+        # SAPMA OFSETİN YARISI. Tam sapmada uçtaki noktalar merkeze
+        # ofsetin 1,41 katı uzağa düşüyordu ve kullanıcının girdiği
+        # "× yarıçap" oranı söylediği şeyi anlatmaz olurdu. Yarıda azami
+        # uzaklık 1,12 ofset — kanopinin biraz dışı, komşunun dibi değil.
+        #
+        # NİYE VAR: sıra ekimde su tek noktaya değil iki bitkinin arasını
+        # boydan boya ıslatacak şekilde dağılıyor. Çember tek bitkinin
+        # çevresini sarıyor; zikzak sırayı takip ediyor.
+        n = max(2, adet)
+        vx, vy = -uy, ux
+        cikti: list[tuple[float, float]] = []
+        for i in range(n):
+            ilerleme = -1.0 + (2.0 * i) / (n - 1)
+            sapma = 0.5 if i % 2 == 0 else -0.5
+            cikti.append((ilerleme * ux + sapma * vx,
+                          ilerleme * uy + sapma * vy))
+        return cikti
     raise SulamaHatasi(f"Bilinmeyen sulama deseni: {desen!r}")
 
 
@@ -436,8 +470,8 @@ def noktalar(bitki: dict[str, Any], tur: dict[str, Any] | None, *,
                 "nem_gerekce": nem_gerekce}
 
     # --- noktalar -----------------------------------------------------------
-    yonler = _yonler(desen, _sayi(ayar["sulama_aci"]), adet)
-    pay = round(toplam_saniye / max(1, len(yonler) or 1), 2)
+    sapmalar = _sapmalar(desen, _sayi(ayar["sulama_aci"]), adet)
+    pay = round(toplam_saniye / max(1, len(sapmalar) or 1), 2)
 
     # BAŞLIK KAYMASI. Sulama başlığı Z eksenine ayrı takılı ve ucun
     # merkezinden kaymış: makine `hedef + (dx, dy)`ye gidince su hedefe
@@ -450,12 +484,15 @@ def noktalar(bitki: dict[str, Any], tur: dict[str, Any] | None, *,
     # Tek noktaya bakmak ya suyu kabın dışına döktürür ya da geçerli bir
     # sulamayı reddeder.
     cikti: list[dict[str, Any]] = []
-    if not yonler:
+    if not sapmalar:
         cikti.append(_nokta(bx, by, sulama_z, round(toplam_saniye, 2), None, bas))
     else:
-        for a in yonler:
-            cikti.append(_nokta(bx + ofset * math.cos(a), by + ofset * math.sin(a),
-                                sulama_z, pay, round(math.degrees(a) % 360.0, 1), bas))
+        for dx, dy in sapmalar:
+            # Açı sapmadan çıkıyor; zikzakta her noktanınki başka ve
+            # hata metninde hangi yöne nişanlandığı okunabilmeli.
+            aci = round(math.degrees(math.atan2(dy, dx)) % 360.0, 1)
+            cikti.append(_nokta(bx + ofset * dx, by + ofset * dy,
+                                sulama_z, pay, aci, bas))
 
     # --- dikim alanı denetimi: OFSETLİ konuma göre --------------------------
     # Bitkinin kendi konumu alanın içinde olsa bile ofsetli nokta dışına
@@ -475,9 +512,13 @@ def noktalar(bitki: dict[str, Any], tur: dict[str, Any] | None, *,
                 # SEBEP + ÇÖZÜM. Sabit açı, kenardaki bitkide suyu duvara
                 # nişanlayabiliyor; kullanıcıya ne yapacağını söylemek
                 # "reddedildi" demekten çok daha işe yarıyor.
+                # GERÇEK UZAKLIK yazılıyor, `ofset` değil: zikzakta her
+                # noktanın merkeze uzaklığı başka ve tek bir sayı yazmak
+                # kullanıcıyı yanlış noktayı aramaya gönderirdi.
+                uzaklik = math.hypot(nk["su_x"] - bx, nk["su_y"] - by)
                 ret.append(
                     f"X{nk['su_x']:.1f} Y{nk['su_y']:.1f} dikim alanı dışında "
-                    f"({nk['aci']:.0f}° yönünde {ofset:.0f} mm ofset) — "
+                    f"({nk['aci']:.0f}° yönünde {uzaklik:.0f} mm) — "
                     f"ofset yönünü (sulama_aci) çevirin, ofseti "
                     f"(sulama_oran) küçültün ya da bu bitkide deseni "
                     f"'tam üst' yapın")
