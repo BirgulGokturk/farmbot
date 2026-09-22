@@ -31,7 +31,14 @@ _KILIT = threading.RLock()
 
 #: Slug biçimi — katalogdaki türlerin anahtarı. Serbest metin kabul etmek,
 #: dosyayı panelden gelen her şeyin çöplüğüne çevirirdi.
-SLUG_DESENI = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
+#:
+#: TÜRKÇE HARFLER DE GEÇİYOR. Katalogdaki 37 slug'ın 36'sı sadeleştirilmiş
+#: (`havuc`, `cilek`, `misir`) ama `fesleğen` öyle değil; yalnız ASCII
+#: kabul etmek o türü favoriye alınamaz yapıyordu. Katalogdaki anahtarı
+#: düzeltmek de olurdu, ama o slug'la ekilmiş bitkilerin türü kopardı.
+#: Doğrulamanın işi katalogda gerçekten bulunan anahtarı reddetmek değil,
+#: uydurma metni reddetmek.
+SLUG_DESENI = re.compile(r"^[a-z0-9çğıöşü][a-z0-9çğıöşü_-]{0,63}$")
 
 #: Üst sınır. Favori listesi uzadıkça "favori" anlamını yitiriyor; ayrıca
 #: sınırsız liste dosyayı panelden şişirilebilir hâle getirirdi.

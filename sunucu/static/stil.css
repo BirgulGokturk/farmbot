@@ -1282,6 +1282,42 @@ table.veri td { color: var(--metin-2); }
  * Sahne yine DOM'dan çıkmıyor — yalnız mutlak konumdan normal akışa geçiyor,
  * aynı <canvas>, aynı WebGL bağlamı.
  */
+/* ÜST ÇUBUK — 900-1150 ARASI ÖLÇÜLDÜ, SAĞ GRUP SEKMELERİN ÜSTÜNE BİNİYORDU.
+ *
+ * Taban ızgara `1fr auto 1fr`: yan sütunlar EŞİT. Sol sütunda yalnız
+ * marka var (120 px), sağ sütunda üç ışık + "⏻ Aç" + "Acil durdurma"
+ * (268 px). Eşit bölüşümde sol 148 px boşa yatarken sağ 268 px'i o
+ * genişliğe sığdıramıyor; `min-width: 0` sütunun min-content'in altına
+ * inmesine izin verdiği için taşma kesilmiyor, SOLA doğru akıp
+ * sekmelerin üstüne biniyor. Ölçülen binme: 1100 px'de 0, 1000 px'de
+ * 48 px, 940 px'de 78 px, 865 px'de 51 px, 753 px'de 107 px.
+ * (Aşağıdaki 900 px bloğu yazıldığında sekme yediydi ve "⏻ Aç" düğmesi
+ * yoktu; sekme sayısı sekize çıkınca o kazanç yetmez oldu.)
+ *
+ * SİMETRİDEN VAZGEÇİLİYOR, SIĞMADIĞI İÇİN. Simetrik düzenin istediği
+ * genişlik 2x268 + 545 + 64 = 1145 px; altında ızgara zaten simetrik
+ * olamıyor, yalnız bunu taşarak yapıyor. Onun yerine yan sütunlar
+ * içerikleri kadar yer alıyor, sekme şeridi ARTAN alanı alıp kendi
+ * içinde ortalanıyor. Sığmazsa kayıyor — kesilmektense kaysın.
+ */
+@media (max-width: 1150px) {
+  .ust-ic { grid-template-columns: auto minmax(0, 1fr) auto; }
+  nav.sekmeler {
+    min-width: 0;
+    overflow-x: auto;
+    scrollbar-width: none;
+    justify-content: center;
+  }
+  nav.sekmeler::-webkit-scrollbar { display: none; }
+}
+
+/* Marka yazısı 1050 px'in altında düşüyor: 88 px kazandırıyor ve sekme
+   şeridinin sekiz sekmesi (545 px) 940 px'de bile kaymadan sığıyor.
+   Simge kalıyor — kimlik gitmiyor, yalnız yazı gidiyor. */
+@media (max-width: 1050px) {
+  .marka span { display: none; }
+}
+
 @media (max-width: 900px) {
   #uygulama { height: auto; overflow: visible; }
   header { position: sticky; top: 0; }
