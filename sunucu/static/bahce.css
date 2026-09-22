@@ -266,3 +266,46 @@ body.bh-menu .bh-cark { color: var(--metin); border-color: var(--metin-3); }
   .bh-is-neden { flex-wrap: nowrap; overflow: hidden; }
   .bh-is-neden > * { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 }
+
+/* --------------------------------------------------- koordinat satırı
+ *
+ * Tuvalin altında, `bh-not` ile aynı zeminde: ikisi de "sahnenin dışında
+ * söylenen söz". Kalıcı değil — düğmeyle açılıyor, nokta konunca
+ * kapanıyor. Bahçe tasarımının "kenarda kart sütunu yok" kuralı duruyor;
+ * bu bir sütun değil, bir satır ve yalnız kullanıldığı an görünüyor.
+ *
+ * Kutular dar (7ch): yatak 540x645 mm, dört haneden uzun bir sayı
+ * girilmiyor. Dokunmatikte 44 px'in altına inmiyorlar.
+ */
+.bh-koor {
+  flex: 0 0 auto;
+  display: flex; align-items: center; gap: var(--b2); flex-wrap: wrap;
+  padding: 6px var(--b3);
+  background: var(--yuzey-2); border-top: 1px solid var(--cizgi);
+  font-size: var(--yazi-kucuk);
+}
+.bh-koor label { color: var(--metin-3); font-weight: 600; }
+.bh-koor input {
+  width: 7ch; min-height: 32px; padding: 0 6px;
+  background: var(--yuzey); color: var(--metin);
+  border: 1px solid var(--cizgi); border-radius: 6px;
+  font: inherit; text-align: right;
+}
+.bh-koor input:focus-visible { outline: 2px solid var(--vurgu); outline-offset: 1px; }
+.bh-koor-birim { color: var(--metin-3); margin-left: -4px; }
+.bh-koor button {
+  min-height: 32px; padding: 0 12px;
+  background: var(--vurgu); border: 1px solid var(--vurgu); color: #fff;
+  font: inherit; font-weight: 600; border-radius: 6px; cursor: pointer;
+}
+.bh-koor button:active { transform: translateY(1px); }
+/* SEBEP GÖRÜNÜYOR: sayı reddedildiyse neden reddedildiği burada. */
+.bh-koor-not { color: var(--metin-3); min-width: 0; }
+.bh-koor-not.hata { color: var(--uyari, #e07a5f); }
+
+@media (max-width: 720px) {
+  /* Parmakla: hedefler 44 px, kutular biraz geniş. */
+  .bh-koor input, .bh-koor button { min-height: 44px; }
+  .bh-koor input { width: 8ch; }
+  .bh-koor-not { flex: 1 0 100%; }
+}

@@ -255,6 +255,13 @@
                   aria-label="sonraki iş" hidden>›</button>
           <button type="button" id="bh-is-ertele" hidden>yarın sor</button>
           <button type="button" class="bh-evet" id="bh-is-evet" hidden>Yap</button>
+          <!-- KOORDİNATLA EKİM. Toprağa uzun basmak bir nokta koyuyor ama
+               parmakla konulan nokta ancak pikselin izin verdiği kadar
+               hassas: 540 mm'lik yatak 700 px'e sığdığında bir piksel
+               0,8 mm. Ölçtüğü yere ekmek isteyen için sayı gerekiyor. -->
+          <button type="button" class="bh-ikon" id="bh-koor-ac"
+                  title="Koordinat girerek ek" aria-label="Koordinat girerek ek"
+                  aria-expanded="false">⌖</button>
           <button type="button" class="bh-ikon" id="bh-kur"
                   title="Bahçeyi yeniden kur" aria-label="Bahçeyi yeniden kur">⟳</button>
           <button type="button" class="bh-sakin" id="bh-sakin" aria-pressed="false">sakin mod</button>
@@ -265,6 +272,25 @@
 
         <div class="bh-tuval" id="bh-tuval">
           <canvas id="bh-sahne" aria-label="Bahçe yatağı"></canvas>
+        </div>
+
+        <!-- KOORDİNAT SATIRI — tuvalin altında, kapalı başlıyor.
+             Kalıcı bir form değil: nokta konunca kapanıyor ve gerisi
+             uzun basışla açılan akışın AYNISI (göz halkası, uygunluk
+             çemberi, onay). İkinci bir ekim yolu yazmıyoruz; yalnız
+             noktanın nereye konduğunu söylemenin ikinci yolu var. -->
+        <div class="bh-koor" id="bh-koor" hidden>
+          <label for="bh-koor-x">X</label>
+          <input type="number" id="bh-koor-x" step="1" inputmode="decimal"
+                 autocomplete="off" aria-label="X koordinatı, milimetre">
+          <label for="bh-koor-y">Y</label>
+          <input type="number" id="bh-koor-y" step="1" inputmode="decimal"
+                 autocomplete="off" aria-label="Y koordinatı, milimetre">
+          <span class="bh-koor-birim">mm</span>
+          <button type="button" class="asil" id="bh-koor-koy">Noktayı koy</button>
+          <!-- SINIRLAR YAZILI. Yatak dışına yazılan sayının neden
+               reddedildiği tahmin edilecek bir şey değil. -->
+          <span class="bh-koor-not" id="bh-koor-not"></span>
         </div>
 
         <div class="bh-not" id="bh-not" hidden></div>

@@ -2977,6 +2977,73 @@ window.Bahce = (function () {
     altYaz(); isteKare();
   }
 
+  /* ==================================================================== *
+   * KOORDİNATLA EKİM NOKTASI
+   *
+   * Toprağa uzun basmak da nokta koyuyor ama parmağın hassasiyeti
+   * pikselle sınırlı: 540 mm'lik yatak 700 px'e sığdığında bir piksel
+   * 0,8 mm ve parmağın dokunma alanı onlarca piksel. Ölçerek bulunan
+   * bir yere ekmek isteyen için sayı gerekiyor.
+   *
+   * İKİNCİ BİR EKİM YOLU DEĞİL. Nokta konduktan sonrası uzun basışın
+   * aynısı: çevresinde hazne gözleri halka olarak çiziliyor, göz
+   * seçilince uygunluk çemberi yanıyor, onay kutusu çıkıyor ve ekimi
+   * `/api/bahce/ek` yapıyor. Burada yalnız noktanın NEREYE konduğu
+   * başka türlü söyleniyor.
+   * ==================================================================== */
+  function koorNot(metin, hata) {
+    var el = $("#bh-koor-not");
+    if (!el) return;
+    el.textContent = metin || "";
+    if (hata) el.classList.add("hata"); else el.classList.remove("hata");
+  }
+  function koorAc(acik) {
+    var kutu = $("#bh-koor"), dug = $("#bh-koor-ac");
+    if (!kutu) return;
+    kutu.hidden = !acik;
+    if (dug) dug.setAttribute("aria-expanded", acik ? "true" : "false");
+    if (!acik) { koorNot(""); return; }
+    var s = yatakSinir();
+    koorNot("yatak X " + Math.round(s.x1) + "–" + Math.round(s.x2)
+      + " · Y " + Math.round(s.y1) + "–" + Math.round(s.y2) + " mm");
+    /* Boş kutu yatağın ORTASIYLA başlıyor, sıfırla değil: sıfır yatağın
+       köşesi ve oraya kimse ekmiyor — düzeltmek yazmaktan hızlı. */
+    var gx = $("#bh-koor-x"), gy = $("#bh-koor-y");
+    if (gx && gx.value === "") gx.value = Math.round((s.x1 + s.x2) / 2);
+    if (gy && gy.value === "") gy.value = Math.round((s.y1 + s.y2) / 2);
+    if (gx) { gx.focus(); gx.select(); }
+  }
+  var koorKoy = guvenli("koordinat", function () {
+    var gx = $("#bh-koor-x"), gy = $("#bh-koor-y");
+    var hx = gx ? String(gx.value).trim() : "";
+    var hy = gy ? String(gy.value).trim() : "";
+    if (hx === "" || hy === "") { koorNot("X ve Y gerekiyor.", true); return; }
+    var x = Number(hx), y = Number(hy);
+    if (!isFinite(x) || !isFinite(y)) { koorNot("Sayı değil.", true); return; }
+    /* SINIR DENETİMİ BURADA, çünkü yatağın dışına konan nokta sahnenin
+       dışına çizilir ve kullanıcı hiçbir şey görmez. Sunucu da ekim
+       anında denetliyor; bu onun yerine geçmiyor, sebebi ERKEN söylüyor. */
+    var s = yatakSinir();
+    if (x < s.x1 || x > s.x2 || y < s.y1 || y > s.y2) {
+      koorNot("Yatağın dışı — X " + Math.round(s.x1) + "–" + Math.round(s.x2)
+        + " · Y " + Math.round(s.y1) + "–" + Math.round(s.y2) + " mm.", true);
+      Ses.hata();
+      return;
+    }
+    /* `ekimSunucudan = false`: nokta kullanıcının, sunucunun önerdiği boş
+       yerlerden biri değil. Ekranın kendi uygunluk denetimi bu yüzden
+       açık kalıyor ve tür seçilince çember yeşil/kırmızı yanıyor. */
+    S.ekimNokta = { x: x, y: y };
+    S.ekimSunucudan = false;
+    S.ekimTur = ""; S.ekimGoz = ""; S.secili = ""; S.halka = false;
+    S.bosYer = null; S.bosYerHata = "";
+    koorAc(false);
+    Ses.tik();
+    mesajYaz("Nokta kondu: X " + Math.round(x) + " · Y " + Math.round(y)
+      + " mm — çevresindeki gözlerden tohum seç.");
+    altYaz(); isteKare();
+  });
+
   /** Altıgen etiketin yolu — düğmeler yuvarlak kutu değil, çivili askıya
    *  asılmış ALET ETİKETLERİ. Yuvarlak köşeli kutu her arayüzde var;
    *  bahçe aletinin yerinde durmuyordu. */
@@ -4601,6 +4668,19 @@ window.Bahce = (function () {
     $("#bh-is-geri").addEventListener("click", function () { S.kartIx--; ustYaz(); });
     $("#bh-is-ileri").addEventListener("click", function () { S.kartIx++; ustYaz(); });
     $("#bh-kur").addEventListener("click", function () { insaBasla(); });
+    $("#bh-koor-ac").addEventListener("click", function () {
+      var k = $("#bh-koor");
+      koorAc(!!(k && k.hidden));
+    });
+    $("#bh-koor-koy").addEventListener("click", function () { koorKoy(); });
+    /* Enter da koyuyor: iki sayı yazıp fareye uzanmak gereksiz. */
+    ["#bh-koor-x", "#bh-koor-y"].forEach(function (sec) {
+      var el = $(sec);
+      if (!el) return;
+      el.addEventListener("keydown", function (e) {
+        if (e.key === "Enter") { e.preventDefault(); koorKoy(); }
+      });
+    });
     document.addEventListener("keydown", function (e) {
       if (!S.acik) return;
       if (e.key === "Escape") {
@@ -4609,6 +4689,8 @@ window.Bahce = (function () {
           var ck = $("#bh-cark"); if (ck) ck.setAttribute("aria-expanded", "false");
           isteKare(); return;
         }
+        var kk = $("#bh-koor");
+        if (kk && !kk.hidden) { koorAc(false); return; }
         if (S.film) { filmKapat(); return; }
         if (S.rafAcik || S.ekimTur) { ekimBirak(); return; }
         if (S.tasima) { S.tasima = null; S.tasimaHedef = null; altYaz(); isteKare(); return; }
