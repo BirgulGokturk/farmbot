@@ -1421,8 +1421,13 @@ window.Bahce = (function () {
     calisanAletCiz(c);
     vurguCiz(c);
     eylemCiz(c);
-    kartCiz(c);
     if (S.insaBitti) { rayCiz(c); rafCiz(c); gorevCiz(c); sensorCiz(c); jogCiz(c); }
+    /* KÜNYE EN ÜSTTE ÇİZİLİYOR — tabelalardan SONRA.
+       Önce tabelalardan önce çiziliyordu ve Ölçümler tabelası kartın
+       üstüne biniyordu: satırlar yarım kalıyor, kartın ne yazdığı
+       okunmuyordu. Kart kullanıcının O AN dokunduğu şey; ambiyans
+       tabelası onun üstüne çıkmamalı. */
+    kartCiz(c);
     balonCiz(c);
     atmosferCiz(c, dt);
     bulutCiz(c, dt);
@@ -3600,8 +3605,12 @@ window.Bahce = (function () {
     /* DİKİM VE YAŞ */
     var ek = sayi(b.ekim, 0), yas = sayi(b.yas_gun, 0), olgun = sayi(b.olgun_gun, 0);
     if (ek || yas) {
-      r.push({ ad: "Dikim", deger: ek ? tarih(ek) : (yas + " gün önce"),
-               alt: yas + " günlük" + (olgun ? " · olgunluk " + olgun + " gün" : "")
+      /* YAŞ YUVARLANIYOR. Sunucu kesirli gün veriyor ve kart onu olduğu
+         gibi basıyordu: "10.297452518432229 günlük". Saat mertebesindeki
+         kesir kimsenin işine yaramıyor, satırı da taşırıyordu. */
+      var yasY = Math.round(yas);
+      r.push({ ad: "Dikim", deger: ek ? tarih(ek) : (yasY + " gün önce"),
+               alt: yasY + " günlük" + (olgun ? " · olgunluk " + Math.round(olgun) + " gün" : "")
                  + (olgun ? " · %" + Math.round(kis(yas / olgun, 0, 1) * 100) : ""),
                renk: "#e8ece2" });
     }
@@ -3655,10 +3664,33 @@ window.Bahce = (function () {
        yoksa ikisi birbirinden kopuyordu. */
     var mk = S.halkaMerkez || halkaMerkez(px(b.x), py(b.y), R);
     var gx = mk.x, gy = mk.y;
+    /* `y` önce: `x`e bağlı değil ve çakışma denetimi ikisini de
+       istiyor. */
+    var y = kis(gy - h / 2, 58, Math.max(58, S.boy - h - 8));
     var x = gx + R + 16;
     if (x + w > S.en - 8) x = gx - R - 16 - w;
+    /* ÖLÇÜMLER TABELASINDAN KAÇIYOR. Kart üstte çiziliyor, yani
+       okunuyor; ama tabelayı gereksiz yere örtmesi de istenmez. Sol
+       tarafta yer varsa oraya açılıyor ve ikisi birden okunuyor. Yer
+       yoksa üstte kalmaya devam ediyor — okunmayan bir kart, örtülmüş
+       bir tabeladan kötü. */
+    var st = S.sensorKutu;
+    if (st && x < st.x + st.w && x + w > st.x
+        && y < st.y + st.h && y + h > st.y) {
+      var sol = gx - R - 16 - w;
+      if (sol >= 8 && sol + w <= st.x) {
+        x = sol;                      /* halkanın solu tabelayı temizliyor */
+      } else if (st.x - w - 8 >= 8) {
+        /* HALKANIN SOLU DA YETMİYOR. Bitki tam tabelanın altındaysa
+           (sağ üst köşe) iki yan da tabelaya denk geliyordu ve kart
+           halkanın soluna atılsa bile çakışma sürüyordu — ölçüldü,
+           1440 px'lik sahnede 10248 px² örtüşme kalıyordu. Kart o
+           zaman halkadan koparılıp tabelanın soluna itiliyor; kime ait
+           olduğu zaten ince bağlantı çizgisinden okunuyor. */
+        x = st.x - w - 8;
+      }
+    }
     x = kis(x, 8, Math.max(8, S.en - w - 8));
-    var y = kis(gy - h / 2, 58, Math.max(58, S.boy - h - 8));
     S.kartKutu = { x: x, y: y, w: w, h: h };
     c.save();
     c.fillStyle = "rgba(0,0,0,.4)";
@@ -5137,7 +5169,16 @@ window.Bahce = (function () {
                          return { k: t.k, cx: t.cx, cy: t.cy, r: t.r };
                        }) } : null,
         olcum: { satir: olcumSatirlari(), hata: S.olcumHata,
-                 kutu: S.sensorKutu ? true : false },
+                 /* Kutunun KENDİSİ de veriliyor: künye kartıyla
+                    çakışıp çakışmadığı ancak iki dikdörtgen elde olunca
+                    ölçülebiliyor. */
+                 kutu: S.sensorKutu ? true : false,
+                 kutuYeri: S.sensorKutu ? { x: Math.round(S.sensorKutu.x),
+                                            y: Math.round(S.sensorKutu.y),
+                                            w: S.sensorKutu.w, h: S.sensorKutu.h } : null },
+        kunye: S.kartKutu ? { x: Math.round(S.kartKutu.x),
+                              y: Math.round(S.kartKutu.y),
+                              w: S.kartKutu.w, h: S.kartKutu.h } : null,
         dur: S.durDugme ? { x: S.durDugme.x, y: S.durDugme.y, kimlik: S.durDugme.kimlik } : null,
         eylem: EYLEM.map(function (x) {
           return { k: x.k, x: x._x, y: x._y, r: x._r };
