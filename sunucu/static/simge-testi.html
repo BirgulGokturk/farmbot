@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Simge testi — hangi işaret çizilmiyor</title>
+<!--
+  NİYE VAR. Panel düğmelerinin bir kısmı Unicode işareti (⏻, ⌂, ⟳ …) ve
+  bunlar EMOJİ DEĞİL: teknik simge blokundan geliyorlar ve her işletim
+  sistemi hepsini taşımıyor. iPad'de "emojiler görünmüyor" diye ortaya
+  çıkan şey büyük ihtimalle bu — gerçek emojiler (🌱 💧 🌡) iOS'ta zaten var.
+
+  Hangisinin düştüğünü tahmin etmek yerine ÖLÇÜYORUZ: her işaret panelin
+  kendi yazı yığınıyla küçük bir tuvale çiziliyor ve hiçbir yazı tipinde
+  bulunmayan bir kod noktasının çizimiyle PİKSEL PİKSEL karşılaştırılıyor.
+  Aynıysa tarayıcı o işaret için de "bilinmeyen" kutusunu çiziyor demektir.
+
+  Önce genişlik karşılaştırılıyordu ve yanlış alarm veriyordu: ölçüldü,
+  "A" harfi 19,35 px ve boş kutu 19,37 px — gerçek bir glif rahatlıkla
+  kutuyla aynı genişliğe düşebiliyor. Piksel karşılaştırması bunu çözüyor.
+
+  Yine de sayfa hükmü tek başına vermiyor: işaretleri büyük büyük de
+  gösteriyor, ekran görüntüsünde göz de doğruluyor.
+-->
+<style>
+  :root {
+    --zemin: #16181a; --yuzey: #202427; --cizgi: #333a3e;
+    --metin: #e7ebe6; --metin-3: #9aa3a0; --kotu: #e07a5f; --iyi: #63c46b;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 16px; background: var(--zemin); color: var(--metin);
+    font: 15px/1.5 ui-sans-serif, system-ui, "Segoe UI", Roboto, Arial, sans-serif;
+  }
+  h1 { font-size: 18px; margin: 0 0 4px; }
+  p { margin: 4px 0 14px; color: var(--metin-3); font-size: 13px; }
+  #ozet {
+    background: var(--yuzey); border: 1px solid var(--cizgi); border-radius: 8px;
+    padding: 12px; margin-bottom: 16px; font-size: 14px;
+  }
+  #ozet b { font-size: 18px; }
+  .eksikler {
+    font-family: ui-monospace, Menlo, Consolas, monospace;
+    font-size: 15px; line-height: 2; word-break: break-word; margin-top: 8px;
+  }
+  .izgara {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
+    gap: 8px;
+  }
+  .hucre {
+    background: var(--yuzey); border: 1px solid var(--cizgi);
+    border-radius: 8px; padding: 8px 4px; text-align: center;
+  }
+  .hucre.yok { border-color: var(--kotu); }
+  /* İŞARET PANELİN YIĞINIYLA çiziliyor: test ettiğimiz şey panelin
+     gerçekte kullandığı yazı tipi sırası, rastgele bir yazı tipi değil. */
+  .isaret {
+    font: 30px/1.2 ui-sans-serif, system-ui, "Segoe UI", Roboto, Arial, sans-serif;
+    display: block; min-height: 38px;
+  }
+  .kod { font-family: ui-monospace, monospace; font-size: 10px; color: var(--metin-3); }
+  .nerede { font-size: 10px; color: var(--metin-3); display: block; margin-top: 2px; }
+  .hucre.yok .kod { color: var(--kotu); }
+</style>
+</head>
+<body>
+<h1>Simge testi</h1>
+<p>Bu sayfayı sorunlu cihazda açın. Kırmızı çerçeveli olanlar bu cihazda
+   çizilmiyor demektir. Ekran görüntüsü yeterli.</p>
+
+<div id="ozet">ölçülüyor…</div>
+<div class="izgara" id="izgara"></div>
+
+<script>
+/* Panelde GERÇEKTEN ekrana çıkan işaretler. Liste depodan tarandı;
+   yalnız CSS yorumlarında geçen kutu çizgileri (─ │ ┌ …) dışarıda,
+   çünkü onlar hiç çizilmiyor. */
+const ISARETLER = [
+  ["⏻", "güç düğmesi (Aç/Kapat)"],
+  ["⌂", "yön tuşları · home"],
+  ["⟳", "bahçeyi yeniden kur"],
+  ["⤢", "kamera kutusu · büyüt"],
+  ["⤡", "kamera kutusu · küçült"],
+  ["⬓", "leke · toprak"],
+  ["⊡", "leke · kesit"],
+  ["◎", "leke · çözümle"],
+  ["⌨", "klavye ipucu"],
+  ["⚙", "bahçe menüsü"],
+  ["⚠", "uyarı"],
+  ["★", "favori · dolu"],
+  ["☆", "favori · boş"],
+  ["✎", "düzenle"],
+  ["✓", "onay"],
+  ["✕", "kapat / hata"],
+  ["↺", "geri al"],
+  ["↷", "ileri al"],
+  ["▲", "yön · yukarı"],
+  ["▼", "yön · aşağı"],
+  ["◀", "yön · sol"],
+  ["▶", "yön · sağ"],
+  ["▸", "katlanır bölüm"],
+  ["▾", "açılır liste"],
+  ["■", "durdur"],
+  ["←", "ok"], ["→", "ok"], ["↑", "ok"], ["↓", "ok"],
+  ["↖", "ok"], ["↗", "ok"], ["↙", "ok"], ["↘", "ok"], ["↔", "ok"],
+  ["‹", "önceki iş"], ["›", "sonraki iş"],
+  ["−", "eksi"], ["±", "artı eksi"], ["≈", "yaklaşık"], ["≠", "eşit değil"],
+  ["°", "derece"], ["²", "kare"], ["·", "ayraç"], ["…", "üç nokta"],
+  ["—", "uzun tire"], ["–", "kısa tire"], ["×", "çarpı"], ["•", "madde"],
+  ["“", "tırnak"], ["”", "tırnak"],
+  ["🌱", "EMOJİ · fide"],
+  ["💧", "EMOJİ · su"],
+  ["🌡️", "EMOJİ · sıcaklık"],
+  ["🔊", "EMOJİ · ses açık"],
+  ["🔇", "EMOJİ · ses kapalı"],
+  ["📍", "EMOJİ · konum"],
+];
+
+/* GLİF VAR MI — GENİŞLİKLE DEĞİL, PİKSELLE.
+   Tarayıcı bulunmayan bir kod noktası için hep aynı "bilinmeyen"
+   kutusunu çiziyor. Önce o kutunun GENİŞLİĞİ ölçülüyordu ve ölçüldü ki
+   bu yanlış alarm veriyor: bu makinede "A" harfi 19,35 px, boş kutu
+   19,37 px — aradaki fark 0,02 px ve gerçek bir glif rahatlıkla kutuyla
+   aynı genişliğe düşebiliyor.
+   Onun yerine işaret küçük bir tuvale çizilip boş kutunun çizimiyle
+   PİKSEL PİKSEL karşılaştırılıyor. Aynıysa o işaret için gerçekten
+   bilinmeyen kutusu çiziliyor demektir.
+   Yalnız saydamlık kanalına bakılıyor: emoji renkli, kutu beyaz çiziliyor
+   ve renk karşılaştırması ikisini boş yere ayırırdı. */
+const YIGIN = '30px ui-sans-serif, system-ui, "Segoe UI", Roboto, Arial, sans-serif';
+const OLCU = 48;
+function cizim(ch) {
+  const c = document.createElement("canvas");
+  c.width = OLCU; c.height = OLCU;
+  const x = c.getContext("2d", { willReadFrequently: true });
+  x.font = YIGIN;
+  x.textBaseline = "middle";
+  x.textAlign = "center";
+  x.fillStyle = "#fff";
+  x.clearRect(0, 0, OLCU, OLCU);
+  x.fillText(ch, OLCU / 2, OLCU / 2);
+  return x.getImageData(0, 0, OLCU, OLCU).data;
+}
+function ayni(a, b) {
+  for (let i = 3; i < a.length; i += 4) if (a[i] !== b[i]) return false;
+  return true;
+}
+/* İki AYRI atanmamış kod noktası aynı çizilmeli. Çizilmiyorsa bu
+   tarayıcıda yöntem işlemiyor demektir ve sayfa hüküm vermiyor. */
+const bosKutu = cizim(String.fromCharCode(0xE05F));
+const olculebilir = ayni(bosKutu, cizim(String.fromCharCode(0xE9A1)));
+
+function cizilmiyor(ch) {
+  if (!olculebilir) return null;
+  return ayni(cizim(ch), bosKutu);
+}
+
+const izgara = document.getElementById("izgara");
+const eksik = [];
+for (const [ch, nerede] of ISARETLER) {
+  const yok = cizilmiyor(ch);
+  if (yok) eksik.push(ch + " (U+" + ch.codePointAt(0).toString(16).toUpperCase() + ")");
+  const d = document.createElement("div");
+  d.className = "hucre" + (yok ? " yok" : "");
+  d.innerHTML = '<span class="isaret"></span>'
+    + '<span class="kod">U+' + ch.codePointAt(0).toString(16).toUpperCase() + "</span>"
+    + '<span class="nerede"></span>';
+  d.querySelector(".isaret").textContent = ch;
+  d.querySelector(".nerede").textContent = nerede;
+  izgara.appendChild(d);
+}
+
+const ozet = document.getElementById("ozet");
+if (!olculebilir) {
+  ozet.innerHTML = "<b>Ölçüm yapılamadı</b><br>"
+    + "Bu tarayıcı eksik glifleri genişlikten ayırt ettirmiyor. "
+    + "Aşağıdaki kutulara gözle bakın: boş kare ya da soru işareti "
+    + "görünen işaret o cihazda yok demektir.";
+} else if (!eksik.length) {
+  ozet.innerHTML = '<b style="color:var(--iyi)">Hepsi çiziliyor</b><br>'
+    + ISARETLER.length + " işaretin tamamı bu cihazda var. "
+    + "Sorun başka yerde — ekran görüntüsü gönderin.";
+} else {
+  ozet.innerHTML = '<b style="color:var(--kotu)">' + eksik.length + " işaret çizilmiyor</b>"
+    + ' <span style="color:var(--metin-3)">/ ' + ISARETLER.length + "</span>"
+    + '<div class="eksikler">' + eksik.join("  ") + "</div>";
+}
+</script>
+</body>
+</html>
