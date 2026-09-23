@@ -58,6 +58,12 @@
     font-family: ui-monospace, Menlo, Consolas, monospace;
     font-size: 15px; line-height: 2; word-break: break-word; margin-top: 8px;
   }
+  #emoji-tani { margin-bottom: 16px; }
+  #emoji-tani .olcum-satir {
+    display: grid; grid-template-columns: 190px auto; gap: 10px;
+    padding: 4px 0; border-top: 1px solid var(--cizgi); font-size: 14px;
+  }
+  #emoji-tani .olcum-ad { color: var(--metin-3); }
   .izgara {
     display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
     gap: 8px;
@@ -84,6 +90,12 @@
    çizilmiyor demektir. Ekran görüntüsü yeterli.</p>
 
 <div id="ozet">ölçülüyor…</div>
+<!-- EMOJİ TEŞHİSİ. "Emoji görünmüyor" üç ayrı sebepten olabiliyor ve
+     ekran görüntüsünden ayırt edilemiyor: (1) panelin yeni CSS'i cihaza
+     hiç ulaşmamış, (2) cihazda emoji fontu var ama yığında adı geçmiyor,
+     (3) bizim gönderdiğimiz font seçiliyor ama cihaz o biçimi çizemiyor.
+     Aşağıdaki üç satır üçünü birbirinden ayırıyor. -->
+<div id="emoji-tani"></div>
 <div class="izgara" id="izgara"></div>
 
 <script>
@@ -172,6 +184,76 @@ function cizilmiyor(ch) {
   if (!olculebilir) return null;
   return ayni(cizim(ch), bosKutu);
 }
+
+/* --------------------------------------------------- EMOJİ TEŞHİSİ */
+(function () {
+  const kutu = document.getElementById("emoji-tani");
+  const satir = (ad, deger, iyi) =>
+    `<div class="olcum-satir"><span class="olcum-ad">${ad}</span>`
+    + `<b style="color:${iyi === null ? "inherit" : (iyi ? "var(--iyi)" : "var(--kotu)")}">`
+    + String(deger) + "</b></div>";
+
+  const yigin = getComputedStyle(document.documentElement)
+    .getPropertyValue("--yazi-yigin").trim();
+  /* YENİ CSS GELDİ Mİ: emoji fontlarının adı yığında geçiyorsa panelin
+     güncel sürümü bu cihaza ulaşmış demektir. Geçmiyorsa tarayıcı eski
+     kopyayı gösteriyor ve yapılacak şey önce onu tazelemek. */
+  const yeniCss = yigin.includes("Apple Color Emoji");
+
+  /* HANGİ FONT ÇİZİYOR — `document.fonts.check` İLE DEĞİL, PİKSELLE.
+     `check` denendi ve güvenilmez çıktı: Chrome yedek fontla
+     çizilebilen her metin için "evet" diyor, o yüzden Windows'ta
+     "Apple Color Emoji" bile var görünüyordu.
+     Onun yerine aynı emoji üç ayrı yığınla çiziliyor ve bitmap'ler
+     karşılaştırılıyor:
+       A = panelin gerçek yığını
+       B = yalnız bizim gönderdiğimiz font
+       C = emoji fontu adı hiç geçmeyen bir yığın
+     A boşsa hiç çizilmiyor; A = B ise bizim font seçiliyor (iOS'ta bu
+     bos kutu demek); A ≠ B ve A ≠ C ise sistemin kendi emoji fontu
+     devrede — istediğimiz bu. */
+  const ciz = (ch, aile) => {
+    const c = document.createElement("canvas");
+    c.width = OLCU; c.height = OLCU;
+    const x = c.getContext("2d", { willReadFrequently: true });
+    x.font = "30px " + aile;
+    x.textBaseline = "middle"; x.textAlign = "center";
+    x.fillStyle = "#fff";
+    x.clearRect(0, 0, OLCU, OLCU);
+    x.fillText(ch, OLCU / 2, OLCU / 2);
+    return x.getImageData(0, 0, OLCU, OLCU).data;
+  };
+  const esit = (a, b) => { for (let i = 3; i < a.length; i += 4) if (a[i] !== b[i]) return false; return true; };
+  const dolu = (a) => { for (let i = 3; i < a.length; i += 4) if (a[i] > 8) return true; return false; };
+
+  const FIDE = "🌱";
+  const A = ciz(FIDE, yigin);
+  const B = ciz(FIDE, '"BitkiEmoji", monospace');
+  const C = ciz(FIDE, "monospace");
+  const bosKutuA = esit(A, ciz(String.fromCharCode(0xE05F), yigin));
+
+  let kim, kimIyi;
+  if (!dolu(A) || bosKutuA) { kim = "HİÇBİRİ — boş kutu çiziliyor"; kimIyi = false; }
+  else if (esit(A, B) && !esit(B, C)) { kim = "bizim gönderdiğimiz font (BitkiEmoji)"; kimIyi = false; }
+  else { kim = "cihazın kendi emoji fontu"; kimIyi = true; }
+
+  let bitkiDurum = "(bilinmiyor)";
+  try {
+    const f = [...document.fonts].filter((x) => x.family.indexOf("Bitki") >= 0)[0];
+    bitkiDurum = f ? f.status : "(tanımlı değil)";
+  } catch (h) { /* boş */ }
+
+  let h = satir("Panel CSS'i güncel mi", yeniCss ? "evet" : "HAYIR — önbellek", yeniCss);
+  h += satir("🌱 neyle çiziliyor", kim, kimIyi);
+  h += satir("Gönderdiğimiz font", bitkiDurum, null);
+  h += `<p class="ikincil">Yazı yığını: ${yigin || "(okunamadı)"}</p>`;
+  if (!yeniCss) {
+    h += '<p class="ikincil" style="color:var(--kotu)">Tarayıcı panelin eski '
+       + 'kopyasını gösteriyor. Sayfayı kapatıp açın; geçmezse tarayıcı '
+       + 'geçmişinden site verilerini temizleyin.</p>';
+  }
+  kutu.innerHTML = h;
+}());
 
 const izgara = document.getElementById("izgara");
 const eksik = [];
