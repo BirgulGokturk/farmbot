@@ -152,6 +152,10 @@ DHT dht22(DHT_PIN, DHT22);
 DHT *dht = &dht11;
 const char *dhtAdi = "DHT11";
 Adafruit_BMP085 bmp;
+/* BMP180/BMP085'in sabit I2C adresi. Yoklama icin gerekiyor: kutuphane
+   kendi adresini disari vermiyor ve `begin()` cagrilmadan once "orada
+   biri var mi" sorusunu bizim sormamiz gerekiyor (bkz. setup). */
+#define BMP_ADRES 0x77
 bool bmpVar = false;
 
 // Rölelerin gerçek durumu. Panel bunu tahmin etmiyor, kart söylüyor.
@@ -346,7 +350,24 @@ void setup() {
     Serial.println(F("UYARI: Wire zaman asimi bu cekirdekte yok — I2C "
                      "acilistan sonra takilirsa kart durabilir"));
 #endif
-    bmpVar = bmp.begin();
+    /* ADRES YOKLAMASI — `bmp.begin()` ÇAĞRILMADAN ÖNCE.
+     *
+     * SAHADA ÖLÇÜLDÜ: sensör tamamen SÖKÜLÜ, SDA ve SCL yüksek (yukarıdaki
+     * denetim temiz geçti), buna rağmen kart `bmp.begin()`de durdu ve
+     * "Hazir." hiç yazılmadı. Yani kilitlenmenin sebebi takılı bir veri
+     * yolu değil, KÜTÜPHANENİN KENDİSİ: `Adafruit_BMP085::begin()` önce
+     * `read8()` çağırıyor ve o işlev `Wire.requestFrom(...)` sonrasında
+     *     while (!Wire.available());
+     * diyor. Cevap veren kimse yoksa `requestFrom` sıfır bayt döndürüyor
+     * ve bu döngü HİÇ BİTMİYOR. Zaman aşımı da yok (bu çekirdekte
+     * `WIRE_HAS_TIMEOUT` tanımlı değil, bir üstteki uyarı onu söylüyor).
+     *
+     * `endTransmission` ise sonsuza kadar beklemiyor: adres ACK'lanmazsa
+     * durum kodu dönüyor. Bu yüzden önce adresi yokluyoruz ve ancak biri
+     * cevap verirse kütüphaneye giriyoruz. Cevap yoksa aşağıdaki
+     * "BMP180 bulunamadi" satırı zaten yazılıyor. */
+    Wire.beginTransmission(BMP_ADRES);
+    bmpVar = (Wire.endTransmission() == 0) ? bmp.begin() : false;
   }
 #if defined(WIRE_HAS_TIMEOUT)
   /* Bayrak yalnız Wire.begin çağrıldıysa anlamlı; hat baştan takılıysa
