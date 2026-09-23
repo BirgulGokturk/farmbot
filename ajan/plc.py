@@ -98,10 +98,16 @@ PROX_GIRIS = ("X0", "X5", "X6")   # hangi fiziksel giriş, sırayla
 # olduğunu söyleyen tek şey.
 #
 # X GİRİŞLERİ MODBUS'A AÇIK DEĞİL — proksimitelerde ölçüldü: fonksiyon 1
-# ve 2 ile 0..31 arası bütün bitler sıfır ve hiç değişmiyor. PLC'nin
-# bunları D registerlarına kopyalaması gerekiyor, prox için yapıldığı
-# gibi. Registerlar aşağıda; ladder yazılana kadar hepsi 0 okur ve
-# `home_anahtari` kapalı kaldığı sürece hiçbir karara girmez.
+# ve 2 ile 0..31 arası bütün bitler sıfır ve hiç değişmiyor. Onun için
+# ladder bunları D registerlarına kopyalıyor, prox için yapıldığı gibi.
+#
+# KOPYALAMA DÖRT EKSEN İÇİN DE YAZILMIŞ DURUMDA (ladder'da görüldü):
+#
+#     Net 36/37  X1 -> D1120     Net 40/41  X3 -> D1122
+#     Net 38/39  X2 -> D1121     Net 42/43  X4 -> D1123
+#
+# Dördü de aynı kalıp: normalde-açık kontak K1 yazıyor, normalde-kapalı
+# kontak K0. Makine home köşesindeyken dördü birden 0x1 okuyor.
 HOME_SW_BAS = 1120
 #: Hangi fiziksel girişin hangi registera kopyalanacağı — EKSEN SIRASINA
 #: göre (X, Y, Z, T). Kullanıcı doğruladı: X1→X, X2→Y, X3→Z, X4→T.
@@ -806,9 +812,9 @@ class Gantry:
                     for n, h in enumerate(prox_ham)
                 ],
                 # Eksen başına referans anahtarı. `acik` True ise eksen
-                # fiziksel olarak uçta. Ladder kopyalamayı yazana kadar
-                # hepsi 0 okuyor; `home_anahtari` kapalıyken hiçbir
-                # karara girmiyor, yalnız görünüyor.
+                # fiziksel olarak uçta. Ladder dördünü de kopyalıyor;
+                # `home_anahtari` dışında kalan eksende yalnız görünür,
+                # hiçbir karara girmez.
                 "home_switch": [
                     {"eksen": EKSENLER[n]["ad"], "giris": HOME_SW_GIRIS[n],
                      "reg": HOME_SW_BAS + n, "ham": h,

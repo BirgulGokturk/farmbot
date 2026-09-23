@@ -680,15 +680,24 @@ class Uclar:
         return max(1, min(10000, sure))
 
     def home_anahtari(self) -> set[str]:
-        """Anahtarına güvenilecek eksenlerin adları — {"x", "y", "z"}.
+        """Anahtarına güvenilecek eksenlerin adları — {"x", "y", "z", "t"}.
 
-        Eski biçim (tek `true`/`false`) da okunuyor: `true` girilmişse
-        X, Y ve Z sayılıyor, T hariç — bu makinede T'de anahtar yok ve
-        onu da kapsamak her T home'unu reddettirirdi.
+        Eski biçim (tek `true`/`false`) da okunuyor: `true` = dört eksen.
+
+        T ÖNCEDEN HARİÇTİ, artık değil. "Bu makinede T'de anahtar yok"
+        diye dışarıda bırakılmıştı; ladder'da yeri görüldü ve varsayım
+        yanlış çıktı. Net 42/43, ötekilerin tıpatıp eşi:
+
+            Net 36/37  X1 -> D1120 (X)     Net 40/41  X3 -> D1122 (Z)
+            Net 38/39  X2 -> D1121 (Y)     Net 42/43  X4 -> D1123 (T)
+
+        T hariç kalınca T home'u yalnız "kayıtlı koordinata git"ti:
+        eksen takılsa da sayaç yürüdüğü için panel gitmediği hâlde
+        0,00 mm yazıyordu ve kaymayı ölçecek hiçbir şey yoktu.
         """
         ham = self.ayar.get("home_anahtari")
         if ham is True:
-            return {"x", "y", "z"}
+            return {"x", "y", "z", "t"}
         if not isinstance(ham, (list, tuple, set)):
             return set()
         return {str(a).strip().lower() for a in ham if str(a).strip()}
