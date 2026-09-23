@@ -23,14 +23,29 @@
   gösteriyor, ekran görüntüsünde göz de doğruluyor.
 -->
 <style>
+  /* PANELDEKİNİN AYNISI. Test sayfası kendi yazı yığınını kullanırsa
+     panelin sorununu üretmez: ilk sürümde emoji fontları yığında adı
+     geçmediği için bu sayfa iPad'de emojileri "var" gösterirken panel
+     aynı emojileri çizemiyordu. */
+  @font-face {
+    font-family: "BitkiEmoji";
+    src: url("/statik/bitki-emoji.woff2") format("woff2");
+    font-display: swap;
+    unicode-range: U+FE0F, U+1F330-1F343, U+1F345-1F349, U+1F353, U+1F360,
+                   U+1F383, U+1F952-1F955, U+1F966, U+1F96C, U+1F9C4-1F9C5,
+                   U+1FAD8, U+1FADB;
+  }
   :root {
+    --yazi-yigin: ui-sans-serif, system-ui, "Segoe UI", Roboto, Arial,
+                  "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji",
+                  sans-serif, "BitkiEmoji";
     --zemin: #16181a; --yuzey: #202427; --cizgi: #333a3e;
     --metin: #e7ebe6; --metin-3: #9aa3a0; --kotu: #e07a5f; --iyi: #63c46b;
   }
   * { box-sizing: border-box; }
   body {
     margin: 0; padding: 16px; background: var(--zemin); color: var(--metin);
-    font: 15px/1.5 ui-sans-serif, system-ui, "Segoe UI", Roboto, Arial, sans-serif;
+    font: 15px/1.5 var(--yazi-yigin);
   }
   h1 { font-size: 18px; margin: 0 0 4px; }
   p { margin: 4px 0 14px; color: var(--metin-3); font-size: 13px; }
@@ -55,7 +70,7 @@
   /* İŞARET PANELİN YIĞINIYLA çiziliyor: test ettiğimiz şey panelin
      gerçekte kullandığı yazı tipi sırası, rastgele bir yazı tipi değil. */
   .isaret {
-    font: 30px/1.2 ui-sans-serif, system-ui, "Segoe UI", Roboto, Arial, sans-serif;
+    font: 30px/1.2 var(--yazi-yigin);
     display: block; min-height: 38px;
   }
   .kod { font-family: ui-monospace, monospace; font-size: 10px; color: var(--metin-3); }
@@ -127,7 +142,10 @@ const ISARETLER = [
    bilinmeyen kutusu çiziliyor demektir.
    Yalnız saydamlık kanalına bakılıyor: emoji renkli, kutu beyaz çiziliyor
    ve renk karşılaştırması ikisini boş yere ayırırdı. */
-const YIGIN = '30px ui-sans-serif, system-ui, "Segoe UI", Roboto, Arial, sans-serif';
+/* Ölçüm de panelin yığınıyla yapılıyor; başka bir yığınla ölçmek,
+   panelin görmediği bir yazı tipini ölçmek olurdu. */
+const YIGIN = '30px ' + getComputedStyle(document.documentElement)
+  .getPropertyValue("--yazi-yigin").trim();
 const OLCU = 48;
 function cizim(ch) {
   const c = document.createElement("canvas");

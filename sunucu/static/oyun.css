@@ -15,7 +15,11 @@
 .oy-kap {
   position: absolute; inset: 0; overflow: hidden;
   background: #cfd9e0;
-  font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  /* Emoji fontlari burada da adiyla geciyor: `stil.css`teki yiginla ayni
+     gerekce — iOS bizim CBDT bicimli alt kumemizi cizemiyor ve adi gecen
+     bir emoji fontu yoksa sistemin kendi fontuna hic dusmuyor. */
+  font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto,
+        "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif;
   color: #21262b;
   box-sizing: border-box;
 }

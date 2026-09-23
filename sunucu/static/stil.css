@@ -107,9 +107,36 @@
  * Yazi yiginin SONUNDA duruyor: normal harfler sistem fontuyla ciziliyor,
  * yalnizca sistemde bulunmayan emoji glifleri buradan geliyor.
  *
+ * SISTEM EMOJI FONTLARI BU FONTTAN ONCE GELMEK ZORUNDA — iPad'de bitki
+ * emojileri hic cizilmiyordu ve sebebi olculdu: bu dosya Noto Color
+ * Emoji'nin CBDT/CBLC bicimi, yani Google'in bitmap renkli formati.
+ * Chrome, Android ve Windows bu bicimi cizebiliyor; SAFARI/iOS
+ * CIZEMIYOR (Safari sbix ve COLR/CPAL destekliyor).
+ *
+ * Asil tuzak `unicode-range`: tarayiciya "bu kod noktalari icin BU
+ * fontu kullan" diyor. Font yiginin sonunda olsa bile, listede ondan
+ * once ADI GECEN bir emoji fontu yoksa tarayici bu fonta geliyor,
+ * cizemiyor ve isletim sisteminin kendi emoji fontuna HIC dusmuyor.
+ * Sonuc: Apple Color Emoji'de zaten var olan fide emojisi bos kutu
+ * olarak cikiyordu.
+ *
+ * Cozum: platform emoji fontlari adiyla ve BU FONTTAN ONCE yaziliyor.
+ * Boylece iOS/macOS Apple Color Emoji'yi (sbix), Windows Segoe UI
+ * Emoji'yi (COLR), Android kendi Noto Color Emoji'sini kullaniyor;
+ * bizim gonderdigimiz alt kume ise gercekten SON CARE oluyor —
+ * emoji fontu hic olmayan kurulumlar icin (Raspberry Pi OS gibi).
+ *
  * Kaynak: github.com/googlefonts/noto-emoji · SIL Open Font License 1.1
  * Lisans metni: bitki-emoji.LISANS.txt
  */
+
+/* Tek yazi yigini, TEK yerde. Panelin her yeri bunu kullaniyor; ikinci
+   bir yere kopyalamak, emoji fontlarinin birinde unutulmasi demekti. */
+:root {
+  --yazi-yigin: ui-sans-serif, system-ui, "Segoe UI", Roboto, Arial,
+                "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji",
+                sans-serif, "BitkiEmoji";
+}
 @font-face {
   font-family: "BitkiEmoji";
   src: url("/statik/bitki-emoji.woff2") format("woff2");
@@ -124,7 +151,7 @@ body {
   margin: 0;
   background: var(--zemin);
   color: var(--metin);
-  font: var(--yazi-govde)/1.5 ui-sans-serif, system-ui, "Segoe UI", Roboto, Arial, sans-serif, "BitkiEmoji";
+  font: var(--yazi-govde)/1.5 var(--yazi-yigin);
   -webkit-font-smoothing: antialiased;
 }
 

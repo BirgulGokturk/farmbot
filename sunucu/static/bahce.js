@@ -5061,6 +5061,11 @@ window.Bahce = (function () {
          bir köşesini örtüyorlardı. Sekmeden çıkınca kullanıcının kendi
          ayarı geri geliyor. */
       if (S.acik) kamBahceyeGir(); else kamBahcedenCik();
+      /* Sağ payı HEMEN ölçüyoruz. `olcuKur` bunu zaten yapıyor ama o
+         `requestAnimationFrame` içinde; sekme açılırken ilk çizim
+         rAF'tan önce olduğu için pay bir kare boyunca yedek değerde
+         kalıyordu. */
+      if (S.acik) sagPayOlc();
       if (!S.acik) {
         carkKapat(); jogBitir();
         if (S.ekimSayac) { clearInterval(S.ekimSayac); S.ekimSayac = null; }

@@ -91,10 +91,17 @@ body.bahce-acik.bh-menu #tani-bant { display: block; }
    arasında değişiyor. `bahce.js` grubu her durum değişiminde ölçüp bu
    değişkeni yazıyor; aşağıdaki sayı yalnız değişken hiç yazılmadıysa
    (bahçe kapalı açılış) geçerli olan yedek. */
-body.bahce-acik:not(.bh-menu) .bh-ust { padding-right: var(--bh-sag-pay, 250px); }
-@media (max-width: 720px) {
-  body.bahce-acik:not(.bh-menu) .bh-ust { padding-right: var(--bh-sag-pay, 150px); }
-}
+/* YEDEK DEĞER GÜVENLİ TARAFTA. Önce 250 px yazıyordu ve ölçüldü ki
+   grubun gerçek ihtiyacı 1920 px'de 297, 430 px'de 303 px; yani yedek
+   değer tek başına YETMİYORDU. Bu yalnız JavaScript payı henüz
+   yazmadan önceki ilk çizimde görünüyordu — ama tam da o anda "⟳"
+   düğmesi "⏻ Kapat"ın altında kalıyordu.
+   Şimdi yedek değer en kötü durumu karşılıyor; JavaScript ölçtüğünde
+   payı yalnızca DARALTIYOR. Böylece betik geç çalışsa da, hiç
+   çalışmasa da binme olmuyor.
+   720 px altındaki ayrı yedek (150 px) kaldırıldı: orada ihtiyaç daha
+   da büyüktü, küçük bir yedek yanlış yöne emniyetliydi. */
+body.bahce-acik:not(.bh-menu) .bh-ust { padding-right: var(--bh-sag-pay, 310px); }
 
 .bh-cark {
   pointer-events: auto;
