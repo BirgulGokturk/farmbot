@@ -221,9 +221,15 @@ class Ajan:
 
         # Program dizisi ajanda yürüyor: panel kapansa da acil durdurma
         # diziyi kesebilsin diye.
+        # RÖLE DOĞRULAMASI. Dizi komutu yazdıktan sonra kartın BİLDİRDİĞİ
+        # duruma bakıyor: `arduino.komut` yalnız seri porta yazıyor ve
+        # port açık olduğu sürece başarılı sayılıyor — kartın komutu
+        # gördüğünü göstermiyor. Kaynak, kartın her ölçüm satırında
+        # yolladığı `r_su_pompasi` / `r_hava_pompasi` alanları.
         self.dizi = dizi_modulu.Dizi(self.plc, self.uclar,
                                      lambda k: self.arduino.komut(k),
-                                     gunluk_cb=self._gunluk_gonder)
+                                     gunluk_cb=self._gunluk_gonder,
+                                     role_durum=self._role_durum_oku)
         # ÇIKARIM kameradan ÖNCE kuruluyor: kamera kancayı kurucuda
         # istiyor. Hailo kapalıysa `kare_ver` hemen False dönüyor,
         # kamera hiçbir şey fark etmiyor.
@@ -761,6 +767,22 @@ class Ajan:
             k = (self._son_durum.get("konum") or {}) if self._son_durum else {}
             paket["konum"] = {"x": k.get("x"), "y": k.get("y"), "z": k.get("z")}
         self._kuyruga_at(paket)
+
+    def _role_durum_oku(self, role: str):
+        """Kartın bildirdiği röle durumu: 1, 0 ya da None (bilinmiyor).
+
+        None ile 0 AYRI: "kapalı" ile "kart hiç söylemedi" aynı şey
+        değil. İkisini birleştirmek, susan bir kartı "röle kapalı" diye
+        göstermek olurdu.
+        """
+        veri = getattr(self.arduino, "son_veri", None) or {}
+        ham = veri.get("r_" + role)
+        if ham is None:
+            return None
+        try:
+            return 1 if int(ham) else 0
+        except (TypeError, ValueError):
+            return None
 
     def _gunluk_gonder(self, metin: str, seviye: str = "bilgi") -> None:
         """PLC sürücüsünden (bekçi, hareket işçisi) gelen bildirimler."""

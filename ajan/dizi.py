@@ -42,16 +42,27 @@ def _sayi(deger, varsayilan=0.0):
         return varsayilan
 
 
+#: Röle komutundan sonra kartın onayı için beklenen süre. Kart
+#: OLCUM_ARALIGI_MS = 2000 ile satır bastığı için iki aralık + pay.
+ROLE_DOGRULAMA_SN = 5.0
+
+
 class DiziHatasi(Exception):
     """Dizi başlatılamadı ya da bir adım başarısız oldu."""
 
 
 class Dizi:
     def __init__(self, plc: Any, uclar: Any, arduino_komut: Callable[[str], None],
-                 gunluk_cb: Callable[[str, str], None] | None = None) -> None:
+                 gunluk_cb: Callable[[str, str], None] | None = None,
+                 role_durum: Callable[[str], Any] | None = None) -> None:
         self.plc = plc
         self.uclar = uclar
         self.arduino_komut = arduino_komut
+        #: Kartın BİLDİRDİĞİ röle durumu: ad -> 1/0/None. `None` =
+        #: "kart söylemedi" (henüz VERI satırı gelmedi ya da alan yok).
+        #: Verilmezse doğrulama atlanıyor ve bu GÜNLÜĞE yazılıyor —
+        #: sessizce doğrulamadan geçmek, doğrulanmış gibi görünürdü.
+        self.role_durum = role_durum
         #: Bu dizinin açtığı ve henüz kapatmadığı röleler.
         self._acik_roleler: set[str] = set()
         #: Gözden alınmış ama henüz toprağa bırakılmamış tohumun gözü.
@@ -90,6 +101,7 @@ class Dizi:
                 raise DiziHatasi(f"Bilinmeyen röle: '{role}'")
             durum = 1 if adim.get("durum") else 0
             self.arduino_komut(f"ROLE {role} {durum}")
+            self._role_dogrula(role, durum)
             # Dizinin AÇTIĞI röleler izleniyor: dizi yarıda kesilirse
             # kapatma adımı hiç çalışmıyor ve röle açık kalıyor.
             if durum:
@@ -178,6 +190,52 @@ class Dizi:
             self._asili_goz = None
             self.durum["calisiyor"] = False
 
+    def _role_dogrula(self, role: str, beklenen: int) -> None:
+        """Kart komutu GERÇEKTEN uyguladı mı — VERI satırından okuyor.
+
+        NİYE EKLENDİ. `arduino_komut` yalnız seri porta yazıyor; port açık
+        olduğu sürece yazma başarılı sayılıyor. Sahada bunun bedeli
+        ödendi: kartın sketch'i `setup()` içinde takılı kalmıştı, `loop()`
+        hiç çalışmıyordu, dolayısıyla hiçbir ROLE komutu yürütülmedi —
+        ama dizi bütün adımları "başarılı" sayıp panele "sulama
+        tamamlandı" yazdı. Pompa bütün o süre boyunca kendi hâlindeydi.
+        Yazmanın başarılı olması, kartın komutu gördüğü anlamına gelmiyor.
+
+        NEYİ DOĞRULUYOR, NEYİ DOĞRULAMIYOR. Kart her ölçüm satırında
+        `r_su_pompasi` / `r_hava_pompasi` alanlarını yolluyor ve bunlar
+        `roleYaz` içinde ayarlanıyor — yani "kart komutu aldı ve pini
+        sürdü" demek. SUYUN AKTIĞINI göstermiyor: röle kartının
+        polaritesi ya da NO/NC ucu yanlışsa pin doğru sürülür ama pompa
+        ters çalışır. Akış ölçümü yok; olsaydı burada o okunurdu.
+
+        SÜRE. Kart `OLCUM_ARALIGI_MS = 2000` ile satır basıyor, yani en
+        kötü durumda bir sonraki satır 2 saniye sonra. İki aralık + pay =
+        5 saniye; altında kalan bir sınır, sağlıklı bir kartı hatalı
+        gösterirdi.
+        """
+        if self.role_durum is None:
+            self.gunluk_cb(
+                f"UYARI: {role} komutu doğrulanmadı — kart durumu okunamıyor",
+                "hata")
+            return
+        bitis = time.time() + ROLE_DOGRULAMA_SN
+        son: Any = None
+        while time.time() < bitis:
+            son = self.role_durum(role)
+            if son is not None and int(son) == beklenen:
+                return
+            time.sleep(0.2)
+        istenen = "açık" if beklenen else "kapalı"
+        if son is None:
+            raise DiziHatasi(
+                f"{role}: kart durum bildirmiyor ({ROLE_DOGRULAMA_SN:.0f} sn "
+                f"beklendi). Kart ölçüm satırı basmıyor olabilir — "
+                f"ajan/seri_tara.py ile bakın.")
+        raise DiziHatasi(
+            f"{role}: '{istenen}' komutu verildi ama kart hâlâ "
+            f"'{'açık' if int(son) else 'kapalı'}' bildiriyor "
+            f"({ROLE_DOGRULAMA_SN:.0f} sn beklendi).")
+
     def _roleleri_kapat(self) -> None:
         """Dizinin açık bıraktığı röleleri kapatır.
 
@@ -192,6 +250,11 @@ class Dizi:
         for role in sorted(self._acik_roleler):
             try:
                 self.arduino_komut(f"ROLE {role} 0")
+                # BURADA DA DOĞRULANIYOR ama hata YÜKSELTİLMİYOR: bu ağ
+                # zaten bir kesilmenin ardından çalışıyor ve istisna
+                # atmak asıl hatayı gölgeler. Doğrulama sonucu günlüğe
+                # geçiyor; kapanmayan bir pompa görülmesi gereken şey.
+                self._role_dogrula(role, 0)
                 self.gunluk_cb(f"Dizi bitti/kesildi — {role} kapatıldı", "bilgi")
             except Exception as hata:
                 # Yutmuyoruz: kapatılamayan bir pompa görülmesi gereken bir şey.
