@@ -706,14 +706,28 @@ class Ajan:
         bir dizi tohum ucuyla yapılıyor. Hiçbiri yoksa '' dönüyor ve
         kapı hiç kurulmuyor — bilmediğimiz bir iş için uç dayatmak,
         çalışan bir diziyi durdurmak olurdu.
+
+        SU POMPASI KAZANIYOR, SIRA DEĞİL. Önce adımlar sırayla geziliyor
+        ve İLK eşleşmede dönülüyordu. Sulama dizisine T inişi eklenince
+        (başlık kontrolü T ile yapılıyor) adım sırası
+            nokta → uc_dikey → role su_pompasi
+        oldu ve döngü `uc_dikey`i önce görüp "tohum" dönmeye başladı:
+        SULAMA İŞİ İÇİN TOHUM UCU SEÇİLİYORDU. Sahada görülen buydu —
+        servo yanlış açıya gidiyor, su yanlış başlıktan aranıyor.
+
+        `uc_dikey` iki işte de geçiyor, yani başlığı TEK BAŞINA
+        söylemiyor; su pompası rölesi ise yalnız sulamada var ve kesin
+        kanıt. Bu yüzden adımların tamamı taranıyor ve pompa varsa o
+        kazanıyor.
         """
+        tohum_izi = False
         for adim in adimlar or []:
             tip = str(adim.get("tip", ""))
             if tip == "role" and str(adim.get("ad", "")) == "su_pompasi":
                 return "sulama"
             if tip in ("uc_dikey", "goz"):
-                return "tohum"
-        return ""
+                tohum_izi = True
+        return "tohum" if tohum_izi else ""
 
     def _olcum_geldi(self, veri: dict[str, Any]) -> None:
         """Seri port iş parçacığından çağrılır — asyncio'ya güvenli aktarım."""
