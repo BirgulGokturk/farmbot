@@ -279,6 +279,15 @@ void setup() {
   isikYaz(false);
 
   Serial.begin(9600);
+  /* İLK SATIR HEMEN ÇIKIYOR — sensör aramasını beklemeden.
+   *
+   * Aşağıdaki `dhtSec` en kötü durumda 8 saniye sürüyor (iki sensör
+   * tipi x iki deneme x 2 sn) ve o süre boyunca karttan tek bayt
+   * çıkmıyordu. Sahada bunun bedeli ödendi: portu 10 saniye dinleyen
+   * bir sınama hiçbir şey görmedi ve kart "susmuş" sanıldı — oysa
+   * açılış sırasını yürütüyordu. "Kart yaşıyor mu" sorusu artık iki
+   * saniyede cevaplanıyor. */
+  Serial.println(F("ACILIS: kart calisiyor, sensorler araniyor"));
   dhtSec();
   bmpVar = bmp.begin();
   if (!bmpVar) Serial.println(F("UYARI: BMP180 bulunamadi, digerleriyle devam"));
