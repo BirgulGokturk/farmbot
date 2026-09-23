@@ -316,12 +316,40 @@ class Arduino:
         else:
             self.tani = tani.arduino_port_yok(metin)
 
+    def _veri_bekleme_denetle(self) -> None:
+        """Port açık ama VERI: satırı gelmiyorsa tanıyı kurar.
+
+        GÜNLÜĞE DE YAZIYOR, yalnız panele değil. Tanı `self.tani`de
+        duruyordu ve panel açık değilse kimse görmüyordu; `journalctl`e
+        bakan biri de "port açıldı" satırından sonra hiçbir şey
+        görmüyordu. Bir kez yazılıyor — her 2 saniyede bir tekrarlarsa
+        günlük işe yaramaz hâle gelir.
+        """
+        if not self._ilk_veri_bekleniyor or self.tani is not None:
+            return
+        if time.time() - self._ilk_veri_bekleniyor <= VERI_BEKLEME_SN:
+            return
+        self.tani = tani.arduino_veri_yok(self.port, self.baud)
+        logger.warning(
+            "Arduino %s açık ama %.0f saniyedir VERI: satırı gelmiyor "
+            "(%d baud). Sketch eski ya da hız tutmuyor; okuma yönü hiç "
+            "çalışmıyor olabilir. Teşhis: ajan/seri_tara.py",
+            self.port, VERI_BEKLEME_SN, self.baud)
+
     def _dongu(self) -> None:
         while self._calisiyor:
             try:
                 if not self.bagli:
                     self._ac()
                 ham = self._seri.readline()
+                # TEŞHİS KONTROLÜ EN ÖNDE. Eskiden döngünün SONUNDAYDI ve
+                # ondan önce iki `continue` vardı: boş okuma ve boş satır.
+                # Kart HİÇ bayt göndermediğinde `readline()` her seferinde
+                # boş dönüyor, `continue` teşhisi atlıyordu — yani "veri
+                # gelmiyor" tanısı yalnız kart bir şeyler gönderirken
+                # kurulabiliyordu. Sahada görülen tam bu oldu: port açık,
+                # komutlar yazılıyor, panelde ne veri ne uyarı.
+                self._veri_bekleme_denetle()
                 if not ham:
                     continue
                 satir = ham.decode("utf-8", errors="replace").strip()
@@ -333,11 +361,6 @@ class Arduino:
                     self._veri_isle(satir[len(ONEK):])
                 else:
                     logger.debug("Arduino: %s", satir)
-                # Port açık ama uzun süredir VERI satırı yoksa sketch eski ya
-                # da baud hızı tutmuyor; bunu da söylemek gerekiyor.
-                if (self._ilk_veri_bekleniyor and self.tani is None
-                        and time.time() - self._ilk_veri_bekleniyor > VERI_BEKLEME_SN):
-                    self.tani = tani.arduino_veri_yok(self.port, self.baud)
             except Exception as hata:
                 # Arduino takili degilse bu hata her 3 saniyede bir tekrarlar.
                 # Her seferinde uyari yazmak gunlugu doldurup ise yarar
