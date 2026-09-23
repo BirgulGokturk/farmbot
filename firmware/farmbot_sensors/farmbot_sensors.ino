@@ -156,6 +156,32 @@ Adafruit_BMP085 bmp;
    kendi adresini disari vermiyor ve `begin()` cagrilmadan once "orada
    biri var mi" sorusunu bizim sormamiz gerekiyor (bkz. setup). */
 #define BMP_ADRES 0x77
+
+/* BMP180 AÇMA ANAHTARI — VARSAYILAN KAPALI.
+ *
+ * SAHADA ÖLÇÜLDÜ: bu çekirdekte `WIRE_HAS_TIMEOUT` tanımlı değil, yani
+ * Wire'ın HİÇBİR çağrısında zaman aşımı yok. Sensör tamamen sökülüyken
+ * bile `bmp.begin()` dönmedi; adres yoklaması eklendi (`endTransmission`
+ * bir durum kodu döndürdüğü için güvenli sanılmıştı) ve O DA dönmedi.
+ * Kart üç ayrı denemede de "BILGI: DHT tipi" satırından sonra durdu.
+ *
+ * Tek bir sensör bütün sistemi durduramaz. Kart kilitlendiğinde yalnız
+ * basınç değil; sulama, pompalar, servo, toprak nemi ve bütün ölçüm
+ * akışı duruyor — sahada 38 saat boyunca olan buydu. Basınç ve rakım,
+ * ötekilerin yanında vazgeçilebilir ölçümler.
+ *
+ * Bu yüzden I2C varsayılan olarak HİÇ AÇILMIYOR: `Wire.begin()` bile
+ * çağrılmıyor, dolayısıyla takılabilecek bir çağrı kalmıyor. Ölçüm
+ * döngüsü zaten `if (bmpVar)` ile korunuyor.
+ *
+ * GERİ AÇMAK İÇİN: donanım düzeldikten sonra aşağıdaki 0'ı 1 yapıp
+ * yükleyin. Önce çekirdeği güncellemek daha iyi —
+ *     arduino-cli core upgrade arduino:avr
+ * güncel çekirdekte `WIRE_HAS_TIMEOUT` tanımlı oluyor ve yukarıdaki
+ * zaman aşımı koruması gerçekten derlemeye giriyor. */
+#ifndef BMP_KULLAN
+#define BMP_KULLAN 0
+#endif
 bool bmpVar = false;
 
 // Rölelerin gerçek durumu. Panel bunu tahmin etmiyor, kart söylüyor.
@@ -324,6 +350,7 @@ void setup() {
    * zaten kullanılamaz. Bunu anlamak için tek bir I2C hareketi bile
    * gerekmiyor — pinleri girişe alıp okumak yetiyor ve bu işlem
    * TAKILAMAZ. Çekirdek sürümünden de bağımsız. */
+#if BMP_KULLAN
   pinMode(SDA, INPUT);
   pinMode(SCL, INPUT);
   delayMicroseconds(50);          // pull-up'ların hattı toparlaması için
@@ -385,6 +412,13 @@ void setup() {
   if (!bmpVar && sdaBos && sclBos) {
     Serial.println(F("UYARI: BMP180 bulunamadi, digerleriyle devam"));
   }
+#else
+  /* I2C'ye hiç dokunulmuyor: açılamayan bir veri yolunda
+     takılacak çağrı da yok. */
+  bmpVar = false;
+  Serial.println(F("BILGI: BMP180 kapali (BMP_KULLAN 0) — I2C hic "
+                   "acilmiyor; basinc ve rakim olculmuyor"));
+#endif
 
   Serial.println(F("Hazir. Komutlar: ROLE <su_pompasi|hava_pompasi|isik> <0|1> | UC <indeks> <derece> <sure_ms> | KAPAT | OKU | TEST <0|1> | ACI <0-180> | US <544-2400>"));
 #if TEST_ACILISTA
