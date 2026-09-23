@@ -2853,3 +2853,12 @@ body.kamera-sekmesi .toplu-cubuk { display: none; }
    metnin kendisi zaten ne olduğunu ve ne kadar süredir olduğunu yazıyor;
    renk yalnız gözün önce oraya gitmesini sağlıyor. */
 .bolum-not.uyari { color: #e8a33d; font-weight: 600; }
+
+/* Dar ekranda kamera düğmesi yalnız simge. Sahne çubuğu 720 px altında
+   yatay kayıyor ve "Kameralar" yazısı 98 px yer kaplayıp yanındaki
+   düğmeleri görünür alanın dışına itiyordu — ölçüldü, 390 px'de dört
+   düğme birden kaydırma gerektiriyordu. Ne yaptığı `title`da yazılı ve
+   basılı hâli renkten okunuyor. */
+@media (max-width: 720px) {
+  #d-kamera-kutu .ad { display: none; }
+}

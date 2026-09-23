@@ -1818,6 +1818,49 @@ function kameraGoruntuTemizle(ad) {
   // kalan kutular neyin üstünde olduğu bilinmeyen kutulardır.
   }
 
+/* ------------------------------------------- YÜZEN KUTULARIN HATIRLANMASI
+ * Kutular sahnenin parçası ve her sayfa açılışında kendiliğinden
+ * geliyorlardı: `S.kamKutuKapali` yalnız bellekteydi, yenileyince
+ * sıfırlanıyor ve kutular geri düşüyordu. Kullanıcının "gizle" kararı
+ * bir kereliktir diye davranmak, aynı düğmeye her açılışta yeniden
+ * bastırmak demekti.
+ *
+ * VARSAYILAN KAPALI. Kutular sahnenin sağ alt köşesini kaplıyor ve
+ * çoğu işte (ekim, sulama, katman inceleme) bakılan şey yatak. Açmak
+ * tek tık; kapatmak için önce fark etmek gerekiyordu. */
+const KAM_KUTU_ANAHTAR = "farmbot_kam_kutu_kapali";
+
+function kamKutuTercihOku() {
+  try {
+    const ham = localStorage.getItem(KAM_KUTU_ANAHTAR);
+    if (ham) return JSON.parse(ham) || {};
+  } catch (h) { /* depolama yoksa varsayılan geçerli */ }
+  return null;                    // hiç kayıt yok: çağıran varsayılanı koysun
+}
+
+function kamKutuTercihYaz() {
+  try {
+    localStorage.setItem(KAM_KUTU_ANAHTAR, JSON.stringify(S.kamKutuKapali || {}));
+  } catch (h) { /* depolama yoksa tercih oturumluk kalıyor */ }
+}
+
+/** Sahne çubuğundaki düğmenin hâli — kutulardan biri açıksa basılı. */
+function kamKutuDugmeYaz() {
+  const d = document.getElementById("d-kamera-kutu");
+  if (!d) return;
+  const acik = kamListe().some((k) => !S.kamKutuKapali[k.ad]);
+  d.setAttribute("aria-checked", acik ? "true" : "false");
+  d.classList.toggle("secili", acik);
+}
+
+/** Hepsini aç ya da kapat — sahne çubuğundaki düğme buradan geçiyor. */
+function kamKutulariniGoster(goster) {
+  kamListe().forEach((k) => kamKutusuAcKapa(k.ad, goster, true));
+  kamKutuTercihYaz();
+  kamKutuDugmeYaz();
+  gunluk(`Kamera kutuları ${goster ? "açıldı" : "gizlendi"}`);
+}
+
 /** Yüzen kamera kutusunu açar/kapatır. `goster` verilmezse tersine çevirir.
  *
  *  DÜĞME DE BAHÇE PANELİ DE BURADAN GEÇİYOR. Kutuyu gizlemenin yan
@@ -1888,6 +1931,11 @@ function kamKutusuAcKapa(ad, goster, sessiz) {
     }
   }
   kamSahnedeYaz(ad);
+  kamKutuDugmeYaz();
+  /* TEK KUTU DEĞİŞSE DE TERCİH SAKLANIYOR: Kamera sekmesindeki
+     "Sahnede" düğmesiyle gizlenen kutu, yenilemeden sonra geri
+     gelmemeli. */
+  kamKutuTercihYaz();
   // Gizli kutu için akış istemiyoruz, geri açılınca istiyoruz.
   izleAkisTazele();
   if (!sessiz) {
@@ -1915,8 +1963,19 @@ function kameralarYaz(liste) {
   if (imza !== S.kamImza) {
     S.kamImza = imza;
     S.kameralar = yeni;
+    /* TERCİH BURADA UYGULANIYOR: kutular ancak kamera listesi gelince
+       yaratılıyor, o yüzden saklanan hâl de ilk o anda biliniyor.
+       Kayıt yoksa VARSAYILAN KAPALI — kutular sahnenin sağ alt
+       köşesini kaplıyor ve çoğu işte bakılan şey yatak. */
+    const saklanan = kamKutuTercihOku();
+    yeni.forEach((k) => {
+      if (S.kamKutuKapali[k.ad] === undefined) {
+        S.kamKutuKapali[k.ad] = saklanan ? !!saklanan[k.ad] : true;
+      }
+    });
     kamYarilariKur();
     kamKutulariKur();
+    kamKutuDugmeYaz();
     // LİSTE SONRADAN GELİYOR. Sayfa açıldığında kamera listesi henüz
     // yoktu, dolayısıyla açılıştaki `izleSekmesi(true)` hiçbir kameraya
     // ulaşamıyordu. Liste değiştiği anda akış isteğini yineliyoruz;
@@ -4738,6 +4797,16 @@ function olaylariBagla() {
       kutu.classList.remove("gizli");
       dugme.setAttribute("aria-expanded", "true");
       dugme.classList.add("secili");
+    };
+  }
+  const kamKutuDugme = $("#d-kamera-kutu");
+  if (kamKutuDugme) {
+    kamKutuDugme.onclick = () => {
+      /* Hâl KUTULARDAN okunuyor, bayraktan değil: ekranda ne
+         görünüyorsa durum odur (aynı gerekçe `kamKutusuAcKapa`da
+         yazılı). Biri bile açıksa düğme "kapat" yapıyor. */
+      const acik = kamListe().some((k) => !S.kamKutuKapali[k.ad]);
+      kamKutulariniGoster(!acik);
     };
   }
   acilirBagla("#katman-kutu", "#d-katman-ac");

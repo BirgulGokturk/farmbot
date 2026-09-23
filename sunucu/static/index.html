@@ -34,6 +34,7 @@
   <symbol id="i-ok" viewBox="0 0 16 16"><path d="m4.5 6.2 3.5 3.6 3.5-3.6"/></symbol>
   <symbol id="i-artı" viewBox="0 0 16 16"><path d="M8 3v10M3 8h10"/></symbol>
   <symbol id="i-kapat" viewBox="0 0 16 16"><path d="m4 4 8 8M12 4l-8 8"/></symbol>
+  <symbol id="i-kamera" viewBox="0 0 16 16"><path d="M2.5 5.5h2.6l1.1-2h3.6l1.1 2h2.6v7.5h-11z"/><path d="M8 7.3a2.1 2.1 0 1 0 0 4.2 2.1 2.1 0 0 0 0-4.2Z"/></symbol>
 </defs></svg>
 
 
@@ -1701,6 +1702,13 @@
 
       <span class="cubuk-ayirac"></span>
 
+      <!-- YÜZEN KAMERALAR. Kutular sahnenin bir parçası ve her açılışta
+           kendiliğinden geliyordu; bahçede olduğu gibi burada da kapalı
+           başlayıp düğmeyle açılıyorlar. Tercih tarayıcıda saklanıyor,
+           yani her yenilemede geri gelmiyorlar. -->
+      <button class="ikon-dugme" id="d-kamera-kutu" role="checkbox" aria-checked="false"
+              title="Sahnedeki kamera kutularını aç/kapat">
+        <svg class="ikon"><use href="#i-kamera"/></svg><span class="ad">Kameralar</span></button>
       <button class="ikon-dugme" id="d-katman-ac" aria-expanded="false" aria-controls="katman-kutu"
               title="Katmanlar">
         <svg class="ikon"><use href="#i-katman"/></svg><span class="ad">Katmanlar</span>
