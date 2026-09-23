@@ -289,7 +289,38 @@ void setup() {
    * saniyede cevaplanıyor. */
   Serial.println(F("ACILIS: kart calisiyor, sensorler araniyor"));
   dhtSec();
+  /* I2C ZAMAN AŞIMI — BİR SENSÖR KARTI KİLİTLEMESİN.
+   *
+   * SAHADA BUNUN BEDELİ ÖDENDİ: kart 38 saat boyunca ölçüm göndermedi
+   * ve sebebi `bmp.begin()`in DÖNMEMESİYDİ. AVR'nin TWI donanımı, veri
+   * ya da saat hattı düşük takılı kalırsa sonsuza kadar bekliyor.
+   * Açılış çıktısı "BILGI: DHT tipi ..."de kesiliyor, "Hazir." hiç
+   * yazılmıyor ve `loop` hiç çalışmıyordu — yani gevşeyen tek bir
+   * sensör kablosu sulamayı, pompaları ve bütün ölçümü durduruyordu.
+   *
+   * `setWireTimeout` bekleyişi sınırlıyor, ikinci argüman zaman
+   * aşımında veri yolunu sıfırlıyor. Bozuk sensör artık yalnız kendini
+   * kaybettiriyor: BMP okunamıyor, ötekiler çalışmaya devam ediyor.
+   *
+   * 25 ms: tek bir I2C hareketi normalde mikrosaniyeler sürüyor; bu
+   * süre yalnız TAKILMAYI yakalamak için, yavaş sensör için değil. */
+  Wire.begin();
+#if defined(WIRE_HAS_TIMEOUT)
+  Wire.setWireTimeout(25000, true);
+  Wire.clearWireTimeoutFlag();
+#endif
   bmpVar = bmp.begin();
+#if defined(WIRE_HAS_TIMEOUT)
+  /* TAKILMA İLE YOKLUK AYRI ŞEYLER. "Bulunamadi" demek, kabloyu
+   * arayan kişiyi sensörün kendisine yönlendiriyor; oysa hat takılı
+   * kaldıysa sorun SDA/SCL hattında ya da başka bir I2C aygıtında. */
+  if (Wire.getWireTimeoutFlag()) {
+    Serial.println(F("UYARI: I2C hatti takildi (SDA/SCL) — BMP180 atlandi, "
+                     "kart calismaya devam ediyor"));
+    Wire.clearWireTimeoutFlag();
+    bmpVar = false;
+  } else
+#endif
   if (!bmpVar) Serial.println(F("UYARI: BMP180 bulunamadi, digerleriyle devam"));
 
   Serial.println(F("Hazir. Komutlar: ROLE <su_pompasi|hava_pompasi|isik> <0|1> | UC <indeks> <derece> <sure_ms> | KAPAT | OKU | TEST <0|1> | ACI <0-180> | US <544-2400>"));
