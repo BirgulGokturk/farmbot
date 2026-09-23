@@ -1752,6 +1752,27 @@ class Gantry:
         # tamamen çalışmaz olurdu.
         if eksen:
             sira = [EKSEN_INDEKS[eksen]]
+            # TEK EKSENDE DE TOHUM UCU ÇEKİLİYOR.
+            #
+            # "Tümü" sırası (Z → T → X → Y) T'yi zaten çekiyordu ama tek
+            # eksen istendiğinde T listeye hiç girmiyordu. Sahada olan
+            # şu: kullanıcı ⌂ Z'ye basıyor, Z home'a gidiyor, ama tohum
+            # ucu aşağıda kalıyor; sonraki her X/Y hareketi "Tohum ucu
+            # aşağıda" diye reddediliyor ve kullanıcı ayrıca ⌂ T'ye
+            # basmak zorunda kalıyor. Home'un anlamı "makineyi güvenli
+            # hâle getir"; yarısını yapıp bırakmak o anlamı bozuyor.
+            #
+            # SIRA "TÜMÜ" İLE AYNI: Z varsa önce Z (her şeyi topraktan
+            # çıkarıyor), sonra T. X/Y'den önce ise T, çünkü uç
+            # aşağıdayken yatay hareket zaten reddediliyor.
+            #
+            # T'NİN KENDİSİ İSTENDİĞİNDE dokunulmuyor; kalibre değilse
+            # ya da zaten yukarıdaysa da eklenmiyor — gereksiz bir
+            # hareket, home'u yavaşlatmaktan başka işe yaramaz.
+            t_i = EKSEN_INDEKS["t"]
+            if (sira[0] != t_i and self.t_kalibre_mi()
+                    and self.t_yatay_engel()):
+                sira = sira + [t_i] if sira[0] == 2 else [t_i] + sira
         else:
             sira = [2, 3, 0, 1] if self.t_kalibre_mi() else [2, 0, 1]
 
