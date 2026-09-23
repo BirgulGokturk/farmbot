@@ -458,6 +458,9 @@ class Kamera:
         self.cihaz_not: str = ""
         self._denetim_uyarisi = False
         self._son_denetim = ""
+        #: Son bildirilen denetim HATASI. Aynı arıza her turda günlüğe
+        #: düşmesin diye tutuluyor; liste değişince yeniden yazılıyor.
+        self._son_denetim_hata = ""
         # TAM ÇÖZÜNÜRLÜKLÜ SON KARE. Canlı akış küçültülmüş kare
         # gönderiyor; çözümleme (AprilTag, filiz) büyüğünü istiyor ve
         # kamerayı ikinci kez açmak mümkün değil — cihaz akışta meşgul.
@@ -768,13 +771,67 @@ class Kamera:
         except (OSError, subprocess.SubprocessError) as hata:
             self.gunluk_cb(f"[{self.etiket}] denetimler yazılamadı: {hata}", "uyari")
             return
-        if sonuc.returncode != 0:
-            ayrinti = (sonuc.stderr or b"").decode("utf-8", "replace").strip()
-            self.gunluk_cb(f"[{self.etiket}] denetimler yazılamadı: "
-                           f"{ayrinti[-200:] or 'bilinmeyen hata'}", "uyari")
-        elif ciftler != self._son_denetim:
-            self._son_denetim = ciftler
-            self.gunluk_cb(f"[{self.etiket}] kamera denetimleri uygulandı: {ciftler}")
+        if sonuc.returncode == 0:
+            if ciftler != self._son_denetim:
+                self._son_denetim = ciftler
+                self.gunluk_cb(f"[{self.etiket}] kamera denetimleri uygulandı: {ciftler}")
+            return
+
+        # TOPLU YAZMA BAŞARISIZ — TEK TEK DENİYORUZ.
+        #
+        # Bütün denetimler tek `--set-ctrl` çağrısında gidiyordu ve
+        # içlerinden BİRİ reddedilince v4l2-ctl bütün çağrıyı
+        # düşürüyordu: parlaklık, beyaz ayarı, odak, hiçbiri
+        # yazılmıyordu. Üstelik mesaj hangi denetimin suçlu olduğunu
+        # söylemiyordu; sahada "Error setting controls: Permission
+        # denied" beş dakikada bir tekrarlıyor ve kullanıcı ayarları
+        # değiştirip hiçbir şeyin değişmediğini görüyordu.
+        #
+        # "Permission denied" burada çoğunlukla izin sorunu DEĞİL:
+        # V4L2, o an ETKİN OLMAYAN bir denetime yazmayı da böyle
+        # reddediyor. `exposure_time_absolute`, `auto_exposure` elle
+        # kipte değilken etkisiz; `focus_absolute` da otomatik odak
+        # açıkken. Sıralama bunu zaten gözetiyor (adında "auto" geçenler
+        # önce), ama sürücü "auto" değerini reddederse sonraki denetim
+        # yine etkisiz kalıyor.
+        #
+        # Tek tek yazınca geçenler UYGULANIYOR, geçmeyenler adıyla ve
+        # değeriyle günlüğe düşüyor — hangisini düzelteceği belli oluyor.
+        basarili, basarisiz = [], []
+        for ad, deger in siralı:
+            if not str(ad).replace("_", "").isalnum():
+                continue
+            try:
+                tek = subprocess.run(
+                    ["v4l2-ctl", "-d", cihaz, "--set-ctrl", f"{ad}={deger}"],
+                    capture_output=True, timeout=6)
+            except (OSError, subprocess.SubprocessError) as hata:
+                basarisiz.append(f"{ad}={deger} ({hata})")
+                continue
+            if tek.returncode == 0:
+                basarili.append(f"{ad}={deger}")
+            else:
+                sebep = (tek.stderr or b"").decode("utf-8", "replace").strip()
+                basarisiz.append(f"{ad}={deger} → {sebep.splitlines()[-1] if sebep else 'reddedildi'}")
+
+        if basarili:
+            imza = ",".join(basarili)
+            if imza != self._son_denetim:
+                self._son_denetim = imza
+                self.gunluk_cb(f"[{self.etiket}] {len(basarili)} denetim uygulandı: {imza}")
+        if basarisiz:
+            # HER TURDA DEĞİL: aynı arıza beş dakikada bir günlüğü
+            # doldurmasın. Liste değişirse yeniden yazılıyor.
+            imza_h = ";".join(basarisiz)
+            if imza_h != self._son_denetim_hata:
+                self._son_denetim_hata = imza_h
+                self.gunluk_cb(
+                    f"[{self.etiket}] {len(basarisiz)} denetim KABUL EDİLMEDİ: "
+                    + " | ".join(basarisiz[:6])
+                    + ". 'Permission denied' genelde izin değil, denetimin o an "
+                      "etkisiz olduğu anlamına geliyor: pozlama için "
+                      "auto_exposure=1 (elle), odak için "
+                      "focus_automatic_continuous=0 gerekiyor.", "uyari")
 
     def denetim_yaz(self, ad: str, deger: Any) -> tuple[bool, str]:
         """TEK bir v4l2 denetimini yazar — tarama için, GEÇİCİ.
