@@ -304,24 +304,66 @@ void setup() {
    *
    * 25 ms: tek bir I2C hareketi normalde mikrosaniyeler sürüyor; bu
    * süre yalnız TAKILMAYI yakalamak için, yavaş sensör için değil. */
-  Wire.begin();
+  /* HAT SERBEST Mİ — Wire.begin'DEN ÖNCE, PİNLERE BAKARAK.
+   *
+   * SAHADA İKİNCİ KEZ ÖDENDİ. Yukarıdaki `setWireTimeout` koruması
+   * `#if defined(WIRE_HAS_TIMEOUT)` içindeydi; kurulu AVR çekirdeği o
+   * tanımı taşımıyorsa koruma derlemeye HİÇ GİRMİYOR ve `bmp.begin()`
+   * yine sonsuza kadar bekliyor. Ölçülen belirti tam buydu: kart
+   * "BILGI: DHT tipi DHT11" satırını basıp susuyor, "Hazir." hiç
+   * yazılmıyor, `loop` hiç çalışmıyor — yani ne VERI: satırı ne de uç
+   * servosu. Koruma kütüphanenin varlığına bağlı olmamalı.
+   *
+   * BOŞTAKİ I2C HATTI YÜKSEK durur: iki hat da pull-up dirençlerle
+   * VCC'ye çekili, aygıtlar yalnız aşağı çeker. Biri AŞAĞIDA takılı
+   * kalmışsa (gevşek kablo, beslemesiz sensör, ölü aygıt) veri yolu
+   * zaten kullanılamaz. Bunu anlamak için tek bir I2C hareketi bile
+   * gerekmiyor — pinleri girişe alıp okumak yetiyor ve bu işlem
+   * TAKILAMAZ. Çekirdek sürümünden de bağımsız. */
+  pinMode(SDA, INPUT);
+  pinMode(SCL, INPUT);
+  delayMicroseconds(50);          // pull-up'ların hattı toparlaması için
+  const bool sdaBos = digitalRead(SDA) == HIGH;
+  const bool sclBos = digitalRead(SCL) == HIGH;
+  if (!sdaBos || !sclBos) {
+    /* HANGİ HAT olduğunu yazıyoruz: "I2C bozuk" demek kabloyu baştan
+     * sona arattırıyor, "SCL aşağıda takılı" tek bir uca bakmayı
+     * sağlıyor. */
+    Serial.print(F("UYARI: I2C hatti bosta degil ("));
+    if (!sdaBos) Serial.print(F("SDA asagida"));
+    if (!sdaBos && !sclBos) Serial.print(F(", "));
+    if (!sclBos) Serial.print(F("SCL asagida"));
+    Serial.println(F(") — BMP180 hic denenmiyor, kart calismaya devam ediyor"));
+    bmpVar = false;
+  } else {
+    Wire.begin();
 #if defined(WIRE_HAS_TIMEOUT)
-  Wire.setWireTimeout(25000, true);
-  Wire.clearWireTimeoutFlag();
+    Wire.setWireTimeout(25000, true);
+    Wire.clearWireTimeoutFlag();
+#else
+    /* Koruma derlemeye girmedi — bunu SÖYLÜYORUZ. Sessiz kalsaydı,
+     * hat açılıştan sonra takılırsa sebebi yine bilinmez olurdu. */
+    Serial.println(F("UYARI: Wire zaman asimi bu cekirdekte yok — I2C "
+                     "acilistan sonra takilirsa kart durabilir"));
 #endif
-  bmpVar = bmp.begin();
+    bmpVar = bmp.begin();
+  }
 #if defined(WIRE_HAS_TIMEOUT)
-  /* TAKILMA İLE YOKLUK AYRI ŞEYLER. "Bulunamadi" demek, kabloyu
+  /* Bayrak yalnız Wire.begin çağrıldıysa anlamlı; hat baştan takılıysa
+   * o dala hiç girilmedi.
+   * TAKILMA İLE YOKLUK AYRI ŞEYLER. "Bulunamadi" demek, kabloyu
    * arayan kişiyi sensörün kendisine yönlendiriyor; oysa hat takılı
    * kaldıysa sorun SDA/SCL hattında ya da başka bir I2C aygıtında. */
-  if (Wire.getWireTimeoutFlag()) {
-    Serial.println(F("UYARI: I2C hatti takildi (SDA/SCL) — BMP180 atlandi, "
-                     "kart calismaya devam ediyor"));
+  if (sdaBos && sclBos && Wire.getWireTimeoutFlag()) {
+    Serial.println(F("UYARI: I2C hatti acilis sirasinda takildi (SDA/SCL) — "
+                     "BMP180 atlandi, kart calismaya devam ediyor"));
     Wire.clearWireTimeoutFlag();
     bmpVar = false;
   } else
 #endif
-  if (!bmpVar) Serial.println(F("UYARI: BMP180 bulunamadi, digerleriyle devam"));
+  if (!bmpVar && sdaBos && sclBos) {
+    Serial.println(F("UYARI: BMP180 bulunamadi, digerleriyle devam"));
+  }
 
   Serial.println(F("Hazir. Komutlar: ROLE <su_pompasi|hava_pompasi|isik> <0|1> | UC <indeks> <derece> <sure_ms> | KAPAT | OKU | TEST <0|1> | ACI <0-180> | US <544-2400>"));
 #if TEST_ACILISTA
