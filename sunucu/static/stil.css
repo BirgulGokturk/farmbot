@@ -2848,3 +2848,8 @@ body.kamera-sekmesi .toplu-cubuk { display: none; }
   background: linear-gradient(to right, var(--vurgu) var(--o, 0%),
                               transparent var(--o, 0%));
 }
+
+/* Bölüm başlığındaki "ölçüm durmuş" uyarısı. Renk TEK işaret değil —
+   metnin kendisi zaten ne olduğunu ve ne kadar süredir olduğunu yazıyor;
+   renk yalnız gözün önce oraya gitmesini sağlıyor. */
+.bolum-not.uyari { color: #e8a33d; font-weight: 600; }

@@ -2207,10 +2207,30 @@ window.Bahce = (function () {
     { k: "basinc", ad: "Basınç", birim: "hPa", ondalik: 0 },
     { k: "bmp_sicaklik", ad: "Kart", birim: "°C", ondalik: 1 }
   ];
+  /* Ölçüm bu süreden eskiyse bağlantı kopmuş sayılıyor. Ölçüm normalde
+     saniyeler aralıkla geliyor; beş dakika sessizlik kaza değil. */
+  var OLCUM_BAYAT_SN = 300;
+  /** Yaşı okunur yazıya çevirir — saat ve gün de yazıyor.
+   *  Önce yalnız "sn" ve "dk" vardı; 38 saatlik bir okuma "2280 dk önce"
+   *  diye çıkıyordu ve kimse o sayıyı gün olarak okumuyordu. */
+  function yasYazi(sn) {
+    if (sn < 90) return sn + " sn önce";
+    if (sn < 5400) return Math.round(sn / 60) + " dk önce";
+    if (sn < 172800) return Math.round(sn / 3600) + " saat önce";
+    return Math.round(sn / 86400) + " gün önce";
+  }
   var olcumAl = guvenli("ölçüm", function () {
     return api("/api/durum").then(function (c) {
       S.olcumVeri = (c && c.olcum) || null;
-      S.olcumT = Date.now();
+      /* YAŞ ÖLÇÜMÜN KENDİ ZAMANINDAN, İSTEĞİN ZAMANINDAN DEĞİL.
+         Burada `Date.now()` yazıyordu: panel ne zaman sorduysa o
+         yazılıyor ve okuma kaç saatlik olursa olsun "8 sn önce" diye
+         görünüyordu. Sahada bunun bedeli ödendi — Arduino 38 saat
+         boyunca susmuş, panel taze değer gösterdiği için kimse fark
+         etmemişti. Ölçüm paketi kendi `ts`sini taşıyor; sunucu açılışta
+         veritabanındaki son kaydı da `ts`siyle birlikte koyuyor. */
+      var ts = Number(S.olcumVeri && S.olcumVeri.ts);
+      S.olcumT = (isFinite(ts) && ts > 0) ? ts * 1000 : 0;
       S.olcumHata = "";
       isteKare();
     }).catch(function (h) {
@@ -2288,10 +2308,17 @@ window.Bahce = (function () {
     c.fillText("Ölçümler", kt.x + 12, kt.y + 20);
 
     var yas = S.olcumT ? Math.round((Date.now() - S.olcumT) / 1000) : -1;
-    c.font = "10px system-ui,sans-serif";
-    c.fillStyle = "rgba(243,227,198,.6)";
-    c.fillText(yas < 0 ? "henüz okunmadı" : (yas < 90 ? yas + " sn önce"
-      : Math.round(yas / 60) + " dk önce"), kt.x + 12, kt.y + 33);
+    /* BAYAT OKUMA GÖRÜNÜR OLUYOR. Sensör susunca ekranda son değer
+       kalıyor ve taze değerden ayırt edilemiyorsa yanlış karar
+       verdiriyor. Sınır 300 sn: ölçüm normalde saniyeler aralıkla
+       geliyor, beş dakika sessizlik bağlantının koptuğu anlamına
+       geliyor. */
+    var bayat = yas > OLCUM_BAYAT_SN;
+    c.font = (bayat ? "700 10px " : "10px ") + "system-ui,sans-serif";
+    c.fillStyle = bayat ? "#ffb9a6" : "rgba(243,227,198,.6)";
+    c.fillText(yas < 0 ? "ölçüm zamanı bilinmiyor"
+      : (yasYazi(yas) + (bayat ? " · SENSÖR SUSMUŞ" : "")),
+      kt.x + 12, kt.y + 33);
 
     var yy = kt.y + 54;
     if (!satir.length) {

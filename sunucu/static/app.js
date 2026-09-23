@@ -4246,6 +4246,28 @@ function olcumOzetiYaz() {
     .filter((ad) => KANAL_VAR[ad])
     .filter((ad) => { const r = okuma(ad); return !r || r.yas >= ESKI_OKUMA_SN; });
   if (!SON_PAKET.ts) { kutu.textContent = ""; return; }
+
+  /* AKIŞIN TAMAMI DURDUYSA ÖNCE ONU SÖYLE.
+   *
+   * `okuma().yas` bir kanalın EN SON PAKETE göre geriliğini ölçüyor;
+   * kanallar arasındaki farkı yakalıyor ama hepsi birlikte susarsa
+   * hepsinin yaşı sıfır kalıyor ve hiçbir şey geride görünmüyordu.
+   * Özet de yalnız paketin saatini yazıyordu — 38 saat önceki bir
+   * okuma "01:15" diye çıkıyor ve bugünmüş gibi okunuyordu. Sahada
+   * tam olarak bu oldu: Arduino sustu, panel taze görünmeye devam
+   * etti ve kimse fark etmedi.
+   *
+   * Sınır 300 sn: ölçüm normalde saniyeler aralıkla geliyor. */
+  const yas = Math.round(Date.now() / 1000 - SON_PAKET.ts);
+  if (yas > 300) {
+    const sure = yas < 5400 ? `${Math.round(yas / 60)} dk`
+      : yas < 172800 ? `${Math.round(yas / 3600)} saat`
+      : `${Math.round(yas / 86400)} gün`;
+    kutu.textContent = `⚠ ölçüm durmuş — ${sure} önce`;
+    kutu.classList.add("uyari");
+    return;
+  }
+  kutu.classList.remove("uyari");
   kutu.textContent = geride.length
     ? `${geride.length} okuma geride` : saatEtiketi(SON_PAKET.ts, false);
 }
