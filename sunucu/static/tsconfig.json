@@ -1,0 +1,17 @@
+{
+  "//": "Tip denetimi — DERLEME DEĞİL. Pi'ye giden dosya .js dosyasının",
+  "//2": "kendisi; bu yapılandırma yalnız Windows'ta hata aramak için.",
+  "//3": "Çalıştırma:  npx tsc --noEmit -p sunucu/static",
+  "compilerOptions": {
+    "target": "ES2020",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["ES2020", "DOM"],
+    "allowJs": true,
+    "checkJs": true,
+    "noEmit": true,
+    "strict": false,
+    "noImplicitAny": false
+  },
+  "include": ["ses.js"]
+}
