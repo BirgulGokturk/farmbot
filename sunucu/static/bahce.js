@@ -129,11 +129,12 @@ window.Bahce = (function () {
     nemKat: null, nemKatCt: null, nemDamga: "",
     islak: [], damla: [], suAkiyor: false, suKanit: "yok",
     ray: [], sepet: null, tasima: null, tasimaHedef: null, durDugme: null, suSesT: 0,
-    sesDugme: null, konumVar: false, hareketSes: false, enable: false, acil: false, hareket: false,
+    sesDugme: null, altDugme: [], konumVar: false, hareketSes: false, enable: false, acil: false, hareket: false,
     jog: null, jogBasili: null, jogSayac: null, olcumVeri: null, olcumT: 0,
     olcumHata: "", sensorKutu: null,
     film: null, gorevKutu: null, kartKutu: null, kartYildiz: null, halkaMerkez: null,
     gorevSatir: [], gorevSatirAdet: 3, gorevKalan: 0, vurgu: null,
+    zilAcik: false, zilSatir: [], zilKutu: null,
     raf: [], rafKutu: null, rafAcik: false, ekimGoz: "", bosYer: null, bosYerHata: "",
     sonIs: null, sonHasat: null, sonAlt: "",
     ekimSunucudan: false, ekimOturum: null, ekimSayac: null,
@@ -1435,6 +1436,7 @@ window.Bahce = (function () {
     parcaCiz(c);
     tasimaCiz(c);
     ekimOturumCiz(c);
+    zilCiz(c);
     filmCiz(c);
     if (!S.insaBitti) {
       c.fillStyle = "rgba(255,255,255,.5)";
@@ -1482,9 +1484,12 @@ window.Bahce = (function () {
   /** Hepsini aç ya da kapat. `sessiz` bahçeye girerken günlüğü susturuyor. */
   function kamHepsi(goster, sessiz) {
     var p = P();
-    if (!p.kamKutusuAcKapa) return;
+    /* Panelde kutu anahtarı yoksa sessizce "kapalı" demek yanlış olur:
+       yapılmadığını söyleyebilmek için false dönüyor. */
+    if (!p.kamKutusuAcKapa) return false;
     kamAdlari().forEach(function (ad) { p.kamKutusuAcKapa(ad, goster, sessiz); });
     kamDugmeYaz();
+    return true;
   }
   /** Bahçe açılırken: hâli sakla, kutuları kapat. */
   function kamBahceyeGir() {
@@ -1868,6 +1873,172 @@ window.Bahce = (function () {
   }
 
   /* ==================================================================== *
+   * ZİL — ÜST ŞERİDİN TEK BİLDİRİMİ
+   *
+   * Şeritteki uzun cümle kalktı; yerine rozetli bir zil var. Rozetteki
+   * sayı UYDURMA DEĞİL: sunucunun açık kartları (ertelenmişler hariç).
+   * Zile dokununca hepsi tek listede açılıyor — tabelada üç satır
+   * gösteriliyor, burada hepsi, gerekçesiyle ve kendi düğmesiyle.
+   * ==================================================================== */
+  function zilSayi() {
+    return acikKartlar().filter(function (k) { return !k.ertelendi; }).length;
+  }
+  function zilKur() {
+    if ($("#bh-zil")) return;
+    var ust = document.querySelector("#bh-kok .bh-ust");
+    if (!ust) return;
+    var d = document.createElement("button");
+    d.type = "button"; d.id = "bh-zil"; d.className = "bh-zil";
+    d.title = "Bugünün işleri";
+    d.setAttribute("aria-label", "Bugünün işleri");
+    d.setAttribute("aria-expanded", "false");
+    d.innerHTML = '<span aria-hidden="true">🔔</span>'
+      + '<span class="bh-rozet" id="bh-rozet" hidden>0</span>';
+    d.addEventListener("click", function () {
+      S.zilAcik = !S.zilAcik;
+      d.setAttribute("aria-expanded", S.zilAcik ? "true" : "false");
+      Ses.uyandir(); Ses.tik();
+      isteKare();
+    });
+    /* ZİL DURUM YAZISININ YANINDA. Şeridin sağ ucuna konunca (ölçüldü:
+       x=1216) yüzen başlık kümesinin altında kalıyor ve gerçek fare
+       tıklaması `#d-enable`e gidiyordu; ayrıca "Hazır"dan kopuk
+       duruyordu. `#bh-makine`nin hemen ardına giriyor. */
+    var mak = $("#bh-makine");
+    if (mak && mak.parentNode) mak.parentNode.insertBefore(d, mak.nextSibling);
+    else ust.appendChild(d);
+  }
+  function zilYaz() {
+    var r = $("#bh-rozet");
+    if (!r) return;
+    var n = zilSayi();
+    r.textContent = n > 99 ? "99+" : String(n);
+    r.hidden = n === 0;
+  }
+  /** Zilin listesi: bütün açık kartlar, gerekçesiyle ve düğmesiyle. */
+  function zilCiz(c) {
+    if (!S.zilAcik) { S.zilSatir = []; return; }
+    var liste = acikKartlar().map(function (k) {
+      return gorevSatirYap(k);
+    });
+    var w = Math.min(380, S.en - 32), sh = 52;
+    var h = 46 + Math.max(1, liste.length) * sh + 10;
+    if (h > S.boy - 24) h = S.boy - 24;
+    /* ZİLİN ALTINDAN AÇILIYOR. Panel sağ uçta duruyordu; zil durum
+       yazısının yanına taşınınca açılan liste bambaşka bir köşede
+       çıkıyordu. Zilin DOM kutusunu tuvale göre okuyup oradan
+       hizalıyoruz; zil yoksa eski sağ uç. */
+    var x = kis(S.en - w - 14, 8, Math.max(8, S.en - w - 8)), y = 10;
+    var zd = $("#bh-zil"), tv = S.tuval;
+    if (zd && tv) {
+      var zr = zd.getBoundingClientRect(), tr = tv.getBoundingClientRect();
+      x = kis(zr.left - tr.left - 6, 8, Math.max(8, S.en - w - 8));
+    }
+    S.zilKutu = { x: x, y: y, w: w, h: h };
+    c.save();
+    c.fillStyle = "rgba(0,0,0,.45)";
+    c.beginPath();
+    if (c.roundRect) c.roundRect(x + 3, y + 5, w, h, 14); else c.rect(x + 3, y + 5, w, h);
+    c.fill();
+    var g = c.createLinearGradient(x, y, x, y + h);
+    g.addColorStop(0, "rgba(33,38,31,.98)"); g.addColorStop(1, "rgba(23,27,21,.98)");
+    c.fillStyle = g;
+    c.beginPath();
+    if (c.roundRect) c.roundRect(x, y, w, h, 14); else c.rect(x, y, w, h);
+    c.fill();
+    c.strokeStyle = "rgba(150,170,140,.5)"; c.lineWidth = 1.2; c.stroke();
+    c.textAlign = "left"; c.textBaseline = "alphabetic";
+    c.font = "700 13px system-ui,sans-serif"; c.fillStyle = "#eef2e8";
+    c.fillText("Bugünün işleri", x + 14, y + 24);
+    c.font = "10px system-ui,sans-serif"; c.fillStyle = "rgba(201,206,196,.65)";
+    c.fillText("sunucunun kararı · satıra dokun, yapılsın", x + 14, y + 38);
+    var yy = y + 46, i;
+    S.zilSatir = [];
+    if (!liste.length) {
+      c.font = "italic 12px system-ui,sans-serif";
+      c.fillStyle = "rgba(201,206,196,.8)";
+      c.fillText("bugün bekleyen iş yok", x + 14, yy + 22);
+    }
+    for (i = 0; i < liste.length && yy + sh <= y + h; i++) {
+      var gv = liste[i];
+      var sol = x + 10, gen = w - 20;
+      c.fillStyle = "rgba(255,255,255,.05)";
+      c.beginPath();
+      if (c.roundRect) c.roundRect(sol, yy, gen, sh - 8, 8); else c.rect(sol, yy, gen, sh - 8);
+      c.fill();
+      /* Düğme sağda: kartın kendi "evet" yazısı. */
+      c.font = "600 11px system-ui,sans-serif";
+      var dg = gv.evet, dgen = c.measureText(dg).width + 18;
+      var dx = sol + gen - dgen - 8, dy = yy + (sh - 8) / 2 - 11;
+      c.fillStyle = gv.ertelendi ? "rgba(40,44,38,.8)" : "rgba(52,86,52,.9)";
+      c.beginPath();
+      if (c.roundRect) c.roundRect(dx, dy, dgen, 22, 11); else c.rect(dx, dy, dgen, 22);
+      c.fill();
+      c.strokeStyle = gv.ertelendi ? "rgba(226,232,222,.3)" : "rgba(160,214,150,.85)";
+      c.lineWidth = 1;
+      c.beginPath();
+      if (c.roundRect) c.roundRect(dx, dy, dgen, 22, 11); else c.rect(dx, dy, dgen, 22);
+      c.stroke();
+      c.fillStyle = gv.ertelendi ? "rgba(226,232,222,.55)" : "#d8f0cf";
+      c.textAlign = "center"; c.fillText(dg, dx + dgen / 2, dy + 15);
+      c.textAlign = "left";
+      /* Başlık + gerekçe */
+      c.font = "600 12px system-ui,sans-serif";
+      c.fillStyle = gv.ertelendi ? "rgba(238,242,232,.5)" : "#eef2e8";
+      var enCok = dx - sol - 24;
+      var metin = gv.metin;
+      while (metin.length > 4 && c.measureText(metin).width > enCok) {
+        metin = metin.slice(0, metin.length - 2);
+      }
+      if (metin !== gv.metin) metin += "…";
+      c.fillText(metin, sol + 12, yy + 18);
+      if (gv.favori) yildizCiz(c, sol + 16 + c.measureText(metin).width + 8, yy + 14, 6, true);
+      if (gv.alt) {
+        c.font = "10px system-ui,sans-serif";
+        c.fillStyle = "rgba(190,196,186,.8)";
+        var alt = gv.alt;
+        while (alt.length > 4 && c.measureText(alt).width > enCok) {
+          alt = alt.slice(0, alt.length - 2);
+        }
+        if (alt !== gv.alt) alt += "…";
+        c.fillText(alt, sol + 12, yy + 33);
+      }
+      S.zilSatir.push({ x: sol, y: yy, w: gen, h: sh - 8, gorev: gv });
+      yy += sh;
+    }
+    if (i < liste.length) {
+      c.font = "10px system-ui,sans-serif";
+      c.fillStyle = "rgba(201,206,196,.7)";
+      c.fillText("+" + (liste.length - i) + " iş daha sığmadı", x + 14, y + h - 10);
+    }
+    c.restore();
+  }
+  function zilDokun(p) {
+    if (!S.zilAcik) return false;
+    var i;
+    for (i = 0; i < S.zilSatir.length; i++) {
+      var k = S.zilSatir[i];
+      if (p.x >= k.x && p.x <= k.x + k.w && p.y >= k.y && p.y <= k.y + k.h) {
+        S.zilAcik = false;
+        var z = $("#bh-zil");
+        if (z) z.setAttribute("aria-expanded", "false");
+        gorevBasildi(k.gorev, i);
+        return true;
+      }
+    }
+    var kt = S.zilKutu;
+    if (kt && p.x >= kt.x && p.x <= kt.x + kt.w && p.y >= kt.y && p.y <= kt.y + kt.h) {
+      return true;                                /* listenin içi */
+    }
+    /* Dışarı dokunmak kapatıyor. */
+    S.zilAcik = false;
+    var z2 = $("#bh-zil");
+    if (z2) z2.setAttribute("aria-expanded", "false");
+    isteKare();
+    return true;
+  }
+
+  /* ==================================================================== *
    * GÖREV TABELASI VE ÇİFTÇİ PUANI
    *
    * GÖREVLER UYDURULMUYOR. "Bugün 5 bitki sula" gibi bir hedefi ekran
@@ -1954,9 +2125,10 @@ window.Bahce = (function () {
    *    ek     → hangi türe göre hesaplandığı
    *  Sayı uydurulmuyor: süre her bitkinin kendi `sulama_saniye` ayarından
    *  toplanıyor, bir tanesi bile eksikse "≈" konmuyor, satır susuyor. */
-  function gorevListesi() {
-    var n = S.gorevSatirAdet == null ? 3 : S.gorevSatirAdet;
-    return acikKartlar().slice(0, n).map(function (k) {
+  /** Bir kartın ekran satırı. Tabela da zil listesi de bunu kullanıyor;
+   *  ikisi ayrı yazılsaydı aynı iş iki yerde farklı anlatılırdı. */
+  function gorevSatirYap(k) {
+    return (function (k) {
       var adlar = (k.noktalar || []).map(String);
       var alt = "";
       if (k.tip === "sula") {
@@ -1985,7 +2157,11 @@ window.Bahce = (function () {
                metin: String(k.baslik || k.metin || k.tip || "iş"),
                alt: alt, evet: String(k.evet || "Yap"),
                ertelendi: !!k.ertelendi, adet: adlar.length, kart: k };
-    });
+    }(k));
+  }
+  function gorevListesi() {
+    var n = S.gorevSatirAdet == null ? 3 : S.gorevSatirAdet;
+    return acikKartlar().slice(0, n).map(gorevSatirYap);
   }
   function gorevKur() {
     /* Tabela sol çimde, alet askısının üstünde. Yer dar ise çizilmiyor:
@@ -2720,8 +2896,12 @@ window.Bahce = (function () {
      tutmak, alet sayısı değiştiğinde birinin sessizce yanılması demekti. */
   var RAY_GEN = 50, RAY_ARA = 16;
   var RAY_TABELA_ARA = 34;   /* tabelanın altı ile ilk alet arası */
-  /* Ses düğmesi askının 30 px altında ve yarıçapı 15; artı kenar payı. */
-  var RAY_ALT_PAY = 57;
+  /* ASKININ ALTINDAKİ YUVARLAK SIRA: askıdan 16 px aşağıda, çapı 30;
+     artı 8 px kenar payı = 64. Tek düğme (ses) varken 57 idi; sıra dört
+     düğmeye çıkınca bu sayı büyüdü — tabela da aynı sabiti okuduğu için
+     yer ayırması kendiliğinden düzeliyor. */
+  var ALT_DUGME_ARA = 16, ALT_DUGME_R = 15;
+  var RAY_ALT_PAY = ALT_DUGME_ARA + ALT_DUGME_R * 2 + 8;
   function rayYuksekligi() {
     return RAY_ALET.length * RAY_GEN + (RAY_ALET.length - 1) * RAY_ARA;
   }
@@ -2772,10 +2952,16 @@ window.Bahce = (function () {
        Yer açmak askının değil TABELANIN işi: tabela kendi boyunu
        askının ihtiyacına göre kısıyor (`gorevOlcu` kullanan yer), o
        yüzden burada sığdırmaya çalışmak gerekmiyor. */
-    if (S.gorevKutu) {
-      var alt0 = S.gorevKutu.y + S.gorevKutu.h + RAY_TABELA_ARA;
-      if (y0 < alt0) y0 = alt0;
-    }
+    var tavan = S.gorevKutu
+      ? S.gorevKutu.y + S.gorevKutu.h + RAY_TABELA_ARA : 12;
+    if (y0 < tavan) y0 = tavan;
+    /* ALTTAN TAŞMA: ortalanan askı, altındaki yuvarlak sırayı ekranın
+       dışına itebiliyordu (ölçüldü: 385 px tuvalde 20 px). Aşağı
+       kaydırmak yerine YUKARI çekiyoruz, ama tabelanın altından
+       yukarısına asla geçmeden — eski kırpma tam da bu yüzden askıyı
+       tabelanın üstüne bindiriyordu. */
+    var enAlt = S.boy - RAY_ALT_PAY - top;
+    if (y0 > enAlt) y0 = Math.max(tavan, enAlt);
     var solBos = G.ox - G.kal - G.ray - 12;
     var x = solBos > gen + 16 ? (solBos - gen) / 2 : 8;
     S.ray = RAY_ALET.map(function (a, i) {
@@ -2783,7 +2969,34 @@ window.Bahce = (function () {
                x: x, y: y0 + i * (gen + ara), w: gen, h: gen };
     });
     var son2 = S.ray[S.ray.length - 1];
-    S.sesDugme = { x: x + gen / 2 - 15, y: son2.y + son2.h + 30, r: 15 };
+    /* ASKININ ALTINDAKİ YUVARLAKLAR: ses, bahçeyi yeniden kur,
+       koordinatla ek, kamera kutuları. Son ikisi üst şeritten indi;
+       düğmelerin kendisi `index.html`de duruyor ve burada yalnız
+       `click`leri çağrılıyor — davranış tek yerde, ortak dosya
+       değişmiyor. */
+    var dugmeler = [{ k: "ses" }, { k: "kur" }, { k: "koor" }, { k: "kam" }];
+    var rr = ALT_DUGME_R, bosluk = ALT_DUGME_ARA;
+    /* Askı tavana dayandıysa (tabela yüzünden aşağı kalmışsa) sıra yine
+       de ekranda kalsın: önce araya, sonra yarıçapa dokunuyoruz. 11 px
+       altı parmakla vurulamıyor, orada duruyoruz ve taşmayı
+       gizlemiyoruz — düğmeler çizilmiyor, sebebi alt şeritte yazıyor. */
+    var kalanAlt = S.boy - (son2.y + son2.h) - 6;
+    if (bosluk + rr * 2 > kalanAlt) bosluk = Math.max(8, kalanAlt - rr * 2);
+    if (bosluk + rr * 2 > kalanAlt) rr = Math.floor((kalanAlt - bosluk) / 2);
+    if (rr < 11) { S.altDugme = []; S.sesDugme = null; S.altDugmeDar = true; }
+    else {
+      S.altDugmeDar = false;
+      var ry = son2.y + son2.h + bosluk;
+      var yatayAra = 8;
+      var genToplam = dugmeler.length * rr * 2 + (dugmeler.length - 1) * yatayAra;
+      var bx = x + gen / 2 - genToplam / 2;
+      if (bx < 4) bx = 4;
+      S.altDugme = dugmeler.map(function (d, i) {
+        return { k: d.k, x: bx + i * (rr * 2 + yatayAra), y: ry, r: rr };
+      });
+    }
+    S.sesDugme = S.altDugme.length
+      ? { x: S.altDugme[0].x, y: S.altDugme[0].y, r: S.altDugme[0].r } : null;
     var sagBos = S.en - (G.ox + G.bw + G.kal + G.ray + 12);
     var sgen = 58;
     var sx = sagBos > sgen + 16 ? S.en - sagBos / 2 - sgen / 2 : S.en - sgen - 10;
@@ -3368,7 +3581,128 @@ window.Bahce = (function () {
       c.restore();
     }
     sepetCiz(c);
-    sesCiz(c);
+    altDugmeCiz(c);
+  }
+  function altDugmeBul(p) {
+    var liste = S.altDugme || [], i;
+    for (i = 0; i < liste.length; i++) {
+      var d = liste[i];
+      if (Math.hypot(d.x + d.r - p.x, d.y + d.r - p.y) < d.r + 5) return d;
+    }
+    return null;
+  }
+  /** Üst şeritten inen düğmeler kendi `click`lerini çağırıyor: iş tek
+   *  yerde kalsın, ortak dosyadaki davranış kopyalanmasın. */
+  function domTikla(sec, yok) {
+    var el = $(sec);
+    if (!el) { mesajYaz(yok || "Bu düğme bu panelde yok."); altYaz(); return false; }
+    el.click();
+    return true;
+  }
+  var altDugmeBasildi = guvenli("alt düğme", function (d) {
+    Ses.uyandir();
+    if (d.k === "ses") {
+      var sa = Ses.degistir();
+      mesajYaz(sa ? "Ses açık." : "Ses kapalı.");
+      altYaz(); isteKare(); return;
+    }
+    Ses.tik();
+    if (d.k === "kur") { insaBasla(); mesajYaz("Bahçe yeniden kuruluyor."); }
+    else if (d.k === "koor") {
+      if (domTikla("#bh-koor-ac", "Koordinat kutusu bu sürümde yok.")) {
+        mesajYaz("X/Y yaz, noktayı koy.");
+      }
+    } else if (d.k === "kam") {
+      if (domTikla("#bh-kam", "Kamera kutuları bu sürümde yok.")) {
+        if (!P().kamKutusuAcKapa) mesajYaz("Kamera kutuları bu panelde açılmıyor.");
+        else mesajYaz(kamAcikMi() ? "Kamera kutuları açık." : "Kamera kutuları kapalı.");
+      }
+    }
+    altYaz(); isteKare();
+  });
+  /** Askının altındaki yuvarlak düğmeler. */
+  function altDugmeCiz(c) {
+    if (S.altDugmeDar) {
+      /* Sığmadığını yazmadan gizlemek, düğmeler hiç yokmuş gibi
+         görünmesine yol açıyordu. */
+      var son = S.ray[S.ray.length - 1];
+      if (son) {
+        c.save();
+        c.fillStyle = "rgba(190,196,186,.75)";
+        c.font = "11px system-ui, sans-serif"; c.textAlign = "center";
+        c.fillText("düğmeler sığmadı", son.x + son.w / 2,
+                   Math.min(S.boy - 4, son.y + son.h + 14));
+        c.restore();
+      }
+      return;
+    }
+    var sira = S.altDugme || [];
+    if (sira.length) {
+      /* KÜÇÜK RAF: yuvarlaklar askının altında havada duruyordu, ayrı
+         bir şeymiş gibi görünüyordu. Aynı tahtanın devamı olarak
+         çizilince sol menünün parçası oluyor. Askı tahtası dar (bir
+         alet genişliği), sıra ondan geniş — o yüzden ayrı bir raf. */
+      var s0 = sira[0], sn = sira[sira.length - 1];
+      var rx = s0.x - 7, rw = (sn.x + sn.r * 2) - s0.x + 14;
+      var ryy = s0.y - 7, rh = s0.r * 2 + 14;
+      c.save();
+      c.fillStyle = "rgba(0,0,0,.3)";
+      c.beginPath();
+      if (c.roundRect) c.roundRect(rx + 2, ryy + 4, rw, rh, 7);
+      else c.rect(rx + 2, ryy + 4, rw, rh);
+      c.fill();
+      var rg = c.createLinearGradient(rx, ryy, rx + rw, ryy);
+      rg.addColorStop(0, "#6b4a2c"); rg.addColorStop(0.35, "#8a6238");
+      rg.addColorStop(0.75, "#754f2d"); rg.addColorStop(1, "#5c3f25");
+      c.fillStyle = rg;
+      c.beginPath();
+      if (c.roundRect) c.roundRect(rx, ryy, rw, rh, 7); else c.rect(rx, ryy, rw, rh);
+      c.fill();
+      c.strokeStyle = "rgba(30,18,8,.5)"; c.lineWidth = 1.2;
+      c.beginPath();
+      if (c.roundRect) c.roundRect(rx + 0.5, ryy + 0.5, rw - 1, rh - 1, 7);
+      else c.rect(rx + 0.5, ryy + 0.5, rw - 1, rh - 1);
+      c.stroke();
+      c.restore();
+    }
+    sira.forEach(function (d) {
+      if (d.k === "ses") { sesCiz(c); return; }
+      var cx = d.x + d.r, cy = d.y + d.r;
+      var acik = d.k === "kam" ? kamAcikMi() : false;
+      c.save();
+      c.fillStyle = "rgba(20,24,19,.8)";
+      c.beginPath(); c.arc(cx, cy, d.r, 0, 6.3); c.fill();
+      c.strokeStyle = acik ? "#7bbf5a" : "rgba(201,206,196,.55)";
+      c.lineWidth = 1.3;
+      c.beginPath(); c.arc(cx, cy, d.r, 0, 6.3); c.stroke();
+      c.strokeStyle = acik ? "#cfe8c2" : "rgba(214,220,210,.9)";
+      c.fillStyle = c.strokeStyle;
+      c.lineWidth = 1.6; c.lineCap = "round";
+      if (d.k === "kur") {                       /* yeniden kur: dönen ok */
+        c.beginPath(); c.arc(cx, cy, 6.5, 0.6, 5.4); c.stroke();
+        c.beginPath();
+        c.moveTo(cx + 5.4, cy - 5.4); c.lineTo(cx + 7.4, cy - 1.6);
+        c.lineTo(cx + 3.2, cy - 2.4); c.closePath(); c.fill();
+      } else if (d.k === "koor") {               /* koordinat: artı + halka */
+        c.beginPath(); c.arc(cx, cy, 5.6, 0, 6.3); c.stroke();
+        c.beginPath();
+        c.moveTo(cx - 9, cy); c.lineTo(cx - 2.5, cy);
+        c.moveTo(cx + 2.5, cy); c.lineTo(cx + 9, cy);
+        c.moveTo(cx, cy - 9); c.lineTo(cx, cy - 2.5);
+        c.moveTo(cx, cy + 2.5); c.lineTo(cx, cy + 9);
+        c.stroke();
+      } else if (d.k === "kam") {                /* kamera kutuları */
+        c.beginPath();
+        if (c.roundRect) c.roundRect(cx - 8, cy - 6, 16, 12, 2);
+        else c.rect(cx - 8, cy - 6, 16, 12);
+        c.stroke();
+        c.beginPath(); c.arc(cx, cy, 3, 0, 6.3); c.stroke();
+        if (!acik) {                             /* kapalıysa üstü çizili */
+          c.beginPath(); c.moveTo(cx - 9, cy + 7); c.lineTo(cx + 9, cy - 7); c.stroke();
+        }
+      }
+      c.restore();
+    });
   }
   /** Ses açma/kapama — tarayıcı ilk dokunuşa kadar ses çaldırmıyor,
    *  bu düğme hem izni açıyor hem tercihi (localStorage) tutuyor. */
@@ -4017,6 +4351,8 @@ window.Bahce = (function () {
        kazayla iş yaptırmak istemiyoruz. */
     if (S.film && filmDokun(p)) return;
 
+    /* Zil listesi açıksa bütün dokunuşlar onun. */
+    if (S.zilAcik && zilDokun(p)) return;
     /* Ekim oturumu paneli en üstte: makine beklerken onay düğmesinin
        önüne başka hiçbir şey geçmiyor. */
     if (S.ekimOturum && ekimOturumDokun(p)) return;
@@ -4047,12 +4383,9 @@ window.Bahce = (function () {
     /* Yön tuşları */
     var jt = jogTusBul(p);
     if (jt) { jogBasla(jt); return; }
-    /* Ses düğmesi */
-    if (S.sesDugme && Math.hypot(S.sesDugme.x + 15 - p.x, S.sesDugme.y + 15 - p.y) < S.sesDugme.r + 4) {
-      var sa = Ses.degistir();
-      mesajYaz(sa ? "Ses açık." : "Ses kapalı.");
-      altYaz(); isteKare(); return;
-    }
+    /* Askının altındaki yuvarlak düğmeler */
+    var ad0 = altDugmeBul(p);
+    if (ad0) { altDugmeBasildi(ad0); return; }
     /* SOL RAY — aleti eline al. Makine kopukken alınmıyor ve sebebi
        söyleniyor: o işi yapan makine. */
     var ray = rayVur(p);
@@ -4630,6 +4963,7 @@ window.Bahce = (function () {
     return k[S.kartIx];
   }
   var ustYaz = guvenli("üst şerit", function () {
+    zilYaz();
     var v = S.veri || {}, bagli = !!v.bagli;
     var kuyruk = v.kuyruk || {};
     var el = $("#bh-makine");
@@ -4977,6 +5311,11 @@ window.Bahce = (function () {
         }
         var kk = $("#bh-koor");
         if (kk && !kk.hidden) { koorAc(false); return; }
+        if (S.zilAcik) {
+          S.zilAcik = false;
+          var zz = $("#bh-zil"); if (zz) zz.setAttribute("aria-expanded", "false");
+          isteKare(); return;
+        }
         if (S.film) { filmKapat(); return; }
         if (S.rafAcik || S.ekimTur) { ekimBirak(); return; }
         if (S.tasima) { S.tasima = null; S.tasimaHedef = null; altYaz(); isteKare(); return; }
@@ -5119,6 +5458,7 @@ window.Bahce = (function () {
       }
     } catch (h) { /* gözlemci yoksa `resize` ve `ustYaz` yolu duruyor */ }
     carkKur();
+    zilKur();
     sakinKur();
     bulutKur();
     xpOku();
@@ -5148,7 +5488,7 @@ window.Bahce = (function () {
          kalıyordu. */
       if (S.acik) sagPayOlc();
       if (!S.acik) {
-        carkKapat(); jogBitir();
+        carkKapat(); jogBitir(); S.zilAcik = false;
         if (S.ekimSayac) { clearInterval(S.ekimSayac); S.ekimSayac = null; }
         Ses.akisDur(); Ses.motorDur(); S.hareketSes = false;
       }
@@ -5244,6 +5584,13 @@ window.Bahce = (function () {
                  return { k: r.k, ad: r.ad, dolu: r.dolu, x: r.x, y: r.y, w: r.w, h: r.h }; }),
                tur: S.ekimTur, goz: S.ekimGoz,
                bosYer: S.bosYer ? S.bosYer.yerler.length : -1, hata: S.bosYerHata },
+        altDugme: (S.altDugme || []).map(function (d) {
+          return { k: d.k, x: d.x, y: d.y, r: d.r };
+        }),
+        zil: { acik: !!S.zilAcik, sayi: zilSayi(),
+               satir: S.zilSatir.map(function (z) {
+                 return { kimlik: z.gorev.kimlik, x: z.x, y: z.y, w: z.w, h: z.h };
+               }) },
         gorev: S.gorevSatir.map(function (g) {
           return { kimlik: g.gorev.kimlik, tip: g.gorev.tip, metin: g.gorev.metin,
                    alt: g.gorev.alt, evet: g.gorev.evet, favori: g.gorev.favori,

@@ -116,6 +116,58 @@ body.bahce-acik:not(.bh-menu) .bh-ust { padding-right: var(--bh-sag-pay, 310px);
 .bh-cark:focus-visible { outline: 2px solid var(--vurgu); outline-offset: 2px; }
 body.bh-menu .bh-cark { color: var(--metin); border-color: var(--metin-3); }
 
+/* ------------------------------------------------------- üst şerit sade
+ * ÜST ŞERİT YALNIZ DURUM: makinenin hâli (hazır / meşgul / bağlı değil),
+ * bir zil ve bahçeyi yeniden kuran düğme. Günün işlerini anlatan uzun
+ * cümle ("25 bitki susadı · Fesleğen, maydanoz, roka ve 3 tane daha
+ * sulanacak…") şeridin yarısını yiyordu ve aynı bilgi tabelada zaten
+ * satır satır duruyor. Detay artık ZİLİN ARKASINDA: rozette kaç iş
+ * olduğu yazılı, dokununca hepsi tek listede açılıyor.
+ *
+ * EYLEM DÜĞMELERİ SOLDAKİ ASKIYA TAŞINDI (Sula → tabeladaki satırın
+ * kendi düğmesi; koordinatla ek ve kameralar → askının altındaki
+ * yuvarlak düğmeler). Buradaki düğmeler gizleniyor ama SİLİNMİYOR:
+ * askıdaki yuvarlaklar onların `click`ini çağırıyor, yani davranış tek
+ * yerde kalıyor ve `index.html` (ortak dosya) değişmiyor. */
+body.bahce-acik #bh-is-metin,
+body.bahce-acik #bh-is-neden,
+body.bahce-acik #bh-is-sayac,
+body.bahce-acik #bh-is-geri,
+body.bahce-acik #bh-is-ileri,
+body.bahce-acik #bh-is-evet,
+body.bahce-acik #bh-koor-ac,
+body.bahce-acik #bh-kam,
+body.bahce-acik #bh-kur { display: none !important; }
+body.bahce-acik .bh-orta { flex: 1 1 auto; }
+
+/* ZİL — şeridin tek bildirim aracı. Rozet kaç iş olduğunu söylüyor. */
+.bh-zil {
+  position: relative;
+  /* Zil DURUMUN YANINDA, şeridin sağ ucunda değil: sağ uçta üst barın
+     kendi düğmeleri (⏻, ⚙, acil durdurma) üstüne biniyor — tıklama
+     onlara gidiyordu (ölçüldü: "⏻ Aç" zilin tıklamasını yutuyordu). */
+  width: 34px; height: 34px; margin-left: 12px;
+  border-radius: 50%;
+  border: 1px solid var(--cizgi-2);
+  background: linear-gradient(180deg, rgba(255, 255, 255, .07), rgba(0, 0, 0, .14));
+  color: var(--metin-2); cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 15px; line-height: 1;
+}
+.bh-zil:hover { color: var(--metin); border-color: var(--metin-3); }
+.bh-zil:focus-visible { outline: 2px solid var(--vurgu); outline-offset: 2px; }
+.bh-zil[aria-expanded="true"] { border-color: var(--vurgu); color: var(--metin); }
+.bh-zil .bh-rozet {
+  position: absolute; top: -4px; right: -4px;
+  min-width: 17px; height: 17px; padding: 0 4px;
+  border-radius: 999px;
+  background: var(--kritik); color: #fff;
+  font: 600 10px/17px system-ui, sans-serif;
+  text-align: center;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, .45);
+}
+.bh-zil .bh-rozet[hidden] { display: none; }
+
 /* KALDIRILAN İKİ DÜĞME: "sakin mod" ve "yarın sor".
    Kullanıcı ikisini de istemedi. Erteleme YETENEĞİ duruyor (ertelenmiş
    bir kart hâlâ "ertelendi · geri al" diyor), yalnız üst şeritteki düğme
