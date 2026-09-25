@@ -137,6 +137,30 @@
  * tam o anda gücü kesmek, horn'u hedefin biraz berisinde bırakırdı. */
 #define SERVO_OTURMA_PAYI_MS 300
 
+/* VARIŞTAN SONRA NE KADAR TUTULACAĞI — ÖLÇÜMDEN SONRA EKLENDİ.
+ *
+ * Sahada ölçüldü: horn 90 dereceye sürülüp komut akışı kesilince 90 ->
+ * 30 -> 0 diye indi; komutlar akarken 90'da duruyordu. Yani kart yeni
+ * bir açı yazmıyor (ajan günlüğünde tek bir `ACI 90` var), mekanizmanın
+ * yükü horn'u çekiyor. Güç kesikken tutma torku YOK, dolayısıyla
+ * pozisyonu yazılımla korumanın başka bir yolu da yok.
+ *
+ * Çözüm gücü hiç kesmemek DEĞİL: sürekli akım ısınma ve titreme
+ * getiriyor ve `SERVO_GUC_KES` tam bu yüzden eklenmişti. Onun yerine
+ * kesme ERTELENİYOR — horn işin gerektirdiği süre boyunca yerinde
+ * duruyor, sonra bırakılıyor ve yükün altında 0'a iniyor.
+ *
+ * DEĞER ÖLÇÜLMEDİ, KULLANICININ İŞ SÜRESİDİR. "Bir açıya gittikten
+ * sonra 10 dakika tutsun" isteğinden geliyor; doğru sayı işin ne kadar
+ * sürdüğüne bağlı ve bunu ancak kullanan bilir. `TUT <saniye>` komutuyla
+ * çalışırken değiştirilebiliyor, 0 = hiç kesme (sonsuz tutma).
+ *
+ * SERVONUN KENDİ BESLEMESİ OLMALI. 10 dakika tutma, 10 dakika akım
+ * demek; Arduino'nun 5V'undan çekilirse kart brown-out'a girer. Bu
+ * makinede servo ayrı beslemeye alındı. */
+#define SERVO_TUTMA_MS 600000UL
+#define SERVO_TUTMA_AZAMI_SN 3600UL
+
 /* `ACI` ve `US` komutlarında hareket süresi GELMİYOR (`UC`de geliyor).
  * En kötü hâl 0'dan 180'e tam yol: mikro servoda ~600 ms. 900 ms o
  * yolun üstünde kalıyor. */
@@ -203,6 +227,11 @@ int ucAci = -1;                 // komut edilen derece; -1 = bilinmiyor
 bool ucHarekette = false;
 /* Gücün kesileceği an (millis). 0 = bekleyen kesme yok. */
 unsigned long servoKesMs = 0;
+/* Varıştan sonraki tutma süresi (ms). 0 = güç hiç kesilmiyor.
+ * Çalışırken `TUT <saniye>` ile değiştiriliyor; kartta kalıcı DEĞİL,
+ * sıfırlanınca varsayılana dönüyor — kalıcı yapmak EEPROM yazmak
+ * demekti ve sessizce eskiyen bir ikinci ayar kaynağı doğururdu. */
+unsigned long servoTutmaMs = SERVO_TUTMA_MS;
 unsigned long ucKomutMs = 0;
 unsigned long ucSureMs = 0;     // hareket süresi — KOMUTLA geliyor
 
@@ -420,7 +449,7 @@ void setup() {
                    "acilmiyor; basinc ve rakim olculmuyor"));
 #endif
 
-  Serial.println(F("Hazir. Komutlar: ROLE <su_pompasi|hava_pompasi|isik> <0|1> | UC <indeks> <derece> <sure_ms> | KAPAT | OKU | TEST <0|1> | ACI <0-180> | US <544-2400>"));
+  Serial.println(F("Hazir. Komutlar: ROLE <su_pompasi|hava_pompasi|isik> <0|1> | UC <indeks> <derece> <sure_ms> | KAPAT | OKU | TEST <0|1> | ACI <0-180> | US <544-2400> | TUT <saniye, 0=sonsuz>"));
 #if TEST_ACILISTA
   testBasla();
 #endif
@@ -478,10 +507,21 @@ void servoGucKes() {
   sonOlcum = 0;
 }
 
-/** Gücü `bekleme` ms sonra kesmeyi planlar. */
+/** Gücü `bekleme` + TUTMA SÜRESİ kadar sonra kesmeyi planlar.
+ *
+ *  `bekleme` hareketin kendi süresi (yola çıkıp varması); tutma süresi
+ *  onun ÜSTÜNE biniyor, yerine geçmiyor. Yoksa uzun bir hareket kısa bir
+ *  tutmayı yer, kısa bir hareket de horn'u gereğinden uzun tutardı.
+ */
 void servoKesPlanla(unsigned long bekleme) {
 #if SERVO_GUC_KES
-  servoKesMs = millis() + bekleme;
+  if (servoTutmaMs == 0) {
+    /* SONSUZ TUTMA. 0 "bekleyen kesme yok" demek, yani `servoGucGozet`
+     * hiç kesmiyor ve horn tutulmaya devam ediyor. */
+    servoKesMs = 0;
+    return;
+  }
+  servoKesMs = millis() + bekleme + servoTutmaMs;
   /* 0 "bekleyen yok" demek; taşma tam 0'a denk gelirse kesme kaybolur. */
   if (servoKesMs == 0) servoKesMs = 1;
 #else
@@ -761,6 +801,36 @@ void komutIsle(String komut) {
     return;
   }
 
+  /* "TUT 600" — varıştan sonra kaç saniye güç verilmeye devam edecek.
+   * 0 = hiç kesme. Kartta kalıcı değil; sıfırlanınca varsayılana dönüyor.
+   *
+   * BEKLEYEN KESME DE YENİDEN PLANLANIYOR: horn şu anda tutuluyorsa ve
+   * kullanıcı süreyi uzatıyorsa, yeni sürenin bir sonraki harekete kadar
+   * beklemesi şaşırtıcı olurdu. Yeni süre ŞİMDİDEN başlıyor. */
+  if (buyuk.startsWith("TUT ")) {
+    long sn = komut.substring(komut.indexOf(' ') + 1).toInt();
+    if (sn < 0 || (unsigned long)sn > SERVO_TUTMA_AZAMI_SN) {
+      Serial.print(F("HATA: TUT 0-"));
+      Serial.print(SERVO_TUTMA_AZAMI_SN);
+      Serial.println(F(" saniye"));
+      return;
+    }
+    servoTutmaMs = (unsigned long)sn * 1000UL;
+    if (ucTakili) {
+      if (servoTutmaMs == 0) {
+        servoKesMs = 0;
+      } else {
+        servoKesMs = millis() + servoTutmaMs;
+        if (servoKesMs == 0) servoKesMs = 1;
+      }
+    }
+    Serial.print(F("KOMUT: tutma "));
+    if (servoTutmaMs == 0) Serial.println(F("sonsuz (guc kesilmeyecek)"));
+    else { Serial.print(sn); Serial.println(F(" saniye")); }
+    sonOlcum = 0;
+    return;
+  }
+
   /* "ACI 120" — servoyu o açıya sürer. "HIZ" da kabul ediliyor ama adı
    * düzeltilerek: servo sürekli dönüşlü sanılırken komut HIZ'dı; ezber
    * hâline gelmiş bir komutu sessizce "bilinmeyen" yapmak yerine ne
@@ -891,6 +961,10 @@ void olcVeYaz() {
    * göremez ve `uc_aci` komut edilen değeri göstermeye devam eder.
    * Panelin bu ikisini ayırt edebilmesi için alan ayrı gidiyor. */
   Serial.print(F(",\"servo_guc\":"));            Serial.print(ucTakili ? 1 : 0);
+  /* VARIŞTAN SONRAKİ TUTMA SÜRESİ. Panelde görünmesi şart: horn'un
+   * düşmesi bu sayının bitmesiyle oluyor ve kaç saniye olduğu
+   * görünmezse "servo kendiliğinden indi" diye okunuyor. 0 = sonsuz. */
+  Serial.print(F(",\"servo_tutma_sn\":"));      Serial.print(servoTutmaMs / 1000UL);
   /* Kartın açık kaldığı süre. Geriye giderse kart yeniden başlamıştır ve
    * röleler kapanmıştır — pompa çekişinde besleme çökerse tam bunu
    * görüyoruz. */
