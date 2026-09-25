@@ -133,7 +133,7 @@ window.Bahce = (function () {
     jog: null, jogBasili: null, jogSayac: null, olcumVeri: null, olcumT: 0,
     olcumHata: "", sensorKutu: null,
     film: null, gorevKutu: null, kartKutu: null, kartYildiz: null, halkaMerkez: null,
-    gorevSatir: [], vurgu: null,
+    gorevSatir: [], gorevSatirAdet: 3, gorevKalan: 0, vurgu: null,
     raf: [], rafKutu: null, rafAcik: false, ekimGoz: "", bosYer: null, bosYerHata: "",
     sonIs: null, sonHasat: null, sonAlt: "",
     ekimSunucudan: false, ekimOturum: null, ekimSayac: null,
@@ -267,10 +267,10 @@ window.Bahce = (function () {
     G.ray = Math.max(7, Math.min(16, k * 16));      /* ray genişliği */
     G.s = s;
     gorevKur();
-    rayKur();
     rafKur();
     sensorKur();
     jogKur();
+    rayKur();               /* askı + sepet: tabela ve jog yerleştikten sonra */
   }
   function px(mx) { return G.ox + (sayi(mx) - G.s.x1) * G.k; }
   function py(my) { return G.oy + (sayi(my) - G.s.y1) * G.k; }
@@ -1955,7 +1955,8 @@ window.Bahce = (function () {
    *  Sayı uydurulmuyor: süre her bitkinin kendi `sulama_saniye` ayarından
    *  toplanıyor, bir tanesi bile eksikse "≈" konmuyor, satır susuyor. */
   function gorevListesi() {
-    return acikKartlar().slice(0, 3).map(function (k) {
+    var n = S.gorevSatirAdet == null ? 3 : S.gorevSatirAdet;
+    return acikKartlar().slice(0, n).map(function (k) {
       var adlar = (k.noktalar || []).map(String);
       var alt = "";
       if (k.tip === "sula") {
@@ -1991,18 +1992,41 @@ window.Bahce = (function () {
        üst şerit zaten aynı kartları yazıyor, iki kez söylemenin anlamı
        yok ve dar ekranda tabela sahneyi yiyor. */
     var solBos = G.ox - G.kal - G.ray - 12;
-    if (solBos < 172 || S.boy < 320) { S.gorevKutu = null; return; }
+    if (solBos < 172 || S.boy < 320) {
+      S.gorevKutu = null; S.gorevSatirAdet = 0;
+      S.gorevKalan = acikKartlar().length; S.gorevSatir = [];
+      return;
+    }
     var w = Math.min(250, solBos - 16);
-    var adet = acikKartlar().slice(0, 3).length;
-    var h = gorevOlcu(adet);
+    var toplam = acikKartlar().length;
     /* TABELA ASKIYA YER BIRAKIYOR — sayı tahmin değil, askının kendi
        ölçüsünden çıkıyor. Eski sabit (`S.boy - 200`) askının gerçek
        boyunu (5 alet = 314 px) bilmiyordu ve tabela onu örtecek kadar
-       uzayabiliyordu. */
+       uzayabiliyordu.
+       YÜKSEKLİK KIRPILMIYOR, SATIR SAYISI KISILIYOR. Kutunun boyunu
+       kırpmak satırları durdurmuyordu: üç satır çizilmeye devam ediyor,
+       sonuncusu puan çubuğunun ve "+N iş" yazısının üstüne biniyordu
+       (ekran görüntüsünde "12+ boş yer var" ile "Çiftçi 12 · 8 puan" iç
+       içeydi). Artık önce KAÇ SATIR sığdığı bulunuyor, kutu ondan
+       türetiliyor; sığmayanlar "+N iş daha" diye yazılıyor. */
     var askiPay = RAY_TABELA_ARA + rayYuksekligi() + RAY_ALT_PAY;
     var enCok = S.boy - 14 - askiPay;
-    if (h > enCok) h = Math.max(110, enCok);
-    S.gorevKutu = { x: Math.max(10, (solBos - w) / 2), y: 14, w: w, h: h };
+    var satir = Math.min(3, toplam);
+    while (satir > 1 && gorevOlcu(satir) > enCok) satir--;
+    if (gorevOlcu(satir) > enCok) {
+      /* Tam boy askıyla sığmadı: askı kısılırsa TEK satır sığar mı? */
+      var enCok2 = S.boy - 14 - (RAY_TABELA_ARA + rayEnAzYukseklik() + RAY_ALT_PAY);
+      satir = gorevOlcu(1) <= enCok2 ? 1 : 0;
+    }
+    if (satir <= 0) { S.gorevKutu = null; S.gorevSatirAdet = 0;
+                      S.gorevKalan = toplam; S.gorevSatir = []; return; }
+    S.gorevSatirAdet = satir;
+    S.gorevKalan = Math.max(0, toplam - satir);
+    S.gorevKutu = { x: Math.max(10, (solBos - w) / 2), y: 14, w: w,
+                    h: gorevOlcu(satir) };
+    /* Dokunma kutuları ÇİZİMDEN BAĞIMSIZ: kare atlandığında da satıra
+       dokunuş nereye geldiğini bilsin. */
+    S.gorevSatir = gorevSatirKutular(S.gorevKutu, gorevListesi());
   }
   /** Tabela KARE BAŞINA DEĞİL, içeriği değişince çiziliyor: ahşap
    *  dokusu, gölgesi ve yazıları her karede yeniden üretmek 24 bitkilik
@@ -2011,6 +2035,7 @@ window.Bahce = (function () {
     var kt = S.gorevKutu;
     if (!kt) return "";
     return kt.x + "x" + kt.y + "x" + kt.w + "x" + kt.h + "|" + XP.puan + "|"
+      + S.gorevKalan + "|"
       + gorevListesi().map(function (g) {
           return g.kimlik + (g.ertelendi ? "e" : "") + g.metin + "|" + g.alt + "|"
             + g.evet + "|" + g.favori;
@@ -2028,8 +2053,7 @@ window.Bahce = (function () {
   }
   function gorevCiz(c) {
     var kt = S.gorevKutu;
-    if (!kt) { S.gorevSatir = []; return; }
-    S.gorevSatir = gorevSatirKutular(kt, gorevListesi());
+    if (!kt) return;
     var d = gorevDamga();
     if (S.gorevTuval && d === S.gorevDamga) {
       c.drawImage(S.gorevTuval, 0, 0, S.gorevTuval.width, S.gorevTuval.height,
@@ -2167,6 +2191,14 @@ window.Bahce = (function () {
       yy += GOREV_SATIR;
     });
 
+    /* SIĞMAYAN İŞ SESSİZCE KAYBOLMUYOR: kaç tane gösterilemediği yazılı;
+       hepsine üst şeritteki oklardan ulaşılıyor. */
+    if (S.gorevKalan > 0) {
+      c.font = "10px system-ui,sans-serif";
+      c.fillStyle = "rgba(243,227,198,.7)";
+      c.fillText("+" + S.gorevKalan + " iş daha · üst şeritteki oklarla",
+        kt.x + 12, kt.y + kt.h - 34);
+    }
     /* Puan çubuğu — SUNUCU DEĞİL, bu tarayıcı. */
     var cy = kt.y + kt.h - 26, cw = kt.w - 24;
     var oran = (XP.puan % 120) / 120;
@@ -2278,7 +2310,11 @@ window.Bahce = (function () {
   }
   function sensorKur() {
     var sagBos = S.en - (G.ox + G.bw + G.kal + G.ray + 12);
-    if (sagBos < 150 || S.boy < 300) { S.sensorKutu = null; return; }
+    /* SAĞ SÜTUN BÜTÇESİ: yön tuşları bloğu (56+132+22) ve sepet (78)
+       işlev; ölçüm tahtası bilgi. Üçü sığmıyorsa düşen tahta oluyor —
+       aynı ölçümler İzle sekmesinde zaten duruyor, ama yön tuşlarının
+       yerine koyacak bir şey yok. 460 px: 210 + 78 + 128 + boşluklar. */
+    if (sagBos < 150 || S.boy < 460) { S.sensorKutu = null; return; }
     var w = Math.min(200, sagBos - 14);
     S.sensorKutu = { x: S.en - sagBos / 2 - w / 2, y: 14, w: w, h: 128 };
   }
@@ -2355,18 +2391,22 @@ window.Bahce = (function () {
    * bir düğmeyi çalışıyor gibi göstermek, kullanıcıyı makinenin bozuk
    * olduğuna inandırır.
    * ==================================================================== */
+  /* YÖN TUŞLARININ BLOĞU PANODAN BÜYÜK: üstünde konum satırı ve Z
+   * tuşları (56 px), altında "basılı tut" yazısı (22 px) var. Blok
+   * hesaba katılmayınca konum yazısı Z tuşlarının altında kalıyor, alt
+   * yazı da tuvalin kenarından taşıyordu. */
+  var JOG_UST = 56, JOG_ALT = 22;
   function jogKur() {
     var gen = 132;
     var sagBos = S.en - (G.ox + G.bw + G.kal + G.ray + 12);
-    var x, y;
-    if (sagBos >= gen + 16) {
-      x = S.en - sagBos / 2 - gen / 2;
-      y = S.boy - gen - 26;
-    } else {
-      x = S.en - gen - 10;                       /* dar ekran: sağ alt köşe */
-      y = S.boy - gen - 14;
-    }
     if (S.boy < 260) { S.jog = null; return; }
+    var x, y;
+    if (sagBos >= gen + 16) x = S.en - sagBos / 2 - gen / 2;
+    else x = S.en - gen - 10;                    /* dar ekran: sağ alt köşe */
+    y = S.boy - JOG_ALT - gen - 8;
+    var enUst = (S.sensorKutu ? S.sensorKutu.y + S.sensorKutu.h + 16 : 14) + JOG_UST;
+    if (y < enUst) y = enUst;
+    if (y + gen + JOG_ALT > S.boy - 4) y = Math.max(JOG_UST, S.boy - 4 - JOG_ALT - gen);
     var t = 40, orta = gen / 2;
     S.jog = {
       x: x, y: y, w: gen, h: gen,
@@ -2441,7 +2481,7 @@ window.Bahce = (function () {
     c.fillText(m && m.x != null && S.konumVar
       ? ("X " + Math.round(m.x) + "  Y " + Math.round(m.y)
          + (m.z == null ? "" : "  Z " + Math.round(m.z)))
-      : "konum bildirilmedi", j.x + j.w / 2, j.y - 44);
+      : "konum bildirilmedi", j.x + j.w / 2, j.y - JOG_UST + 12);
     c.restore();
   }
   function jogTusBul(p) {
@@ -2685,6 +2725,13 @@ window.Bahce = (function () {
   function rayYuksekligi() {
     return RAY_ALET.length * RAY_GEN + (RAY_ALET.length - 1) * RAY_ARA;
   }
+  /** Askının SIKIŞMIŞ boyu: `rayKur` yer yetmeyince önce aralığı, sonra
+   *  yuvayı 36 pikselin altına inmeden kısıyor. Tabela "hiç sığmıyorum"
+   *  demeden önce bu payı da denemeli — yoksa askı küçülerek yer
+   *  açabilecekken tabela boş yere düşüyordu (485 px tuvalde oldu). */
+  function rayEnAzYukseklik() {
+    return RAY_ALET.length * 36 + (RAY_ALET.length - 1) * 4;
+  }
   var RAY_ALET = [
     { k: "sula", ad: "Su", renk: "#5aa6e8", ipucu: "bitkiye bırak · sula" },
     { k: "nem", ad: "Nem", renk: "#63c46b", ipucu: "bitkiye bırak · nem ölç" },
@@ -2740,7 +2787,14 @@ window.Bahce = (function () {
     var sagBos = S.en - (G.ox + G.bw + G.kal + G.ray + 12);
     var sgen = 58;
     var sx = sagBos > sgen + 16 ? S.en - sagBos / 2 - sgen / 2 : S.en - sgen - 10;
-    S.sepet = { x: sx, y: Math.max(16, S.boy / 2 - 32), w: sgen, h: 64 };
+    /* Sepet ölçüm tahtası ile yön tuşlarının ARASINA oturuyor; etiketi
+       için 14 px payı var. Ortalanırsa ikisinden birinin üstüne
+       biniyordu. */
+    var sust = S.sensorKutu ? S.sensorKutu.y + S.sensorKutu.h + 18 : 16;
+    var salt = S.jog ? S.jog.y - JOG_UST - 18 : S.boy - 26;
+    var sy = sust + Math.max(0, (salt - sust - 78) / 2);
+    if (sy + 78 > salt) sy = Math.max(16, salt - 78);
+    S.sepet = { x: sx, y: sy, w: sgen, h: 64 };
   }
   function aletSimge(c, k, cx, cy, renk, sol) {
     c.save();
