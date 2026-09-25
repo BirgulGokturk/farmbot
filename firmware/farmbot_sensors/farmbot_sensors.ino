@@ -952,11 +952,30 @@ void sayiYaz(float d) {
 }
 
 void olcVeYaz() {
-  /* KAPALIYKEN KÜTÜPHANEYE HİÇ GİRİLMİYOR. Okuyup sonucu atmak,
-   * kesme kilidini yine yaşamak olurdu — ölçümün amacı tam o kilidi
-   * ortadan kaldırmak. */
+  /* SERVO TAKILIYKEN DHT OKUNMUYOR — ÖLÇÜLEREK KARAR VERİLDİ.
+   *
+   * Adafruit DHT kütüphanesi 40 bitlik çerçeveyi okurken kendi içinde
+   * `noInterrupts()` kullanıyor (DHT11de ~4-5 ms). Servo darbeyi Timer1
+   * kesmesiyle bitiriyor; kesme geciktiğinde darbe uzuyor ve horn bir
+   * çerçevelik sıçrama yapıyor. Sahada görülen "aralıklarla git gel"
+   * buydu: `DHT 0` ile okuma durdurulunca seğirme geçti, `DHT 1` ile
+   * geri geldi.
+   *
+   * NİYE GEÇİCİ DETACH DEĞİL. Okumadan önce servoyu bırakıp sonra geri
+   * takmak akla geliyor ama `attach` darbe genişliğini 1500 us'ye
+   * (~90 derece) kuruyor: horn her ölçümde 90a doğru sıçrardı. Üstelik
+   * o an tutma torku da kalkardı ve yük horn'u indirirdi.
+   *
+   * BEDELİ AÇIKÇA SÖYLENİYOR: tutma boyunca hava sıcaklığı ve nemi
+   * `null` gidiyor. Son okuma TEKRARLANMIYOR — eski bir değeri yeni gibi
+   * göstermek, ölçümün durduğunu gizlerdi. Tutma süresi `TUT` ile
+   * kısaltılırsa boşluk da kısalıyor; karar kullanıcının.
+   *
+   * KAPALIYKEN KÜTÜPHANEYE HİÇ GİRİLMİYOR: okuyup sonucu atmak kesme
+   * kilidini yine yaşamak olurdu. */
+  const bool dhtSimdi = dhtOku && !ucTakili;
   float nem = NAN, sicaklik = NAN;
-  if (dhtOku) {
+  if (dhtSimdi) {
     nem      = dht->readHumidity();
     sicaklik = dht->readTemperature();
   }
@@ -1002,9 +1021,12 @@ void olcVeYaz() {
    * düşmesi bu sayının bitmesiyle oluyor ve kaç saniye olduğu
    * görünmezse "servo kendiliğinden indi" diye okunuyor. 0 = sonsuz. */
   Serial.print(F(",\"servo_tutma_sn\":"));      Serial.print(servoTutmaMs / 1000UL);
-  /* DHT okuması açık mı — `null` sıcaklığın sebebi arıza mı yoksa bu
-   * bayrak mı, panelden ayırt edilebilsin diye. */
-  Serial.print(F(",\"dht_oku\":"));             Serial.print(dhtOku ? 1 : 0);
+  /* O ÖLÇÜMDE DHT OKUNDU MU — anahtarın kendisi değil, SONUÇ.
+   * `null` sıcaklığın sebebini panel buradan ayırt ediyor:
+   *   dht_oku 0 ve servo_guc 1 -> servo tutuluyor, okuma bilerek atlandı
+   *   dht_oku 0 ve servo_guc 0 -> `DHT 0` ile elle kapatılmış
+   *   dht_oku 1 ama sıcaklık null -> sensör okunamıyor, ARIZA */
+  Serial.print(F(",\"dht_oku\":"));             Serial.print(dhtSimdi ? 1 : 0);
   /* Kartın açık kaldığı süre. Geriye giderse kart yeniden başlamıştır ve
    * röleler kapanmıştır — pompa çekişinde besleme çökerse tam bunu
    * görüyoruz. */
