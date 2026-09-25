@@ -197,7 +197,16 @@ VARSAYILAN = {
     #   kural, ama bu mekanizmanın kendi ölçülmüş sayısı değil.
     # Hangi açının hangi başlığı indirdiği baş başına:
     # `baslar.<kimlik>.servo_aci`.
-    "uc_secici": {"guvenli_z": None, "sure_ms": 900},
+    # `tutma_sn` — VARIŞTAN SONRA servoya kaç saniye güç verilmeye devam
+    #   edeceği. 0 = hiç kesilmesin. Sahada ölçüldü: güç kesilince tutma
+    #   torku da kalkıyor ve mekanizmanın yükü horn'u 90'dan 0'a indiriyor
+    #   (komut akışı sürerken 90'da duruyordu, kesilince düştü). Kart bunu
+    #   kendi varsayılanıyla (10 dakika) yapıyor ama SIFIRLANINCA o
+    #   varsayılana dönüyor; buradaki değer ajan tarafından her ölçümde
+    #   karta yeniden bildiriliyor, böylece kurulum ayarı tek yerde kalıyor.
+    #   Üst sınır kartın kabul ettiği sınırla aynı (3600 sn); ayrışsalardı
+    #   panelden girilen bir sayı sessizce reddedilirdi.
+    "uc_secici": {"guvenli_z": None, "sure_ms": 900, "tutma_sn": 600},
     # "Z güvenli yükseklikte mi" kıyaslamasının PAYI (mm). Koda gömülü
     # 1,0 mm'ydi; kuruluma göre değişiyor ve panelden giriliyor.
     "guvenli_z_ofset": 1.0,
@@ -678,6 +687,29 @@ class Uclar:
         except (TypeError, ValueError):
             sure = int(VARSAYILAN["uc_secici"]["sure_ms"])
         return max(1, min(10000, sure))
+
+    #: Kartın kabul ettiği üst sınır (`SERVO_TUTMA_AZAMI_SN`). Burada da
+    #: aynı: ayrışsalardı panelden girilen değer karta gidip sessizce
+    #: reddedilirdi ve hangisinin geçerli olduğu görünmezdi.
+    TUTMA_AZAMI_SN = 3600
+
+    def servo_tutma_sn(self) -> int:
+        """Varıştan sonra servoya kaç saniye güç verileceği. 0 = kesme yok.
+
+        Hareket süresiyle KARIŞTIRILMAMALI: `servo_sure_ms` horn'un yola
+        çıkıp varması, bu ise vardıktan sonra yerinde tutulması. İkisini
+        tek sayıya indirmek, "iş süresi" ile "tutma süresi"ni birbirine
+        bağlardı; kısa bir hareket uzun bir tutma isteyebiliyor.
+        """
+        ham = (self.ayar.get("uc_secici") or {}).get("tutma_sn")
+        varsayilan = int(VARSAYILAN["uc_secici"]["tutma_sn"])
+        if ham in (None, ""):
+            return varsayilan
+        try:
+            sn = int(ham)
+        except (TypeError, ValueError):
+            return varsayilan
+        return max(0, min(self.TUTMA_AZAMI_SN, sn))
 
     def home_anahtari(self) -> set[str]:
         """Anahtarına güvenilecek eksenlerin adları — {"x", "y", "z", "t"}.

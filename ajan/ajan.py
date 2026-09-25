@@ -745,8 +745,59 @@ class Ajan:
         self._uc_secili = veri.get("uc_secili")
         self._uc_aci = veri.get("uc_aci")
         self._uc_harekette = bool(veri.get("uc_hareket"))
+        self._tutma_gozet(veri)
         self._kuyruga_at({"tip": "olcum", "ts": time.time(),
                           "veri": self._konum_ekle(self._toprak_yuzde_ekle(veri))})
+
+    #: Tutma süresi uyuşmazlığında iki gönderim arasındaki en az süre.
+    #: Kart komutu reddederse (ya da bir şekilde uygulamazsa) her ölçümde
+    #: yeniden yollamak seri hattı boğardı; 30 saniye, kartın 2 saniyelik
+    #: ölçüm aralığının çok üstünde ve bir sıfırlamayı fark etmek için
+    #: yeterince kısa.
+    TUTMA_TEKRAR_SN = 30.0
+
+    def _tutma_gozet(self, veri: dict[str, Any]) -> None:
+        """Karttaki tutma süresi ayardan farklıysa `TUT` ile düzeltir.
+
+        NİYE HER ÖLÇÜMDE BAKILIYOR, BİR KEZ GÖNDERİLMİYOR. Kart pompa
+        çekişinde ya da USB'nin açılıp kapanmasıyla sıfırlanabiliyor ve
+        sıfırlanınca firmware varsayılanına dönüyor. Tek seferlik bir
+        gönderim, o andan sonra sessizce yanlış bir süreyle çalışmak
+        demekti — ve tutma süresinin yanlış olduğu ancak horn düştüğünde
+        fark edilirdi.
+
+        KAYNAK KARTIN KENDİ BİLDİRİMİ: `servo_tutma_sn` alanı. Ajan "ben
+        göndermiştim" diye varsaymıyor; kartın ne dediğine bakıyor.
+        """
+        istenen = self.uclar.servo_tutma_sn()
+        kartta = veri.get("servo_tutma_sn")
+        if kartta is None:
+            # Alan yoksa kart eski firmware. Sessiz kalmıyoruz ama bir kez
+            # söylüyoruz: her ölçümde tekrarlamak günlüğü doldururdu.
+            if not getattr(self, "_tutma_alani_uyarildi", False):
+                self._tutma_alani_uyarildi = True
+                logger.warning(
+                    "Kart `servo_tutma_sn` bildirmiyor — eski firmware. "
+                    "Servo tutma süresi ayardan yönetilemiyor; "
+                    "firmware/farmbot_sensors yüklenmeli.")
+            return
+        try:
+            kartta = int(kartta)
+        except (TypeError, ValueError):
+            return
+        if kartta == istenen:
+            return
+        simdi = time.time()
+        if simdi - getattr(self, "_tutma_son_gonderim", 0.0) < self.TUTMA_TEKRAR_SN:
+            return
+        self._tutma_son_gonderim = simdi
+        try:
+            self.arduino.komut(f"TUT {istenen}")
+        except Exception as hata:                        # noqa: BLE001
+            logger.warning("Servo tutma süresi gönderilemedi: %s", hata)
+            return
+        logger.info("Servo tutma süresi karta yazıldı: %d sn (kartta %d idi)",
+                    istenen, kartta)
 
     def _kare_geldi(self, kam_ad: str, b64: str, ts: float) -> None:
         """Kamera iş parçacığından çağrılır.
