@@ -132,6 +132,7 @@ window.Bahce = (function () {
     sesDugme: null, altDugme: [], konumVar: false, hareketSes: false, enable: false, acil: false, hareket: false,
     jog: null, jogBasili: null, jogSayac: null, olcumVeri: null, olcumT: 0,
     olcumHata: "", sensorKutu: null, sagPanel: null, durumKutu: null,
+    gunlukKutu: null, gunluk: [], gunlukSon: "", gunlukTut: false,
     film: null, gorevKutu: null, kartKutu: null, kartYildiz: null, halkaMerkez: null,
     gorevSatir: [], gorevSatirAdet: 3, gorevKalan: 0, vurgu: null,
     zilAcik: false, zilSatir: [], zilKutu: null,
@@ -220,6 +221,7 @@ window.Bahce = (function () {
       S.hatalar.push(m);
       if (S.hatalar.length > 4) S.hatalar.shift();
       try { console.error("[bahçe]", ad, hata); } catch (e) { /* boş */ }
+      try { gunlugeYaz(m, "hata"); } catch (e2) { /* günlük yoksa sessiz */ }
     }
     var el = $("#bh-hata");
     if (el) {
@@ -228,6 +230,7 @@ window.Bahce = (function () {
     }
   }
   function notYaz(anahtar, metin) {
+    if (metin && S.notlar[anahtar] !== metin) gunlugeYaz(metin, "uyari");
     if (metin) S.notlar[anahtar] = metin; else delete S.notlar[anahtar];
     var el = $("#bh-not");
     if (!el) return;
@@ -236,7 +239,129 @@ window.Bahce = (function () {
     el.hidden = !h.length;
     el.textContent = h.join(" · ");
   }
-  function mesajYaz(m) { S.mesaj = m || ""; S.mesajT = S.t; altYaz(); }
+  function mesajYaz(m) {
+    S.mesaj = m || ""; S.mesajT = S.t;
+    if (m) gunlugeYaz(m, "");
+    altYaz();
+  }
+
+  /* ==================================================================== *
+   * GÜNLÜK — SAĞ PANELDEKİ KÜÇÜK TERMİNAL
+   *
+   * Olay şeridi (`#bh-alt`) tuvalin ALTINDA, ekranı boydan boya kesen
+   * bir bant olarak duruyordu: sahneden yer yiyor, bahçeyi kenarları
+   * belirsiz bir dikdörtgene çeviriyordu. Üstelik tek satırlıktı —
+   * bir önceki mesaj, üstüne yenisi yazılınca kayboluyordu.
+   *
+   * Artık sağ kontrol panelinin bir bölümü: üstte kaydırılabilir bir
+   * akış (geçmiş satırlar, saatiyle), altta `#bh-alt`in KENDİSİ. Şerit
+   * SİLİNMEDİ, TAŞINDI: seçili bitki kartı, onay düğmeleri, "geri al" —
+   * hepsi aynı DOM düğümü, aynı olay bağları, yalnız yeri değişti.
+   * Bahçeden çıkarken kendi yerine geri konuyor (`gunlukSok`), yani
+   * öteki sekmeler etkilenmiyor ve `index.html` (ortak dosya)
+   * değişmiyor.
+   *
+   * SIĞMAZSA TAŞINMIYOR: panelde en az 96 px yer yoksa şerit eski
+   * yerinde kalıyor. Kaybolmak, onay ve geri-al düğmelerini kaybetmek
+   * demek olurdu.
+   * ==================================================================== */
+  var GUNLUK_ENCOK = 80;             /* akışta tutulan satır sayısı */
+  function saatYazi() {
+    var d = new Date();
+    function ik(n) { return (n < 10 ? "0" : "") + n; }
+    return ik(d.getHours()) + ":" + ik(d.getMinutes()) + ":" + ik(d.getSeconds());
+  }
+  /** Akışa bir satır. Aynı cümle arka arkaya iki kez yazılmıyor:
+   *  saniyede bir tazelenen durum mesajları akışı doldururdu. */
+  function gunlugeYaz(metin, sinif) {
+    var m = String(metin || "").trim();
+    if (!m || m === S.gunlukSon) return;
+    S.gunlukSon = m;
+    S.gunluk.push({ saat: saatYazi(), metin: m, sinif: sinif || "" });
+    if (S.gunluk.length > GUNLUK_ENCOK) S.gunluk.shift();
+    gunlukBoya();
+  }
+  function gunlukBoya() {
+    var ak = $("#bh-g-akis");
+    if (!ak) return;
+    /* KAYDIRMA KULLANICININDIR. Önce "dipte miyiz" ölçülüyordu ama canlı
+       şerit (seçili bitki) uzayınca akışın boyu değişiyor ve ölçüm
+       yanılıyordu: terminal kendiliğinden ortada kalıyordu. Artık
+       kullanıcı yukarı kaydırdıysa (S.gunlukTut) yerinde kalıyor,
+       kaydırmadıysa hep dipte. */
+    var dipte = !S.gunlukTut;
+    ak.innerHTML = S.gunluk.map(function (g) {
+      return '<div class="bh-g-satir' + (g.sinif ? " " + g.sinif : "") + '">'
+        + '<span class="bh-g-saat">' + g.saat + "</span>"
+        + '<span class="bh-g-metin">' + kacisli(g.metin) + "</span></div>";
+    }).join("");
+    if (dipte) {
+      ak.scrollTop = ak.scrollHeight;
+      /* İKİNCİ KEZ, BİR KAREDEN SONRA: canlı şerit (`#bh-alt`) bu
+         çağrıdan SONRA yeniden yazılıyor ve boyu değişince akışın
+         görünen yüksekliği de değişiyor — dibe indirdiğimiz satır
+         yukarıda kalıyordu (ölçüldü: 294 px akışta 109 px pencere,
+         dipte değil). */
+      requestAnimationFrame(function () {
+        if (!S.gunlukTut && ak.parentNode) ak.scrollTop = ak.scrollHeight;
+      });
+
+    }
+  }
+  /** Terminali kur ve `#bh-alt` ile `#bh-not`u içine al. */
+  function gunlukKur() {
+    if ($("#bh-gunluk")) return;
+    var tuval = $("#bh-tuval"), alt = $("#bh-alt");
+    if (!tuval || !alt) return;
+    var d = document.createElement("div");
+    d.className = "bh-gunluk"; d.id = "bh-gunluk";
+    d.innerHTML = '<div class="bh-g-bas"><span>günlük</span>'
+      + '<button type="button" class="bh-g-sil" id="bh-g-sil" '
+      + 'title="akışı temizle" aria-label="akışı temizle">temizle</button></div>'
+      + '<div class="bh-g-akis" id="bh-g-akis" tabindex="0" '
+      + 'role="log" aria-label="olay günlüğü"></div>';
+    tuval.appendChild(d);
+    /* Şeridin ESKİ YERİ hatırlanıyor: çıkarken tam oraya geri konuyor. */
+    S.altYuva = { ana: alt.parentNode, once: alt.nextSibling };
+    d.appendChild(alt);
+    var not = $("#bh-not");
+    if (not) { S.notYuva = { ana: not.parentNode, once: not.nextSibling };
+               d.insertBefore(not, alt); }
+    var sil = $("#bh-g-sil");
+    if (sil) sil.addEventListener("click", function () {
+      S.gunluk = []; S.gunlukSon = ""; S.gunlukTut = false; gunlukBoya();
+    });
+    var ak0 = $("#bh-g-akis");
+    if (ak0) ak0.addEventListener("scroll", function () {
+      S.gunlukTut = ak0.scrollTop + ak0.clientHeight < ak0.scrollHeight - 8;
+    });
+    gunlukBoya();
+  }
+  /** Bahçeden çıkarken: şerit kendi yerine, terminal kaldırılıyor. */
+  function gunlukSok() {
+    var d = $("#bh-gunluk");
+    if (!d) return;
+    var alt = $("#bh-alt"), not = $("#bh-not");
+    if (alt && S.altYuva && S.altYuva.ana) S.altYuva.ana.insertBefore(alt, S.altYuva.once);
+    if (not && S.notYuva && S.notYuva.ana) S.notYuva.ana.insertBefore(not, S.notYuva.once);
+    S.altYuva = null; S.notYuva = null;
+    if (d.parentNode) d.parentNode.removeChild(d);
+  }
+  /** Terminali panelin ayırdığı yere oturt — ölçü tuvalden geliyor. */
+  function gunlukYerlestir() {
+    var d = $("#bh-gunluk");
+    var kt = S.gunlukKutu;
+    if (!d) return;
+    if (!kt) {
+      /* Yer yok: şerit eski yerine dönüyor, sebebi ekranda değil ama
+         ŞERİT KAYBOLMUYOR — düğmeleri erişilebilir kalıyor. */
+      gunlukSok(); return;
+    }
+    d.style.left = Math.round(kt.x) + "px";
+    d.style.top = Math.round(kt.y) + "px";
+    d.style.width = Math.round(kt.w) + "px";
+    d.style.height = Math.round(kt.h) + "px";
+  }
 
   /* ==================================================================== *
    * GEOMETRİ — yatağın milimetresi ile tuvalin pikseli arasında TEK ölçek.
@@ -269,7 +394,8 @@ window.Bahce = (function () {
     G.s = s;
     gorevKur();
     rafKur();
-    sagPanelKur();          /* ölçümler + sepet + durum + yön tuşları: tek sütun */
+    sagPanelKur();          /* ölçümler + sepet + günlük + durum + yön tuşları */
+    gunlukYerlestir();      /* DOM terminal, panelin ayırdığı yere */
     rayKur();               /* askı: tabela yerleştikten sonra */
   }
   function px(mx) { return G.ox + (sayi(mx) - G.s.x1) * G.k; }
@@ -1920,18 +2046,22 @@ window.Bahce = (function () {
     var liste = acikKartlar().map(function (k) {
       return gorevSatirYap(k);
     });
-    var w = Math.min(380, S.en - 32), sh = 52;
+    /* Zil listesi de sol oluğa sığıyor: 380 px genişken yatağın sol
+       kenarını örtüyordu (ölçüldü: 1500 px'de 15 px taşma). */
+    var ol = solOluk(200, 360);
+    var w = Math.min(360, Math.max(200, ol.sag - 8)), sh = 52;
     var h = 46 + Math.max(1, liste.length) * sh + 10;
     if (h > S.boy - 24) h = S.boy - 24;
     /* ZİLİN ALTINDAN AÇILIYOR. Panel sağ uçta duruyordu; zil durum
        yazısının yanına taşınınca açılan liste bambaşka bir köşede
        çıkıyordu. Zilin DOM kutusunu tuvale göre okuyup oradan
        hizalıyoruz; zil yoksa eski sağ uç. */
-    var x = kis(S.en - w - 14, 8, Math.max(8, S.en - w - 8)), y = 10;
+    var enSag = Math.max(8, ol.sag - w);
+    var x = kis(8, 8, enSag), y = 10;
     var zd = $("#bh-zil"), tv = S.tuval;
     if (zd && tv) {
       var zr = zd.getBoundingClientRect(), tr = tv.getBoundingClientRect();
-      x = kis(zr.left - tr.left - 6, 8, Math.max(8, S.en - w - 8));
+      x = kis(zr.left - tr.left - 6, 8, enSag);
     }
     S.zilKutu = { x: x, y: y, w: w, h: h };
     c.save();
@@ -2166,13 +2296,13 @@ window.Bahce = (function () {
     /* Tabela sol çimde, alet askısının üstünde. Yer dar ise çizilmiyor:
        üst şerit zaten aynı kartları yazıyor, iki kez söylemenin anlamı
        yok ve dar ekranda tabela sahneyi yiyor. */
-    var solBos = G.ox - G.kal - G.ray - 12;
-    if (solBos < 172 || S.boy < 320) {
+    var ol = solOluk(172, 250);
+    if (ol.sag - ol.x < 172 || S.boy < 320) {
       S.gorevKutu = null; S.gorevSatirAdet = 0;
       S.gorevKalan = acikKartlar().length; S.gorevSatir = [];
       return;
     }
-    var w = Math.min(250, solBos - 16);
+    var w = ol.w;
     var toplam = acikKartlar().length;
     /* TABELA ASKIYA YER BIRAKIYOR — sayı tahmin değil, askının kendi
        ölçüsünden çıkıyor. Eski sabit (`S.boy - 200`) askının gerçek
@@ -2184,21 +2314,18 @@ window.Bahce = (function () {
        (ekran görüntüsünde "12+ boş yer var" ile "Çiftçi 12 · 8 puan" iç
        içeydi). Artık önce KAÇ SATIR sığdığı bulunuyor, kutu ondan
        türetiliyor; sığmayanlar "+N iş daha" diye yazılıyor. */
-    var askiPay = RAY_TABELA_ARA + rayYuksekligi() + RAY_ALT_PAY;
-    var enCok = S.boy - 14 - askiPay;
+    /* ASKIYA YER AYIRMIYOR ARTIK: askı sol kenarda, tabela onun
+       sağındaki sütunda — yan yanalar. Tabelanın bütçesi kendi
+       sütununun boyu; kartla paylaşıyor (kart altına giriyor). */
+    var enCok = S.boy - 28 - (KART_ENAZ + 10);
     var satir = Math.min(3, toplam);
     while (satir > 1 && gorevOlcu(satir) > enCok) satir--;
-    if (gorevOlcu(satir) > enCok) {
-      /* Tam boy askıyla sığmadı: askı kısılırsa TEK satır sığar mı? */
-      var enCok2 = S.boy - 14 - (RAY_TABELA_ARA + rayEnAzYukseklik() + RAY_ALT_PAY);
-      satir = gorevOlcu(1) <= enCok2 ? 1 : 0;
-    }
+    if (gorevOlcu(satir) > enCok) satir = gorevOlcu(1) <= S.boy - 28 ? 1 : 0;
     if (satir <= 0) { S.gorevKutu = null; S.gorevSatirAdet = 0;
                       S.gorevKalan = toplam; S.gorevSatir = []; return; }
     S.gorevSatirAdet = satir;
     S.gorevKalan = Math.max(0, toplam - satir);
-    S.gorevKutu = { x: Math.max(10, (solBos - w) / 2), y: 14, w: w,
-                    h: gorevOlcu(satir) };
+    S.gorevKutu = { x: ol.x, y: 14, w: w, h: gorevOlcu(satir) };
     /* Dokunma kutuları ÇİZİMDEN BAĞIMSIZ: kare atlandığında da satıra
        dokunuş nereye geldiğini bilsin. */
     S.gorevSatir = gorevSatirKutular(S.gorevKutu, gorevListesi());
@@ -2517,9 +2644,43 @@ window.Bahce = (function () {
   var SP_DURUM = 46;        /* durum çubuğu */
   var SP_OLCUM_ENAZ = 74;   /* başlık + tazelik + bir satır */
   var SP_OLCUM_ENCOK = 132;
+  var SP_LOG_ENAZ = 96;     /* başlık + bir satır akış + canlı satır */
+  var SP_LOG_ENCOK = 190;
+  /* ==================================================================== *
+   * SOL OLUK — KENARA YAPIŞAN KARTLARIN YERİ
+   *
+   * Yatak (vizör) tuvalin ortasında ve iki yanında çim kalıyor. Sağ
+   * oluk kontrol panelinin; kartlar (bitki künyesi, ekim oturumu, zil
+   * listesi) SOL oluğa yapışıyor. Hiçbiri yatağın üstüne düşmüyor:
+   * ölçüm betiği (`vizor.js`) her kartın dikdörtgenini yatağınkiyle
+   * kesiştiriyor ve kesişme sıfır olmak zorunda.
+   *
+   * OLUK İKİ SÜTUN: en solda askı (sol kenara yapışık, 50 px), onun
+   * sağında kart sütunu. Böylece kart açıkken askı ve görev tabelası
+   * örtülmüyor — eskiden kart ikisinin de üstüne biniyordu. Askı ile
+   * tabela artık dikey yer için yarışmıyor (yan yanalar), o yüzden
+   * tabela üç satırını daha sık koruyor.
+   * ==================================================================== */
+  /* 12 px: askı tahtası aletin 9 px solundan başlıyor, 8'de tahtanın
+     kenarı tuvalin dışında kalıyordu (ölçüldü: -1 px). */
+  var ASKI_X = 12;
+  /* Kart sütunda tabelanın ALTINA giriyor: tabela kendi boyunu keserken
+     karta bu kadar yer bırakıyor (başlık + iki satır). */
+  var KART_ENAZ = 120;
+  function solOluk(enAz, enCok) {
+    /* Askının EN GENİŞ hâli (RAY_GEN) ile hesaplanıyor, o anki hâliyle
+       değil: `gorevKur` askıdan ÖNCE çalışıyor ve bir önceki karenin
+       genişliğini okumak, pencere boyutu değişirken bir kare boyunca
+       yanlış sütun demekti. Askı daralırsa sütun yalnız biraz geç
+       başlar; hiçbir zaman askının üstüne binmez. */
+    var x = ASKI_X + RAY_GEN + 10;
+    var sag = Math.max(x + 120, G.ox - 10);
+    var w = kis(sag - x, enAz || 150, enCok || 260);
+    return { x: x, w: w, sag: sag, askiSag: ASKI_X + RAY_GEN };
+  }
   function sagPanelKur() {
     S.sensorKutu = null; S.sepet = null; S.durumKutu = null;
-    S.jog = null; S.sagPanel = null;
+    S.jog = null; S.sagPanel = null; S.gunlukKutu = null;
     if (S.boy < 260) return;
     var sagBos = S.en - (G.ox + G.bw + G.kal + G.ray + 12);
     /* Panel genişliği: yön tuşu panosu + iç pay altına inemez. Sağda o
@@ -2532,31 +2693,40 @@ window.Bahce = (function () {
     var jogBlok = SP_ZUST + SP_JOG;
     if (icBoy < jogBlok + SP_DURUM + SP_ARA) return;   /* tuşlar bile sığmıyor */
 
-    var kalan = icBoy - jogBlok - SP_DURUM - SP_ARA * 2;
+    S.sagPanel = { x: x, y: ust, w: w, h: alt - ust };
+    var ix = x + SP_IC, iw = w - SP_IC * 2;
+    /* ALTTAN YUKARI SABİT: yön tuşları, üstünde durum çubuğu. */
+    var jy = alt - SP_IC - SP_JOG;
+    var dy = jy - SP_ZUST - SP_DURUM;
+    S.durumKutu = { x: ix, y: dy, w: iw, h: SP_DURUM };
+
+    /* Üstteki bölümlere ve GÜNLÜĞE kalan yer. Günlük en az yerini
+       baştan ayırıyor: onay ve "geri al" düğmeleri orada, düşerse
+       kullanıcı yaptığı işi geri alamaz. */
+    var ustBas = ust + SP_IC;
+    var bosluk = dy - SP_ARA - ustBas;
+    var kalan = bosluk - (SP_LOG_ENAZ + SP_ARA);
     var sepetVar = kalan >= SP_SEPET + SP_ARA;
     if (sepetVar) kalan -= SP_SEPET + SP_ARA;
     var olcumBoy = kalan >= SP_OLCUM_ENAZ + SP_ARA
       ? Math.min(SP_OLCUM_ENCOK, kalan - SP_ARA) : 0;
 
-    S.sagPanel = { x: x, y: ust, w: w, h: alt - ust };
-    var ix = x + SP_IC, iw = w - SP_IC * 2;
-    var yy = ust + SP_IC;
+    var yy = ustBas;
     if (olcumBoy > 0) { S.sensorKutu = { x: ix, y: yy, w: iw, h: olcumBoy };
                         yy += olcumBoy + SP_ARA; }
-    /* Yön tuşları alta sabit, durum çubuğu onların hemen üstünde. */
-    var jy = alt - SP_IC - SP_JOG;
-    var dy = jy - SP_ZUST - SP_DURUM;
-    S.durumKutu = { x: ix, y: dy, w: iw, h: SP_DURUM };
     if (sepetVar) {
-      /* Sepet, ölçümlerin altı ile durum çubuğunun üstü arasında
-         ORTALANIYOR: artan boşluk iki yana eşit dağılsın. */
-      var bos = dy - SP_ARA - yy;
       /* Sepet sütunun ortasında ve ESKİSİNDEN BÜYÜK (58→72 px): artık
          çimde değil panelin içinde ve bırakma hedefi olduğu için
          parmakla vurulması kolay olmalı. */
-      S.sepet = { x: ix + iw / 2 - 36, y: yy + Math.max(0, (bos - SP_SEPET) / 2),
-                  w: 72, h: 80 };
+      S.sepet = { x: ix + iw / 2 - 36, y: yy, w: 72, h: 80 };
+      yy += SP_SEPET + SP_ARA;
     }
+    /* GÜNLÜK ARTAN HER YERİ ALIYOR (en çok 190 px): panelin altında boş
+       bir alan bırakmaktansa terminal uzun olsun, daha çok satır
+       görünsün. */
+    var gBoy = kis(dy - SP_ARA - yy, 0, SP_LOG_ENCOK);
+    S.gunlukKutu = gBoy >= SP_LOG_ENAZ
+      ? { x: ix, y: dy - SP_ARA - gBoy, w: iw, h: gBoy } : null;
     jogYerlestir(ix + iw / 2 - SP_JOG / 2, jy);
   }
   /** Tuş yerleri — panelin verdiği köşeden. */
@@ -2601,7 +2771,9 @@ window.Bahce = (function () {
     /* Bölüm çizgileri: yalnız iki bölüm arasında, kenarlara değmeden. */
     var ayirici = [];
     if (S.sensorKutu) ayirici.push(S.sensorKutu.y + S.sensorKutu.h + SP_ARA / 2);
-    if (S.durumKutu) ayirici.push(S.durumKutu.y - SP_ARA / 2);
+    /* Günlük DOM penceresi; tuvalde yalnız üstündeki çizgi var. */
+    if (S.gunlukKutu) ayirici.push(S.gunlukKutu.y - SP_ARA / 2);
+    else if (S.durumKutu) ayirici.push(S.durumKutu.y - SP_ARA / 2);
     c.strokeStyle = "rgba(124,132,122,.22)"; c.lineWidth = 1;
     ayirici.forEach(function (ay) {
       c.beginPath(); c.moveTo(pn.x + SP_IC, ay); c.lineTo(pn.x + pn.w - SP_IC, ay); c.stroke();
@@ -2999,8 +3171,11 @@ window.Bahce = (function () {
      artı 8 px kenar payı = 64. Tek düğme (ses) varken 57 idi; sıra dört
      düğmeye çıkınca bu sayı büyüdü — tabela da aynı sabiti okuduğu için
      yer ayırması kendiliğinden düzeliyor. */
-  var ALT_DUGME_ARA = 16, ALT_DUGME_R = 15;
-  var RAY_ALT_PAY = ALT_DUGME_ARA + ALT_DUGME_R * 2 + 8;
+  /* İKİ SIRA, İKİ SÜTUN. Dört düğme tek sırada 144 px yer kaplıyordu;
+     askı sol kenara yapışınca bu sıra yanındaki kart sütununa
+     giriyordu. 2x2 ızgara askının genişliğine (50 px) yakın duruyor. */
+  var ALT_DUGME_ARA = 16, ALT_DUGME_R = 13, ALT_DUGME_BOS = 6;
+  var RAY_ALT_PAY = ALT_DUGME_ARA + ALT_DUGME_R * 4 + ALT_DUGME_BOS + 8;
   function rayYuksekligi() {
     return RAY_ALET.length * RAY_GEN + (RAY_ALET.length - 1) * RAY_ARA;
   }
@@ -3032,9 +3207,10 @@ window.Bahce = (function () {
        Önce ARALIK daralıyor, sonra alet küçülüyor: dokunma hedefi
        aletin kendisi, aradaki boşluk değil. Alt sınır 36 px — altına
        inmek parmakla vurulamayan bir düğme demek. */
-    var tabelaAlti = S.gorevKutu
-      ? S.gorevKutu.y + S.gorevKutu.h + RAY_TABELA_ARA : 12;
-    var yer = S.boy - tabelaAlti - RAY_ALT_PAY;
+    /* ARTIK TABELA İLE YAN YANA: askı sol kenarda, tabela onun sağındaki
+       sütunda. Dikey yer için yarışmıyorlar, o yüzden askının bütçesi
+       tuvalin tamamı. (Eskiden tabelanın altından başlıyordu.) */
+    var yer = S.boy - 12 - RAY_ALT_PAY;
     if (n > 1 && n * gen + (n - 1) * ara > yer) {
       ara = Math.max(4, Math.floor((yer - n * gen) / (n - 1)));
       if (n * gen + (n - 1) * ara > yer) {
@@ -3043,16 +3219,7 @@ window.Bahce = (function () {
     }
     var top = n * gen + (n - 1) * ara;
     var y0 = Math.max(12, (S.boy - top) / 2);
-    /* Askı, görev tabelasının ALTINDAN başlıyor: ortalanınca tabelanın
-       altına giriyordu.
-       KIRPMA YOK ARTIK. Eskiden buradaki alt sınır (`S.boy - top - 56`)
-       tabelanın altını da geçebiliyordu ve askı tabelanın ÜSTÜNE
-       biniyordu — ilk alet ("Su") tabelanın arkasında kalıyordu.
-       Yer açmak askının değil TABELANIN işi: tabela kendi boyunu
-       askının ihtiyacına göre kısıyor (`gorevOlcu` kullanan yer), o
-       yüzden burada sığdırmaya çalışmak gerekmiyor. */
-    var tavan = S.gorevKutu
-      ? S.gorevKutu.y + S.gorevKutu.h + RAY_TABELA_ARA : 12;
+    var tavan = 12;
     if (y0 < tavan) y0 = tavan;
     /* ALTTAN TAŞMA: ortalanan askı, altındaki yuvarlak sırayı ekranın
        dışına itebiliyordu (ölçüldü: 385 px tuvalde 20 px). Aşağı
@@ -3061,8 +3228,11 @@ window.Bahce = (function () {
        tabelanın üstüne bindiriyordu. */
     var enAlt = S.boy - RAY_ALT_PAY - top;
     if (y0 > enAlt) y0 = Math.max(tavan, enAlt);
-    var solBos = G.ox - G.kal - G.ray - 12;
-    var x = solBos > gen + 16 ? (solBos - gen) / 2 : 8;
+    /* ASKI SOL KENARA YAPIŞIK. Oluğun ortasında duruyordu: sağında
+       kalan boşluk hiçbir işe yaramıyordu, kart da oraya sığmıyordu.
+       Kenara alınınca yanında tabela ve kart için gerçek bir sütun
+       açılıyor. */
+    var x = ASKI_X;
     S.ray = RAY_ALET.map(function (a, i) {
       return { k: a.k, ad: a.ad, renk: a.renk, ipucu: a.ipucu,
                x: x, y: y0 + i * (gen + ara), w: gen, h: gen };
@@ -3080,18 +3250,21 @@ window.Bahce = (function () {
        altı parmakla vurulamıyor, orada duruyoruz ve taşmayı
        gizlemiyoruz — düğmeler çizilmiyor, sebebi alt şeritte yazıyor. */
     var kalanAlt = S.boy - (son2.y + son2.h) - 6;
-    if (bosluk + rr * 2 > kalanAlt) bosluk = Math.max(8, kalanAlt - rr * 2);
-    if (bosluk + rr * 2 > kalanAlt) rr = Math.floor((kalanAlt - bosluk) / 2);
+    var gerek = bosluk + rr * 4 + ALT_DUGME_BOS;
+    if (gerek > kalanAlt) bosluk = Math.max(8, kalanAlt - rr * 4 - ALT_DUGME_BOS);
+    if (bosluk + rr * 4 + ALT_DUGME_BOS > kalanAlt) {
+      rr = Math.floor((kalanAlt - bosluk - ALT_DUGME_BOS) / 4);
+    }
     if (rr < 11) { S.altDugme = []; S.sesDugme = null; S.altDugmeDar = true; }
     else {
       S.altDugmeDar = false;
       var ry = son2.y + son2.h + bosluk;
-      var yatayAra = 8;
-      var genToplam = dugmeler.length * rr * 2 + (dugmeler.length - 1) * yatayAra;
-      var bx = x + gen / 2 - genToplam / 2;
-      if (bx < 4) bx = 4;
+      var izgaraEn = rr * 4 + ALT_DUGME_BOS;
+      var bx = Math.max(4, x + gen / 2 - izgaraEn / 2);
       S.altDugme = dugmeler.map(function (d, i) {
-        return { k: d.k, x: bx + i * (rr * 2 + yatayAra), y: ry, r: rr };
+        return { k: d.k,
+                 x: bx + (i % 2) * (rr * 2 + ALT_DUGME_BOS),
+                 y: ry + Math.floor(i / 2) * (rr * 2 + ALT_DUGME_BOS), r: rr };
       });
     }
     S.sesDugme = S.altDugme.length
@@ -3199,10 +3372,12 @@ window.Bahce = (function () {
   function ekimOturumCiz(c) {
     var e = S.ekimOturum;
     if (!e || !e.aktif) { S.ekimOnayKutu = null; S.ekimIptalKutu = null; return; }
-    var w = Math.min(420, S.en - 40), h = 104;
-    /* Panel alt şeridin üstünde duruyor: 16 piksel payla düğmelerin alt
-       kenarı kırpılıyordu (ölçüldü). */
-    var x = (S.en - w) / 2, y = Math.max(58, S.boy - h - 46);
+    /* EKİM PANELİ DE SOL OLUKTA. Ortada, alt şeridin üstünde duruyordu:
+       420 px genişliğiyle yatağın tam ortasına oturuyor ve ekimin
+       yapıldığı yeri — yani bakılması gereken şeyi — örtüyordu. */
+    var ol = solOluk(210, 320);
+    var w = ol.w, h = 118;
+    var x = ol.x, y = Math.max(14, S.boy - h - 14);
     c.save();
     c.fillStyle = "rgba(0,0,0,.42)";
     c.beginPath();
@@ -3341,7 +3516,9 @@ window.Bahce = (function () {
     if (!S.rafAcik) { S.raf = []; return; }
     var gozler = gozListesi();
     var ilk = S.ray.length ? S.ray[0] : { x: 12, y: 60, w: 50 };
-    var w = 152, x = Math.min(S.en - w - 10, ilk.x + ilk.w + 14);
+    /* Tohum rafı da kart sütununda: askının sağında, yatağa taşmadan. */
+    var ol = solOluk(140, 190);
+    var w = Math.min(190, ol.w), x = ol.x;
     var y = Math.max(10, ilk.y - 10);
     S.raf = gozler.map(function (g, i) {
       return { k: g.k, ad: g.ad, tohum: g.tohum, dolu: g.dolu,
@@ -4159,43 +4336,28 @@ window.Bahce = (function () {
     var b = S.ix[S.secili];
     if (!b) return;
     var satir = kartSatirlari(b);
-    var w = 246, ust = 46, satirY = 34;
+    var ust = 46, satirY = 34;
     var h = ust + satir.length * satirY + 12;
-    /* Kart bitkinin YANINDA duruyor, üstünde değil: eylem halkası orada.
-       Hangi yanda yer varsa o yana açılıyor, ekrandan taşmıyor. */
     var sp = spriteAl(b);
     var R = Math.max(66, sp.R + 40);
-    /* Kart halkanın yanında: halka kaydıysa kart da onunla kayıyor,
-       yoksa ikisi birbirinden kopuyordu. */
     var mk = S.halkaMerkez || halkaMerkez(px(b.x), py(b.y), R);
     var gx = mk.x, gy = mk.y;
-    /* `y` önce: `x`e bağlı değil ve çakışma denetimi ikisini de
-       istiyor. */
-    var y = kis(gy - h / 2, 58, Math.max(58, S.boy - h - 8));
-    var x = gx + R + 16;
-    if (x + w > S.en - 8) x = gx - R - 16 - w;
-    /* ÖLÇÜMLER TABELASINDAN KAÇIYOR. Kart üstte çiziliyor, yani
-       okunuyor; ama tabelayı gereksiz yere örtmesi de istenmez. Sol
-       tarafta yer varsa oraya açılıyor ve ikisi birden okunuyor. Yer
-       yoksa üstte kalmaya devam ediyor — okunmayan bir kart, örtülmüş
-       bir tabeladan kötü. */
-    var st = S.sagPanel;
-    if (st && x < st.x + st.w && x + w > st.x
-        && y < st.y + st.h && y + h > st.y) {
-      var sol = gx - R - 16 - w;
-      if (sol >= 8 && sol + w <= st.x) {
-        x = sol;                      /* halkanın solu tabelayı temizliyor */
-      } else if (st.x - w - 8 >= 8) {
-        /* HALKANIN SOLU DA YETMİYOR. Bitki tam tabelanın altındaysa
-           (sağ üst köşe) iki yan da tabelaya denk geliyordu ve kart
-           halkanın soluna atılsa bile çakışma sürüyordu — ölçüldü,
-           1440 px'lik sahnede 10248 px² örtüşme kalıyordu. Kart o
-           zaman halkadan koparılıp tabelanın soluna itiliyor; kime ait
-           olduğu zaten ince bağlantı çizgisinden okunuyor. */
-        x = st.x - w - 8;
-      }
-    }
-    x = kis(x, 8, Math.max(8, S.en - w - 8));
+    /* KART ARTIK BİTKİNİN YANINDA DEĞİL, SOL OLUKTA.
+       Kart bitkinin yanında açılıyordu ve 246x296 px'lik bir dikdörtgen
+       toprağın ortasına düşüyordu: bakılan şeyin — yatağın — üstünü
+       örtüyordu. Bütün arayüz kenarlara yapışık olunca orta alan
+       yalnız bahçe kalıyor. Sol oluk seçildi: sağ oluk kontrol
+       panelinin, üst şerit durumun.
+       ASKIYI ÖRTMÜYOR: askının sağında 200 px varsa kart oraya
+       oturuyor, yoksa (dar ekran) sola yapışıp askının üstüne biniyor
+       — kartın kendi düğmeleri aynı işleri yapıyor. */
+    var ol = solOluk(150, 260);
+    var w = ol.w, x = ol.x;
+    /* Kart TABELANIN ALTINA giriyor: ikisi aynı sütunda ve ikisi de
+       görünür kalıyor. Sığmazsa yukarı kayıyor — o zaman tabelanın
+       altını örtüyor, ama kart o an bakılan şey. */
+    var ustSinir = S.gorevKutu ? S.gorevKutu.y + S.gorevKutu.h + 10 : 14;
+    var y = kis(ustSinir, 14, Math.max(14, S.boy - h - 10));
     S.kartKutu = { x: x, y: y, w: w, h: h };
     c.save();
     c.fillStyle = "rgba(0,0,0,.4)";
@@ -4209,13 +4371,10 @@ window.Bahce = (function () {
     if (c.roundRect) c.roundRect(x, y, w, h, 14); else c.rect(x, y, w, h);
     c.fill();
     c.strokeStyle = "rgba(140,152,134,.5)"; c.lineWidth = 1.2; c.stroke();
-    /* Bitkiye bağlayan ince çizgi: kartın kime ait olduğu belli olsun. */
-    c.strokeStyle = "rgba(140,152,134,.45)"; c.lineWidth = 1;
-    c.beginPath();
-    c.moveTo(x < gx ? x + w : x, y + h / 2);
-    c.lineTo(gx + (x < gx ? -1 : 1) * (R + 2), gy);
-    c.stroke();
-    /* Kart hangi bitkinin: bitkinin çevresinde ince halka. */
+    /* BAĞLANTI ÇİZGİSİ KALKTI: kart kenara sabitlenince çizgi bütün
+       yatağı boydan boya kesiyordu — vizörü temizlemek için kartı
+       kenara almanın anlamı kalmıyordu. Kartın kime ait olduğunu
+       bitkinin çevresindeki halka söylüyor. */
     c.strokeStyle = "rgba(140,152,134,.55)"; c.lineWidth = 1.4;
     c.beginPath(); c.arc(px(b.x), py(b.y), sp.R + 5, 0, 6.3); c.stroke();
 
@@ -5139,7 +5298,17 @@ window.Bahce = (function () {
     if (!n.kendi) return { yazi: y + " · " + Math.round(n.uzak) + " mm öteden ödünç", sinif: "odunc" };
     return { yazi: y + " · " + sureKisa(n.yas) + " önce ölçüldü", sinif: "olculdu" };
   }
-  var altYaz = guvenli("alt şerit", function () {
+  /** Şeridi yazdıktan SONRA akışı dibe indiriyor: şeridin boyu
+   *  değişince akışın görünen yüksekliği de değişiyor ve `gunlukBoya`
+   *  içinde yapılan kaydırma yukarıda kalıyordu (ölçüldü: 246 px
+   *  akışta scrollTop 0). Sıra burada garanti. */
+  function altYaz() { altSeritYaz(); gunlukDibeIn(); }
+  function gunlukDibeIn() {
+    if (S.gunlukTut) return;
+    var ak = $("#bh-g-akis");
+    if (ak) ak.scrollTop = ak.scrollHeight;
+  }
+  var altSeritYaz = guvenli("alt şerit", function () {
     var kok = $("#bh-alt");
     if (!kok) return;
     var bagli = !!(S.veri && S.veri.bagli);
@@ -5549,6 +5718,7 @@ window.Bahce = (function () {
     } catch (h) { /* gözlemci yoksa `resize` ve `ustYaz` yolu duruyor */ }
     carkKur();
     zilKur();
+    gunlukKur();
     sakinKur();
     bulutKur();
     xpOku();
@@ -5578,7 +5748,7 @@ window.Bahce = (function () {
          kalıyordu. */
       if (S.acik) sagPayOlc();
       if (!S.acik) {
-        carkKapat(); jogBitir(); S.zilAcik = false;
+        carkKapat(); jogBitir(); S.zilAcik = false; gunlukSok();
         if (S.ekimSayac) { clearInterval(S.ekimSayac); S.ekimSayac = null; }
         Ses.akisDur(); Ses.motorDur(); S.hareketSes = false;
       }
@@ -5588,6 +5758,11 @@ window.Bahce = (function () {
         return;
       }
       if (!kur()) return;
+      /* Terminal her girişte yeniden kuruluyor: çıkarken `gunlukSok`
+         onu kaldırıp şeridi yerine koyuyor, bir daha kurulmazsa şerit
+         ekranın altında kalıyordu (ölçüldü: ikinci girişte terminal
+         yoktu). Çağrı tekrarlanabilir — varsa hiçbir şey yapmıyor. */
+      gunlukKur();
       requestAnimationFrame(function () {
         olcuKur();
         veriYukle().then(function () {
@@ -5679,6 +5854,8 @@ window.Bahce = (function () {
         altDugme: (S.altDugme || []).map(function (d) {
           return { k: d.k, x: d.x, y: d.y, r: d.r };
         }),
+        zilKutu: S.zilKutu ? { x: Math.round(S.zilKutu.x), y: Math.round(S.zilKutu.y),
+                               w: Math.round(S.zilKutu.w), h: Math.round(S.zilKutu.h) } : null,
         zil: { acik: !!S.zilAcik, sayi: zilSayi(),
                satir: S.zilSatir.map(function (z) {
                  return { kimlik: z.gorev.kimlik, x: z.x, y: z.y, w: z.w, h: z.h };
@@ -5702,6 +5879,11 @@ window.Bahce = (function () {
                                        y: Math.round(S.sagPanel.y),
                                        w: Math.round(S.sagPanel.w),
                                        h: Math.round(S.sagPanel.h) } : null,
+                 gunluk: S.gunlukKutu ? { x: Math.round(S.gunlukKutu.x),
+                                          y: Math.round(S.gunlukKutu.y),
+                                          w: Math.round(S.gunlukKutu.w),
+                                          h: Math.round(S.gunlukKutu.h),
+                                          satir: S.gunluk.length } : null,
                  durum: S.durumKutu ? { x: Math.round(S.durumKutu.x),
                                         y: Math.round(S.durumKutu.y),
                                         w: Math.round(S.durumKutu.w),
