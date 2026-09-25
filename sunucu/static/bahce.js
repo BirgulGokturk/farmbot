@@ -130,7 +130,8 @@ window.Bahce = (function () {
     islak: [], damla: [], suAkiyor: false, suKanit: "yok",
     ray: [], sepet: null, tasima: null, tasimaHedef: null, durDugme: null, suSesT: 0,
     sesDugme: null, altDugme: [], konumVar: false, hareketSes: false, enable: false, acil: false, hareket: false,
-    jog: null, jogBasili: null, jogSayac: null, olcumVeri: null, olcumT: 0,
+    jog: null, jogBasili: null, jogSayac: null, tohumUcu: null,
+    olcumVeri: null, olcumT: 0,
     olcumHata: "", sensorKutu: null, sagSutun: null, durumKutu: null,
     film: null, gorevKutu: null, kartKutu: null, kartYildiz: null, kartFilm: null,
     halkaMerkez: null,
@@ -2525,7 +2526,9 @@ window.Bahce = (function () {
   var SP_JOG = 132;         /* yön tuşu panosu (kare) */
   var SP_ZUST = 40;         /* Z tuşları panonun üstünde: yer payı */
   var SP_SEPET = 94;        /* sepet + "Hasat" etiketi */
-  var SP_DURUM = 46;        /* durum çubuğu */
+  /* Durum tahtası: konum satırı + T satırı + ipucu = 58 px. T satırı
+     yokken de aynı boy kalıyor; tabela içerik değişince zıplamasın. */
+  var SP_DURUM = 58;
   var SP_OLCUM_ENAZ = 74;   /* başlık + tazelik + bir satır */
   var SP_OLCUM_ENCOK = 132;
   var SP_ALT_YAZI = 18;     /* "basılı tut" satırı için alt pay */
@@ -2613,17 +2616,41 @@ window.Bahce = (function () {
         { k: "y+", ad: "▼", cx: x + orta, cy: y + gen - 22, r: 19, eksen: "y", yon: 1 },
         { k: "x-", ad: "◀", cx: x + 22, cy: y + orta, r: 19, eksen: "x", yon: -1 },
         { k: "x+", ad: "▶", cx: x + gen - 22, cy: y + orta, r: 19, eksen: "x", yon: 1 },
-        { k: "home", ad: "⌂", cx: x + orta, cy: y + orta, r: 21, eksen: "", yon: 0 },
-        /* Z YÖNÜ ANA PANELLE AYNI OLMAK ZORUNDA. Burada Z▲ eksiye,
-         * Z▼ artıya bağlıydı — yani düğmeler makineyi ters yöne
-         * götürüyordu. Sür sekmesindeki Z▲ artı, Z▼ eksi (index.html);
-         * iki panelde iki yön, kullanıcıyı ekrana göre değil kas
-         * hafızasına göre yanıltıyor ve Z'de o, ucu toprağa sürmek
-         * demek. Yalnız yön değişti, tuşların yeri ve adı aynı. */
-        { k: "z+", ad: "Z▲", cx: x + 24, cy: y - 22, r: 16, eksen: "z", yon: 1 },
-        { k: "z-", ad: "Z▼", cx: x + gen - 24, cy: y - 22, r: 16, eksen: "z", yon: -1 }
-      ]
+        { k: "home", ad: "⌂", cx: x + orta, cy: y + orta, r: 21, eksen: "", yon: 0 }
+      ].concat(dikeyTuslar(x, y, gen))
     };
+  }
+  /* ==================================================================== *
+   * DİKEY EKSENLER — Z VE T, PANONUN ÜSTÜNDE TEK SIRADA
+   *
+   * Z ANA KÖPRÜNÜN dikey ekseni: bütün başlıkları birden indirir.
+   * T TOHUM UCUNUN KENDİ ekseni: yalnız tohum ucunu Z'nin üstüne
+   * binerek indirip kaldırır. İkisi ayrı motor, ayrı kural, ayrı
+   * kilit — bu yüzden ayrı düğmeler ve aralarında boşluk var.
+   *
+   * YÖNLER ANA PANELDEKİNİN AYNISI (`index.html`):
+   *   Z▲ = yon +1 (mm artar, köprü yukarı),  Z▼ = yon −1
+   *   T▲ = yon −1 (mm AZALIR, uç yukarı),    T▼ = yon +1
+   * T'de işaretler ters, çünkü T bir UZAMA ekseni: 0 mm = uç tamamen
+   * yukarıda, milimetre aşağı doğru büyüyor. Ok fiziksel yönü
+   * gösteriyor, sayının yönünü değil. İki panelde iki yön olması,
+   * kullanıcıyı kas hafızasıyla ucu toprağa sürmeye götürürdü.
+   * ==================================================================== */
+  function dikeyTuslar(x, y, gen) {
+    /* Dört düğme 132 px'lik panoya sığıyor: 4x26 + grup içi 2x4 +
+       gruplar arası 12 = 124, iki yana 4'er px pay. Yarıçap 13'ün
+       altına inilmiyor — parmakla vurulacak. */
+    var r = 13, ici = 4, arasi = 12, cy = y - 22;
+    var adim = r * 2 + ici;                       /* grup içi merkez aralığı */
+    var toplam = 4 * r * 2 + 2 * ici + arasi;
+    var bx = x + gen / 2 - toplam / 2 + r;        /* ilk düğmenin merkezi */
+    var tx = bx + adim + r * 2 + arasi;           /* T grubunun ilk merkezi */
+    return [
+      { k: "z+", ad: "Z▲", cx: bx, cy: cy, r: r, eksen: "z", yon: 1 },
+      { k: "z-", ad: "Z▼", cx: bx + adim, cy: cy, r: r, eksen: "z", yon: -1 },
+      { k: "t-", ad: "T▲", cx: tx, cy: cy, r: r, eksen: "t", yon: -1 },
+      { k: "t+", ad: "T▼", cx: tx + adim, cy: cy, r: r, eksen: "t", yon: 1 }
+    ];
   }
   /** Sağ sütun: üç ayrı parça, TEK KOLONA HİZALI.
    *  Tek büyük koyu panel denendi ve bahçeden kopuk duruyordu; bahçenin
@@ -2724,10 +2751,18 @@ window.Bahce = (function () {
    * olduğuna inandırır.
    * ==================================================================== */
   /** Tuşlar neden kilitli? Tek cümlede sebep — ya da boş. */
-  function jogKilit() {
+  /** Tuşlar neden kilitli? `eksen` verilirse o eksene ÖZEL sebep de
+   *  denetleniyor. T'nin kendi şartı var: kalibrasyon girilmemişse ajan
+   *  jog'u reddediyor (`plc.jog`, "T kalibre edilmedi"). Düğmeyi
+   *  çalışır gösterip hatayı sonra yazmak, kullanıcıya makine bozuk
+   *  gibi görünüyordu — kilit önceden ve sebebiyle. */
+  function jogKilit(eksen) {
     if (!(S.veri && S.veri.bagli)) return "makine bağlı değil";
     if (S.acil) return "acil durdurma mandalı düştü";
     if (!S.enable) return "sürücü torku kapalı (Ayarlar > Enable)";
+    if (eksen === "t" && S.tohumUcu && S.tohumUcu.kalibre === false) {
+      return "tohum ucu ekseni kalibre edilmedi (Ayarlar > Eksen kalibrasyonu)";
+    }
     return "";
   }
   /* ==================================================================== *
@@ -2763,13 +2798,37 @@ window.Bahce = (function () {
       ? ("X " + Math.round(m.x) + "  Y " + Math.round(m.y)
          + (m.z == null ? "" : "  Z " + Math.round(m.z)))
       : "konum bildirilmedi", kt.x + 26, kt.y + 20);
+    /* T AYRI SATIRDA, X/Y/Z'nin yanında değil: ayrı bir eksen ve
+       ötekilerle aynı satıra sıkıştırmak "dördüncü koordinat" gibi
+       okunuyordu. Sayı yalnız makine bildirdiyse yazılıyor; kalibre
+       değilse yerine o yazıyor — uydurma bir 0 mm konmuyor. */
+    var tYazi = "";
+    /* T MİLİMETRESİ İKİ YERDEN GELEBİLİYOR: durum paketinin `konum.t`si
+       ve `tohum_ucu.mm`. Aynı ölçümün (ajan `konum4_mm`) iki adı; bazı
+       paket yolları `konum`u x/y/z'ye kırpıyor (ajan.py), o yüzden
+       ikincisi yedek. İkisi de yoksa satır yazılmıyor — sıfır
+       uydurulmuyor. */
+    var tmm = null;
+    if (konumVar && m && m.t != null) tmm = m.t;
+    else if (S.tohumUcu && S.tohumUcu.mm != null) tmm = sayi(S.tohumUcu.mm);
+    if (S.tohumUcu && S.tohumUcu.kalibre === false) tYazi = "T kalibre değil";
+    else if (tmm != null) {
+      tYazi = "T " + Math.round(tmm) + " mm"
+        + (S.tohumUcu ? (S.tohumUcu.yukarida ? " · yukarıda" : " · aşağıda") : "");
+    }
+    if (tYazi) {
+      c.font = "10px ui-monospace,monospace";
+      c.fillStyle = (S.tohumUcu && S.tohumUcu.kalibre === false)
+        ? "rgba(255,185,166,.85)" : "rgba(230,212,156,.85)";
+      c.fillText(tYazi, kt.x + 26, kt.y + 34);
+    }
     c.font = "10px system-ui,sans-serif";
     c.fillStyle = kilit ? "#ffb9a6" : "rgba(243,227,198,.7)";
     /* Kısa cümle: tabela ~190 px ve 10 punto ile ~34 karakter alıyor.
        Uzun hâli ("hepsini home'a gönderir") kesiliyordu. */
     var alt = kilit || "basılı tut · ⌂ = hepsi home'a";
     if (alt.length > 34) alt = alt.slice(0, 33) + "…";
-    c.fillText(alt, kt.x + 12, kt.y + 37);
+    c.fillText(alt, kt.x + 12, kt.y + (tYazi ? 49 : 37));
     c.restore();
   }
   /** Yön tuşları — YALNIZ TUŞLAR. Konum ve kilit sebebi durum
@@ -2800,15 +2859,22 @@ window.Bahce = (function () {
     j.tuslar.forEach(function (t) {
       var basili = S.jogBasili === t.k;
       var evi = t.k === "home";
+      /* T ayrı kilitlenebiliyor: ötekiler açıkken o sönük kalabilir. */
+      var tkilit = t.eksen ? jogKilit(t.eksen) : kilit;
       c.save();
       c.fillStyle = basili ? (evi ? "#c98a3a" : "#4f6f8a") : "rgba(18,22,18,.92)";
       c.beginPath(); c.arc(t.cx, t.cy, t.r, 0, 6.3); c.fill();
-      c.strokeStyle = kilit ? "#4a4d47" : (evi ? "#e0a955" : "#9fb3c4");
+      c.strokeStyle = tkilit ? "#4a4d47"
+        : (evi ? "#e0a955" : (t.eksen === "t" ? "#c8a76a" : "#9fb3c4"));
       c.lineWidth = basili ? 2.2 : 1.4;
       c.beginPath(); c.arc(t.cx, t.cy, t.r, 0, 6.3); c.stroke();
-      c.font = (evi ? "700 17px" : "600 13px") + " system-ui,sans-serif";
+      c.font = (evi ? "700 17px" : (t.r < 16 ? "600 11px" : "600 13px"))
+        + " system-ui,sans-serif";
       c.textAlign = "center"; c.textBaseline = "middle";
-      c.fillStyle = kilit ? "#6b6f68" : (evi ? "#f0cd8a" : "#d6e2ec");
+      /* T sarımsı: bahçedeki tohum ucunun rengi. Z mavimsi kalıyor —
+         iki eksen iki motor, karıştırılmasın. */
+      c.fillStyle = tkilit ? "#6b6f68"
+        : (evi ? "#f0cd8a" : (t.eksen === "t" ? "#e6d49c" : "#d6e2ec"));
       c.fillText(t.ad, t.cx, t.cy + 1);
       c.restore();
     });
@@ -2834,7 +2900,7 @@ window.Bahce = (function () {
       });
   });
   function jogBasla(t) {
-    var kilit = jogKilit();
+    var kilit = jogKilit(t.eksen);
     if (kilit) { mesajYaz("Yön tuşları kilitli — " + kilit + "."); Ses.hata(); altYaz(); return; }
     if (t.k === "home") {
       /* HOME BÜTÜN EKSENLERİ HAREKET ETTİRİR: önce ne olacağını yazıyor. */
@@ -5893,9 +5959,17 @@ window.Bahce = (function () {
       S.konumVar = !!d.konum;
       if (d.konum) {
         S.veri.konum = d.konum;
+        /* T DE ALINIYOR. Paket `konum.t` veriyor (ajan `konum4_mm`),
+           panel onu atıyordu; yön tuşlarına T eklenince aynı bilgiyi
+           ikinci bir yerden türetmek gerekirdi. */
         S.makine = { x: sayi(d.konum.x), y: sayi(d.konum.y),
-                     z: d.konum.z == null ? null : sayi(d.konum.z) };
+                     z: d.konum.z == null ? null : sayi(d.konum.z),
+                     t: d.konum.t == null ? null : sayi(d.konum.t) };
       }
+      /* TOHUM UCU: kalibre mi, nerede, yukarıda mı — ajanın ÖLÇTÜĞÜ
+         hâl (`plc.durum().tohum_ucu`). T tuşlarının kilidi ve sebebi
+         buradan; hatırlanan bir bayraktan değil. */
+      if ("tohum_ucu" in d) S.tohumUcu = d.tohum_ucu || null;
       if ("bagli" in d) S.veri.bagli = d.bagli;
       if ("mesgul" in d) S.veri.mesgul = d.mesgul;
       /* Yön tuşları bu üç alana bakıyor: tork kapalıysa ya da acil mandalı
