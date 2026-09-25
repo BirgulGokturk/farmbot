@@ -2203,7 +2203,13 @@ window.Bahce = (function () {
                       S.gorevKalan = toplam; S.gorevSatir = []; return; }
     S.gorevSatirAdet = satir;
     S.gorevKalan = Math.max(0, toplam - satir);
-    S.gorevKutu = { x: ol.x, y: 14, w: w, h: gorevOlcu(satir) };
+    /* KUTU DİKEYDE ORTALANIYOR. Üste çivilenmişken altında koca bir boş
+       çim kalıyordu; askı ortalandığı için ikisi hizasız duruyordu.
+       Kart payı (KART_ENAZ) SATIR SAYISINI belirlemeye devam ediyor —
+       burada değişen yalnız kutunun yeri, boyu değil. */
+    var gh = gorevOlcu(satir);
+    var gy = kis((S.boy - gh) / 2, 14, Math.max(14, S.boy - gh - 14));
+    S.gorevKutu = { x: ol.x, y: gy, w: w, h: gh };
     /* Dokunma kutuları ÇİZİMDEN BAĞIMSIZ: kare atlandığında da satıra
        dokunuş nereye geldiğini bilsin. */
     S.gorevSatir = gorevSatirKutular(S.gorevKutu, gorevListesi());
@@ -3096,7 +3102,10 @@ window.Bahce = (function () {
       }
     }
     var top = n * gen + (n - 1) * ara;
-    var y0 = Math.max(12, (S.boy - top) / 2);
+    /* ORTALAMAYA ALT DÜĞME SIRASI DA GİRİYOR. Yalnız aletlere göre
+       ortalanınca GÖRÜNEN blok (askı + altındaki yuvarlaklar) merkezden
+       aşağı kayıyordu — ölçüldü: 903 px tuvalde 43 px. */
+    var y0 = Math.max(12, (S.boy - top - RAY_ALT_PAY) / 2);
     var tavan = 12;
     if (y0 < tavan) y0 = tavan;
     /* ALTTAN TAŞMA: ortalanan askı, altındaki yuvarlak sırayı ekranın
