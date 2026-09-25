@@ -131,7 +131,7 @@ window.Bahce = (function () {
     ray: [], sepet: null, tasima: null, tasimaHedef: null, durDugme: null, suSesT: 0,
     sesDugme: null, altDugme: [], konumVar: false, hareketSes: false, enable: false, acil: false, hareket: false,
     jog: null, jogBasili: null, jogSayac: null, olcumVeri: null, olcumT: 0,
-    olcumHata: "", sensorKutu: null,
+    olcumHata: "", sensorKutu: null, sagPanel: null, durumKutu: null,
     film: null, gorevKutu: null, kartKutu: null, kartYildiz: null, halkaMerkez: null,
     gorevSatir: [], gorevSatirAdet: 3, gorevKalan: 0, vurgu: null,
     zilAcik: false, zilSatir: [], zilKutu: null,
@@ -269,9 +269,8 @@ window.Bahce = (function () {
     G.s = s;
     gorevKur();
     rafKur();
-    sensorKur();
-    jogKur();
-    rayKur();               /* askı + sepet: tabela ve jog yerleştikten sonra */
+    sagPanelKur();          /* ölçümler + sepet + durum + yön tuşları: tek sütun */
+    rayKur();               /* askı: tabela yerleştikten sonra */
   }
   function px(mx) { return G.ox + (sayi(mx) - G.s.x1) * G.k; }
   function py(my) { return G.oy + (sayi(my) - G.s.y1) * G.k; }
@@ -1422,7 +1421,7 @@ window.Bahce = (function () {
     calisanAletCiz(c);
     vurguCiz(c);
     eylemCiz(c);
-    if (S.insaBitti) { rayCiz(c); rafCiz(c); gorevCiz(c); sensorCiz(c); jogCiz(c); }
+    if (S.insaBitti) { rayCiz(c); rafCiz(c); gorevCiz(c); sagPanelCiz(c); }
     /* KÜNYE EN ÜSTTE ÇİZİLİYOR — tabelalardan SONRA.
        Önce tabelalardan önce çiziliyordu ve Ölçümler tabelası kartın
        üstüne biniyordu: satırlar yarım kalıyor, kartın ne yazdığı
@@ -2484,106 +2483,85 @@ window.Bahce = (function () {
     if (ss) cikti.push({ ad: "Son sulama", deger: sureKisa(ss.yas) + " önce" });
     return cikti;
   }
-  function sensorKur() {
-    var sagBos = S.en - (G.ox + G.bw + G.kal + G.ray + 12);
-    /* SAĞ SÜTUN BÜTÇESİ: yön tuşları bloğu (56+132+22) ve sepet (78)
-       işlev; ölçüm tahtası bilgi. Üçü sığmıyorsa düşen tahta oluyor —
-       aynı ölçümler İzle sekmesinde zaten duruyor, ama yön tuşlarının
-       yerine koyacak bir şey yok. 460 px: 210 + 78 + 128 + boşluklar. */
-    if (sagBos < 150 || S.boy < 460) { S.sensorKutu = null; return; }
-    var w = Math.min(200, sagBos - 14);
-    S.sensorKutu = { x: S.en - sagBos / 2 - w / 2, y: 14, w: w, h: 128 };
-  }
-  function sensorCiz(c) {
-    var kt = S.sensorKutu;
-    if (!kt) return;
-    var satir = olcumSatirlari();
-    c.save();
-    /* Direk + tahta: görev tabelasının kardeşi, sağ çimde. */
-    c.fillStyle = "#6b4a2c";
-    c.fillRect(kt.x + kt.w / 2 - 4, kt.y + kt.h - 4, 8, 18);
-    c.fillStyle = "rgba(0,0,0,.3)";
-    c.beginPath();
-    if (c.roundRect) c.roundRect(kt.x + 3, kt.y + 5, kt.w, kt.h, 8);
-    else c.rect(kt.x + 3, kt.y + 5, kt.w, kt.h);
-    c.fill();
-    var g = c.createLinearGradient(kt.x, kt.y, kt.x, kt.y + kt.h);
-    g.addColorStop(0, "#8d6b46"); g.addColorStop(0.5, "#79583a"); g.addColorStop(1, "#63472d");
-    c.fillStyle = g;
-    c.beginPath();
-    if (c.roundRect) c.roundRect(kt.x, kt.y, kt.w, kt.h, 8); else c.rect(kt.x, kt.y, kt.w, kt.h);
-    c.fill();
-    c.strokeStyle = "rgba(38,24,10,.55)"; c.lineWidth = 1.4; c.stroke();
-
-    c.textAlign = "left";
-    c.font = "700 12px system-ui,sans-serif"; c.fillStyle = "#f3e3c6";
-    c.fillText("Ölçümler", kt.x + 12, kt.y + 20);
-
-    var yas = S.olcumT ? Math.round((Date.now() - S.olcumT) / 1000) : -1;
-    /* BAYAT OKUMA GÖRÜNÜR OLUYOR. Sensör susunca ekranda son değer
-       kalıyor ve taze değerden ayırt edilemiyorsa yanlış karar
-       verdiriyor. Sınır 300 sn: ölçüm normalde saniyeler aralıkla
-       geliyor, beş dakika sessizlik bağlantının koptuğu anlamına
-       geliyor. */
-    var bayat = yas > OLCUM_BAYAT_SN;
-    c.font = (bayat ? "700 10px " : "10px ") + "system-ui,sans-serif";
-    c.fillStyle = bayat ? "#ffb9a6" : "rgba(243,227,198,.6)";
-    c.fillText(yas < 0 ? "ölçüm zamanı bilinmiyor"
-      : (yasYazi(yas) + (bayat ? " · SENSÖR SUSMUŞ" : "")),
-      kt.x + 12, kt.y + 33);
-
-    var yy = kt.y + 54;
-    if (!satir.length) {
-      c.font = "italic 11px system-ui,sans-serif";
-      c.fillStyle = S.olcumHata ? "#ffb9a6" : "rgba(243,227,198,.8)";
-      var m = S.olcumHata || "ölçüm paketi gelmedi";
-      c.fillText(m.length > 30 ? m.slice(0, 29) + "…" : m, kt.x + 12, yy);
-    }
-    satir.slice(0, 4).forEach(function (r) {
-      c.font = "11px system-ui,sans-serif";
-      c.fillStyle = "rgba(243,227,198,.85)";
-      c.fillText(r.ad, kt.x + 12, yy);
-      c.font = "600 12px ui-monospace,monospace";
-      c.fillStyle = "#f3e3c6";
-      c.textAlign = "right";
-      c.fillText(r.deger, kt.x + kt.w - 12, yy);
-      c.textAlign = "left";
-      yy += 19;
-    });
-    c.restore();
-  }
-
   /* ==================================================================== *
-   * YÖN TUŞLARI — MAKİNEYİ ELLE SÜRMEK
+   * SAĞ KONTROL PANELİ — ÜÇ PARÇA TEK SÜTUNDA
    *
-   * Dört ok X ve Y'yi, iki küçük tuş Z'yi sürüyor; ortadaki tuş BÜTÜN
-   * EKSENLERİ home'a gönderiyor. Hepsi var olan `/api/komut` ucunu
-   * kullanıyor: basılı tutarken `jog {eksen,yon,basili:true}`, bırakınca
-   * `jog_dur`. Yeni bir hareket yolu açılmıyor — sınır ve Z denetimleri
-   * ajanda, tek yerde kalsın.
+   * Ölçüm tahtası sağ üstte, sepet ortada çimde, yön tuşları sağ altta
+   * ayrı ayrı duruyordu: üçü de "sağ tarafta bir şeyler" gibi
+   * okunuyordu, hizaları tutmuyordu ve aralarındaki boşluk ekran boyuna
+   * göre değişiyordu. Artık hepsi SAĞ KENARA YAPIŞIK tek bir dikey
+   * panelin bölümleri: aynı genişlik, aynı sol kenar, aralarında aynı
+   * çizgi.
    *
-   * KİLİT ŞARTLARI ekranda yazılı: makine kopuksa, sürücü torku kapalıysa
-   * ya da acil mandalı düştüyse tuşlar sönük ve sebebi altında. Çalışmayan
-   * bir düğmeyi çalışıyor gibi göstermek, kullanıcıyı makinenin bozuk
-   * olduğuna inandırır.
+   * SIRA, ÜSTTEN ALTA: ölçümler (bilgi) · hasat sepeti (hedef) ·
+   * durum çubuğu (makine ne diyor) · yön tuşları (elle sürme).
+   * Yön tuşları panelin ALTINA sabit: parmağın en rahat vardığı yer ve
+   * ekran kısaldıkça yukarıdaki bilgi bölümleri düşüyor, tuşlar değil.
+   *
+   * SIĞMAZSA NE DÜŞER: yer önce SEPETE veriliyor (bırakma hedefi;
+   * ölçümlerin aynısı İzle sekmesinde de var). Sepet sığmıyorsa artan
+   * yer ölçümlere gidiyor — ölçüm bölümü daha kısa (en az 74 px), yani
+   * sepetin sığmadığı boşlukta o hâlâ sığabiliyor; boş bırakmaktansa
+   * dolsun. Durum çubuğu ile tuşlar hiç düşmüyor: tuşların yerine
+   * koyacak bir şey yok ve kilitli bir tuşun sebebi yazmıyorsa makine
+   * bozuk sanılıyor. Ölçülen sınırlar (24 bitki, kap içi):
+   *   820x470 → tuşlar+durum+ölçüm · 900x520 → tuşlar+durum+sepet
+   *   1100x620 ve üstü → dördü birden.
    * ==================================================================== */
-  /* YÖN TUŞLARININ BLOĞU PANODAN BÜYÜK: üstünde konum satırı ve Z
-   * tuşları (56 px), altında "basılı tut" yazısı (22 px) var. Blok
-   * hesaba katılmayınca konum yazısı Z tuşlarının altında kalıyor, alt
-   * yazı da tuvalin kenarından taşıyordu. */
-  var JOG_UST = 56, JOG_ALT = 22;
-  function jogKur() {
-    var gen = 132;
+  var SP_PAY = 10;          /* panelin ekran kenarına payı */
+  var SP_IC = 12;           /* panel içi kenar payı */
+  var SP_ARA = 10;          /* bölümler arası */
+  var SP_JOG = 132;         /* yön tuşu panosu (kare) */
+  var SP_ZUST = 40;         /* Z tuşları panonun üstünde: yer payı */
+  var SP_SEPET = 94;        /* sepet + "Hasat" etiketi */
+  var SP_DURUM = 46;        /* durum çubuğu */
+  var SP_OLCUM_ENAZ = 74;   /* başlık + tazelik + bir satır */
+  var SP_OLCUM_ENCOK = 132;
+  function sagPanelKur() {
+    S.sensorKutu = null; S.sepet = null; S.durumKutu = null;
+    S.jog = null; S.sagPanel = null;
+    if (S.boy < 260) return;
     var sagBos = S.en - (G.ox + G.bw + G.kal + G.ray + 12);
-    if (S.boy < 260) { S.jog = null; return; }
-    var x, y;
-    if (sagBos >= gen + 16) x = S.en - sagBos / 2 - gen / 2;
-    else x = S.en - gen - 10;                    /* dar ekran: sağ alt köşe */
-    y = S.boy - JOG_ALT - gen - 8;
-    var enUst = (S.sensorKutu ? S.sensorKutu.y + S.sensorKutu.h + 16 : 14) + JOG_UST;
-    if (y < enUst) y = enUst;
-    if (y + gen + JOG_ALT > S.boy - 4) y = Math.max(JOG_UST, S.boy - 4 - JOG_ALT - gen);
-    var t = 40, orta = gen / 2;
+    /* Panel genişliği: yön tuşu panosu + iç pay altına inemez. Sağda o
+       kadar boş çim yoksa panel sahnenin üstüne biniyor — yön tuşları
+       zaten öyleydi; kaybolmasındansa binsin. */
+    var w = kis(Math.min(210, sagBos - 12), SP_JOG + SP_IC * 2, 210);
+    var x = S.en - w - SP_PAY;
+    var ust = SP_PAY, alt = S.boy - SP_PAY;
+    var icBoy = alt - ust - SP_IC * 2;
+    var jogBlok = SP_ZUST + SP_JOG;
+    if (icBoy < jogBlok + SP_DURUM + SP_ARA) return;   /* tuşlar bile sığmıyor */
+
+    var kalan = icBoy - jogBlok - SP_DURUM - SP_ARA * 2;
+    var sepetVar = kalan >= SP_SEPET + SP_ARA;
+    if (sepetVar) kalan -= SP_SEPET + SP_ARA;
+    var olcumBoy = kalan >= SP_OLCUM_ENAZ + SP_ARA
+      ? Math.min(SP_OLCUM_ENCOK, kalan - SP_ARA) : 0;
+
+    S.sagPanel = { x: x, y: ust, w: w, h: alt - ust };
+    var ix = x + SP_IC, iw = w - SP_IC * 2;
+    var yy = ust + SP_IC;
+    if (olcumBoy > 0) { S.sensorKutu = { x: ix, y: yy, w: iw, h: olcumBoy };
+                        yy += olcumBoy + SP_ARA; }
+    /* Yön tuşları alta sabit, durum çubuğu onların hemen üstünde. */
+    var jy = alt - SP_IC - SP_JOG;
+    var dy = jy - SP_ZUST - SP_DURUM;
+    S.durumKutu = { x: ix, y: dy, w: iw, h: SP_DURUM };
+    if (sepetVar) {
+      /* Sepet, ölçümlerin altı ile durum çubuğunun üstü arasında
+         ORTALANIYOR: artan boşluk iki yana eşit dağılsın. */
+      var bos = dy - SP_ARA - yy;
+      /* Sepet sütunun ortasında ve ESKİSİNDEN BÜYÜK (58→72 px): artık
+         çimde değil panelin içinde ve bırakma hedefi olduğu için
+         parmakla vurulması kolay olmalı. */
+      S.sepet = { x: ix + iw / 2 - 36, y: yy + Math.max(0, (bos - SP_SEPET) / 2),
+                  w: 72, h: 80 };
+    }
+    jogYerlestir(ix + iw / 2 - SP_JOG / 2, jy);
+  }
+  /** Tuş yerleri — panelin verdiği köşeden. */
+  function jogYerlestir(x, y) {
+    var gen = SP_JOG, orta = gen / 2;
     S.jog = {
       x: x, y: y, w: gen, h: gen,
       tuslar: [
@@ -2602,8 +2580,107 @@ window.Bahce = (function () {
         { k: "z-", ad: "Z▼", cx: x + gen - 24, cy: y - 22, r: 16, eksen: "z", yon: -1 }
       ]
     };
-    return t;
   }
+  /** Panel gövdesi + bölümler. */
+  function sagPanelCiz(c) {
+    var pn = S.sagPanel;
+    if (!pn) return;
+    c.save();
+    c.fillStyle = "rgba(0,0,0,.34)";
+    c.beginPath();
+    if (c.roundRect) c.roundRect(pn.x + 3, pn.y + 5, pn.w, pn.h, 16);
+    else c.rect(pn.x + 3, pn.y + 5, pn.w, pn.h);
+    c.fill();
+    var g = c.createLinearGradient(pn.x, pn.y, pn.x, pn.y + pn.h);
+    g.addColorStop(0, "rgba(40,46,40,.95)"); g.addColorStop(1, "rgba(24,28,24,.95)");
+    c.fillStyle = g;
+    c.beginPath();
+    if (c.roundRect) c.roundRect(pn.x, pn.y, pn.w, pn.h, 16); else c.rect(pn.x, pn.y, pn.w, pn.h);
+    c.fill();
+    c.strokeStyle = "rgba(124,132,122,.55)"; c.lineWidth = 1.2; c.stroke();
+    /* Bölüm çizgileri: yalnız iki bölüm arasında, kenarlara değmeden. */
+    var ayirici = [];
+    if (S.sensorKutu) ayirici.push(S.sensorKutu.y + S.sensorKutu.h + SP_ARA / 2);
+    if (S.durumKutu) ayirici.push(S.durumKutu.y - SP_ARA / 2);
+    c.strokeStyle = "rgba(124,132,122,.22)"; c.lineWidth = 1;
+    ayirici.forEach(function (ay) {
+      c.beginPath(); c.moveTo(pn.x + SP_IC, ay); c.lineTo(pn.x + pn.w - SP_IC, ay); c.stroke();
+    });
+    c.restore();
+    sensorCiz(c);
+    sepetCiz(c);
+    durumCiz(c);
+    jogCiz(c);
+  }
+  function sensorCiz(c) {
+    var kt = S.sensorKutu;
+    if (!kt) return;
+    var satir = olcumSatirlari();
+    c.save();
+    /* ARTIK TAHTA DEĞİL, PANELİN BİR BÖLÜMÜ. Direkli ahşap tabela sağ
+       çimde ayrı bir nesne gibi duruyordu; panelin içinde aynı
+       görüntü "sahnede bir tabela mı, arayüz mü?" diye okunuyordu. */
+    c.textAlign = "left";
+    c.font = "700 12px system-ui,sans-serif"; c.fillStyle = "#e8eee2";
+    c.fillText("Ölçümler", kt.x, kt.y + 12);
+
+    var yas = S.olcumT ? Math.round((Date.now() - S.olcumT) / 1000) : -1;
+    /* BAYAT OKUMA GÖRÜNÜR OLUYOR. Sensör susunca ekranda son değer
+       kalıyor ve taze değerden ayırt edilemiyorsa yanlış karar
+       verdiriyor. Sınır 300 sn: ölçüm normalde saniyeler aralıkla
+       geliyor, beş dakika sessizlik bağlantının koptuğu anlamına
+       geliyor. */
+    var bayat = yas > OLCUM_BAYAT_SN;
+    c.font = (bayat ? "700 10px " : "10px ") + "system-ui,sans-serif";
+    c.fillStyle = bayat ? "#ffb9a6" : "rgba(214,222,210,.6)";
+    c.fillText(yas < 0 ? "ölçüm zamanı bilinmiyor"
+      : (yasYazi(yas) + (bayat ? " · SENSÖR SUSMUŞ" : "")),
+      kt.x, kt.y + 25);
+
+    var yy = kt.y + 44;
+    if (!satir.length) {
+      c.font = "italic 11px system-ui,sans-serif";
+      c.fillStyle = S.olcumHata ? "#ffb9a6" : "rgba(214,222,210,.8)";
+      var m = S.olcumHata || "ölçüm paketi gelmedi";
+      c.fillText(m.length > 30 ? m.slice(0, 29) + "…" : m, kt.x, yy);
+    }
+    /* SATIR SAYISI KUTUNUN BOYUNDAN ÇIKIYOR: panel kısaldığında dört
+       satır çizilip alttaki bölümün üstüne binmesin. */
+    var sigan = Math.max(0, Math.floor((kt.y + kt.h - yy + 6) / 19));
+    satir.slice(0, sigan).forEach(function (r) {
+      c.font = "11px system-ui,sans-serif";
+      c.fillStyle = "rgba(214,222,210,.85)";
+      c.fillText(r.ad, kt.x, yy);
+      c.font = "600 12px ui-monospace,monospace";
+      c.fillStyle = "#e8eee2";
+      c.textAlign = "right";
+      c.fillText(r.deger, kt.x + kt.w, yy);
+      c.textAlign = "left";
+      yy += 19;
+    });
+    if (satir.length > sigan) {
+      c.font = "10px system-ui,sans-serif";
+      c.fillStyle = "rgba(214,222,210,.55)";
+      c.fillText("+" + (satir.length - sigan) + " ölçüm · İzle sekmesinde",
+        kt.x, kt.y + kt.h - 1);
+    }
+    c.restore();
+  }
+
+  /* ==================================================================== *
+   * YÖN TUŞLARI — MAKİNEYİ ELLE SÜRMEK
+   *
+   * Dört ok X ve Y'yi, iki küçük tuş Z'yi sürüyor; ortadaki tuş BÜTÜN
+   * EKSENLERİ home'a gönderiyor. Hepsi var olan `/api/komut` ucunu
+   * kullanıyor: basılı tutarken `jog {eksen,yon,basili:true}`, bırakınca
+   * `jog_dur`. Yeni bir hareket yolu açılmıyor — sınır ve Z denetimleri
+   * ajanda, tek yerde kalsın.
+   *
+   * KİLİT ŞARTLARI ekranda yazılı: makine kopuksa, sürücü torku kapalıysa
+   * ya da acil mandalı düştüyse tuşlar sönük ve sebebi altında. Çalışmayan
+   * bir düğmeyi çalışıyor gibi göstermek, kullanıcıyı makinenin bozuk
+   * olduğuna inandırır.
+   * ==================================================================== */
   /** Tuşlar neden kilitli? Tek cümlede sebep — ya da boş. */
   function jogKilit() {
     if (!(S.veri && S.veri.bagli)) return "makine bağlı değil";
@@ -2611,25 +2688,59 @@ window.Bahce = (function () {
     if (!S.enable) return "sürücü torku kapalı (Ayarlar > Enable)";
     return "";
   }
+  /* ==================================================================== *
+   * DURUM ÇUBUĞU — MAKİNE NE DİYOR
+   *
+   * Konum satırı ve kilit sebebi tuşların çevresine serpilmişti: konum
+   * üstte küçük gri bir satır, sebep altta dokuz punto. İkisi de bu
+   * ekranın en çok okunan bilgisi ve ikisi de tuşların "etrafında"
+   * duruyordu. Artık tuşların ÜSTÜNDE, kendi zemini olan bir çubukta;
+   * tuş alanında yalnız tuşlar var.
+   *
+   * IŞIK UYDURULMUYOR: yeşil = bağlı, tork açık, acil mandalı yukarıda
+   * (yani tuşlar gerçekten çalışır); kırmızı = kilidin sebebi yanında
+   * yazılı. Konum, makinenin BİLDİRDİĞİ sayı; bildirmemişse yerine
+   * tahmin konmuyor, "konum bildirilmedi" yazıyor.
+   * ==================================================================== */
+  function durumCiz(c) {
+    var kt = S.durumKutu;
+    if (!kt) return;
+    var kilit = jogKilit();
+    c.save();
+    c.fillStyle = kilit ? "rgba(58,30,24,.72)" : "rgba(22,34,24,.72)";
+    c.beginPath();
+    if (c.roundRect) c.roundRect(kt.x, kt.y, kt.w, kt.h, 9);
+    else c.rect(kt.x, kt.y, kt.w, kt.h);
+    c.fill();
+    c.strokeStyle = kilit ? "rgba(224,127,106,.55)" : "rgba(124,190,120,.45)";
+    c.lineWidth = 1.1; c.stroke();
+    /* Durum ışığı */
+    c.fillStyle = kilit ? "#e07f6a" : "#7bbf5a";
+    c.beginPath(); c.arc(kt.x + 11, kt.y + 15, 4.2, 0, 6.3); c.fill();
+
+    var m = S.makine, konumVar = !!(m && m.x != null && S.konumVar);
+    c.textAlign = "left"; c.textBaseline = "alphabetic";
+    c.font = konumVar ? "600 13px ui-monospace,monospace" : "italic 12px system-ui,sans-serif";
+    c.fillStyle = konumVar ? "#e8eee2" : "rgba(232,238,226,.72)";
+    c.fillText(konumVar
+      ? ("X " + Math.round(m.x) + "  Y " + Math.round(m.y)
+         + (m.z == null ? "" : "  Z " + Math.round(m.z)))
+      : "konum bildirilmedi", kt.x + 22, kt.y + 19);
+    c.font = "10px system-ui,sans-serif";
+    c.fillStyle = kilit ? "#ffb9a6" : "rgba(214,226,236,.72)";
+    /* Kısa cümle: çubuk 186 px ve 10 punto ile ~34 karakter alıyor.
+       Uzun hâli ("hepsini home'a gönderir") kesiliyordu. */
+    var alt = kilit || "basılı tut · ⌂ = hepsi home'a";
+    if (alt.length > 34) alt = alt.slice(0, 33) + "…";
+    c.fillText(alt, kt.x + 11, kt.y + 36);
+    c.restore();
+  }
+  /** Yön tuşları — YALNIZ TUŞLAR. Yazılar durum çubuğunda. */
   function jogCiz(c) {
     var j = S.jog;
     if (!j) return;
     var kilit = jogKilit();
     c.save();
-    /* Kumanda kutusu: koyu, hafif kabartmalı bir pano. */
-    c.fillStyle = "rgba(0,0,0,.34)";
-    c.beginPath();
-    if (c.roundRect) c.roundRect(j.x + 3, j.y + 5, j.w, j.h, 16);
-    else c.rect(j.x + 3, j.y + 5, j.w, j.h);
-    c.fill();
-    var g = c.createLinearGradient(j.x, j.y, j.x, j.y + j.h);
-    g.addColorStop(0, "rgba(46,52,46,.96)"); g.addColorStop(1, "rgba(26,30,26,.96)");
-    c.fillStyle = g;
-    c.beginPath();
-    if (c.roundRect) c.roundRect(j.x, j.y, j.w, j.h, 16); else c.rect(j.x, j.y, j.w, j.h);
-    c.fill();
-    c.strokeStyle = kilit ? "#4a4d47" : "#7c847a"; c.lineWidth = 1.2; c.stroke();
-
     j.tuslar.forEach(function (t) {
       var basili = S.jogBasili === t.k;
       var evi = t.k === "home";
@@ -2646,18 +2757,6 @@ window.Bahce = (function () {
       c.restore();
     });
     c.textBaseline = "alphabetic";
-    c.font = "9px system-ui,sans-serif"; c.textAlign = "center";
-    c.fillStyle = kilit ? "#e07f6a" : "rgba(214,226,236,.75)";
-    c.fillText(kilit || "basılı tut · ⌂ hepsini home'a gönderir",
-      j.x + j.w / 2, j.y + j.h + 14);
-    /* Konum: tuşların hemen üstünde, makinenin BİLDİRDİĞİ sayı. */
-    c.font = "10px ui-monospace,monospace";
-    c.fillStyle = "rgba(214,226,236,.7)";
-    var m = S.makine;
-    c.fillText(m && m.x != null && S.konumVar
-      ? ("X " + Math.round(m.x) + "  Y " + Math.round(m.y)
-         + (m.z == null ? "" : "  Z " + Math.round(m.z)))
-      : "konum bildirilmedi", j.x + j.w / 2, j.y - JOG_UST + 12);
     c.restore();
   }
   function jogTusBul(p) {
@@ -2997,17 +3096,8 @@ window.Bahce = (function () {
     }
     S.sesDugme = S.altDugme.length
       ? { x: S.altDugme[0].x, y: S.altDugme[0].y, r: S.altDugme[0].r } : null;
-    var sagBos = S.en - (G.ox + G.bw + G.kal + G.ray + 12);
-    var sgen = 58;
-    var sx = sagBos > sgen + 16 ? S.en - sagBos / 2 - sgen / 2 : S.en - sgen - 10;
-    /* Sepet ölçüm tahtası ile yön tuşlarının ARASINA oturuyor; etiketi
-       için 14 px payı var. Ortalanırsa ikisinden birinin üstüne
-       biniyordu. */
-    var sust = S.sensorKutu ? S.sensorKutu.y + S.sensorKutu.h + 18 : 16;
-    var salt = S.jog ? S.jog.y - JOG_UST - 18 : S.boy - 26;
-    var sy = sust + Math.max(0, (salt - sust - 78) / 2);
-    if (sy + 78 > salt) sy = Math.max(16, salt - 78);
-    S.sepet = { x: sx, y: sy, w: sgen, h: 64 };
+    /* SEPET ARTIK BURADA DEĞİL: sağ kontrol panelinin bir bölümü
+       (`sagPanelKur`). Askı sol sütunu kuruyor, sağ sütuna karışmıyor. */
   }
   function aletSimge(c, k, cx, cy, renk, sol) {
     c.save();
@@ -3580,7 +3670,7 @@ window.Bahce = (function () {
       c.fillText("makine bağlı değil", s0.x + s0.w / 2, s0.y - 44);
       c.restore();
     }
-    sepetCiz(c);
+    /* Sepet sağ panelde çiziliyor; askı yalnız sol sütunu çiziyor. */
     altDugmeCiz(c);
   }
   function altDugmeBul(p) {
@@ -3740,9 +3830,9 @@ window.Bahce = (function () {
     var cx = sp.x + sp.w / 2, ust = sp.y + 10, alt = sp.y + sp.h - 8;
     var ru = sp.w * 0.54, ra = sp.w * 0.38;
     c.save();
-    /* Çime düşen gölge */
-    c.fillStyle = "rgba(0,0,0,.34)";
-    c.beginPath(); c.ellipse(cx + 3, alt + 3, ru * 0.96, ru * 0.3, 0, 0, 6.3); c.fill();
+    /* Panel zeminine düşen gölge (eskiden çime düşüyordu). */
+    c.fillStyle = "rgba(0,0,0,.32)";
+    c.beginPath(); c.ellipse(cx + 2, alt + 3, ru * 0.9, ru * 0.26, 0, 0, 6.3); c.fill();
     /* Gövde */
     var g = c.createLinearGradient(cx - ru, 0, cx + ru, 0);
     g.addColorStop(0, uzeri ? "#c79a4e" : "#9c7a41");
@@ -4089,7 +4179,7 @@ window.Bahce = (function () {
        tarafta yer varsa oraya açılıyor ve ikisi birden okunuyor. Yer
        yoksa üstte kalmaya devam ediyor — okunmayan bir kart, örtülmüş
        bir tabeladan kötü. */
-    var st = S.sensorKutu;
+    var st = S.sagPanel;
     if (st && x < st.x + st.w && x + w > st.x
         && y < st.y + st.h && y + h > st.y) {
       var sol = gx - R - 16 - w;
@@ -5573,6 +5663,8 @@ window.Bahce = (function () {
         film: S.film ? { ad: S.film.ad, kare: S.film.kareler.length, ix: S.film.ix,
                          hata: S.film.hata, resim: !!S.film.img,
                          serit: S.film.serit || null, kutu: S.film.kutu || null } : null,
+        kart: S.kartKutu ? { x: Math.round(S.kartKutu.x), y: Math.round(S.kartKutu.y),
+                             w: Math.round(S.kartKutu.w), h: Math.round(S.kartKutu.h) } : null,
         yildiz: S.kartYildiz ? { x: S.kartYildiz.x, y: S.kartYildiz.y,
                                  w: S.kartYildiz.w, h: S.kartYildiz.h,
                                  favori: S.secili ? Favori.var(S.secili) : false } : null,
@@ -5597,7 +5689,7 @@ window.Bahce = (function () {
                    x: g.x, y: g.y, w: g.w, h: g.h };
         }),
         jog: S.jog ? { x: S.jog.x, y: S.jog.y, w: S.jog.w, h: S.jog.h,
-                       kilit: jogKilit(),
+                       kilit: jogKilit(), basili: S.jogBasili || "",
                        tuslar: S.jog.tuslar.map(function (t) {
                          return { k: t.k, cx: t.cx, cy: t.cy, r: t.r };
                        }) } : null,
@@ -5606,6 +5698,14 @@ window.Bahce = (function () {
                     çakışıp çakışmadığı ancak iki dikdörtgen elde olunca
                     ölçülebiliyor. */
                  kutu: S.sensorKutu ? true : false,
+                 panel: S.sagPanel ? { x: Math.round(S.sagPanel.x),
+                                       y: Math.round(S.sagPanel.y),
+                                       w: Math.round(S.sagPanel.w),
+                                       h: Math.round(S.sagPanel.h) } : null,
+                 durum: S.durumKutu ? { x: Math.round(S.durumKutu.x),
+                                        y: Math.round(S.durumKutu.y),
+                                        w: Math.round(S.durumKutu.w),
+                                        h: S.durumKutu.h } : null,
                  kutuYeri: S.sensorKutu ? { x: Math.round(S.sensorKutu.x),
                                             y: Math.round(S.sensorKutu.y),
                                             w: S.sensorKutu.w, h: S.sensorKutu.h } : null },
