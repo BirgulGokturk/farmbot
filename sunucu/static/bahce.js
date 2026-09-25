@@ -2175,7 +2175,7 @@ window.Bahce = (function () {
        üst şerit zaten aynı kartları yazıyor, iki kez söylemenin anlamı
        yok ve dar ekranda tabela sahneyi yiyor. */
     var ol = solOluk(172, 250);
-    if (ol.sag - ol.x < 172 || S.boy < 320) {
+    if (ol.sag - ol.bas < 172 || S.boy < 320) {
       S.gorevKutu = null; S.gorevSatirAdet = 0;
       S.gorevKalan = acikKartlar().length; S.gorevSatir = [];
       return;
@@ -2550,10 +2550,15 @@ window.Bahce = (function () {
        genişliğini okumak, pencere boyutu değişirken bir kare boyunca
        yanlış sütun demekti. Askı daralırsa sütun yalnız biraz geç
        başlar; hiçbir zaman askının üstüne binmez. */
-    var x = ASKI_X + RAY_GEN + 10;
-    var sag = Math.max(x + 120, G.ox - 10);
-    var w = kis(sag - x, enAz || 150, enCok || 260);
-    return { x: x, w: w, sag: sag, askiSag: ASKI_X + RAY_GEN };
+    var bas = ASKI_X + RAY_GEN + 10;
+    var sag = Math.max(bas + 120, G.ox - 10);
+    var w = kis(sag - bas, enAz || 150, enCok || 260);
+    /* KART ŞERİDİN ORTASINDA. Sola dayalıyken askının hemen dibinde
+       duruyor, sağında da yatağa kadar boş çim kalıyordu — kutu
+       şeridin içinde kaymış görünüyordu. Artan yer iki yana eşit
+       bölünüyor; kutu şeridi dolduruyorsa hiçbir şey değişmiyor. */
+    var x = bas + Math.max(0, (sag - bas - w) / 2);
+    return { x: x, w: w, bas: bas, sag: sag, askiSag: ASKI_X + RAY_GEN };
   }
   function sagSutunKur() {
     S.sensorKutu = null; S.sepet = null; S.durumKutu = null;
@@ -5955,6 +5960,9 @@ window.Bahce = (function () {
                satir: S.zilSatir.map(function (z) {
                  return { kimlik: z.gorev.kimlik, x: z.x, y: z.y, w: z.w, h: z.h };
                }) },
+        gorevKutu: S.gorevKutu ? { x: Math.round(S.gorevKutu.x), y: Math.round(S.gorevKutu.y),
+                                   w: Math.round(S.gorevKutu.w),
+                                   h: Math.round(S.gorevKutu.h) } : null,
         gorev: S.gorevSatir.map(function (g) {
           return { kimlik: g.gorev.kimlik, tip: g.gorev.tip, metin: g.gorev.metin,
                    alt: g.gorev.alt, evet: g.gorev.evet, favori: g.gorev.favori,
