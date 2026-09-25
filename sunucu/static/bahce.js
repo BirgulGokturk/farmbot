@@ -131,9 +131,9 @@ window.Bahce = (function () {
     ray: [], sepet: null, tasima: null, tasimaHedef: null, durDugme: null, suSesT: 0,
     sesDugme: null, altDugme: [], konumVar: false, hareketSes: false, enable: false, acil: false, hareket: false,
     jog: null, jogBasili: null, jogSayac: null, olcumVeri: null, olcumT: 0,
-    olcumHata: "", sensorKutu: null, sagPanel: null, durumKutu: null,
-    gunlukKutu: null, gunluk: [], gunlukSon: "", gunlukTut: false,
-    film: null, gorevKutu: null, kartKutu: null, kartYildiz: null, halkaMerkez: null,
+    olcumHata: "", sensorKutu: null, sagSutun: null, durumKutu: null,
+    film: null, gorevKutu: null, kartKutu: null, kartYildiz: null, kartFilm: null,
+    halkaMerkez: null,
     gorevSatir: [], gorevSatirAdet: 3, gorevKalan: 0, vurgu: null,
     zilAcik: false, zilSatir: [], zilKutu: null,
     raf: [], rafKutu: null, rafAcik: false, ekimGoz: "", bosYer: null, bosYerHata: "",
@@ -221,7 +221,6 @@ window.Bahce = (function () {
       S.hatalar.push(m);
       if (S.hatalar.length > 4) S.hatalar.shift();
       try { console.error("[bahçe]", ad, hata); } catch (e) { /* boş */ }
-      try { gunlugeYaz(m, "hata"); } catch (e2) { /* günlük yoksa sessiz */ }
     }
     var el = $("#bh-hata");
     if (el) {
@@ -230,7 +229,6 @@ window.Bahce = (function () {
     }
   }
   function notYaz(anahtar, metin) {
-    if (metin && S.notlar[anahtar] !== metin) gunlugeYaz(metin, "uyari");
     if (metin) S.notlar[anahtar] = metin; else delete S.notlar[anahtar];
     var el = $("#bh-not");
     if (!el) return;
@@ -239,129 +237,8 @@ window.Bahce = (function () {
     el.hidden = !h.length;
     el.textContent = h.join(" · ");
   }
-  function mesajYaz(m) {
-    S.mesaj = m || ""; S.mesajT = S.t;
-    if (m) gunlugeYaz(m, "");
-    altYaz();
-  }
+  function mesajYaz(m) { S.mesaj = m || ""; S.mesajT = S.t; altYaz(); }
 
-  /* ==================================================================== *
-   * GÜNLÜK — SAĞ PANELDEKİ KÜÇÜK TERMİNAL
-   *
-   * Olay şeridi (`#bh-alt`) tuvalin ALTINDA, ekranı boydan boya kesen
-   * bir bant olarak duruyordu: sahneden yer yiyor, bahçeyi kenarları
-   * belirsiz bir dikdörtgene çeviriyordu. Üstelik tek satırlıktı —
-   * bir önceki mesaj, üstüne yenisi yazılınca kayboluyordu.
-   *
-   * Artık sağ kontrol panelinin bir bölümü: üstte kaydırılabilir bir
-   * akış (geçmiş satırlar, saatiyle), altta `#bh-alt`in KENDİSİ. Şerit
-   * SİLİNMEDİ, TAŞINDI: seçili bitki kartı, onay düğmeleri, "geri al" —
-   * hepsi aynı DOM düğümü, aynı olay bağları, yalnız yeri değişti.
-   * Bahçeden çıkarken kendi yerine geri konuyor (`gunlukSok`), yani
-   * öteki sekmeler etkilenmiyor ve `index.html` (ortak dosya)
-   * değişmiyor.
-   *
-   * SIĞMAZSA TAŞINMIYOR: panelde en az 96 px yer yoksa şerit eski
-   * yerinde kalıyor. Kaybolmak, onay ve geri-al düğmelerini kaybetmek
-   * demek olurdu.
-   * ==================================================================== */
-  var GUNLUK_ENCOK = 80;             /* akışta tutulan satır sayısı */
-  function saatYazi() {
-    var d = new Date();
-    function ik(n) { return (n < 10 ? "0" : "") + n; }
-    return ik(d.getHours()) + ":" + ik(d.getMinutes()) + ":" + ik(d.getSeconds());
-  }
-  /** Akışa bir satır. Aynı cümle arka arkaya iki kez yazılmıyor:
-   *  saniyede bir tazelenen durum mesajları akışı doldururdu. */
-  function gunlugeYaz(metin, sinif) {
-    var m = String(metin || "").trim();
-    if (!m || m === S.gunlukSon) return;
-    S.gunlukSon = m;
-    S.gunluk.push({ saat: saatYazi(), metin: m, sinif: sinif || "" });
-    if (S.gunluk.length > GUNLUK_ENCOK) S.gunluk.shift();
-    gunlukBoya();
-  }
-  function gunlukBoya() {
-    var ak = $("#bh-g-akis");
-    if (!ak) return;
-    /* KAYDIRMA KULLANICININDIR. Önce "dipte miyiz" ölçülüyordu ama canlı
-       şerit (seçili bitki) uzayınca akışın boyu değişiyor ve ölçüm
-       yanılıyordu: terminal kendiliğinden ortada kalıyordu. Artık
-       kullanıcı yukarı kaydırdıysa (S.gunlukTut) yerinde kalıyor,
-       kaydırmadıysa hep dipte. */
-    var dipte = !S.gunlukTut;
-    ak.innerHTML = S.gunluk.map(function (g) {
-      return '<div class="bh-g-satir' + (g.sinif ? " " + g.sinif : "") + '">'
-        + '<span class="bh-g-saat">' + g.saat + "</span>"
-        + '<span class="bh-g-metin">' + kacisli(g.metin) + "</span></div>";
-    }).join("");
-    if (dipte) {
-      ak.scrollTop = ak.scrollHeight;
-      /* İKİNCİ KEZ, BİR KAREDEN SONRA: canlı şerit (`#bh-alt`) bu
-         çağrıdan SONRA yeniden yazılıyor ve boyu değişince akışın
-         görünen yüksekliği de değişiyor — dibe indirdiğimiz satır
-         yukarıda kalıyordu (ölçüldü: 294 px akışta 109 px pencere,
-         dipte değil). */
-      requestAnimationFrame(function () {
-        if (!S.gunlukTut && ak.parentNode) ak.scrollTop = ak.scrollHeight;
-      });
-
-    }
-  }
-  /** Terminali kur ve `#bh-alt` ile `#bh-not`u içine al. */
-  function gunlukKur() {
-    if ($("#bh-gunluk")) return;
-    var tuval = $("#bh-tuval"), alt = $("#bh-alt");
-    if (!tuval || !alt) return;
-    var d = document.createElement("div");
-    d.className = "bh-gunluk"; d.id = "bh-gunluk";
-    d.innerHTML = '<div class="bh-g-bas"><span>günlük</span>'
-      + '<button type="button" class="bh-g-sil" id="bh-g-sil" '
-      + 'title="akışı temizle" aria-label="akışı temizle">temizle</button></div>'
-      + '<div class="bh-g-akis" id="bh-g-akis" tabindex="0" '
-      + 'role="log" aria-label="olay günlüğü"></div>';
-    tuval.appendChild(d);
-    /* Şeridin ESKİ YERİ hatırlanıyor: çıkarken tam oraya geri konuyor. */
-    S.altYuva = { ana: alt.parentNode, once: alt.nextSibling };
-    d.appendChild(alt);
-    var not = $("#bh-not");
-    if (not) { S.notYuva = { ana: not.parentNode, once: not.nextSibling };
-               d.insertBefore(not, alt); }
-    var sil = $("#bh-g-sil");
-    if (sil) sil.addEventListener("click", function () {
-      S.gunluk = []; S.gunlukSon = ""; S.gunlukTut = false; gunlukBoya();
-    });
-    var ak0 = $("#bh-g-akis");
-    if (ak0) ak0.addEventListener("scroll", function () {
-      S.gunlukTut = ak0.scrollTop + ak0.clientHeight < ak0.scrollHeight - 8;
-    });
-    gunlukBoya();
-  }
-  /** Bahçeden çıkarken: şerit kendi yerine, terminal kaldırılıyor. */
-  function gunlukSok() {
-    var d = $("#bh-gunluk");
-    if (!d) return;
-    var alt = $("#bh-alt"), not = $("#bh-not");
-    if (alt && S.altYuva && S.altYuva.ana) S.altYuva.ana.insertBefore(alt, S.altYuva.once);
-    if (not && S.notYuva && S.notYuva.ana) S.notYuva.ana.insertBefore(not, S.notYuva.once);
-    S.altYuva = null; S.notYuva = null;
-    if (d.parentNode) d.parentNode.removeChild(d);
-  }
-  /** Terminali panelin ayırdığı yere oturt — ölçü tuvalden geliyor. */
-  function gunlukYerlestir() {
-    var d = $("#bh-gunluk");
-    var kt = S.gunlukKutu;
-    if (!d) return;
-    if (!kt) {
-      /* Yer yok: şerit eski yerine dönüyor, sebebi ekranda değil ama
-         ŞERİT KAYBOLMUYOR — düğmeleri erişilebilir kalıyor. */
-      gunlukSok(); return;
-    }
-    d.style.left = Math.round(kt.x) + "px";
-    d.style.top = Math.round(kt.y) + "px";
-    d.style.width = Math.round(kt.w) + "px";
-    d.style.height = Math.round(kt.h) + "px";
-  }
 
   /* ==================================================================== *
    * GEOMETRİ — yatağın milimetresi ile tuvalin pikseli arasında TEK ölçek.
@@ -394,8 +271,7 @@ window.Bahce = (function () {
     G.s = s;
     gorevKur();
     rafKur();
-    sagPanelKur();          /* ölçümler + sepet + günlük + durum + yön tuşları */
-    gunlukYerlestir();      /* DOM terminal, panelin ayırdığı yere */
+    sagSutunKur();          /* ölçümler + sepet + durum + yön tuşları: aynı kolon */
     rayKur();               /* askı: tabela yerleştikten sonra */
   }
   function px(mx) { return G.ox + (sayi(mx) - G.s.x1) * G.k; }
@@ -1449,6 +1325,7 @@ window.Bahce = (function () {
     if (S.islak.length) return true;            /* ıslaklık soluyor */
     if (S.parcalar.length || S.balonlar.length || S.vurgu) return true;
     if (S.veri && S.veri.mesgul) return true;   /* makine çalışırken izliyoruz */
+    if (S.film && S.film.oynuyor) return true;  /* zaman çubuğu oynuyor */
     if (S.sakin) return false;
     if (document.hidden) return false;
     return true;                                  /* salınım, toz, ışık */
@@ -1486,6 +1363,7 @@ window.Bahce = (function () {
       return;
     }
     S.sonCizim = sn;
+    filmAdim();
     suGuncelle(dt);
     parcaGuncelle(dt);
     var b0 = performance.now();
@@ -1547,7 +1425,7 @@ window.Bahce = (function () {
     calisanAletCiz(c);
     vurguCiz(c);
     eylemCiz(c);
-    if (S.insaBitti) { rayCiz(c); rafCiz(c); gorevCiz(c); sagPanelCiz(c); }
+    if (S.insaBitti) { rayCiz(c); rafCiz(c); gorevCiz(c); sagSutunCiz(c); }
     /* KÜNYE EN ÜSTTE ÇİZİLİYOR — tabelalardan SONRA.
        Önce tabelalardan önce çiziliyordu ve Ölçümler tabelası kartın
        üstüne biniyordu: satırlar yarım kalıyor, kartın ne yazdığı
@@ -2644,8 +2522,7 @@ window.Bahce = (function () {
   var SP_DURUM = 46;        /* durum çubuğu */
   var SP_OLCUM_ENAZ = 74;   /* başlık + tazelik + bir satır */
   var SP_OLCUM_ENCOK = 132;
-  var SP_LOG_ENAZ = 96;     /* başlık + bir satır akış + canlı satır */
-  var SP_LOG_ENCOK = 190;
+  var SP_ALT_YAZI = 18;     /* "basılı tut" satırı için alt pay */
   /* ==================================================================== *
    * SOL OLUK — KENARA YAPIŞAN KARTLARIN YERİ
    *
@@ -2678,56 +2555,42 @@ window.Bahce = (function () {
     var w = kis(sag - x, enAz || 150, enCok || 260);
     return { x: x, w: w, sag: sag, askiSag: ASKI_X + RAY_GEN };
   }
-  function sagPanelKur() {
+  function sagSutunKur() {
     S.sensorKutu = null; S.sepet = null; S.durumKutu = null;
-    S.jog = null; S.sagPanel = null; S.gunlukKutu = null;
+    S.jog = null; S.sagSutun = null;
     if (S.boy < 260) return;
     var sagBos = S.en - (G.ox + G.bw + G.kal + G.ray + 12);
-    /* Panel genişliği: yön tuşu panosu + iç pay altına inemez. Sağda o
-       kadar boş çim yoksa panel sahnenin üstüne biniyor — yön tuşları
-       zaten öyleydi; kaybolmasındansa binsin. */
-    var w = kis(Math.min(210, sagBos - 12), SP_JOG + SP_IC * 2, 210);
-    var x = S.en - w - SP_PAY;
+    var w = kis(Math.min(200, sagBos - 16), SP_JOG + 12, 200);
+    var x = S.en - SP_PAY - w;
     var ust = SP_PAY, alt = S.boy - SP_PAY;
-    var icBoy = alt - ust - SP_IC * 2;
-    var jogBlok = SP_ZUST + SP_JOG;
+    var icBoy = alt - ust;
+    var jogBlok = SP_ZUST + SP_JOG + SP_ALT_YAZI;
     if (icBoy < jogBlok + SP_DURUM + SP_ARA) return;   /* tuşlar bile sığmıyor */
+    S.sagSutun = { x: x, y: ust, w: w, h: icBoy };
 
-    S.sagPanel = { x: x, y: ust, w: w, h: alt - ust };
-    var ix = x + SP_IC, iw = w - SP_IC * 2;
-    /* ALTTAN YUKARI SABİT: yön tuşları, üstünde durum çubuğu. */
-    var jy = alt - SP_IC - SP_JOG;
-    var dy = jy - SP_ZUST - SP_DURUM;
-    S.durumKutu = { x: ix, y: dy, w: iw, h: SP_DURUM };
+    /* ALTTAN YUKARI: yön tuşları en altta (parmağın vardığı yer),
+       üstünde durum tahtası. */
+    var jy = alt - SP_ALT_YAZI - SP_JOG;
+    var dy = jy - SP_ZUST - SP_DURUM - 6;
+    S.durumKutu = { x: x, y: dy, w: w, h: SP_DURUM };
 
-    /* Üstteki bölümlere ve GÜNLÜĞE kalan yer. Günlük en az yerini
-       baştan ayırıyor: onay ve "geri al" düğmeleri orada, düşerse
-       kullanıcı yaptığı işi geri alamaz. */
-    var ustBas = ust + SP_IC;
-    var bosluk = dy - SP_ARA - ustBas;
-    var kalan = bosluk - (SP_LOG_ENAZ + SP_ARA);
+    var kalan = dy - SP_ARA - ust;
     var sepetVar = kalan >= SP_SEPET + SP_ARA;
     if (sepetVar) kalan -= SP_SEPET + SP_ARA;
-    var olcumBoy = kalan >= SP_OLCUM_ENAZ + SP_ARA
-      ? Math.min(SP_OLCUM_ENCOK, kalan - SP_ARA) : 0;
+    var olcumBoy = kalan >= SP_OLCUM_ENAZ
+      ? Math.min(SP_OLCUM_ENCOK, kalan) : 0;
 
-    var yy = ustBas;
-    if (olcumBoy > 0) { S.sensorKutu = { x: ix, y: yy, w: iw, h: olcumBoy };
+    var yy = ust;
+    if (olcumBoy > 0) { S.sensorKutu = { x: x, y: yy, w: w, h: olcumBoy };
                         yy += olcumBoy + SP_ARA; }
     if (sepetVar) {
-      /* Sepet sütunun ortasında ve ESKİSİNDEN BÜYÜK (58→72 px): artık
-         çimde değil panelin içinde ve bırakma hedefi olduğu için
-         parmakla vurulması kolay olmalı. */
-      S.sepet = { x: ix + iw / 2 - 36, y: yy, w: 72, h: 80 };
-      yy += SP_SEPET + SP_ARA;
+      /* Sepet çimin üstünde, sütunun ortasına hizalı: kendi gölgesi ve
+         etiketi var, bir kutunun içinde değil. */
+      var bos = dy - SP_ARA - yy;
+      S.sepet = { x: x + w / 2 - 36, y: yy + Math.max(0, (bos - SP_SEPET) / 2),
+                  w: 72, h: 80 };
     }
-    /* GÜNLÜK ARTAN HER YERİ ALIYOR (en çok 190 px): panelin altında boş
-       bir alan bırakmaktansa terminal uzun olsun, daha çok satır
-       görünsün. */
-    var gBoy = kis(dy - SP_ARA - yy, 0, SP_LOG_ENCOK);
-    S.gunlukKutu = gBoy >= SP_LOG_ENAZ
-      ? { x: ix, y: dy - SP_ARA - gBoy, w: iw, h: gBoy } : null;
-    jogYerlestir(ix + iw / 2 - SP_JOG / 2, jy);
+    jogYerlestir(x + w / 2 - SP_JOG / 2, jy);
   }
   /** Tuş yerleri — panelin verdiği köşeden. */
   function jogYerlestir(x, y) {
@@ -2751,50 +2614,46 @@ window.Bahce = (function () {
       ]
     };
   }
-  /** Panel gövdesi + bölümler. */
-  function sagPanelCiz(c) {
-    var pn = S.sagPanel;
-    if (!pn) return;
-    c.save();
-    c.fillStyle = "rgba(0,0,0,.34)";
-    c.beginPath();
-    if (c.roundRect) c.roundRect(pn.x + 3, pn.y + 5, pn.w, pn.h, 16);
-    else c.rect(pn.x + 3, pn.y + 5, pn.w, pn.h);
-    c.fill();
-    var g = c.createLinearGradient(pn.x, pn.y, pn.x, pn.y + pn.h);
-    g.addColorStop(0, "rgba(40,46,40,.95)"); g.addColorStop(1, "rgba(24,28,24,.95)");
-    c.fillStyle = g;
-    c.beginPath();
-    if (c.roundRect) c.roundRect(pn.x, pn.y, pn.w, pn.h, 16); else c.rect(pn.x, pn.y, pn.w, pn.h);
-    c.fill();
-    c.strokeStyle = "rgba(124,132,122,.55)"; c.lineWidth = 1.2; c.stroke();
-    /* Bölüm çizgileri: yalnız iki bölüm arasında, kenarlara değmeden. */
-    var ayirici = [];
-    if (S.sensorKutu) ayirici.push(S.sensorKutu.y + S.sensorKutu.h + SP_ARA / 2);
-    /* Günlük DOM penceresi; tuvalde yalnız üstündeki çizgi var. */
-    if (S.gunlukKutu) ayirici.push(S.gunlukKutu.y - SP_ARA / 2);
-    else if (S.durumKutu) ayirici.push(S.durumKutu.y - SP_ARA / 2);
-    c.strokeStyle = "rgba(124,132,122,.22)"; c.lineWidth = 1;
-    ayirici.forEach(function (ay) {
-      c.beginPath(); c.moveTo(pn.x + SP_IC, ay); c.lineTo(pn.x + pn.w - SP_IC, ay); c.stroke();
-    });
-    c.restore();
+  /** Sağ sütun: üç ayrı parça, TEK KOLONA HİZALI.
+   *  Tek büyük koyu panel denendi ve bahçeden kopuk duruyordu; bahçenin
+   *  kendi dili ahşap tabela. Parçalar yine ayrı ayrı çiziliyor ama
+   *  aynı x'te, aynı genişlikte ve aynı aralıkla — dağınıklık
+   *  hizasızlıktandı, kutu eksikliğinden değil. */
+  function sagSutunCiz(c) {
+    if (!S.sagSutun) return;
     sensorCiz(c);
     sepetCiz(c);
     durumCiz(c);
     jogCiz(c);
+  }
+  /** Ahşap tahta gövdesi — görev tabelasıyla aynı malzeme. */
+  function tahtaKutu(c, kt, direk) {
+    c.fillStyle = "#6b4a2c";
+    if (direk) c.fillRect(kt.x + kt.w / 2 - 4, kt.y + kt.h - 4, 8, 16);
+    c.fillStyle = "rgba(0,0,0,.3)";
+    c.beginPath();
+    if (c.roundRect) c.roundRect(kt.x + 3, kt.y + 5, kt.w, kt.h, 8);
+    else c.rect(kt.x + 3, kt.y + 5, kt.w, kt.h);
+    c.fill();
+    var g = c.createLinearGradient(kt.x, kt.y, kt.x, kt.y + kt.h);
+    g.addColorStop(0, "#8d6b46"); g.addColorStop(0.5, "#79583a"); g.addColorStop(1, "#63472d");
+    c.fillStyle = g;
+    c.beginPath();
+    if (c.roundRect) c.roundRect(kt.x, kt.y, kt.w, kt.h, 8); else c.rect(kt.x, kt.y, kt.w, kt.h);
+    c.fill();
+    c.strokeStyle = "rgba(38,24,10,.55)"; c.lineWidth = 1.4; c.stroke();
   }
   function sensorCiz(c) {
     var kt = S.sensorKutu;
     if (!kt) return;
     var satir = olcumSatirlari();
     c.save();
-    /* ARTIK TAHTA DEĞİL, PANELİN BİR BÖLÜMÜ. Direkli ahşap tabela sağ
-       çimde ayrı bir nesne gibi duruyordu; panelin içinde aynı
-       görüntü "sahnede bir tabela mı, arayüz mü?" diye okunuyordu. */
+    /* AHŞAP TABELA GERİ GELDİ: görev tabelasının kardeşi. Koyu düz bir
+       bölüm olarak çizilince bahçenin malzemesinden kopuyordu. */
+    tahtaKutu(c, kt, true);
     c.textAlign = "left";
-    c.font = "700 12px system-ui,sans-serif"; c.fillStyle = "#e8eee2";
-    c.fillText("Ölçümler", kt.x, kt.y + 12);
+    c.font = "700 12px system-ui,sans-serif"; c.fillStyle = "#f3e3c6";
+    c.fillText("Ölçümler", kt.x + 12, kt.y + 20);
 
     var yas = S.olcumT ? Math.round((Date.now() - S.olcumT) / 1000) : -1;
     /* BAYAT OKUMA GÖRÜNÜR OLUYOR. Sensör susunca ekranda son değer
@@ -2804,37 +2663,37 @@ window.Bahce = (function () {
        geliyor. */
     var bayat = yas > OLCUM_BAYAT_SN;
     c.font = (bayat ? "700 10px " : "10px ") + "system-ui,sans-serif";
-    c.fillStyle = bayat ? "#ffb9a6" : "rgba(214,222,210,.6)";
+    c.fillStyle = bayat ? "#ffb9a6" : "rgba(243,227,198,.6)";
     c.fillText(yas < 0 ? "ölçüm zamanı bilinmiyor"
       : (yasYazi(yas) + (bayat ? " · SENSÖR SUSMUŞ" : "")),
-      kt.x, kt.y + 25);
+      kt.x + 12, kt.y + 33);
 
-    var yy = kt.y + 44;
+    var yy = kt.y + 54;
     if (!satir.length) {
       c.font = "italic 11px system-ui,sans-serif";
-      c.fillStyle = S.olcumHata ? "#ffb9a6" : "rgba(214,222,210,.8)";
+      c.fillStyle = S.olcumHata ? "#ffb9a6" : "rgba(243,227,198,.8)";
       var m = S.olcumHata || "ölçüm paketi gelmedi";
-      c.fillText(m.length > 30 ? m.slice(0, 29) + "…" : m, kt.x, yy);
+      c.fillText(m.length > 30 ? m.slice(0, 29) + "…" : m, kt.x + 12, yy);
     }
     /* SATIR SAYISI KUTUNUN BOYUNDAN ÇIKIYOR: panel kısaldığında dört
        satır çizilip alttaki bölümün üstüne binmesin. */
-    var sigan = Math.max(0, Math.floor((kt.y + kt.h - yy + 6) / 19));
+    var sigan = Math.max(0, Math.floor((kt.y + kt.h - 10 - yy + 6) / 19));
     satir.slice(0, sigan).forEach(function (r) {
       c.font = "11px system-ui,sans-serif";
-      c.fillStyle = "rgba(214,222,210,.85)";
-      c.fillText(r.ad, kt.x, yy);
+      c.fillStyle = "rgba(243,227,198,.85)";
+      c.fillText(r.ad, kt.x + 12, yy);
       c.font = "600 12px ui-monospace,monospace";
-      c.fillStyle = "#e8eee2";
+      c.fillStyle = "#f3e3c6";
       c.textAlign = "right";
-      c.fillText(r.deger, kt.x + kt.w, yy);
+      c.fillText(r.deger, kt.x + kt.w - 12, yy);
       c.textAlign = "left";
       yy += 19;
     });
     if (satir.length > sigan) {
       c.font = "10px system-ui,sans-serif";
-      c.fillStyle = "rgba(214,222,210,.55)";
+      c.fillStyle = "rgba(243,227,198,.55)";
       c.fillText("+" + (satir.length - sigan) + " ölçüm · İzle sekmesinde",
-        kt.x, kt.y + kt.h - 1);
+        kt.x + 12, kt.y + kt.h - 8);
     }
     c.restore();
   }
@@ -2879,40 +2738,54 @@ window.Bahce = (function () {
     if (!kt) return;
     var kilit = jogKilit();
     c.save();
-    c.fillStyle = kilit ? "rgba(58,30,24,.72)" : "rgba(22,34,24,.72)";
-    c.beginPath();
-    if (c.roundRect) c.roundRect(kt.x, kt.y, kt.w, kt.h, 9);
-    else c.rect(kt.x, kt.y, kt.w, kt.h);
-    c.fill();
-    c.strokeStyle = kilit ? "rgba(224,127,106,.55)" : "rgba(124,190,120,.45)";
-    c.lineWidth = 1.1; c.stroke();
-    /* Durum ışığı */
+    /* Durum da ahşap tabelada: ölçüm tahtasıyla aynı malzeme, aynı
+       genişlik, aynı kolon. */
+    tahtaKutu(c, kt, false);
     c.fillStyle = kilit ? "#e07f6a" : "#7bbf5a";
-    c.beginPath(); c.arc(kt.x + 11, kt.y + 15, 4.2, 0, 6.3); c.fill();
+    c.beginPath(); c.arc(kt.x + 15, kt.y + 16, 4.2, 0, 6.3); c.fill();
 
     var m = S.makine, konumVar = !!(m && m.x != null && S.konumVar);
     c.textAlign = "left"; c.textBaseline = "alphabetic";
     c.font = konumVar ? "600 13px ui-monospace,monospace" : "italic 12px system-ui,sans-serif";
-    c.fillStyle = konumVar ? "#e8eee2" : "rgba(232,238,226,.72)";
+    c.fillStyle = konumVar ? "#f3e3c6" : "rgba(243,227,198,.72)";
     c.fillText(konumVar
       ? ("X " + Math.round(m.x) + "  Y " + Math.round(m.y)
          + (m.z == null ? "" : "  Z " + Math.round(m.z)))
-      : "konum bildirilmedi", kt.x + 22, kt.y + 19);
+      : "konum bildirilmedi", kt.x + 26, kt.y + 20);
     c.font = "10px system-ui,sans-serif";
-    c.fillStyle = kilit ? "#ffb9a6" : "rgba(214,226,236,.72)";
-    /* Kısa cümle: çubuk 186 px ve 10 punto ile ~34 karakter alıyor.
+    c.fillStyle = kilit ? "#ffb9a6" : "rgba(243,227,198,.7)";
+    /* Kısa cümle: tabela ~190 px ve 10 punto ile ~34 karakter alıyor.
        Uzun hâli ("hepsini home'a gönderir") kesiliyordu. */
     var alt = kilit || "basılı tut · ⌂ = hepsi home'a";
     if (alt.length > 34) alt = alt.slice(0, 33) + "…";
-    c.fillText(alt, kt.x + 11, kt.y + 36);
+    c.fillText(alt, kt.x + 12, kt.y + 37);
     c.restore();
   }
-  /** Yön tuşları — YALNIZ TUŞLAR. Yazılar durum çubuğunda. */
+  /** Yön tuşları — YALNIZ TUŞLAR. Konum ve kilit sebebi durum
+   *  tahtasında; burada kumandanın kendisi var. */
   function jogCiz(c) {
     var j = S.jog;
     if (!j) return;
     var kilit = jogKilit();
     c.save();
+    /* Kumanda panosu: bahçenin ahşabı değil, MAKİNENİN kutusu — ayrı
+       malzeme olması kasıtlı, bu bölüm bahçeye değil makineye
+       dokunuyor. Sütunun genişliğinde, ötekilerle aynı x'te. */
+    var pw = S.sagSutun ? S.sagSutun.w : j.w;
+    var px0 = S.sagSutun ? S.sagSutun.x : j.x;
+    var py0 = j.y - SP_ZUST, ph = SP_ZUST + j.h + 8;
+    c.fillStyle = "rgba(0,0,0,.34)";
+    c.beginPath();
+    if (c.roundRect) c.roundRect(px0 + 3, py0 + 5, pw, ph, 14);
+    else c.rect(px0 + 3, py0 + 5, pw, ph);
+    c.fill();
+    var pg = c.createLinearGradient(px0, py0, px0, py0 + ph);
+    pg.addColorStop(0, "rgba(46,52,46,.96)"); pg.addColorStop(1, "rgba(26,30,26,.96)");
+    c.fillStyle = pg;
+    c.beginPath();
+    if (c.roundRect) c.roundRect(px0, py0, pw, ph, 14); else c.rect(px0, py0, pw, ph);
+    c.fill();
+    c.strokeStyle = kilit ? "#4a4d47" : "#7c847a"; c.lineWidth = 1.2; c.stroke();
     j.tuslar.forEach(function (t) {
       var basili = S.jogBasili === t.k;
       var evi = t.k === "home";
@@ -3270,7 +3143,7 @@ window.Bahce = (function () {
     S.sesDugme = S.altDugme.length
       ? { x: S.altDugme[0].x, y: S.altDugme[0].y, r: S.altDugme[0].r } : null;
     /* SEPET ARTIK BURADA DEĞİL: sağ kontrol panelinin bir bölümü
-       (`sagPanelKur`). Askı sol sütunu kuruyor, sağ sütuna karışmıyor. */
+       (`sagSutunKur`). Askı sol sütunu kuruyor, sağ sütuna karışmıyor. */
   }
   function aletSimge(c, k, cx, cy, renk, sol) {
     c.save();
@@ -4326,8 +4199,8 @@ window.Bahce = (function () {
                renk: "#c9cec4" });
     }
     if (sayi(b.film_kare, 0)) {
-      r.push({ ad: "Film", deger: sayi(b.film_kare, 0) + " kare",
-               alt: "halkadaki Film düğmesi açıyor", renk: "#d9b26a" });
+      r.push({ k: "film", ad: "Film", deger: sayi(b.film_kare, 0) + " kare",
+               alt: "dokun · tohumdan bugüne izle", renk: "#d9b26a" });
     }
     return r;
   }
@@ -4342,22 +4215,24 @@ window.Bahce = (function () {
     var R = Math.max(66, sp.R + 40);
     var mk = S.halkaMerkez || halkaMerkez(px(b.x), py(b.y), R);
     var gx = mk.x, gy = mk.y;
-    /* KART ARTIK BİTKİNİN YANINDA DEĞİL, SOL OLUKTA.
-       Kart bitkinin yanında açılıyordu ve 246x296 px'lik bir dikdörtgen
-       toprağın ortasına düşüyordu: bakılan şeyin — yatağın — üstünü
-       örtüyordu. Bütün arayüz kenarlara yapışık olunca orta alan
-       yalnız bahçe kalıyor. Sol oluk seçildi: sağ oluk kontrol
-       panelinin, üst şerit durumun.
-       ASKIYI ÖRTMÜYOR: askının sağında 200 px varsa kart oraya
-       oturuyor, yoksa (dar ekran) sola yapışıp askının üstüne biniyor
-       — kartın kendi düğmeleri aynı işleri yapıyor. */
-    var ol = solOluk(150, 260);
-    var w = ol.w, x = ol.x;
-    /* Kart TABELANIN ALTINA giriyor: ikisi aynı sütunda ve ikisi de
-       görünür kalıyor. Sığmazsa yukarı kayıyor — o zaman tabelanın
-       altını örtüyor, ama kart o an bakılan şey. */
-    var ustSinir = S.gorevKutu ? S.gorevKutu.y + S.gorevKutu.h + 10 : 14;
-    var y = kis(ustSinir, 14, Math.max(14, S.boy - h - 10));
+    /* KART BİTKİNİN YANINDA. Kenara sabitlemek denendi ve bağı
+       koptu: kartın hangi bitkiye ait olduğu ancak ince bir çizgiyle
+       anlatılabiliyordu ve o çizgi bütün yatağı kesiyordu. Kart eylem
+       halkasının yanında açılıyor, hangi yanda yer varsa o yana.
+       Sağ sütundan kaçıyor: kart üstte çizildiği için okunur, ama
+       ölçüm tahtasını boş yere örtmesi de istenmez. */
+    var w = 246;
+    var y = kis(gy - h / 2, 14, Math.max(14, S.boy - h - 8));
+    var x = gx + R + 16;
+    if (x + w > S.en - 8) x = gx - R - 16 - w;
+    var st = S.sagSutun;
+    if (st && x < st.x + st.w && x + w > st.x
+        && y < st.y + st.h && y + h > st.y) {
+      var sol = gx - R - 16 - w;
+      if (sol >= 8 && sol + w <= st.x) x = sol;
+      else if (st.x - w - 8 >= 8) x = st.x - w - 8;
+    }
+    x = kis(x, 8, Math.max(8, S.en - w - 8));
     S.kartKutu = { x: x, y: y, w: w, h: h };
     c.save();
     c.fillStyle = "rgba(0,0,0,.4)";
@@ -4371,10 +4246,13 @@ window.Bahce = (function () {
     if (c.roundRect) c.roundRect(x, y, w, h, 14); else c.rect(x, y, w, h);
     c.fill();
     c.strokeStyle = "rgba(140,152,134,.5)"; c.lineWidth = 1.2; c.stroke();
-    /* BAĞLANTI ÇİZGİSİ KALKTI: kart kenara sabitlenince çizgi bütün
-       yatağı boydan boya kesiyordu — vizörü temizlemek için kartı
-       kenara almanın anlamı kalmıyordu. Kartın kime ait olduğunu
-       bitkinin çevresindeki halka söylüyor. */
+    /* Bitkiye bağlayan ince çizgi: kartın kime ait olduğu belli olsun. */
+    c.strokeStyle = "rgba(140,152,134,.45)"; c.lineWidth = 1;
+    c.beginPath();
+    c.moveTo(x < gx ? x + w : x, y + h / 2);
+    c.lineTo(gx + (x < gx ? -1 : 1) * (R + 2), gy);
+    c.stroke();
+    /* Kart hangi bitkinin: bitkinin çevresinde ince halka. */
     c.strokeStyle = "rgba(140,152,134,.55)"; c.lineWidth = 1.4;
     c.beginPath(); c.arc(px(b.x), py(b.y), sp.R + 5, 0, 6.3); c.stroke();
 
@@ -4392,10 +4270,23 @@ window.Bahce = (function () {
       x + 14, y + 38);
 
     var yy2 = y + ust + 12;
+    S.kartFilm = null;
     satir.forEach(function (r, i) {
       if (i) {
         c.strokeStyle = "rgba(255,255,255,.06)"; c.lineWidth = 1;
         c.beginPath(); c.moveTo(x + 12, yy2 - 22); c.lineTo(x + w - 12, yy2 - 22); c.stroke();
+      }
+      /* FİLM SATIRI DÜĞME: zaman çubuğuna girmenin ikinci yolu. Satır
+         "halkadaki Film düğmesi açıyor" diye tarif ediyordu; tarif
+         etmek yerine kendisi açıyor. */
+      if (r.k === "film") {
+        S.kartFilm = { x: x + 8, y: yy2 - 24, w: w - 16, h: satirY - 2 };
+        c.fillStyle = "rgba(217,178,106,.10)";
+        c.beginPath();
+        if (c.roundRect) c.roundRect(S.kartFilm.x, S.kartFilm.y, S.kartFilm.w, S.kartFilm.h, 7);
+        else c.rect(S.kartFilm.x, S.kartFilm.y, S.kartFilm.w, S.kartFilm.h);
+        c.fill();
+        c.strokeStyle = "rgba(217,178,106,.35)"; c.lineWidth = 1; c.stroke();
       }
       c.font = "10px system-ui,sans-serif";
       c.fillStyle = "rgba(201,206,196,.7)";
@@ -4428,6 +4319,28 @@ window.Bahce = (function () {
     var p = P();
     return (p && p.S && p.S.jeton) ? String(p.S.jeton) : "";
   }
+  /* ==================================================================== *
+   * ZAMAN ÇUBUĞU — TOHUMDAN BUGÜNE
+   *
+   * Arşiv zaten vardı ve kareler tek tek geziliyordu; eksik olan
+   * ZAMANIN KENDİSİYDİ. Çubuğu sürükleyince bitkinin ilk karesinden
+   * bugüne kadarki bütün kareler sırayla geçiyor, ▶ ile kendi kendine
+   * oynuyor: aynı yerden çekilmiş kareler arka arkaya konunca büyüme
+   * görünür hâle geliyor.
+   *
+   * UYDURMA ARA KARE YOK. İki kare arasında geçiş/çapraz geçiş
+   * üretilmiyor; ekranda yalnız MAKİNENİN ÇEKTİĞİ kareler var. Çubuk
+   * karelerin SIRASINA göre değil ZAMANINA göre bölünüyor: iki kare
+   * arasında on gün varsa çubukta da o kadar yer kaplıyor, yoksa
+   * seyrek çekilmiş bir dönem sık çekilmiş gibi görünürdü.
+   * Kare damgası olmayan arşivde çubuk sıraya düşüyor ve bunu yazıyor.
+   *
+   * KARE ÖNBELLEĞİ: her kare bir HTTP isteği. Sürüklerken her adımda
+   * yeniden istemek hem ağı hem gözü yoruyordu; yüklenen kare
+   * `onbellek`te kalıyor ve komşu kareler önden çekiliyor.
+   * ==================================================================== */
+  var FILM_FPS = 6;                  /* oynatma hızı — kare/saniye */
+  var FILM_ONDEN = 3;                /* kaç komşu kare önden çekilsin */
   var filmAc = guvenli("film", function (b) {
     var kimlik = String(b.film_kimlik || "");
     if (!kimlik || !sayi(b.film_kare, 0)) {
@@ -4435,7 +4348,9 @@ window.Bahce = (function () {
       altYaz(); return;
     }
     S.film = { ad: b.ad, tur: b.tur_ad || b.ad, kimlik: kimlik, kareler: [],
-               ix: 0, img: null, hata: "", yukleniyor: true };
+               ix: 0, img: null, hata: "", yukleniyor: true,
+               ekim: sayi(b.ekim, 0), onbellek: {}, oynuyor: false,
+               sonAdim: 0, zamanli: false };
     isteKare();
     api("/api/bahce/film?kimlik=" + encodeURIComponent(kimlik))
       .then(function (c) {
@@ -4444,6 +4359,7 @@ window.Bahce = (function () {
         S.film.yukleniyor = false;
         S.film.ix = Math.max(0, S.film.kareler.length - 1);
         if (!S.film.kareler.length) S.film.hata = "Arşivde kare yok.";
+        filmZamanHesap();
         filmKareYukle();
       })
       .catch(function (h) {
@@ -4454,25 +4370,102 @@ window.Bahce = (function () {
         isteKare();
       });
   });
+  /** Karelerin çubuktaki yeri: zaman damgası varsa ZAMANA göre, yoksa
+   *  sıraya göre. `zamanli` ekranda yazıyor — çubuk hangi ölçekte
+   *  bölünmüş, kullanıcı bilmeden bakmasın. */
+  function filmZamanHesap() {
+    var f = S.film;
+    if (!f) return;
+    var n = f.kareler.length;
+    f.oran = [];
+    if (!n) { f.zamanli = false; return; }
+    var ilk = sayi(f.kareler[0].ts, 0), son = sayi(f.kareler[n - 1].ts, 0);
+    var aralik = son - ilk;
+    f.zamanli = !!(ilk && son && aralik > 0);
+    var i;
+    for (i = 0; i < n; i++) {
+      f.oran.push(f.zamanli
+        ? kis((sayi(f.kareler[i].ts, 0) - ilk) / aralik, 0, 1)
+        : (n === 1 ? 0 : i / (n - 1)));
+    }
+  }
+  /** Kare adresi — önbellek anahtarı da bu. */
+  function filmKareAdres(f, k) {
+    var jt = jeton();
+    if (!jt) return "";
+    return "/api/bahce/film/kare?kimlik=" + encodeURIComponent(f.kimlik)
+      + "&damga=" + encodeURIComponent(k.damga) + "&jeton=" + encodeURIComponent(jt);
+  }
+  /** Bir kareyi getir; önbellekte varsa oradan. `sessiz` önden çekim. */
+  function filmKareIste(f, i, sessiz) {
+    var k = f.kareler[i];
+    if (!k) return null;
+    var onc = f.onbellek[k.damga];
+    if (onc) return onc.tam ? onc.img : null;
+    var adres = filmKareAdres(f, k);
+    if (!adres) { if (!sessiz) { f.hata = "Jeton yok — kare istenemiyor."; isteKare(); } return null; }
+    var im = new Image();
+    var kayit = { img: im, tam: false };
+    f.onbellek[k.damga] = kayit;
+    im.onload = function () {
+      kayit.tam = true;
+      if (S.film === f && f.kareler[f.ix] === k) { f.img = im; f.hata = ""; }
+      isteKare();
+    };
+    im.onerror = function () {
+      delete f.onbellek[k.damga];
+      if (S.film === f && f.kareler[f.ix] === k && !sessiz) {
+        f.img = null; f.hata = "Kare okunamadı.";
+      }
+      isteKare();
+    };
+    im.src = adres;
+    return null;
+  }
   function filmKareYukle() {
     var f = S.film;
     if (!f || !f.kareler.length) { isteKare(); return; }
-    var k = f.kareler[kis(f.ix, 0, f.kareler.length - 1)];
-    if (!k) return;
-    var jt = jeton();
-    if (!jt) { f.hata = "Jeton yok — kare istenemiyor."; isteKare(); return; }
-    var im = new Image();
-    im.onload = function () { if (S.film === f) { f.img = im; f.hata = ""; isteKare(); } };
-    im.onerror = function () { if (S.film === f) { f.img = null; f.hata = "Kare okunamadı."; isteKare(); } };
-    im.src = "/api/bahce/film/kare?kimlik=" + encodeURIComponent(f.kimlik)
-      + "&damga=" + encodeURIComponent(k.damga) + "&jeton=" + encodeURIComponent(jt);
-    f.bekleyen = k.damga;
+    f.ix = kis(f.ix, 0, f.kareler.length - 1);
+    var hazir = filmKareIste(f, f.ix, false);
+    /* ESKİ KARE EKRANDA KALIYOR: yeni kare gelene kadar boş ekran
+       göstermek, sürüklerken filmi kırpık yapıyordu. */
+    if (hazir) { f.img = hazir; f.hata = ""; }
+    var i;
+    for (i = 1; i <= FILM_ONDEN; i++) {
+      filmKareIste(f, f.ix + i, true);
+      filmKareIste(f, f.ix - i, true);
+    }
+    isteKare();
+  }
+  /** Oynatma adımı — `kare()` her karede çağırıyor. */
+  function filmAdim() {
+    var f = S.film;
+    if (!f || !f.oynuyor || f.kareler.length < 2) return;
+    var simdi = Date.now();
+    if (simdi - f.sonAdim < 1000 / FILM_FPS) return;
+    f.sonAdim = simdi;
+    f.ix = f.ix + 1;
+    if (f.ix >= f.kareler.length) f.ix = 0;      /* başa sarıyor */
+    filmKareYukle();
+  }
+  function filmOynat(ac) {
+    var f = S.film;
+    if (!f || f.kareler.length < 2) return;
+    f.oynuyor = ac === undefined ? !f.oynuyor : !!ac;
+    if (f.oynuyor) {
+      /* Sondaysak baştan: "oynat"a basınca hiçbir şey olmaması
+         kullanıcıya bozuk gibi görünüyordu. */
+      if (f.ix >= f.kareler.length - 1) { f.ix = 0; filmKareYukle(); }
+      f.sonAdim = Date.now();
+    }
+    Ses.tik();
+    isteKare();
   }
   function filmKapat() { S.film = null; altYaz(); isteKare(); }
   function filmCiz(c) {
     var f = S.film;
     if (!f) return;
-    var w = Math.min(S.en - 40, 520), h = Math.min(S.boy - 40, 420);
+    var w = Math.min(S.en - 40, 560), h = Math.min(S.boy - 40, 460);
     var x = (S.en - w) / 2, y = (S.boy - h) / 2;
     f.kutu = { x: x, y: y, w: w, h: h };
     c.save();
@@ -4483,9 +4476,10 @@ window.Bahce = (function () {
     if (c.roundRect) c.roundRect(x, y, w, h, 14); else c.rect(x, y, w, h);
     c.fill();
     c.strokeStyle = "#5f6a58"; c.lineWidth = 1.2; c.stroke();
+    c.textBaseline = "alphabetic";
     c.font = "600 13px system-ui,sans-serif"; c.textAlign = "left";
     c.fillStyle = "#e6ebe0";
-    c.fillText(f.tur + " · büyüme filmi", x + 16, y + 24);
+    c.fillText(f.tur + " · tohumdan bugüne", x + 16, y + 24);
     /* Kapat */
     f.kapat = { x: x + w - 22, y: y + 18, r: 15 };
     c.strokeStyle = "#c9cec4"; c.lineWidth = 1.6;
@@ -4493,33 +4487,90 @@ window.Bahce = (function () {
     c.moveTo(f.kapat.x - 6, f.kapat.y - 6); c.lineTo(f.kapat.x + 6, f.kapat.y + 6);
     c.moveTo(f.kapat.x + 6, f.kapat.y - 6); c.lineTo(f.kapat.x - 6, f.kapat.y + 6);
     c.stroke();
-    var ix = y + 38, iy = h - 92;
+
+    var ix0 = y + 38, iy = h - 118;
     if (f.img) {
       var o = Math.min((w - 32) / f.img.width, iy / f.img.height);
       var iw = f.img.width * o, ih = f.img.height * o;
-      c.drawImage(f.img, x + (w - iw) / 2, ix + (iy - ih) / 2, iw, ih);
+      c.drawImage(f.img, x + (w - iw) / 2, ix0 + (iy - ih) / 2, iw, ih);
     } else {
       c.font = "12px system-ui,sans-serif"; c.textAlign = "center";
       c.fillStyle = f.hata ? "#e07f6a" : "#9aa094";
       c.fillText(f.hata || (f.yukleniyor ? "film okunuyor…" : "kare bekleniyor…"),
-        x + w / 2, ix + iy / 2);
+        x + w / 2, ix0 + iy / 2);
     }
-    /* Şerit: her kare bir çentik, seçili olan dolu. */
-    var sy = y + h - 44, sx1 = x + 20, sx2 = x + w - 20;
-    f.serit = { x1: sx1, x2: sx2, y: sy, adet: f.kareler.length };
-    c.strokeStyle = "rgba(200,206,196,.35)"; c.lineWidth = 2;
+
+    var n = f.kareler.length;
+    /* ---------------------------------------------------- ZAMAN ÇUBUĞU */
+    var oy = y + h - 58;                       /* oynat düğmesinin ekseni */
+    f.oynatDugme = { x: x + 32, y: oy, r: 15 };
+    var oynanir = n > 1;
+    c.save();
+    c.fillStyle = "rgba(255,255,255,.06)";
+    c.beginPath(); c.arc(f.oynatDugme.x, f.oynatDugme.y, 15, 0, 6.3); c.fill();
+    c.strokeStyle = oynanir ? "#d9b26a" : "#4a4d47"; c.lineWidth = 1.4;
+    c.beginPath(); c.arc(f.oynatDugme.x, f.oynatDugme.y, 15, 0, 6.3); c.stroke();
+    c.fillStyle = oynanir ? "#f0cd8a" : "#5c605a";
+    if (f.oynuyor) {
+      c.fillRect(f.oynatDugme.x - 5, oy - 6, 3.5, 12);
+      c.fillRect(f.oynatDugme.x + 1.5, oy - 6, 3.5, 12);
+    } else {
+      c.beginPath();
+      c.moveTo(f.oynatDugme.x - 4, oy - 6.5);
+      c.lineTo(f.oynatDugme.x + 7, oy);
+      c.lineTo(f.oynatDugme.x - 4, oy + 6.5);
+      c.closePath(); c.fill();
+    }
+    c.restore();
+
+    var sx1 = x + 60, sx2 = x + w - 20, sy = oy;
+    f.serit = { x1: sx1, x2: sx2, y: sy, adet: n };
+    /* Ray */
+    c.strokeStyle = "rgba(200,206,196,.22)"; c.lineWidth = 4; c.lineCap = "round";
     c.beginPath(); c.moveTo(sx1, sy); c.lineTo(sx2, sy); c.stroke();
-    if (f.kareler.length) {
-      var i, n = f.kareler.length;
+    if (n) {
+      var t = f.oran && f.oran.length === n ? f.oran[kis(f.ix, 0, n - 1)] : 0;
+      var hx = sx1 + t * (sx2 - sx1);
+      /* Geçilen yol */
+      c.strokeStyle = "#d9b26a"; c.lineWidth = 4;
+      c.beginPath(); c.moveTo(sx1, sy); c.lineTo(hx, sy); c.stroke();
+      /* Kare çentikleri: her biri gerçekten çekilmiş bir kare. */
+      var i;
       for (i = 0; i < n; i++) {
-        var kx = n === 1 ? sx1 : sx1 + (i / (n - 1)) * (sx2 - sx1);
-        c.fillStyle = i === f.ix ? "#d9b26a" : "rgba(200,206,196,.5)";
-        c.beginPath(); c.arc(kx, sy, i === f.ix ? 5 : 2.4, 0, 6.3); c.fill();
+        var kx = sx1 + (f.oran ? f.oran[i] : (n === 1 ? 0 : i / (n - 1))) * (sx2 - sx1);
+        c.fillStyle = i <= f.ix ? "rgba(240,205,138,.75)" : "rgba(200,206,196,.4)";
+        c.beginPath(); c.arc(kx, sy, 2, 0, 6.3); c.fill();
       }
+      /* Tutamak */
+      c.fillStyle = "#f0cd8a";
+      c.beginPath(); c.arc(hx, sy, 7, 0, 6.3); c.fill();
+      c.strokeStyle = "rgba(20,24,18,.8)"; c.lineWidth = 1.4;
+      c.beginPath(); c.arc(hx, sy, 7, 0, 6.3); c.stroke();
+
+      /* Etiket: kaçıncı kare, tarihi ve O GÜN bitkinin kaç günlük
+         olduğu. Yaş yalnız dikim damgası varsa yazılıyor —
+         bilinmiyorsa uydurulmuyor. */
       var kk = f.kareler[kis(f.ix, 0, n - 1)];
-      c.font = "11px ui-monospace,monospace"; c.textAlign = "center";
+      var yas = "";
+      if (f.ekim && sayi(kk.ts, 0)) {
+        var g = Math.floor((sayi(kk.ts, 0) - f.ekim) / 86400);
+        if (g >= 0) yas = "  ·  " + g + ". gün";
+      }
+      c.font = "11px ui-monospace,monospace"; c.textAlign = "left";
       c.fillStyle = "#c9cec4";
-      c.fillText((f.ix + 1) + " / " + n + "  ·  " + tarih(kk.ts), x + w / 2, y + h - 18);
+      c.fillText((f.ix + 1) + " / " + n + "  ·  " + (tarih(kk.ts) || "tarihsiz") + yas,
+        sx1, y + h - 30);
+      /* Çubuk hangi ölçekte? Zaman damgası yoksa sıraya düşüyor ve
+         bunu söylüyor — eşit aralıklı çentikler "eşit zaman" diye
+         okunurdu. */
+      c.font = "10px system-ui,sans-serif"; c.textAlign = "right";
+      c.fillStyle = "rgba(160,168,156,.8)";
+      c.fillText(f.zamanli ? "çubuk gerçek zamana göre · sürükle"
+                           : "kare damgası yok · çubuk sıraya göre",
+        sx2, y + h - 30);
+      c.font = "10px system-ui,sans-serif"; c.textAlign = "left";
+      c.fillStyle = "rgba(160,168,156,.75)";
+      c.fillText("ok tuşları kare kare · boşluk oynat/durdur", sx1, y + h - 14);
     }
     c.restore();
   }
@@ -4531,17 +4582,40 @@ window.Bahce = (function () {
     }
     if (p.x < f.kutu.x || p.x > f.kutu.x + f.kutu.w
       || p.y < f.kutu.y || p.y > f.kutu.y + f.kutu.h) { filmKapat(); return true; }
+    if (f.oynatDugme
+        && Math.hypot(f.oynatDugme.x - p.x, f.oynatDugme.y - p.y) < f.oynatDugme.r + 4) {
+      filmOynat(); return true;
+    }
     if (f.serit && f.kareler.length && Math.abs(p.y - f.serit.y) < 26) {
+      /* Sürüklerken oynatma duruyor: iki şey aynı anda ix'i
+         değiştirirse çubuk parmağın altından kaçıyor. */
+      f.oynuyor = false;
       filmSec(p.x); bas = { tip: "film", x: p.x, y: p.y, surukle: true };
       return true;
     }
     return true;                                  /* kutunun içi — geçirmiyoruz */
   }
+  /** Çubuktaki x'i kareye çeviriyor — çentikler ZAMANA göre dağıldığı
+   *  için en yakın çentik aranıyor, oran doğrudan çarpılmıyor. */
   function filmSec(sx) {
     var f = S.film;
     if (!f || !f.kareler.length) return;
     var t = kis((sx - f.serit.x1) / Math.max(1, f.serit.x2 - f.serit.x1), 0, 1);
-    var yeni = Math.round(t * (f.kareler.length - 1));
+    var n = f.kareler.length, yeni = 0, enIyi = 2, i;
+    for (i = 0; i < n; i++) {
+      var o = f.oran ? f.oran[i] : (n === 1 ? 0 : i / (n - 1));
+      var d = Math.abs(o - t);
+      if (d < enIyi) { enIyi = d; yeni = i; }
+    }
+    if (yeni !== f.ix) { f.ix = yeni; filmKareYukle(); }
+    isteKare();
+  }
+  /** Kare kare: ok tuşları ve "önceki/sonraki". */
+  function filmKaydir(yon) {
+    var f = S.film;
+    if (!f || !f.kareler.length) return;
+    f.oynuyor = false;
+    var yeni = kis(f.ix + yon, 0, f.kareler.length - 1);
     if (yeni !== f.ix) { f.ix = yeni; filmKareYukle(); }
     isteKare();
   }
@@ -4665,6 +4739,15 @@ window.Bahce = (function () {
       altYaz(); isteKare(); return;
     }
 
+    /* Kartın film satırı — zaman çubuğunu açıyor. */
+    if (S.secili && S.kartFilm) {
+      var kf = S.kartFilm;
+      if (p.x >= kf.x && p.x <= kf.x + kf.w && p.y >= kf.y && p.y <= kf.y + kf.h) {
+        var bf = S.ix[S.secili];
+        if (bf) { Ses.tik(); filmAc(bf); }
+        return;
+      }
+    }
     /* Kartın yıldızı — favori aç/kapa. */
     if (S.secili && S.kartYildiz) {
       var ky = S.kartYildiz;
@@ -5562,6 +5645,14 @@ window.Bahce = (function () {
     });
     document.addEventListener("keydown", function (e) {
       if (!S.acik) return;
+      /* FİLM AÇIKKEN KLAVYE ONUN: ok tuşları kare kare, boşluk
+         oynat/durdur. Yazı kutusundayken karışmasın diye önce odak
+         denetimi var. */
+      if (S.film && !/^(INPUT|TEXTAREA|SELECT)$/.test((document.activeElement || {}).tagName || "")) {
+        if (e.key === "ArrowRight") { e.preventDefault(); filmKaydir(1); return; }
+        if (e.key === "ArrowLeft") { e.preventDefault(); filmKaydir(-1); return; }
+        if (e.key === " " || e.key === "Spacebar") { e.preventDefault(); filmOynat(); return; }
+      }
       if (e.key === "Escape") {
         if (document.body.classList.contains("bh-menu")) {
           carkKapat();
@@ -5718,7 +5809,6 @@ window.Bahce = (function () {
     } catch (h) { /* gözlemci yoksa `resize` ve `ustYaz` yolu duruyor */ }
     carkKur();
     zilKur();
-    gunlukKur();
     sakinKur();
     bulutKur();
     xpOku();
@@ -5748,7 +5838,7 @@ window.Bahce = (function () {
          kalıyordu. */
       if (S.acik) sagPayOlc();
       if (!S.acik) {
-        carkKapat(); jogBitir(); S.zilAcik = false; gunlukSok();
+        carkKapat(); jogBitir(); S.zilAcik = false;
         if (S.ekimSayac) { clearInterval(S.ekimSayac); S.ekimSayac = null; }
         Ses.akisDur(); Ses.motorDur(); S.hareketSes = false;
       }
@@ -5762,7 +5852,6 @@ window.Bahce = (function () {
          onu kaldırıp şeridi yerine koyuyor, bir daha kurulmazsa şerit
          ekranın altında kalıyordu (ölçüldü: ikinci girişte terminal
          yoktu). Çağrı tekrarlanabilir — varsa hiçbir şey yapmıyor. */
-      gunlukKur();
       requestAnimationFrame(function () {
         olcuKur();
         veriYukle().then(function () {
@@ -5837,9 +5926,15 @@ window.Bahce = (function () {
               islak: S.islak.length },
         film: S.film ? { ad: S.film.ad, kare: S.film.kareler.length, ix: S.film.ix,
                          hata: S.film.hata, resim: !!S.film.img,
+                         oynuyor: !!S.film.oynuyor, zamanli: !!S.film.zamanli,
+                         oran: S.film.oran || null,
+                         onbellek: Object.keys(S.film.onbellek || {}).length,
+                         oynat: S.film.oynatDugme || null,
                          serit: S.film.serit || null, kutu: S.film.kutu || null } : null,
         kart: S.kartKutu ? { x: Math.round(S.kartKutu.x), y: Math.round(S.kartKutu.y),
                              w: Math.round(S.kartKutu.w), h: Math.round(S.kartKutu.h) } : null,
+        kartFilm: S.kartFilm ? { x: Math.round(S.kartFilm.x), y: Math.round(S.kartFilm.y),
+                                 w: Math.round(S.kartFilm.w), h: Math.round(S.kartFilm.h) } : null,
         yildiz: S.kartYildiz ? { x: S.kartYildiz.x, y: S.kartYildiz.y,
                                  w: S.kartYildiz.w, h: S.kartYildiz.h,
                                  favori: S.secili ? Favori.var(S.secili) : false } : null,
@@ -5875,15 +5970,10 @@ window.Bahce = (function () {
                     çakışıp çakışmadığı ancak iki dikdörtgen elde olunca
                     ölçülebiliyor. */
                  kutu: S.sensorKutu ? true : false,
-                 panel: S.sagPanel ? { x: Math.round(S.sagPanel.x),
-                                       y: Math.round(S.sagPanel.y),
-                                       w: Math.round(S.sagPanel.w),
-                                       h: Math.round(S.sagPanel.h) } : null,
-                 gunluk: S.gunlukKutu ? { x: Math.round(S.gunlukKutu.x),
-                                          y: Math.round(S.gunlukKutu.y),
-                                          w: Math.round(S.gunlukKutu.w),
-                                          h: Math.round(S.gunlukKutu.h),
-                                          satir: S.gunluk.length } : null,
+                 sutun: S.sagSutun ? { x: Math.round(S.sagSutun.x),
+                                       y: Math.round(S.sagSutun.y),
+                                       w: Math.round(S.sagSutun.w),
+                                       h: Math.round(S.sagSutun.h) } : null,
                  durum: S.durumKutu ? { x: Math.round(S.durumKutu.x),
                                         y: Math.round(S.durumKutu.y),
                                         w: Math.round(S.durumKutu.w),
