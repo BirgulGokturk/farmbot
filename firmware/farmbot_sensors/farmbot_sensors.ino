@@ -175,6 +175,24 @@ DHT dht11(DHT_PIN, DHT11);
 DHT dht22(DHT_PIN, DHT22);
 DHT *dht = &dht11;
 const char *dhtAdi = "DHT11";
+
+/* DHT OKUMASI AÇIK MI — ÖLÇÜM İÇİN, çalışırken kapatılabiliyor.
+ *
+ * NİYE VAR. Adafruit DHT kütüphanesi 40 bitlik çerçeveyi okurken KENDİ
+ * İÇİNDE `noInterrupts()` kullanıyor (DHT11de ~4-5 ms). Servo
+ * kütüphanesi darbeyi Timer1 kesmesiyle bitiriyor; o kesme geciktiğinde
+ * darbe uzuyor ve horn bir çerçevelik sıçrama yapıyor. Sahada görülen
+ * "aralıklarla git gel" bununla açıklanabilir ama AÇIKLANABİLİR OLMAK
+ * KANIT DEĞİL: aynı belirtiyi ortak olmayan bir GND ya da zayıf bir
+ * servo beslemesi de verir.
+ *
+ * Bu bayrak ikisini ayırmak için: `DHT 0` ile okuma durduruluyor,
+ * seğirme geçiyorsa sebep kesme kilidi, geçmiyorsa besleme tarafı.
+ * Derleme sabiti yapılmadı çünkü ayrım için iki kez yükleme gerekirdi.
+ *
+ * KAPALIYKEN SICAKLIK VE NEM `null` GİDİYOR, son değer tekrarlanmıyor:
+ * eski bir okumayı yeni gibi göstermek, ölçümün durduğunu gizlerdi. */
+bool dhtOku = true;
 Adafruit_BMP085 bmp;
 /* BMP180/BMP085'in sabit I2C adresi. Yoklama icin gerekiyor: kutuphane
    kendi adresini disari vermiyor ve `begin()` cagrilmadan once "orada
@@ -449,7 +467,7 @@ void setup() {
                    "acilmiyor; basinc ve rakim olculmuyor"));
 #endif
 
-  Serial.println(F("Hazir. Komutlar: ROLE <su_pompasi|hava_pompasi|isik> <0|1> | UC <indeks> <derece> <sure_ms> | KAPAT | OKU | TEST <0|1> | ACI <0-180> | US <544-2400> | TUT <saniye, 0=sonsuz>"));
+  Serial.println(F("Hazir. Komutlar: ROLE <su_pompasi|hava_pompasi|isik> <0|1> | UC <indeks> <derece> <sure_ms> | KAPAT | OKU | TEST <0|1> | ACI <0-180> | US <544-2400> | TUT <saniye, 0=sonsuz> | DHT <0|1>"));
 #if TEST_ACILISTA
   testBasla();
 #endif
@@ -760,6 +778,19 @@ void komutIsle(String komut) {
 
   if (buyuk == "OKU") { sonOlcum = 0; return; }
 
+  /* "DHT 0" / "DHT 1" — DHT okumasını kapatır/açar. Ölçüm aracı;
+   * kartta kalıcı değil, sıfırlanınca açık dönüyor. Kalıcı olsaydı
+   * kapalı unutulur ve sıcaklık/nemin neden `null` olduğu aylar sonra
+   * aranırdı. */
+  if (buyuk.startsWith("DHT ")) {
+    int istenen = komut.substring(komut.indexOf(' ') + 1).toInt();
+    dhtOku = (istenen != 0);
+    Serial.print(F("KOMUT: DHT okumasi "));
+    Serial.println(dhtOku ? F("ACIK") : F("KAPALI (sicaklik/nem null)"));
+    sonOlcum = 0;
+    return;
+  }
+
   // Servo denemesini başlat/durdur. Ayarlar dosyanın başındaki blokta.
   /* Servo denemesi. Çıplak "TEST" DEĞİŞTİRİR; "TEST 1" / "TEST 0" ise
    * DURUMU KESİN KURAR.
@@ -921,8 +952,14 @@ void sayiYaz(float d) {
 }
 
 void olcVeYaz() {
-  float nem      = dht->readHumidity();
-  float sicaklik = dht->readTemperature();
+  /* KAPALIYKEN KÜTÜPHANEYE HİÇ GİRİLMİYOR. Okuyup sonucu atmak,
+   * kesme kilidini yine yaşamak olurdu — ölçümün amacı tam o kilidi
+   * ortadan kaldırmak. */
+  float nem = NAN, sicaklik = NAN;
+  if (dhtOku) {
+    nem      = dht->readHumidity();
+    sicaklik = dht->readTemperature();
+  }
 
   float bmpSicaklik = NAN, basinc = NAN, rakim = NAN;
   if (bmpVar) {
@@ -965,6 +1002,9 @@ void olcVeYaz() {
    * düşmesi bu sayının bitmesiyle oluyor ve kaç saniye olduğu
    * görünmezse "servo kendiliğinden indi" diye okunuyor. 0 = sonsuz. */
   Serial.print(F(",\"servo_tutma_sn\":"));      Serial.print(servoTutmaMs / 1000UL);
+  /* DHT okuması açık mı — `null` sıcaklığın sebebi arıza mı yoksa bu
+   * bayrak mı, panelden ayırt edilebilsin diye. */
+  Serial.print(F(",\"dht_oku\":"));             Serial.print(dhtOku ? 1 : 0);
   /* Kartın açık kaldığı süre. Geriye giderse kart yeniden başlamıştır ve
    * röleler kapanmıştır — pompa çekişinde besleme çökerse tam bunu
    * görüyoruz. */
