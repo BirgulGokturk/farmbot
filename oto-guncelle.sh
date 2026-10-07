@@ -24,8 +24,27 @@ uzak="$(git rev-parse origin/main)"
 
 # Pi'de elle yapılmış bir değişiklik varsa dokunmuyoruz: sessizce ezmek,
 # kaybı fark edilmeyen bir hataya dönüşür.
-if [ -n "$(git status --porcelain)" ]; then
-    kayit "Pi'de commit edilmemiş değişiklik var — güncelleme atlandı"
+#
+# MAKİNE DOSYALARI BU DENETİMİN DIŞINDA — ve bu, betiğin hiç çalışmamasına
+# yol açan hatanın düzeltmesi. `uclar.json` ile `gantry_calib.json` Pi'de
+# ÖLÇÜLMÜŞ değerleri tutuyor, yani depodakinden HER ZAMAN farklılar.
+# `git status --porcelain` onları da sayınca çıktı hiçbir zaman boş
+# olmuyordu; betik her turda "elle değişiklik var" deyip atlıyordu. Koruma,
+# korumak için konduğu şeyi engelliyordu.
+#
+# Ezme riski yok: aşağıda çağrılan `guncelle.sh` bu iki dosyayı kenara alıp
+# pull'dan sonra geri koyuyor.
+# TAKİPSİZ DOSYALAR DA SAYILMIYOR (`-uno`). `git pull --ff-only` ile
+# çakışabilecek tek şey DEĞİŞTİRİLMİŞ TAKİPLİ dosya; Pi'de biriken bir
+# günlük, bir yedek ya da bir deneme çıktısı pull'u hiç engellemiyor ama
+# eski denetimde güncellemeyi kalıcı olarak durduruyordu.
+KIRLI="$(git status --porcelain -uno -- . \
+    ':(exclude)ajan/uclar.json' ':(exclude)ajan/gantry_calib.json')"
+if [ -n "$KIRLI" ]; then
+    # HANGİ dosya olduğu da yazılıyor: "değişiklik var" deyip hangisi
+    # olduğunu söylememek, sebebi aranmayan bir atlama demek. Tırnaksız
+    # genişletme satır sonlarını boşluğa çeviriyor, tek satırlık kayıt çıkıyor.
+    kayit "Pi'de commit edilmemiş değişiklik var — atlandı: $(echo $KIRLI)"
     exit 0
 fi
 
@@ -35,12 +54,15 @@ if [ "$mesgul" = "evet" ]; then
     exit 0
 fi
 
-git pull -q --ff-only origin main || { kayit "pull başarısız"; exit 0; }
-# Sira onemli — bkz. guncelle.sh'daki aciklama.
-sudo systemctl restart farmbot-sunucu
-for i in $(seq 20); do
-    curl -sf -m 1 http://127.0.0.1:8000/saglik >/dev/null 2>&1 && break
-    sleep 0.5
-done
-sudo systemctl restart farmbot-ajan
-kayit "Güncellendi: $(git log --oneline -1)"
+# GÜNCELLEMEYİ `guncelle.sh` YAPIYOR, BURASI DEĞİL.
+#
+# Pull ve yeniden başlatma eskiden burada kopyalanmıştı; makine
+# dosyalarının korunması ise yalnız `guncelle.sh`'daydı. İki ayrı uygulama
+# demek, birinde düzeltilen şeyin ötekinde eski kalması demek — nitekim
+# öyle oldu. Hassas kısım tek yerde duruyor.
+if ./guncelle.sh >/dev/null 2>&1; then
+    kayit "Güncellendi: $(git log --oneline -1)"
+else
+    kayit "guncelle.sh başarısız — elle bakılmalı (cd ~/farmbot && ./guncelle.sh)"
+    exit 0
+fi

@@ -2,6 +2,10 @@ __pycache__/
 *.pyc
 .venv/
 ajan/ayarlar.json
+# guncelle.sh makine dosyalarini kenara alirken birakiyor. Takipsiz
+# kaldiklarinda oto-guncelle.sh "elle degisiklik var" deyip her turda
+# atliyordu — yani koruma, guncellemeyi tamamen durduruyordu.
+*.yedek-guncelle
 # Panel parolasi ve ajan jetonu burada. Takipsizdi ama yok sayilmiyordu:
 # yanlislikla `git add -A` yapan biri sirlari depoya sokabilirdi.
 sunucu/ortam
