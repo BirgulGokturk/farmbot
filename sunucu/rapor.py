@@ -63,6 +63,24 @@ def _liste_yaz(adlar: list[str], azami: int = AZAMI_AD) -> str:
     return ", ".join(adlar[:-1]) + " ve " + adlar[-1]
 
 
+def _turlere_gore(bitkiler: list[dict[str, Any]], azami: int = AZAMI_AD) -> str:
+    """Bitki listesini TÜRE GÖRE SAYARAK yazar: '4 Roka, 2 Marul ve Havuç'.
+
+    Bitki adı yerine tür adı yazıldığı için aynı türden dört bitki
+    "Roka, Roka, Roka ve Roka" diye çıkıyordu — sahada görüldü. Tür adı
+    doğru seçim (okuyan "roka-5" değil "Roka" arıyor), o yüzden ad
+    değiştirilmedi, SAYILDI. Tek taneli türde sayı yazılmıyor: "1 Havuç"
+    değil "Havuç".
+    """
+    sayac: dict[str, int] = {}
+    for b in bitkiler:
+        ad = str(b.get("tur_ad") or b.get("tur") or b.get("ad") or "bitki")
+        sayac[ad] = sayac.get(ad, 0) + 1
+    # Çoktan aza: en kalabalık tür önce okunsun.
+    sirali = sorted(sayac.items(), key=lambda p: (-p[1], p[0]))
+    return _liste_yaz([(f"{n} {ad}" if n > 1 else ad) for ad, n in sirali], azami)
+
+
 def _selam(simdi: float) -> str:
     """Haftanın gününe göre değişen açılış — her sabah aynı cümle okunmuyor."""
     gun = time.localtime(simdi).tm_wday
@@ -157,13 +175,12 @@ def metin_uret(bahce: dict[str, Any], durum: dict[str, Any] | None,
 
     parca.append("")
     if olculen:
-        adlar = [str(b.get("tur_ad") or b.get("ad")) for b in olculen]
-        parca.append(f"🚿 Bugün {_liste_yaz(adlar)} sulanmaya ihtiyaç duyuyor "
-                     f"— toprak nemleri ölçüldü ve eşiğin altında.")
+        parca.append(f"🚿 Bugün {len(olculen)} bitki sulanmaya ihtiyaç "
+                     f"duyuyor: {_turlere_gore(olculen)}. Toprak nemleri "
+                     f"ölçüldü ve eşiğin altında.")
     if tahmini:
-        adlar = [str(b.get("tur_ad") or b.get("ad")) for b in tahmini]
-        parca.append(f"🤔 {_liste_yaz(adlar)} için elimde taze bir nem ölçümü "
-                     f"yok; geçen süreye bakarsak susamış olabilirler. "
+        parca.append(f"🤔 {_turlere_gore(tahmini)} için elimde taze bir nem "
+                     f"ölçümü yok; geçen süreye bakarsak susamış olabilirler. "
                      f"Emin olmak için nemlerini ölçmemi isteyebilirsiniz.")
     if not olculen and not tahmini:
         # "SUSAYAN YOK" DA KANITINA GÖRE SÖYLENİYOR. Hiçbir bitkinin
@@ -182,8 +199,7 @@ def metin_uret(bahce: dict[str, Any], durum: dict[str, Any] | None,
     # HASAT — kart zaten hesaplıyor, burada yalnız sayılıyor.
     hasat = [b for b in bitkiler if b.get("hasat")]
     if hasat:
-        adlar = [str(b.get("tur_ad") or b.get("ad")) for b in hasat]
-        parca.append(f"🧺 {_liste_yaz(adlar)} hasada hazır görünüyor.")
+        parca.append(f"🧺 {_turlere_gore(hasat)} hasada hazır görünüyor.")
 
     # MAKİNE BAĞLI DEĞİLSE İŞ YAPILAMAZ. Raporun sonunda söylemek önemli:
     # "şunu sula" deyip makinenin kapalı olduğunu yazmamak, okuyanı boşuna
