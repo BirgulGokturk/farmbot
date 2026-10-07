@@ -49,6 +49,7 @@ import noktalar
 import programlar
 import sulama
 import sulama_genel
+import rapor
 import turler
 import zamanli
 
@@ -4311,6 +4312,8 @@ async def _zamanli_yayinla() -> None:
 
 
 app.include_router(zamanli.yonlendirici_kur(_parola_dogrula))
+app.include_router(rapor.yonlendirici_kur(
+    _parola_dogrula, _bahce_veri, lambda: (merkez.durum(), merkez.son_olcum)))
 
 
 async def _arsiv_dongusu() -> None:
